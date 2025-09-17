@@ -241,9 +241,11 @@ func (c *RecommendationsClient) parseOpenSearchDetails(rec *Recommendation, deta
 
 	osInfo := &OpenSearchDetails{}
 
-	if esDetails.InstanceType != nil {
-		rec.InstanceType = *esDetails.InstanceType
-		osInfo.InstanceType = *esDetails.InstanceType
+	// ESInstanceDetails has InstanceClass and InstanceSize, not InstanceType
+	// Build instance type from class and size
+	if esDetails.InstanceClass != nil && esDetails.InstanceSize != nil {
+		rec.InstanceType = fmt.Sprintf("%s.%s", *esDetails.InstanceClass, *esDetails.InstanceSize)
+		osInfo.InstanceType = rec.InstanceType
 	}
 	if esDetails.InstanceSize != nil {
 		// Parse instance count from size if available

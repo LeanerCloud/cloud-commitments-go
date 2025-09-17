@@ -53,15 +53,15 @@ func (c *PurchaseClient) PurchaseRI(ctx context.Context, rec common.Recommendati
 	reservationID := fmt.Sprintf("elasticache-ri-%s-%d", rec.Region, time.Now().Unix())
 
 	// Create the purchase request
-	input := &elasticache.PurchaseCacheNodesOfferingInput{
-		CacheNodesOfferingId: aws.String(offeringID),
-		CacheNodeCount:       aws.Int32(rec.Count),
-		ReservationId:        aws.String(reservationID),
-		Tags:                 c.createPurchaseTags(rec),
+	input := &elasticache.PurchaseReservedCacheNodesOfferingInput{
+		ReservedCacheNodesOfferingId: aws.String(offeringID),
+		CacheNodeCount:               aws.Int32(rec.Count),
+		ReservedCacheNodeId:          aws.String(reservationID),
+		Tags:                         c.createPurchaseTags(rec),
 	}
 
 	// Execute the purchase
-	response, err := c.client.PurchaseCacheNodesOffering(ctx, input)
+	response, err := c.client.PurchaseReservedCacheNodesOffering(ctx, input)
 	if err != nil {
 		result.Success = false
 		result.Message = fmt.Sprintf("Failed to purchase Reserved Cache Node: %v", err)
@@ -72,7 +72,7 @@ func (c *PurchaseClient) PurchaseRI(ctx context.Context, rec common.Recommendati
 	if response.ReservedCacheNode != nil {
 		result.Success = true
 		result.PurchaseID = aws.ToString(response.ReservedCacheNode.ReservedCacheNodeId)
-		result.ReservationID = aws.ToString(response.ReservedCacheNode.ReservationId)
+		result.ReservationID = aws.ToString(response.ReservedCacheNode.ReservedCacheNodeId)
 		result.Message = fmt.Sprintf("Successfully purchased %d cache nodes", rec.Count)
 
 		// Extract cost information if available
@@ -98,7 +98,7 @@ func (c *PurchaseClient) findOfferingID(ctx context.Context, rec common.Recommen
 	duration := c.getDurationString(rec.Term)
 	offeringType := common.ConvertPaymentOptionToString(rec.PaymentOption)
 
-	input := &elasticache.DescribeCacheNodesOfferingsInput{
+	input := &elasticache.DescribeReservedCacheNodesOfferingsInput{
 		CacheNodeType:      aws.String(rec.InstanceType),
 		ProductDescription: aws.String(cacheDetails.Engine),
 		Duration:           aws.String(duration),
@@ -106,18 +106,18 @@ func (c *PurchaseClient) findOfferingID(ctx context.Context, rec common.Recommen
 		MaxRecords:         aws.Int32(100),
 	}
 
-	result, err := c.client.DescribeCacheNodesOfferings(ctx, input)
+	result, err := c.client.DescribeReservedCacheNodesOfferings(ctx, input)
 	if err != nil {
 		return "", fmt.Errorf("failed to describe offerings: %w", err)
 	}
 
-	if len(result.CacheNodesOfferings) == 0 {
+	if len(result.ReservedCacheNodesOfferings) == 0 {
 		return "", fmt.Errorf("no offerings found for %s %s %s",
 			rec.InstanceType, cacheDetails.Engine, duration)
 	}
 
 	// Return the first matching offering ID
-	offeringID := aws.ToString(result.CacheNodesOfferings[0].CacheNodesOfferingId)
+	offeringID := aws.ToString(result.ReservedCacheNodesOfferings[0].ReservedCacheNodesOfferingId)
 	return offeringID, nil
 }
 
@@ -134,31 +134,31 @@ func (c *PurchaseClient) GetOfferingDetails(ctx context.Context, rec common.Reco
 		return nil, err
 	}
 
-	input := &elasticache.DescribeCacheNodesOfferingsInput{
-		CacheNodesOfferingId: aws.String(offeringID),
+	input := &elasticache.DescribeReservedCacheNodesOfferingsInput{
+		ReservedCacheNodesOfferingId: aws.String(offeringID),
 	}
 
-	result, err := c.client.DescribeCacheNodesOfferings(ctx, input)
+	result, err := c.client.DescribeReservedCacheNodesOfferings(ctx, input)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get offering details: %w", err)
 	}
 
-	if len(result.CacheNodesOfferings) == 0 {
+	if len(result.ReservedCacheNodesOfferings) == 0 {
 		return nil, fmt.Errorf("offering not found: %s", offeringID)
 	}
 
-	offering := result.CacheNodesOfferings[0]
+	offering := result.ReservedCacheNodesOfferings[0]
 	cacheDetails := rec.ServiceDetails.(*common.ElastiCacheDetails)
 
 	details := &common.OfferingDetails{
-		OfferingID:    aws.ToString(offering.CacheNodesOfferingId),
+		OfferingID:    aws.ToString(offering.ReservedCacheNodesOfferingId),
 		InstanceType:  aws.ToString(offering.CacheNodeType),
 		Engine:        cacheDetails.Engine,
-		Duration:      aws.ToString(offering.Duration),
+		Duration:      fmt.Sprintf("%d", aws.ToInt32(offering.Duration)),
 		PaymentOption: aws.ToString(offering.OfferingType),
 		FixedPrice:    aws.ToFloat64(offering.FixedPrice),
 		UsagePrice:    aws.ToFloat64(offering.UsagePrice),
-		CurrencyCode:  aws.ToString(offering.RecurringCharges[0].RecurringChargeFrequency),
+		CurrencyCode:  "USD",
 		OfferingType:  aws.ToString(offering.OfferingType),
 	}
 

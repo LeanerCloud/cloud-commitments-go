@@ -176,7 +176,7 @@ func GetServiceStringForCostExplorer(service ServiceType) string {
 	case ServiceElastiCache:
 		return "Amazon ElastiCache"
 	case ServiceEC2:
-		return "Amazon Elastic Compute Cloud"
+		return "Amazon Elastic Compute Cloud - Compute"
 	case ServiceOpenSearch:
 		return "Amazon OpenSearch Service"
 	case ServiceElasticsearch:
@@ -184,7 +184,7 @@ func GetServiceStringForCostExplorer(service ServiceType) string {
 	case ServiceRedshift:
 		return "Amazon Redshift"
 	case ServiceMemoryDB:
-		return "Amazon MemoryDB"
+		return "Amazon MemoryDB Service"
 	default:
 		return string(service)
 	}

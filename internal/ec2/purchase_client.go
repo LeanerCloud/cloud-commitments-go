@@ -193,12 +193,12 @@ func (c *PurchaseClient) GetOfferingDetails(ctx context.Context, rec common.Reco
 
 	details := &common.OfferingDetails{
 		OfferingID:    aws.ToString(offering.ReservedInstancesOfferingId),
-		InstanceType:  aws.ToString(offering.InstanceType),
+		InstanceType:  string(offering.InstanceType),
 		Platform:      ec2Details.Platform,
 		Duration:      fmt.Sprintf("%d", aws.ToInt64(offering.Duration)),
 		PaymentOption: string(offering.OfferingType),
 		FixedPrice:    fixedPrice,
-		UsagePrice:    aws.ToFloat64(offering.UsagePrice),
+		UsagePrice:    float64(aws.ToFloat32(offering.UsagePrice)),
 		CurrencyCode:  string(offering.CurrencyCode),
 		OfferingType:  string(offering.OfferingType),
 	}
