@@ -14,7 +14,7 @@ import (
 
 // PurchaseClient wraps the AWS RDS client for purchasing Reserved Instances
 type PurchaseClient struct {
-	client *rds.Client
+	client RDSClientInterface
 	common.BasePurchaseClient
 }
 

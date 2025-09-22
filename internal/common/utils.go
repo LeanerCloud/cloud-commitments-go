@@ -189,3 +189,113 @@ func GetServiceStringForCostExplorer(service ServiceType) string {
 		return string(service)
 	}
 }
+
+// ApplyCoverage applies a coverage percentage to recommendations
+func ApplyCoverage(recs []Recommendation, coverage float64) []Recommendation {
+	if coverage >= 100.0 {
+		return recs
+	}
+
+	filtered := make([]Recommendation, 0, len(recs))
+	for _, rec := range recs {
+		adjustedCount := int32(float64(rec.Count) * (coverage / 100.0))
+		if adjustedCount > 0 {
+			recCopy := rec
+			recCopy.Count = adjustedCount
+			filtered = append(filtered, recCopy)
+		}
+	}
+	return filtered
+}
+
+// CalculateTotalSavings calculates the total estimated savings from recommendations
+func CalculateTotalSavings(recs []Recommendation) float64 {
+	total := 0.0
+	for _, rec := range recs {
+		// Calculate savings from cost and savings percent
+		savings := rec.EstimatedCost * (rec.SavingsPercent / 100.0)
+		total += savings
+	}
+	return total
+}
+
+// CalculateTotalInstances calculates the total number of instances in recommendations
+func CalculateTotalInstances(recs []Recommendation) int32 {
+	var total int32
+	for _, rec := range recs {
+		total += rec.Count
+	}
+	return total
+}
+
+// GroupRecommendationsByRegion groups recommendations by region
+func GroupRecommendationsByRegion(recs []Recommendation) map[string][]Recommendation {
+	grouped := make(map[string][]Recommendation)
+	for _, rec := range recs {
+		grouped[rec.Region] = append(grouped[rec.Region], rec)
+	}
+	return grouped
+}
+
+// GroupRecommendationsByService groups recommendations by service type
+func GroupRecommendationsByService(recs []Recommendation) map[ServiceType][]Recommendation {
+	grouped := make(map[ServiceType][]Recommendation)
+	for _, rec := range recs {
+		grouped[rec.Service] = append(grouped[rec.Service], rec)
+	}
+	return grouped
+}
+
+// FilterRecommendationsByThreshold filters recommendations by minimum savings threshold
+func FilterRecommendationsByThreshold(recs []Recommendation, threshold float64) []Recommendation {
+	filtered := make([]Recommendation, 0)
+	for _, rec := range recs {
+		// Calculate savings from cost and savings percent
+		savings := rec.EstimatedCost * (rec.SavingsPercent / 100.0)
+		if savings >= threshold {
+			filtered = append(filtered, rec)
+		}
+	}
+	return filtered
+}
+
+// SortRecommendationsBySavings sorts recommendations by estimated savings (descending)
+func SortRecommendationsBySavings(recs []Recommendation) []Recommendation {
+	// Create a copy to avoid modifying the original slice
+	sorted := make([]Recommendation, len(recs))
+	copy(sorted, recs)
+
+	// Sort by savings in descending order
+	for i := 0; i < len(sorted)-1; i++ {
+		for j := i + 1; j < len(sorted); j++ {
+			savingsI := sorted[i].EstimatedCost * (sorted[i].SavingsPercent / 100.0)
+			savingsJ := sorted[j].EstimatedCost * (sorted[j].SavingsPercent / 100.0)
+			if savingsJ > savingsI {
+				sorted[i], sorted[j] = sorted[j], sorted[i]
+			}
+		}
+	}
+	return sorted
+}
+
+// MergeRecommendations merges two slices of recommendations
+func MergeRecommendations(recsA, recsB []Recommendation) []Recommendation {
+	merged := make([]Recommendation, 0, len(recsA)+len(recsB))
+	merged = append(merged, recsA...)
+	merged = append(merged, recsB...)
+	return merged
+}
+
+// ValidateRecommendation checks if a recommendation has all required fields
+func ValidateRecommendation(rec Recommendation) bool {
+	if rec.Region == "" {
+		return false
+	}
+	if rec.InstanceType == "" {
+		return false
+	}
+	if rec.Count <= 0 {
+		return false
+	}
+	return true
+}

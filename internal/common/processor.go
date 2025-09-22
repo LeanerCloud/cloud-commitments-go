@@ -186,20 +186,7 @@ func (p *ServiceProcessor) discoverRegionsForService(ctx context.Context, servic
 
 // applyCoverage applies the coverage percentage to recommendations
 func (p *ServiceProcessor) applyCoverage(recs []Recommendation) []Recommendation {
-	if p.config.Coverage >= 100.0 {
-		return recs
-	}
-
-	filtered := make([]Recommendation, 0, len(recs))
-	for _, rec := range recs {
-		adjustedCount := int32(float64(rec.Count) * (p.config.Coverage / 100.0))
-		if adjustedCount > 0 {
-			rec.Count = adjustedCount
-			filtered = append(filtered, rec)
-		}
-	}
-
-	return filtered
+	return ApplyCoverage(recs, p.config.Coverage)
 }
 
 // generatePurchaseID generates a unique purchase ID

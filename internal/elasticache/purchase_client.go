@@ -13,7 +13,7 @@ import (
 
 // PurchaseClient wraps the AWS ElastiCache client for purchasing Reserved Cache Nodes
 type PurchaseClient struct {
-	client *elasticache.Client
+	client ElastiCacheClientInterface
 	common.BasePurchaseClient
 }
 
