@@ -14,7 +14,7 @@ import (
 
 // Client wraps the AWS RDS client for purchasing Reserved Instances
 type Client struct {
-	rdsClient *rds.Client
+	rdsClient RDSAPI
 }
 
 // NewClient creates a new purchase client

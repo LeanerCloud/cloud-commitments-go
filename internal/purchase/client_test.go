@@ -1,12 +1,40 @@
 package purchase
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"testing"
+	"time"
 
+	"github.com/LeanerCloud/rds-ri-purchase-tool/internal/recommendations"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/rds"
+	"github.com/aws/aws-sdk-go-v2/service/rds/types"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/mock"
 )
+
+// MockRDSAPI is a mock implementation of RDSAPI
+type MockRDSAPI struct {
+	mock.Mock
+}
+
+func (m *MockRDSAPI) PurchaseReservedDBInstancesOffering(ctx context.Context, params *rds.PurchaseReservedDBInstancesOfferingInput, optFns ...func(*rds.Options)) (*rds.PurchaseReservedDBInstancesOfferingOutput, error) {
+	args := m.Called(ctx, params, optFns)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*rds.PurchaseReservedDBInstancesOfferingOutput), args.Error(1)
+}
+
+func (m *MockRDSAPI) DescribeReservedDBInstancesOfferings(ctx context.Context, params *rds.DescribeReservedDBInstancesOfferingsInput, optFns ...func(*rds.Options)) (*rds.DescribeReservedDBInstancesOfferingsOutput, error) {
+	args := m.Called(ctx, params, optFns)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*rds.DescribeReservedDBInstancesOfferingsOutput), args.Error(1)
+}
 
 func TestNewClient(t *testing.T) {
 	cfg := aws.Config{Region: "us-east-1"}
@@ -17,63 +45,837 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestConvertPaymentOption(t *testing.T) {
-	client := &Client{}
-
 	tests := []struct {
-		name      string
-		option    string
-		expected  string
-		expectErr bool
+		name     string
+		option   string
+		expected string
+		hasError bool
 	}{
 		{
 			name:     "all upfront",
 			option:   "all-upfront",
 			expected: "All Upfront",
+			hasError: false,
 		},
 		{
 			name:     "partial upfront",
 			option:   "partial-upfront",
 			expected: "Partial Upfront",
+			hasError: false,
 		},
 		{
 			name:     "no upfront",
 			option:   "no-upfront",
 			expected: "No Upfront",
+			hasError: false,
 		},
 		{
-			name:      "invalid option",
-			option:    "invalid",
-			expectErr: true,
+			name:     "invalid option",
+			option:   "invalid",
+			expected: "",
+			hasError: true,
 		},
 		{
-			name:      "empty option",
-			option:    "",
-			expectErr: true,
+			name:     "empty option",
+			option:   "",
+			expected: "",
+			hasError: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			client := &Client{}
 			result, err := client.convertPaymentOption(tt.option)
 
-			if tt.expectErr {
+			if tt.hasError {
 				assert.Error(t, err)
+				assert.Empty(t, result)
 			} else {
-				require.NoError(t, err)
+				assert.NoError(t, err)
 				assert.Equal(t, tt.expected, result)
 			}
 		})
 	}
 }
 
-// Test configuration handling
-func TestClientRegionProperty(t *testing.T) {
-	cfg := aws.Config{Region: "eu-central-1"}
-	client := NewClient(cfg)
+func TestPurchaseRI(t *testing.T) {
+	ctx := context.Background()
 
-	// Verify client was created successfully
-	assert.NotNil(t, client)
-	assert.NotNil(t, client.rdsClient)
+	tests := []struct {
+		name               string
+		rec                recommendations.Recommendation
+		mockSetup          func(*MockRDSAPI)
+		expectedSuccess    bool
+		expectedMessage    string
+		expectedPurchaseID string
+	}{
+		{
+			name: "successful purchase",
+			rec: recommendations.Recommendation{
+				Engine:        "mysql",
+				InstanceType:  "db.t3.micro",
+				Count:         2,
+				AZConfig:      "single",
+				PaymentOption: "no-upfront",
+				Term:          36,
+				Region:        "us-east-1",
+			},
+			mockSetup: func(m *MockRDSAPI) {
+				// Mock finding offering
+				m.On("DescribeReservedDBInstancesOfferings", mock.Anything, mock.Anything, mock.Anything).
+					Return(&rds.DescribeReservedDBInstancesOfferingsOutput{
+						ReservedDBInstancesOfferings: []types.ReservedDBInstancesOffering{
+							{
+								ReservedDBInstancesOfferingId: aws.String("offering-123"),
+								DBInstanceClass:                aws.String("db.t3.micro"),
+								ProductDescription:             aws.String("mysql"),
+							},
+						},
+					}, nil)
+
+				// Mock purchase
+				m.On("PurchaseReservedDBInstancesOffering", mock.Anything, mock.Anything, mock.Anything).
+					Return(&rds.PurchaseReservedDBInstancesOfferingOutput{
+						ReservedDBInstance: &types.ReservedDBInstance{
+							ReservedDBInstanceId: aws.String("ri-123456"),
+							FixedPrice:           aws.Float64(1000.0),
+						},
+					}, nil)
+			},
+			expectedSuccess:    true,
+			expectedMessage:    "Successfully purchased 2 instances",
+			expectedPurchaseID: "ri-123456",
+		},
+		{
+			name: "offering not found",
+			rec: recommendations.Recommendation{
+				Engine:        "mysql",
+				InstanceType:  "db.t3.micro",
+				Count:         1,
+				AZConfig:      "single",
+				PaymentOption: "no-upfront",
+				Term:          36,
+			},
+			mockSetup: func(m *MockRDSAPI) {
+				m.On("DescribeReservedDBInstancesOfferings", mock.Anything, mock.Anything, mock.Anything).
+					Return(&rds.DescribeReservedDBInstancesOfferingsOutput{
+						ReservedDBInstancesOfferings: []types.ReservedDBInstancesOffering{},
+					}, nil)
+			},
+			expectedSuccess: false,
+			expectedMessage: "Failed to find offering: no offerings found for db.t3.micro mysql single 3yr",
+		},
+		{
+			name: "describe offerings error",
+			rec: recommendations.Recommendation{
+				Engine:        "mysql",
+				InstanceType:  "db.t3.micro",
+				Count:         1,
+				AZConfig:      "single",
+				PaymentOption: "no-upfront",
+				Term:          36,
+			},
+			mockSetup: func(m *MockRDSAPI) {
+				m.On("DescribeReservedDBInstancesOfferings", mock.Anything, mock.Anything, mock.Anything).
+					Return(nil, errors.New("AWS API error"))
+			},
+			expectedSuccess: false,
+			expectedMessage: "Failed to find offering: failed to describe offerings: AWS API error",
+		},
+		{
+			name: "purchase error",
+			rec: recommendations.Recommendation{
+				Engine:        "mysql",
+				InstanceType:  "db.t3.micro",
+				Count:         1,
+				AZConfig:      "single",
+				PaymentOption: "no-upfront",
+				Term:          36,
+			},
+			mockSetup: func(m *MockRDSAPI) {
+				m.On("DescribeReservedDBInstancesOfferings", mock.Anything, mock.Anything, mock.Anything).
+					Return(&rds.DescribeReservedDBInstancesOfferingsOutput{
+						ReservedDBInstancesOfferings: []types.ReservedDBInstancesOffering{
+							{
+								ReservedDBInstancesOfferingId: aws.String("offering-123"),
+							},
+						},
+					}, nil)
+
+				m.On("PurchaseReservedDBInstancesOffering", mock.Anything, mock.Anything, mock.Anything).
+					Return(nil, errors.New("insufficient quota"))
+			},
+			expectedSuccess: false,
+			expectedMessage: "Failed to purchase RI: insufficient quota",
+		},
+		{
+			name: "empty purchase response",
+			rec: recommendations.Recommendation{
+				Engine:        "mysql",
+				InstanceType:  "db.t3.micro",
+				Count:         1,
+				AZConfig:      "single",
+				PaymentOption: "no-upfront",
+				Term:          36,
+			},
+			mockSetup: func(m *MockRDSAPI) {
+				m.On("DescribeReservedDBInstancesOfferings", mock.Anything, mock.Anything, mock.Anything).
+					Return(&rds.DescribeReservedDBInstancesOfferingsOutput{
+						ReservedDBInstancesOfferings: []types.ReservedDBInstancesOffering{
+							{
+								ReservedDBInstancesOfferingId: aws.String("offering-123"),
+							},
+						},
+					}, nil)
+
+				m.On("PurchaseReservedDBInstancesOffering", mock.Anything, mock.Anything, mock.Anything).
+					Return(&rds.PurchaseReservedDBInstancesOfferingOutput{
+						ReservedDBInstance: nil,
+					}, nil)
+			},
+			expectedSuccess: false,
+			expectedMessage: "Purchase response was empty",
+		},
+		{
+			name: "invalid payment option",
+			rec: recommendations.Recommendation{
+				Engine:        "mysql",
+				InstanceType:  "db.t3.micro",
+				Count:         1,
+				AZConfig:      "single",
+				PaymentOption: "invalid-payment",
+				Term:          36,
+			},
+			mockSetup: func(m *MockRDSAPI) {
+				// No mocks needed - should fail at payment option conversion
+			},
+			expectedSuccess: false,
+			expectedMessage: "Failed to find offering: invalid payment option: unsupported payment option: invalid-payment",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRDS := new(MockRDSAPI)
+			tt.mockSetup(mockRDS)
+
+			client := &Client{
+				rdsClient: mockRDS,
+			}
+
+			result := client.PurchaseRI(ctx, tt.rec)
+
+			assert.Equal(t, tt.expectedSuccess, result.Success)
+			assert.Contains(t, result.Message, tt.expectedMessage)
+			if tt.expectedPurchaseID != "" {
+				assert.Equal(t, tt.expectedPurchaseID, result.PurchaseID)
+			}
+
+			mockRDS.AssertExpectations(t)
+		})
+	}
+}
+
+func TestBatchPurchase(t *testing.T) {
+	ctx := context.Background()
+
+	recommendations := []recommendations.Recommendation{
+		{
+			Engine:        "mysql",
+			InstanceType:  "db.t3.micro",
+			Count:         1,
+			AZConfig:      "single",
+			PaymentOption: "no-upfront",
+			Term:          36,
+		},
+		{
+			Engine:        "postgres",
+			InstanceType:  "db.t3.small",
+			Count:         2,
+			AZConfig:      "multi",
+			PaymentOption: "partial-upfront",
+			Term:          12,
+		},
+	}
+
+	mockRDS := new(MockRDSAPI)
+
+	// First purchase - success
+	mockRDS.On("DescribeReservedDBInstancesOfferings", mock.Anything, mock.Anything, mock.Anything).
+		Return(&rds.DescribeReservedDBInstancesOfferingsOutput{
+			ReservedDBInstancesOfferings: []types.ReservedDBInstancesOffering{
+				{
+					ReservedDBInstancesOfferingId: aws.String("offering-1"),
+				},
+			},
+		}, nil).Once()
+
+	mockRDS.On("PurchaseReservedDBInstancesOffering", mock.Anything, mock.Anything, mock.Anything).
+		Return(&rds.PurchaseReservedDBInstancesOfferingOutput{
+			ReservedDBInstance: &types.ReservedDBInstance{
+				ReservedDBInstanceId: aws.String("ri-1"),
+			},
+		}, nil).Once()
+
+	// Second purchase - failure
+	mockRDS.On("DescribeReservedDBInstancesOfferings", mock.Anything, mock.Anything, mock.Anything).
+		Return(nil, errors.New("API error")).Once()
+
+	client := &Client{
+		rdsClient: mockRDS,
+	}
+
+	// Test with delay
+	startTime := time.Now()
+	results := client.BatchPurchase(ctx, recommendations, 100*time.Millisecond)
+	duration := time.Since(startTime)
+
+	assert.Len(t, results, 2)
+	assert.True(t, results[0].Success)
+	assert.False(t, results[1].Success)
+	assert.GreaterOrEqual(t, duration, 100*time.Millisecond) // Should have delay
+
+	mockRDS.AssertExpectations(t)
+
+	// Test without delay
+	mockRDS = new(MockRDSAPI)
+	mockRDS.On("DescribeReservedDBInstancesOfferings", mock.Anything, mock.Anything, mock.Anything).
+		Return(&rds.DescribeReservedDBInstancesOfferingsOutput{
+			ReservedDBInstancesOfferings: []types.ReservedDBInstancesOffering{},
+		}, nil).Twice()
+
+	client.rdsClient = mockRDS
+
+	results = client.BatchPurchase(ctx, recommendations, 0)
+	assert.Len(t, results, 2)
+
+	mockRDS.AssertExpectations(t)
+}
+
+func TestFindOfferingID(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name           string
+		rec            recommendations.Recommendation
+		mockSetup      func(*MockRDSAPI)
+		expectedID     string
+		expectError    bool
+		errorContains  string
+	}{
+		{
+			name: "successful find",
+			rec: recommendations.Recommendation{
+				Engine:        "mysql",
+				InstanceType:  "db.t3.micro",
+				AZConfig:      "single",
+				PaymentOption: "no-upfront",
+				Term:          36,
+			},
+			mockSetup: func(m *MockRDSAPI) {
+				m.On("DescribeReservedDBInstancesOfferings", mock.Anything, mock.Anything, mock.Anything).
+					Return(&rds.DescribeReservedDBInstancesOfferingsOutput{
+						ReservedDBInstancesOfferings: []types.ReservedDBInstancesOffering{
+							{
+								ReservedDBInstancesOfferingId: aws.String("offering-123"),
+							},
+						},
+					}, nil)
+			},
+			expectedID:  "offering-123",
+			expectError: false,
+		},
+		{
+			name: "no offerings found",
+			rec: recommendations.Recommendation{
+				Engine:        "mysql",
+				InstanceType:  "db.t3.micro",
+				AZConfig:      "single",
+				PaymentOption: "no-upfront",
+				Term:          36,
+			},
+			mockSetup: func(m *MockRDSAPI) {
+				m.On("DescribeReservedDBInstancesOfferings", mock.Anything, mock.Anything, mock.Anything).
+					Return(&rds.DescribeReservedDBInstancesOfferingsOutput{
+						ReservedDBInstancesOfferings: []types.ReservedDBInstancesOffering{},
+					}, nil)
+			},
+			expectError:   true,
+			errorContains: "no offerings found",
+		},
+		{
+			name: "API error",
+			rec: recommendations.Recommendation{
+				Engine:        "mysql",
+				InstanceType:  "db.t3.micro",
+				AZConfig:      "single",
+				PaymentOption: "no-upfront",
+				Term:          36,
+			},
+			mockSetup: func(m *MockRDSAPI) {
+				m.On("DescribeReservedDBInstancesOfferings", mock.Anything, mock.Anything, mock.Anything).
+					Return(nil, errors.New("API error"))
+			},
+			expectError:   true,
+			errorContains: "failed to describe offerings",
+		},
+		{
+			name: "invalid payment option",
+			rec: recommendations.Recommendation{
+				Engine:        "mysql",
+				InstanceType:  "db.t3.micro",
+				AZConfig:      "single",
+				PaymentOption: "invalid",
+				Term:          36,
+			},
+			mockSetup: func(m *MockRDSAPI) {
+				// No mock needed - fails at payment option conversion
+			},
+			expectError:   true,
+			errorContains: "invalid payment option",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRDS := new(MockRDSAPI)
+			tt.mockSetup(mockRDS)
+
+			client := &Client{
+				rdsClient: mockRDS,
+			}
+
+			id, err := client.findOfferingID(ctx, tt.rec)
+
+			if tt.expectError {
+				assert.Error(t, err)
+				assert.Contains(t, err.Error(), tt.errorContains)
+			} else {
+				assert.NoError(t, err)
+				assert.Equal(t, tt.expectedID, id)
+			}
+
+			mockRDS.AssertExpectations(t)
+		})
+	}
+}
+
+func TestValidateOffering(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name        string
+		rec         recommendations.Recommendation
+		mockSetup   func(*MockRDSAPI)
+		expectError bool
+	}{
+		{
+			name: "valid offering",
+			rec: recommendations.Recommendation{
+				Engine:        "mysql",
+				InstanceType:  "db.t3.micro",
+				AZConfig:      "single",
+				PaymentOption: "no-upfront",
+				Term:          36,
+			},
+			mockSetup: func(m *MockRDSAPI) {
+				m.On("DescribeReservedDBInstancesOfferings", mock.Anything, mock.Anything, mock.Anything).
+					Return(&rds.DescribeReservedDBInstancesOfferingsOutput{
+						ReservedDBInstancesOfferings: []types.ReservedDBInstancesOffering{
+							{
+								ReservedDBInstancesOfferingId: aws.String("offering-123"),
+							},
+						},
+					}, nil)
+			},
+			expectError: false,
+		},
+		{
+			name: "invalid offering",
+			rec: recommendations.Recommendation{
+				Engine:        "mysql",
+				InstanceType:  "db.t3.micro",
+				AZConfig:      "single",
+				PaymentOption: "no-upfront",
+				Term:          36,
+			},
+			mockSetup: func(m *MockRDSAPI) {
+				m.On("DescribeReservedDBInstancesOfferings", mock.Anything, mock.Anything, mock.Anything).
+					Return(&rds.DescribeReservedDBInstancesOfferingsOutput{
+						ReservedDBInstancesOfferings: []types.ReservedDBInstancesOffering{},
+					}, nil)
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRDS := new(MockRDSAPI)
+			tt.mockSetup(mockRDS)
+
+			client := &Client{
+				rdsClient: mockRDS,
+			}
+
+			err := client.ValidateOffering(ctx, tt.rec)
+
+			if tt.expectError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+			}
+
+			mockRDS.AssertExpectations(t)
+		})
+	}
+}
+
+func TestGetOfferingDetails(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		name          string
+		rec           recommendations.Recommendation
+		mockSetup     func(*MockRDSAPI)
+		expectedError bool
+		validate      func(*testing.T, *OfferingDetails)
+	}{
+		{
+			name: "successful get details",
+			rec: recommendations.Recommendation{
+				Engine:        "mysql",
+				InstanceType:  "db.t3.micro",
+				AZConfig:      "single",
+				PaymentOption: "no-upfront",
+				Term:          36,
+			},
+			mockSetup: func(m *MockRDSAPI) {
+				// First call for findOfferingID
+				m.On("DescribeReservedDBInstancesOfferings", mock.Anything,
+					mock.MatchedBy(func(input *rds.DescribeReservedDBInstancesOfferingsInput) bool {
+						return input.DBInstanceClass != nil && *input.DBInstanceClass == "db.t3.micro"
+					}), mock.Anything).
+					Return(&rds.DescribeReservedDBInstancesOfferingsOutput{
+						ReservedDBInstancesOfferings: []types.ReservedDBInstancesOffering{
+							{
+								ReservedDBInstancesOfferingId: aws.String("offering-123"),
+							},
+						},
+					}, nil).Once()
+
+				// Second call for GetOfferingDetails
+				duration := int32(31536000) // 1 year in seconds
+				m.On("DescribeReservedDBInstancesOfferings", mock.Anything,
+					mock.MatchedBy(func(input *rds.DescribeReservedDBInstancesOfferingsInput) bool {
+						return input.ReservedDBInstancesOfferingId != nil &&
+							*input.ReservedDBInstancesOfferingId == "offering-123"
+					}), mock.Anything).
+					Return(&rds.DescribeReservedDBInstancesOfferingsOutput{
+						ReservedDBInstancesOfferings: []types.ReservedDBInstancesOffering{
+							{
+								ReservedDBInstancesOfferingId: aws.String("offering-123"),
+								DBInstanceClass:                aws.String("db.t3.micro"),
+								ProductDescription:             aws.String("mysql"),
+								Duration:                       &duration,
+								OfferingType:                   aws.String("No Upfront"),
+								MultiAZ:                        aws.Bool(false),
+								FixedPrice:                     aws.Float64(0.0),
+								UsagePrice:                     aws.Float64(0.05),
+								CurrencyCode:                   aws.String("USD"),
+							},
+						},
+					}, nil).Once()
+			},
+			expectedError: false,
+			validate: func(t *testing.T, details *OfferingDetails) {
+				assert.Equal(t, "offering-123", details.OfferingID)
+				assert.Equal(t, "db.t3.micro", details.InstanceType)
+				assert.Equal(t, "mysql", details.Engine)
+				assert.Equal(t, "31536000", details.Duration)
+				assert.Equal(t, "No Upfront", details.PaymentOption)
+				assert.Equal(t, false, details.MultiAZ)
+				assert.Equal(t, 0.0, details.FixedPrice)
+				assert.Equal(t, 0.05, details.UsagePrice)
+				assert.Equal(t, "USD", details.CurrencyCode)
+			},
+		},
+		{
+			name: "offering not found during initial search",
+			rec: recommendations.Recommendation{
+				Engine:        "mysql",
+				InstanceType:  "db.t3.micro",
+				AZConfig:      "single",
+				PaymentOption: "no-upfront",
+				Term:          36,
+			},
+			mockSetup: func(m *MockRDSAPI) {
+				m.On("DescribeReservedDBInstancesOfferings", mock.Anything, mock.Anything, mock.Anything).
+					Return(&rds.DescribeReservedDBInstancesOfferingsOutput{
+						ReservedDBInstancesOfferings: []types.ReservedDBInstancesOffering{},
+					}, nil).Once()
+			},
+			expectedError: true,
+		},
+		{
+			name: "API error during details fetch",
+			rec: recommendations.Recommendation{
+				Engine:        "mysql",
+				InstanceType:  "db.t3.micro",
+				AZConfig:      "single",
+				PaymentOption: "no-upfront",
+				Term:          36,
+			},
+			mockSetup: func(m *MockRDSAPI) {
+				// First call succeeds
+				m.On("DescribeReservedDBInstancesOfferings", mock.Anything,
+					mock.MatchedBy(func(input *rds.DescribeReservedDBInstancesOfferingsInput) bool {
+						return input.DBInstanceClass != nil
+					}), mock.Anything).
+					Return(&rds.DescribeReservedDBInstancesOfferingsOutput{
+						ReservedDBInstancesOfferings: []types.ReservedDBInstancesOffering{
+							{
+								ReservedDBInstancesOfferingId: aws.String("offering-123"),
+							},
+						},
+					}, nil).Once()
+
+				// Second call fails
+				m.On("DescribeReservedDBInstancesOfferings", mock.Anything,
+					mock.MatchedBy(func(input *rds.DescribeReservedDBInstancesOfferingsInput) bool {
+						return input.ReservedDBInstancesOfferingId != nil
+					}), mock.Anything).
+					Return(nil, errors.New("API error")).Once()
+			},
+			expectedError: true,
+		},
+		{
+			name: "offering not found in details response",
+			rec: recommendations.Recommendation{
+				Engine:        "mysql",
+				InstanceType:  "db.t3.micro",
+				AZConfig:      "single",
+				PaymentOption: "no-upfront",
+				Term:          36,
+			},
+			mockSetup: func(m *MockRDSAPI) {
+				// First call succeeds
+				m.On("DescribeReservedDBInstancesOfferings", mock.Anything,
+					mock.MatchedBy(func(input *rds.DescribeReservedDBInstancesOfferingsInput) bool {
+						return input.DBInstanceClass != nil
+					}), mock.Anything).
+					Return(&rds.DescribeReservedDBInstancesOfferingsOutput{
+						ReservedDBInstancesOfferings: []types.ReservedDBInstancesOffering{
+							{
+								ReservedDBInstancesOfferingId: aws.String("offering-123"),
+							},
+						},
+					}, nil).Once()
+
+				// Second call returns empty
+				m.On("DescribeReservedDBInstancesOfferings", mock.Anything,
+					mock.MatchedBy(func(input *rds.DescribeReservedDBInstancesOfferingsInput) bool {
+						return input.ReservedDBInstancesOfferingId != nil
+					}), mock.Anything).
+					Return(&rds.DescribeReservedDBInstancesOfferingsOutput{
+						ReservedDBInstancesOfferings: []types.ReservedDBInstancesOffering{},
+					}, nil).Once()
+			},
+			expectedError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockRDS := new(MockRDSAPI)
+			tt.mockSetup(mockRDS)
+
+			client := &Client{
+				rdsClient: mockRDS,
+			}
+
+			details, err := client.GetOfferingDetails(ctx, tt.rec)
+
+			if tt.expectedError {
+				assert.Error(t, err)
+			} else {
+				assert.NoError(t, err)
+				if tt.validate != nil {
+					tt.validate(t, details)
+				}
+			}
+
+			mockRDS.AssertExpectations(t)
+		})
+	}
+}
+
+func TestCreatePurchaseTags(t *testing.T) {
+	rec := recommendations.Recommendation{
+		Engine:        "mysql",
+		InstanceType:  "db.t3.micro",
+		Region:        "us-east-1",
+		AZConfig:      "single",
+		PaymentOption: "no-upfront",
+		Term:          36,
+	}
+
+	client := &Client{}
+	tags := client.createPurchaseTags(rec)
+
+	assert.Len(t, tags, 9)
+
+	// Check specific tag values
+	tagMap := make(map[string]string)
+	for _, tag := range tags {
+		tagMap[*tag.Key] = *tag.Value
+	}
+
+	assert.Equal(t, "Reserved Instance Purchase", tagMap["Purpose"])
+	assert.Equal(t, "mysql", tagMap["Engine"])
+	assert.Equal(t, "db.t3.micro", tagMap["InstanceType"])
+	assert.Equal(t, "us-east-1", tagMap["Region"])
+	assert.Equal(t, "single", tagMap["AZConfig"])
+	assert.Equal(t, "rds-ri-tool", tagMap["Tool"])
+	assert.Equal(t, "no-upfront", tagMap["PaymentOption"])
+	assert.Equal(t, "36-months", tagMap["Term"])
+	assert.Contains(t, tagMap, "PurchaseDate")
+}
+
+func TestEstimateCosts(t *testing.T) {
+	ctx := context.Background()
+
+	recommendations := []recommendations.Recommendation{
+		{
+			Engine:        "mysql",
+			InstanceType:  "db.t3.micro",
+			Count:         2,
+			AZConfig:      "single",
+			PaymentOption: "no-upfront",
+			Term:          36,
+		},
+		{
+			Engine:        "postgres",
+			InstanceType:  "db.t3.small",
+			Count:         1,
+			AZConfig:      "multi",
+			PaymentOption: "partial-upfront",
+			Term:          12,
+		},
+	}
+
+	mockRDS := new(MockRDSAPI)
+
+	// First recommendation - success
+	mockRDS.On("DescribeReservedDBInstancesOfferings", mock.Anything,
+		mock.MatchedBy(func(input *rds.DescribeReservedDBInstancesOfferingsInput) bool {
+			return input.DBInstanceClass != nil && *input.DBInstanceClass == "db.t3.micro"
+		}), mock.Anything).
+		Return(&rds.DescribeReservedDBInstancesOfferingsOutput{
+			ReservedDBInstancesOfferings: []types.ReservedDBInstancesOffering{
+				{
+					ReservedDBInstancesOfferingId: aws.String("offering-1"),
+				},
+			},
+		}, nil).Once()
+
+	duration1 := int32(31536000)
+	mockRDS.On("DescribeReservedDBInstancesOfferings", mock.Anything,
+		mock.MatchedBy(func(input *rds.DescribeReservedDBInstancesOfferingsInput) bool {
+			return input.ReservedDBInstancesOfferingId != nil &&
+				*input.ReservedDBInstancesOfferingId == "offering-1"
+		}), mock.Anything).
+		Return(&rds.DescribeReservedDBInstancesOfferingsOutput{
+			ReservedDBInstancesOfferings: []types.ReservedDBInstancesOffering{
+				{
+					ReservedDBInstancesOfferingId: aws.String("offering-1"),
+					DBInstanceClass:                aws.String("db.t3.micro"),
+					ProductDescription:             aws.String("mysql"),
+					Duration:                       &duration1,
+					OfferingType:                   aws.String("No Upfront"),
+					FixedPrice:                     aws.Float64(0.0),
+					UsagePrice:                     aws.Float64(0.05),
+					CurrencyCode:                   aws.String("USD"),
+				},
+			},
+		}, nil).Once()
+
+	// Second recommendation - error
+	mockRDS.On("DescribeReservedDBInstancesOfferings", mock.Anything,
+		mock.MatchedBy(func(input *rds.DescribeReservedDBInstancesOfferingsInput) bool {
+			return input.DBInstanceClass != nil && *input.DBInstanceClass == "db.t3.small"
+		}), mock.Anything).
+		Return(nil, errors.New("API error")).Once()
+
+	client := &Client{
+		rdsClient: mockRDS,
+	}
+
+	estimates, err := client.EstimateCosts(ctx, recommendations)
+
+	assert.NoError(t, err)
+	assert.Len(t, estimates, 2)
+
+	// Check first estimate (success)
+	assert.Equal(t, recommendations[0], estimates[0].Recommendation)
+	assert.Empty(t, estimates[0].Error)
+	assert.Equal(t, 0.0, estimates[0].TotalFixedCost)     // 0.0 * 2 instances
+	assert.Equal(t, 0.1, estimates[0].MonthlyUsageCost)   // 0.05 * 2 instances
+	assert.Equal(t, 3.6, estimates[0].TotalTermCost)      // 0 + (0.1 * 36 months)
+
+	// Check second estimate (error)
+	assert.Equal(t, recommendations[1], estimates[1].Recommendation)
+	assert.Equal(t, "failed to describe offerings: API error", estimates[1].Error)
+
+	mockRDS.AssertExpectations(t)
+}
+
+// Test helper functions
+func TestGetMultiAZ(t *testing.T) {
+	tests := []struct {
+		name     string
+		azConfig string
+		expected bool
+	}{
+		{"single AZ", "single", false},
+		{"multi AZ", "multi", false},  // GetMultiAZ checks for "multi-az"
+		{"single-az", "single-az", false},
+		{"multi-az", "multi-az", true},
+		{"empty", "", false},
+		{"invalid", "invalid", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := recommendations.Recommendation{
+				AZConfig: tt.azConfig,
+			}
+			assert.Equal(t, tt.expected, rec.GetMultiAZ())
+		})
+	}
+}
+
+func TestGetDurationString(t *testing.T) {
+	tests := []struct {
+		name     string
+		term     int32
+		expected string
+	}{
+		{"12 months", 12, "1yr"},
+		{"36 months", 36, "3yr"},
+		{"1 month", 1, "3yr"},  // Default to 3yr
+		{"0 months", 0, "3yr"},  // Default to 3yr
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := recommendations.Recommendation{
+				Term: tt.term,
+			}
+			assert.Equal(t, tt.expected, rec.GetDurationString())
+		})
+	}
 }
 
 // Benchmark tests
@@ -86,437 +888,100 @@ func BenchmarkConvertPaymentOption(b *testing.B) {
 	}
 }
 
-// Test dry run vs actual purchase logic
-func TestDryRunVsActualPurchase(t *testing.T) {
-	tests := []struct {
-		name           string
-		dryRun         bool
-		actualPurchase bool
-		expectedMode   string
-	}{
-		{
-			name:           "default dry run",
-			actualPurchase: false,
-			expectedMode:   "dry-run",
-		},
-		{
-			name:           "actual purchase",
-			actualPurchase: true,
-			expectedMode:   "actual",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Simulate the logic from main function
-			isDryRun := !tt.actualPurchase
-
-			var mode string
-			if isDryRun {
-				mode = "dry-run"
-			} else {
-				mode = "actual"
-			}
-
-			assert.Equal(t, tt.expectedMode, mode)
-		})
-	}
-}
-
-// Test CSV output path validation
-func TestCSVOutputValidation(t *testing.T) {
-	tests := []struct {
-		name        string
-		csvOutput   string
-		expectValid bool
-	}{
-		{
-			name:        "empty output (stdout)",
-			csvOutput:   "",
-			expectValid: true,
-		},
-		{
-			name:        "valid csv file",
-			csvOutput:   "output.csv",
-			expectValid: true,
-		},
-		{
-			name:        "valid path with csv extension",
-			csvOutput:   "/tmp/results.csv",
-			expectValid: true,
-		},
-		{
-			name:        "invalid extension",
-			csvOutput:   "output.txt",
-			expectValid: false,
-		},
-		{
-			name:        "no extension",
-			csvOutput:   "output",
-			expectValid: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Simulate CSV output validation
-			isValid := tt.csvOutput == "" ||
-				(len(tt.csvOutput) > 4 && tt.csvOutput[len(tt.csvOutput)-4:] == ".csv")
-
-			assert.Equal(t, tt.expectValid, isValid)
-		})
-	}
-}
-
-// Test error handling scenarios
-func TestErrorHandlingScenarios(t *testing.T) {
-	tests := []struct {
-		name      string
-		scenario  string
-		expectErr bool
-	}{
-		{
-			name:      "offering not found",
-			scenario:  "offering_not_found",
-			expectErr: true,
-		},
-		{
-			name:      "insufficient quota",
-			scenario:  "insufficient_quota",
-			expectErr: true,
-		},
-		{
-			name:      "invalid payment option",
-			scenario:  "invalid_payment",
-			expectErr: true,
-		},
-		{
-			name:      "successful purchase",
-			scenario:  "success",
-			expectErr: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Simulate error scenarios
-			var hasError bool
-			switch tt.scenario {
-			case "offering_not_found", "insufficient_quota", "invalid_payment":
-				hasError = true
-			case "success":
-				hasError = false
-			}
-
-			assert.Equal(t, tt.expectErr, hasError)
-		})
-	}
-}
-
-// Test helper functions for purchase operations
-func TestPurchaseTagsCreation(t *testing.T) {
-	testRec := struct {
-		Engine        string
-		InstanceType  string
-		Region        string
-		AZConfig      string
-		PaymentOption string
-		Term          int32
-	}{
+func BenchmarkCreatePurchaseTags(b *testing.B) {
+	client := &Client{}
+	rec := recommendations.Recommendation{
 		Engine:        "mysql",
-		InstanceType:  "db.t4g.medium",
+		InstanceType:  "db.t3.micro",
 		Region:        "us-east-1",
-		AZConfig:      "single-az",
-		PaymentOption: "partial-upfront",
+		AZConfig:      "single",
+		PaymentOption: "no-upfront",
 		Term:          36,
 	}
 
-	// Test that tag creation logic would work
-	expectedTags := []string{
-		"Purpose", "Engine", "InstanceType", "Region",
-		"AZConfig", "PurchaseDate", "Tool", "PaymentOption", "Term",
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = client.createPurchaseTags(rec)
 	}
-
-	// Simulate tag creation
-	tagKeys := expectedTags
-
-	// Verify expected tag keys are present
-	for _, expectedKey := range []string{"Purpose", "Engine", "InstanceType"} {
-		found := false
-		for _, key := range tagKeys {
-			if key == expectedKey {
-				found = true
-				break
-			}
-		}
-		assert.True(t, found, "Expected tag key %s not found", expectedKey)
-	}
-
-	// Use testRec to avoid unused variable error
-	assert.Equal(t, "mysql", testRec.Engine)
-	assert.Equal(t, "db.t4g.medium", testRec.InstanceType)
 }
 
-// Test cost estimation logic
-func TestCostEstimationLogic(t *testing.T) {
+// Test error formatting
+func TestErrorFormatting(t *testing.T) {
 	tests := []struct {
 		name          string
-		fixedPrice    float64
-		usagePrice    float64
-		instanceCount int32
-		termMonths    int32
-		expectedFixed float64
-		expectedUsage float64
-		expectedTotal float64
+		baseError     error
+		expectedInMsg string
 	}{
 		{
-			name:          "basic calculation",
-			fixedPrice:    1000.0,
-			usagePrice:    0.1,
-			instanceCount: 2,
-			termMonths:    36,
-			expectedFixed: 2000.0, // 1000 * 2
-			expectedUsage: 7.2,    // 0.1 * 2 * 36
-			expectedTotal: 2007.2, // 2000 + 7.2
+			name:          "nil error",
+			baseError:     nil,
+			expectedInMsg: "",
 		},
 		{
-			name:          "zero usage price",
-			fixedPrice:    500.0,
-			usagePrice:    0.0,
-			instanceCount: 1,
-			termMonths:    12,
-			expectedFixed: 500.0,
-			expectedUsage: 0.0,
-			expectedTotal: 500.0,
+			name:          "simple error",
+			baseError:     errors.New("test error"),
+			expectedInMsg: "test error",
+		},
+		{
+			name:          "formatted error",
+			baseError:     fmt.Errorf("wrapped: %w", errors.New("base error")),
+			expectedInMsg: "base error",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Simulate cost calculation logic
-			totalFixed := tt.fixedPrice * float64(tt.instanceCount)
-			totalUsage := tt.usagePrice * float64(tt.instanceCount) * float64(tt.termMonths)
-			totalCost := totalFixed + totalUsage
-
-			assert.Equal(t, tt.expectedFixed, totalFixed)
-			assert.Equal(t, tt.expectedUsage, totalUsage)
-			assert.Equal(t, tt.expectedTotal, totalCost)
+			if tt.baseError != nil {
+				msg := fmt.Sprintf("Failed: %v", tt.baseError)
+				assert.Contains(t, msg, tt.expectedInMsg)
+			}
 		})
 	}
 }
 
-// Test batch purchase logic
-func TestBatchPurchaseLogic(t *testing.T) {
-	// Test the logic for batch purchases with delays
-	recommendations := []struct{ ID string }{
-		{"rec-1"}, {"rec-2"}, {"rec-3"},
-	}
-
-	// Simulate batch processing
-	processed := 0
-	for i, rec := range recommendations {
-		// Process recommendation
-		processed++
-
-		// Simulate delay logic (except for last item)
-		needsDelay := i < len(recommendations)-1
-
-		if needsDelay {
-			// In real implementation, this would be time.Sleep
-			// Here we just verify the logic
-			assert.True(t, needsDelay)
+// Test edge cases
+func TestEdgeCases(t *testing.T) {
+	t.Run("nil rdsClient", func(t *testing.T) {
+		client := &Client{
+			rdsClient: nil,
 		}
 
-		assert.NotEmpty(t, rec.ID)
-	}
+		// This would panic in real usage, but we're testing the structure
+		assert.Nil(t, client.rdsClient)
+	})
 
-	assert.Equal(t, len(recommendations), processed)
-}
+	t.Run("empty recommendations batch", func(t *testing.T) {
+		client := &Client{
+			rdsClient: new(MockRDSAPI),
+		}
 
-// Test offering validation logic
-func TestOfferingValidationLogic(t *testing.T) {
-	tests := []struct {
-		name             string
-		instanceType     string
-		engine           string
-		multiAZ          bool
-		paymentOption    string
-		validCombination bool
-	}{
-		{
-			name:             "valid MySQL single-AZ",
-			instanceType:     "db.t4g.medium",
-			engine:           "mysql",
-			multiAZ:          false,
-			paymentOption:    "partial-upfront",
-			validCombination: true,
-		},
-		{
-			name:             "valid PostgreSQL multi-AZ",
-			instanceType:     "db.r6g.large",
-			engine:           "postgres",
-			multiAZ:          true,
-			paymentOption:    "all-upfront",
-			validCombination: true,
-		},
-		{
-			name:             "invalid empty instance type",
-			instanceType:     "",
-			engine:           "mysql",
-			multiAZ:          false,
-			paymentOption:    "partial-upfront",
-			validCombination: false,
-		},
-	}
+		results := client.BatchPurchase(context.Background(), []recommendations.Recommendation{}, 0)
+		assert.Empty(t, results)
+	})
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Simulate validation logic
-			isValid := tt.instanceType != "" && tt.engine != "" && tt.paymentOption != ""
+	t.Run("very long delay between purchases", func(t *testing.T) {
+		mockRDS := new(MockRDSAPI)
+		mockRDS.On("DescribeReservedDBInstancesOfferings", mock.Anything, mock.Anything, mock.Anything).
+			Return(&rds.DescribeReservedDBInstancesOfferingsOutput{
+				ReservedDBInstancesOfferings: []types.ReservedDBInstancesOffering{},
+			}, nil).Times(2)
 
-			assert.Equal(t, tt.validCombination, isValid)
-		})
-	}
-}
+		client := &Client{
+			rdsClient: mockRDS,
+		}
 
-// Test purchase result processing
-func TestPurchaseResultProcessing(t *testing.T) {
-	tests := []struct {
-		name           string
-		success        bool
-		purchaseID     string
-		reservationID  string
-		actualCost     float64
-		expectedStatus string
-		expectedCost   string
-	}{
-		{
-			name:           "successful purchase",
-			success:        true,
-			purchaseID:     "ri-123456",
-			reservationID:  "res-789012",
-			actualCost:     1500.75,
-			expectedStatus: "SUCCESS",
-			expectedCost:   "$1500.75",
-		},
-		{
-			name:           "failed purchase",
-			success:        false,
-			purchaseID:     "",
-			reservationID:  "",
-			actualCost:     0.0,
-			expectedStatus: "FAILED",
-			expectedCost:   "N/A",
-		},
-	}
+		recommendations := []recommendations.Recommendation{
+			{Engine: "mysql", InstanceType: "db.t3.micro", PaymentOption: "no-upfront", Term: 36},
+			{Engine: "postgres", InstanceType: "db.t3.small", PaymentOption: "no-upfront", Term: 36},
+		}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Simulate result processing
-			status := "FAILED"
-			if tt.success {
-				status = "SUCCESS"
-			}
+		startTime := time.Now()
+		results := client.BatchPurchase(context.Background(), recommendations, 10*time.Millisecond)
+		duration := time.Since(startTime)
 
-			costString := "N/A"
-			if tt.actualCost > 0 {
-				costString = "$1500.75" // In real code, this would use fmt.Sprintf
-			}
+		assert.Len(t, results, 2)
+		assert.GreaterOrEqual(t, duration, 10*time.Millisecond)
 
-			assert.Equal(t, tt.expectedStatus, status)
-			assert.Equal(t, tt.expectedCost, costString)
-		})
-	}
-}
-
-// Test flag validation
-func TestFlagValidation(t *testing.T) {
-	type flags struct {
-		region         string
-		coverage       float64
-		dryRun         bool
-		actualPurchase bool
-		csvOutput      string
-	}
-
-	tests := []struct {
-		name        string
-		flags       flags
-		expectValid bool
-		errorMsg    string
-	}{
-		{
-			name: "valid flags",
-			flags: flags{
-				region:         "us-east-1",
-				coverage:       75.0,
-				dryRun:         true,
-				actualPurchase: false,
-				csvOutput:      "output.csv",
-			},
-			expectValid: true,
-		},
-		{
-			name: "invalid coverage",
-			flags: flags{
-				region:         "us-east-1",
-				coverage:       -10.0,
-				dryRun:         true,
-				actualPurchase: false,
-				csvOutput:      "",
-			},
-			expectValid: false,
-			errorMsg:    "coverage percentage must be between 0 and 100",
-		},
-		{
-			name: "invalid csv output",
-			flags: flags{
-				region:         "us-east-1",
-				coverage:       50.0,
-				dryRun:         true,
-				actualPurchase: false,
-				csvOutput:      "output.txt",
-			},
-			expectValid: false,
-			errorMsg:    "csv output must end with .csv",
-		},
-		{
-			name: "empty region",
-			flags: flags{
-				region:         "",
-				coverage:       50.0,
-				dryRun:         true,
-				actualPurchase: false,
-				csvOutput:      "",
-			},
-			expectValid: false,
-			errorMsg:    "region cannot be empty",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Simulate flag validation logic
-			var validationErrors []string
-
-			if tt.flags.coverage < 0 || tt.flags.coverage > 100 {
-				validationErrors = append(validationErrors, "coverage percentage must be between 0 and 100")
-			}
-
-			if tt.flags.csvOutput != "" && len(tt.flags.csvOutput) > 4 && tt.flags.csvOutput[len(tt.flags.csvOutput)-4:] != ".csv" {
-				validationErrors = append(validationErrors, "csv output must end with .csv")
-			}
-
-			if tt.flags.region == "" {
-				validationErrors = append(validationErrors, "region cannot be empty")
-			}
-
-			isValid := len(validationErrors) == 0
-			assert.Equal(t, tt.expectValid, isValid)
-
-			if !tt.expectValid {
-				assert.Contains(t, validationErrors, tt.errorMsg)
-			}
-		})
-	}
+		mockRDS.AssertExpectations(t)
+	})
 }
