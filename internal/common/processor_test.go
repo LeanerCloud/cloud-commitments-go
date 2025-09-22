@@ -22,6 +22,14 @@ func (m *MockRecommendationsClient) GetRecommendations(ctx context.Context, para
 	return args.Get(0).([]Recommendation), args.Error(1)
 }
 
+func (m *MockRecommendationsClient) GetRecommendationsForDiscovery(ctx context.Context, service ServiceType) ([]Recommendation, error) {
+	args := m.Called(ctx, service)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]Recommendation), args.Error(1)
+}
+
 func TestNewServiceProcessor(t *testing.T) {
 	cfg := aws.Config{
 		Region: "us-east-1",
@@ -473,6 +481,46 @@ func TestValidateRecommendation(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := ValidateRecommendation(tt.rec)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+// Additional tests for processor functions
+
+func TestProcessorStructure(t *testing.T) {
+	cfg := aws.Config{Region: "us-east-1"}
+	config := ProcessorConfig{
+		Services: []ServiceType{ServiceRDS, ServiceEC2},
+		Regions:  []string{"us-east-1"},
+		Coverage: 100.0,
+		IsDryRun: false,
+	}
+
+	processor := NewServiceProcessor(cfg, config)
+	assert.NotNil(t, processor)
+	assert.NotNil(t, processor.recClient)
+	assert.Equal(t, config, processor.config)
+}
+
+func TestGetServiceDisplayNameExtended(t *testing.T) {
+	tests := []struct {
+		service  ServiceType
+		expected string
+	}{
+		{ServiceRDS, "RDS"},
+		{ServiceElastiCache, "ElastiCache"},
+		{ServiceEC2, "EC2"},
+		{ServiceOpenSearch, "OpenSearch"},
+		{ServiceElasticsearch, "OpenSearch"},
+		{ServiceRedshift, "Redshift"},
+		{ServiceMemoryDB, "MemoryDB"},
+		{ServiceType("custom"), "custom"},
+	}
+
+	for _, tt := range tests {
+		t.Run(string(tt.service), func(t *testing.T) {
+			result := GetServiceDisplayName(tt.service)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
