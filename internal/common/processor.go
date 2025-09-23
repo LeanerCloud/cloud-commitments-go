@@ -24,7 +24,7 @@ type ProcessorConfig struct {
 type ServiceProcessor struct {
 	config    ProcessorConfig
 	awsConfig aws.Config
-	recClient *RecommendationsClient
+	recClient RecommendationsClientInterface
 }
 
 // NewServiceProcessor creates a new service processor

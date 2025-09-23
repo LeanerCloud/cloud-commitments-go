@@ -11,10 +11,22 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 )
 
+// CostExplorerAPI defines the interface for Cost Explorer operations
+type CostExplorerAPI interface {
+	GetReservationPurchaseRecommendation(ctx context.Context, params *costexplorer.GetReservationPurchaseRecommendationInput, optFns ...func(*costexplorer.Options)) (*costexplorer.GetReservationPurchaseRecommendationOutput, error)
+}
+
+// RecommendationsClientInterface defines the interface for recommendations client operations
+type RecommendationsClientInterface interface {
+	GetRecommendations(ctx context.Context, params RecommendationParams) ([]Recommendation, error)
+	GetRecommendationsForDiscovery(ctx context.Context, service ServiceType) ([]Recommendation, error)
+}
+
 // RecommendationsClient wraps the AWS Cost Explorer client for RI recommendations
 type RecommendationsClient struct {
-	costExplorerClient *costexplorer.Client
+	costExplorerClient CostExplorerAPI
 	region             string
+	rateLimiter        *RateLimiter
 }
 
 // NewRecommendationsClient creates a new recommendations client
@@ -27,6 +39,26 @@ func NewRecommendationsClient(cfg aws.Config) *RecommendationsClient {
 	return &RecommendationsClient{
 		costExplorerClient: costexplorer.NewFromConfig(ceConfig),
 		region:             cfg.Region,
+		rateLimiter:        NewRateLimiter(),
+	}
+}
+
+// NewRecommendationsClientWithAPI creates a new recommendations client with a custom Cost Explorer API
+// This is primarily used for testing with mocked clients
+func NewRecommendationsClientWithAPI(api CostExplorerAPI, region string) *RecommendationsClient {
+	return &RecommendationsClient{
+		costExplorerClient: api,
+		region:             region,
+		rateLimiter:        NewRateLimiter(),
+	}
+}
+
+// NewRecommendationsClientWithAPIAndRateLimiter creates a new client with a provided API client and rate limiter (for testing)
+func NewRecommendationsClientWithAPIAndRateLimiter(api CostExplorerAPI, region string, rateLimiter *RateLimiter) *RecommendationsClient {
+	return &RecommendationsClient{
+		costExplorerClient: api,
+		region:             region,
+		rateLimiter:        rateLimiter,
 	}
 }
 
@@ -44,9 +76,25 @@ func (c *RecommendationsClient) GetRecommendations(ctx context.Context, params R
 		input.AccountId = aws.String(params.AccountID)
 	}
 
-	result, err := c.costExplorerClient.GetReservationPurchaseRecommendation(ctx, input)
+	// Implement rate limiting with exponential backoff
+	var result *costexplorer.GetReservationPurchaseRecommendationOutput
+	var err error
+
+	c.rateLimiter.Reset()
+	for {
+		// Wait if this is a retry
+		if waitErr := c.rateLimiter.Wait(ctx); waitErr != nil {
+			return nil, fmt.Errorf("rate limiter wait failed: %w", waitErr)
+		}
+
+		result, err = c.costExplorerClient.GetReservationPurchaseRecommendation(ctx, input)
+		if !c.rateLimiter.ShouldRetry(err) {
+			break
+		}
+	}
+
 	if err != nil {
-		return nil, fmt.Errorf("failed to get RI recommendations: %w", err)
+		return nil, fmt.Errorf("failed to get RI recommendations after %d retries: %w", c.rateLimiter.GetRetryCount(), err)
 	}
 
 	return c.parseRecommendations(result.Recommendations, params)
@@ -77,6 +125,9 @@ func (c *RecommendationsClient) parseRecommendations(awsRecs []types.Reservation
 
 // parseRecommendationDetail converts a single AWS recommendation detail to our format
 func (c *RecommendationsClient) parseRecommendationDetail(awsRec types.ReservationPurchaseRecommendation, details *types.ReservationPurchaseRecommendationDetail, params RecommendationParams) (*Recommendation, error) {
+	// awsRec parameter reserved for future use (metadata, summary info, etc.)
+	_ = awsRec
+
 	var rec Recommendation
 	rec.Service = params.Service
 	rec.PaymentOption = params.PaymentOption

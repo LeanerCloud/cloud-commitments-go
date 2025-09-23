@@ -1,12 +1,29 @@
 package common
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
+
+// MockCostExplorerAPI mocks the AWS Cost Explorer client
+type MockCostExplorerAPI struct {
+	mock.Mock
+}
+
+func (m *MockCostExplorerAPI) GetReservationPurchaseRecommendation(ctx context.Context, params *costexplorer.GetReservationPurchaseRecommendationInput, optFns ...func(*costexplorer.Options)) (*costexplorer.GetReservationPurchaseRecommendationOutput, error) {
+	args := m.Called(ctx, params)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*costexplorer.GetReservationPurchaseRecommendationOutput), args.Error(1)
+}
 
 func TestNewRecommendationsClient(t *testing.T) {
 	cfg := aws.Config{
@@ -18,6 +35,229 @@ func TestNewRecommendationsClient(t *testing.T) {
 	assert.NotNil(t, client)
 	assert.NotNil(t, client.costExplorerClient)
 	assert.Equal(t, "eu-west-1", client.region)
+}
+
+func TestNewRecommendationsClientWithAPI(t *testing.T) {
+	mockAPI := &MockCostExplorerAPI{}
+	client := NewRecommendationsClientWithAPI(mockAPI, "us-west-1")
+
+	assert.NotNil(t, client)
+	assert.Equal(t, mockAPI, client.costExplorerClient)
+	assert.Equal(t, "us-west-1", client.region)
+}
+
+func TestRecommendationsClient_GetRecommendations_Success(t *testing.T) {
+	mockAPI := &MockCostExplorerAPI{}
+	client := NewRecommendationsClientWithAPI(mockAPI, "us-east-1")
+
+	// Mock successful API response
+	mockOutput := &costexplorer.GetReservationPurchaseRecommendationOutput{
+		Recommendations: []types.ReservationPurchaseRecommendation{
+			{
+				RecommendationDetails: []types.ReservationPurchaseRecommendationDetail{
+					{
+						InstanceDetails: &types.InstanceDetails{
+							RDSInstanceDetails: &types.RDSInstanceDetails{
+								InstanceType:     aws.String("db.t3.micro"),
+								DatabaseEngine:   aws.String("mysql"),
+								Region:           aws.String("US East (N. Virginia)"),
+								DeploymentOption: aws.String("Single-AZ"),
+							},
+						},
+						RecommendedNumberOfInstancesToPurchase: aws.String("2"),
+						EstimatedMonthlySavingsAmount:           aws.String("50.00"),
+						EstimatedMonthlySavingsPercentage:       aws.String("20.0"),
+					},
+				},
+			},
+		},
+	}
+
+	mockAPI.On("GetReservationPurchaseRecommendation", mock.Anything, mock.MatchedBy(func(input *costexplorer.GetReservationPurchaseRecommendationInput) bool {
+		return input.Service != nil && *input.Service == "Amazon Relational Database Service"
+	})).Return(mockOutput, nil)
+
+	params := RecommendationParams{
+		Service:            ServiceRDS,
+		Region:             "us-east-1",
+		PaymentOption:      "no-upfront",
+		TermInYears:        1,
+		LookbackPeriodDays: 7,
+		AccountID:          "123456789012",
+	}
+
+	recommendations, err := client.GetRecommendations(context.Background(), params)
+
+	assert.NoError(t, err)
+	assert.Len(t, recommendations, 1)
+	assert.Equal(t, ServiceRDS, recommendations[0].Service)
+	assert.Equal(t, "db.t3.micro", recommendations[0].InstanceType)
+	assert.Equal(t, int32(2), recommendations[0].Count)
+	assert.Equal(t, "us-east-1", recommendations[0].Region)
+
+	mockAPI.AssertExpectations(t)
+}
+
+func TestRecommendationsClient_GetRecommendations_APIError(t *testing.T) {
+	mockAPI := &MockCostExplorerAPI{}
+	// Create a rate limiter with zero delays for testing
+	testRateLimiter := NewRateLimiterWithOptions(0, 0, 0) // No delays, no retries
+	client := NewRecommendationsClientWithAPIAndRateLimiter(mockAPI, "us-east-1", testRateLimiter)
+
+	// Mock API error
+	mockAPI.On("GetReservationPurchaseRecommendation", mock.Anything, mock.Anything).Return(nil, errors.New("API rate limit exceeded"))
+
+	params := RecommendationParams{
+		Service:            ServiceRDS,
+		PaymentOption:      "no-upfront",
+		TermInYears:        1,
+		LookbackPeriodDays: 7,
+	}
+
+	recommendations, err := client.GetRecommendations(context.Background(), params)
+
+	assert.Error(t, err)
+	assert.Nil(t, recommendations)
+	assert.Contains(t, err.Error(), "failed to get RI recommendations")
+	assert.Contains(t, err.Error(), "API rate limit exceeded")
+
+	mockAPI.AssertExpectations(t)
+}
+
+func TestRecommendationsClient_GetRecommendations_WithAccountFilter(t *testing.T) {
+	mockAPI := &MockCostExplorerAPI{}
+	client := NewRecommendationsClientWithAPI(mockAPI, "us-west-2")
+
+	mockOutput := &costexplorer.GetReservationPurchaseRecommendationOutput{
+		Recommendations: []types.ReservationPurchaseRecommendation{},
+	}
+
+	// Verify that AccountId is included in the request when specified
+	mockAPI.On("GetReservationPurchaseRecommendation", mock.Anything, mock.MatchedBy(func(input *costexplorer.GetReservationPurchaseRecommendationInput) bool {
+		return input.AccountId != nil && *input.AccountId == "987654321098"
+	})).Return(mockOutput, nil)
+
+	params := RecommendationParams{
+		Service:            ServiceElastiCache,
+		AccountID:          "987654321098",
+		PaymentOption:      "partial-upfront",
+		TermInYears:        3,
+		LookbackPeriodDays: 30,
+	}
+
+	recommendations, err := client.GetRecommendations(context.Background(), params)
+
+	assert.NoError(t, err)
+	assert.Len(t, recommendations, 0)
+
+	mockAPI.AssertExpectations(t)
+}
+
+func TestRecommendationsClient_GetRecommendations_WithoutAccountFilter(t *testing.T) {
+	mockAPI := &MockCostExplorerAPI{}
+	client := NewRecommendationsClientWithAPI(mockAPI, "eu-west-1")
+
+	mockOutput := &costexplorer.GetReservationPurchaseRecommendationOutput{
+		Recommendations: []types.ReservationPurchaseRecommendation{},
+	}
+
+	// Verify that AccountId is NOT included when not specified
+	mockAPI.On("GetReservationPurchaseRecommendation", mock.Anything, mock.MatchedBy(func(input *costexplorer.GetReservationPurchaseRecommendationInput) bool {
+		return input.AccountId == nil
+	})).Return(mockOutput, nil)
+
+	params := RecommendationParams{
+		Service:            ServiceEC2,
+		PaymentOption:      "all-upfront",
+		TermInYears:        3,
+		LookbackPeriodDays: 60,
+		// No AccountID specified
+	}
+
+	recommendations, err := client.GetRecommendations(context.Background(), params)
+
+	assert.NoError(t, err)
+	assert.Len(t, recommendations, 0)
+
+	mockAPI.AssertExpectations(t)
+}
+
+func TestRecommendationsClient_GetRecommendationsForDiscovery_Success(t *testing.T) {
+	mockAPI := &MockCostExplorerAPI{}
+	client := NewRecommendationsClientWithAPI(mockAPI, "ap-southeast-1")
+
+	mockOutput := &costexplorer.GetReservationPurchaseRecommendationOutput{
+		Recommendations: []types.ReservationPurchaseRecommendation{
+			{
+				RecommendationDetails: []types.ReservationPurchaseRecommendationDetail{
+					{
+						InstanceDetails: &types.InstanceDetails{
+							ElastiCacheInstanceDetails: &types.ElastiCacheInstanceDetails{
+								NodeType:           aws.String("cache.t3.micro"),
+								ProductDescription: aws.String("redis"),
+								Region:             aws.String("Asia Pacific (Singapore)"),
+							},
+						},
+						RecommendedNumberOfInstancesToPurchase: aws.String("1"),
+					},
+					{
+						InstanceDetails: &types.InstanceDetails{
+							ElastiCacheInstanceDetails: &types.ElastiCacheInstanceDetails{
+								NodeType:           aws.String("cache.r6g.large"),
+								ProductDescription: aws.String("redis"),
+								Region:             aws.String("US West (Oregon)"),
+							},
+						},
+						RecommendedNumberOfInstancesToPurchase: aws.String("3"),
+					},
+				},
+			},
+		},
+	}
+
+	// Verify default parameters for discovery
+	mockAPI.On("GetReservationPurchaseRecommendation", mock.Anything, mock.MatchedBy(func(input *costexplorer.GetReservationPurchaseRecommendationInput) bool {
+		return input.Service != nil && *input.Service == "Amazon ElastiCache" &&
+			input.PaymentOption == types.PaymentOptionPartialUpfront &&
+			input.TermInYears == types.TermInYearsThreeYears &&
+			input.LookbackPeriodInDays == types.LookbackPeriodInDaysSevenDays &&
+			input.AccountId == nil
+	})).Return(mockOutput, nil)
+
+	recommendations, err := client.GetRecommendationsForDiscovery(context.Background(), ServiceElastiCache)
+
+	assert.NoError(t, err)
+	assert.Len(t, recommendations, 2)
+
+	// First recommendation
+	assert.Equal(t, ServiceElastiCache, recommendations[0].Service)
+	assert.Equal(t, "cache.t3.micro", recommendations[0].InstanceType)
+	assert.Equal(t, "ap-southeast-1", recommendations[0].Region)
+
+	// Second recommendation
+	assert.Equal(t, ServiceElastiCache, recommendations[1].Service)
+	assert.Equal(t, "cache.r6g.large", recommendations[1].InstanceType)
+	assert.Equal(t, "us-west-2", recommendations[1].Region)
+
+	mockAPI.AssertExpectations(t)
+}
+
+func TestRecommendationsClient_GetRecommendationsForDiscovery_Error(t *testing.T) {
+	mockAPI := &MockCostExplorerAPI{}
+	// Create a rate limiter with zero delays for testing
+	testRateLimiter := NewRateLimiterWithOptions(0, 0, 0) // No delays, no retries
+	client := NewRecommendationsClientWithAPIAndRateLimiter(mockAPI, "eu-central-1", testRateLimiter)
+
+	mockAPI.On("GetReservationPurchaseRecommendation", mock.Anything, mock.Anything).Return(nil, errors.New("unauthorized access"))
+
+	recommendations, err := client.GetRecommendationsForDiscovery(context.Background(), ServiceOpenSearch)
+
+	assert.Error(t, err)
+	assert.Nil(t, recommendations)
+	assert.Contains(t, err.Error(), "failed to get RI recommendations")
+	assert.Contains(t, err.Error(), "unauthorized access")
+
+	mockAPI.AssertExpectations(t)
 }
 
 func TestRecommendationsClient_ParseRecommendations_RDS(t *testing.T) {
@@ -935,4 +1175,295 @@ func TestRecommendationsClient_ParseOpenSearchDetails_InstanceCounting(t *testin
 	assert.Equal(t, "t3.small", osDetails.InstanceType)
 	assert.Equal(t, int32(1), osDetails.InstanceCount) // Default
 	assert.False(t, osDetails.MasterEnabled)           // Default
+}
+
+// Additional comprehensive edge case tests
+
+func TestRecommendationsClient_ParseRecommendationDetail_CostInformationMissing(t *testing.T) {
+	client := &RecommendationsClient{
+		region: "us-east-1",
+	}
+
+	params := RecommendationParams{
+		Service: ServiceRDS,
+	}
+
+	// Test with missing cost information
+	detail := &types.ReservationPurchaseRecommendationDetail{
+		InstanceDetails: &types.InstanceDetails{
+			RDSInstanceDetails: &types.RDSInstanceDetails{
+				InstanceType:   aws.String("db.t3.micro"),
+				DatabaseEngine: aws.String("mysql"),
+				Region:         aws.String("US East (N. Virginia)"),
+			},
+		},
+		RecommendedNumberOfInstancesToPurchase: aws.String("1"),
+		// Missing EstimatedMonthlySavingsAmount and EstimatedMonthlySavingsPercentage
+	}
+
+	awsRec := types.ReservationPurchaseRecommendation{}
+
+	rec, err := client.parseRecommendationDetail(awsRec, detail, params)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, rec)
+	assert.Equal(t, 0.0, rec.EstimatedCost)
+	assert.Equal(t, 0.0, rec.SavingsPercent)
+}
+
+func TestRecommendationsClient_ParseRecommendationDetail_AllServicesDefaultBehavior(t *testing.T) {
+	client := &RecommendationsClient{
+		region: "us-east-1",
+	}
+
+	tests := []struct {
+		name           string
+		service        ServiceType
+		instanceDetail *types.InstanceDetails
+		expectedError  bool
+	}{
+		{
+			name:    "RDS with minimal details",
+			service: ServiceRDS,
+			instanceDetail: &types.InstanceDetails{
+				RDSInstanceDetails: &types.RDSInstanceDetails{
+					InstanceType: aws.String("db.t3.nano"),
+					Region:       aws.String("US East (N. Virginia)"),
+					// Missing DatabaseEngine and DeploymentOption
+				},
+			},
+			expectedError: false,
+		},
+		{
+			name:    "ElastiCache with minimal details",
+			service: ServiceElastiCache,
+			instanceDetail: &types.InstanceDetails{
+				ElastiCacheInstanceDetails: &types.ElastiCacheInstanceDetails{
+					NodeType: aws.String("cache.t2.micro"),
+					// Missing ProductDescription and Region
+				},
+			},
+			expectedError: false,
+		},
+		{
+			name:    "EC2 with minimal details",
+			service: ServiceEC2,
+			instanceDetail: &types.InstanceDetails{
+				EC2InstanceDetails: &types.EC2InstanceDetails{
+					InstanceType: aws.String("t2.nano"),
+					// Missing Platform, Region, Tenancy, AvailabilityZone
+				},
+			},
+			expectedError: false,
+		},
+		{
+			name:    "OpenSearch with minimal details",
+			service: ServiceOpenSearch,
+			instanceDetail: &types.InstanceDetails{
+				ESInstanceDetails: &types.ESInstanceDetails{
+					// Missing InstanceClass, InstanceSize, Region
+				},
+			},
+			expectedError: false,
+		},
+		{
+			name:    "Redshift with minimal details",
+			service: ServiceRedshift,
+			instanceDetail: &types.InstanceDetails{
+				RedshiftInstanceDetails: &types.RedshiftInstanceDetails{
+					// Missing NodeType and Region
+				},
+			},
+			expectedError: false,
+		},
+		{
+			name:    "MemoryDB with missing details",
+			service: ServiceMemoryDB,
+			instanceDetail: &types.InstanceDetails{
+				// MemoryDB uses generic instance details
+			},
+			expectedError: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			params := RecommendationParams{
+				Service: tt.service,
+			}
+
+			detail := &types.ReservationPurchaseRecommendationDetail{
+				InstanceDetails:                        tt.instanceDetail,
+				RecommendedNumberOfInstancesToPurchase: aws.String("1"),
+			}
+
+			awsRec := types.ReservationPurchaseRecommendation{}
+
+			rec, err := client.parseRecommendationDetail(awsRec, detail, params)
+
+			if tt.expectedError {
+				assert.Error(t, err)
+				assert.Nil(t, rec)
+			} else {
+				assert.NoError(t, err)
+				assert.NotNil(t, rec)
+				assert.Equal(t, tt.service, rec.Service)
+			}
+		})
+	}
+}
+
+func TestRecommendationsClient_ParseRecommendationDetail_RegionFiltering(t *testing.T) {
+	client := &RecommendationsClient{
+		region: "us-east-1",
+	}
+
+	params := RecommendationParams{
+		Service: ServiceRDS,
+		Region:  "eu-west-1", // Filter for different region
+	}
+
+	// Recommendation for us-east-1 should be filtered out
+	detail := &types.ReservationPurchaseRecommendationDetail{
+		InstanceDetails: &types.InstanceDetails{
+			RDSInstanceDetails: &types.RDSInstanceDetails{
+				InstanceType:   aws.String("db.t3.micro"),
+				DatabaseEngine: aws.String("mysql"),
+				Region:         aws.String("US East (N. Virginia)"), // us-east-1
+			},
+		},
+		RecommendedNumberOfInstancesToPurchase: aws.String("1"),
+	}
+
+	awsRec := types.ReservationPurchaseRecommendation{}
+
+	rec, err := client.parseRecommendationDetail(awsRec, detail, params)
+
+	assert.NoError(t, err)
+	assert.Nil(t, rec) // Should be filtered out due to region mismatch
+}
+
+func TestRecommendationsClient_ParseRecommendedQuantity_FloatParsing(t *testing.T) {
+	client := &RecommendationsClient{}
+
+	// Test float parsing with Sscanf success
+	detail := &types.ReservationPurchaseRecommendationDetail{
+		RecommendedNumberOfInstancesToPurchase: aws.String("7.9"),
+	}
+
+	result, err := client.parseRecommendedQuantity(detail)
+	assert.NoError(t, err)
+	assert.Equal(t, int32(7), result) // 7.9 truncated to 7
+
+	// Test with scientific notation
+	detail = &types.ReservationPurchaseRecommendationDetail{
+		RecommendedNumberOfInstancesToPurchase: aws.String("1e1"),
+	}
+
+	result, err = client.parseRecommendedQuantity(detail)
+	assert.NoError(t, err)
+	assert.Equal(t, int32(10), result)
+}
+
+func TestRecommendationsClient_GetRecommendations_MultipleRecommendationDetails(t *testing.T) {
+	mockAPI := &MockCostExplorerAPI{}
+	client := NewRecommendationsClientWithAPI(mockAPI, "us-east-1")
+
+	// Mock response with multiple recommendation details
+	mockOutput := &costexplorer.GetReservationPurchaseRecommendationOutput{
+		Recommendations: []types.ReservationPurchaseRecommendation{
+			{
+				RecommendationDetails: []types.ReservationPurchaseRecommendationDetail{
+					{
+						InstanceDetails: &types.InstanceDetails{
+							RDSInstanceDetails: &types.RDSInstanceDetails{
+								InstanceType:     aws.String("db.t3.micro"),
+								DatabaseEngine:   aws.String("mysql"),
+								Region:           aws.String("US East (N. Virginia)"),
+								DeploymentOption: aws.String("Single-AZ"),
+							},
+						},
+						RecommendedNumberOfInstancesToPurchase: aws.String("1"),
+					},
+					{
+						InstanceDetails: &types.InstanceDetails{
+							RDSInstanceDetails: &types.RDSInstanceDetails{
+								InstanceType:     aws.String("db.t3.small"),
+								DatabaseEngine:   aws.String("postgres"),
+								Region:           aws.String("US East (N. Virginia)"),
+								DeploymentOption: aws.String("Multi-AZ"),
+							},
+						},
+						RecommendedNumberOfInstancesToPurchase: aws.String("2"),
+					},
+					{
+						// Invalid recommendation - missing instance details
+						RecommendedNumberOfInstancesToPurchase: aws.String("3"),
+					},
+				},
+			},
+		},
+	}
+
+	mockAPI.On("GetReservationPurchaseRecommendation", mock.Anything, mock.Anything).Return(mockOutput, nil)
+
+	params := RecommendationParams{
+		Service:            ServiceRDS,
+		PaymentOption:      "no-upfront",
+		TermInYears:        1,
+		LookbackPeriodDays: 7,
+	}
+
+	recommendations, err := client.GetRecommendations(context.Background(), params)
+
+	assert.NoError(t, err)
+	assert.Len(t, recommendations, 2) // Only 2 valid recommendations, 1 invalid skipped
+
+	// First recommendation
+	assert.Equal(t, "db.t3.micro", recommendations[0].InstanceType)
+	assert.Equal(t, int32(1), recommendations[0].Count)
+
+	// Second recommendation
+	assert.Equal(t, "db.t3.small", recommendations[1].InstanceType)
+	assert.Equal(t, int32(2), recommendations[1].Count)
+
+	mockAPI.AssertExpectations(t)
+}
+
+func TestRecommendationsClient_ParseRecommendationDetail_GenerateDescription(t *testing.T) {
+	client := &RecommendationsClient{
+		region: "us-east-1",
+	}
+
+	params := RecommendationParams{
+		Service:       ServiceRDS,
+		PaymentOption: "partial-upfront",
+		TermInYears:   3,
+	}
+
+	detail := &types.ReservationPurchaseRecommendationDetail{
+		InstanceDetails: &types.InstanceDetails{
+			RDSInstanceDetails: &types.RDSInstanceDetails{
+				InstanceType:     aws.String("db.r5.xlarge"),
+				DatabaseEngine:   aws.String("postgres"),
+				Region:           aws.String("US East (N. Virginia)"),
+				DeploymentOption: aws.String("Multi-AZ"),
+			},
+		},
+		RecommendedNumberOfInstancesToPurchase: aws.String("5"),
+		EstimatedMonthlySavingsAmount:           aws.String("500.00"),
+		EstimatedMonthlySavingsPercentage:       aws.String("30.0"),
+	}
+
+	awsRec := types.ReservationPurchaseRecommendation{}
+
+	rec, err := client.parseRecommendationDetail(awsRec, detail, params)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, rec)
+	assert.NotEmpty(t, rec.Description) // Description should be generated
+	assert.Contains(t, rec.Description, "postgres")    // Should contain engine
+	assert.Contains(t, rec.Description, "multi-az")    // Should contain AZ config
+	assert.Equal(t, 36, rec.Term)                      // 3 years = 36 months
+	assert.NotZero(t, rec.Timestamp)                   // Timestamp should be set
 }
