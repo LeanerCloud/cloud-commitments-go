@@ -1,6 +1,10 @@
 package common
 
 import (
+	"bufio"
+	"fmt"
+	"math"
+	"os"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
@@ -191,20 +195,57 @@ func GetServiceStringForCostExplorer(service ServiceType) string {
 }
 
 // ApplyCoverage applies a coverage percentage to recommendations
+// Uses ceiling to ensure at least 1 instance when coverage > 0
 func ApplyCoverage(recs []Recommendation, coverage float64) []Recommendation {
 	if coverage >= 100.0 {
+		AppLogger.Printf("📊 Coverage: %.1f%% - Using all recommendations without adjustment\n", coverage)
 		return recs
 	}
 
+	if coverage <= 0.0 {
+		AppLogger.Printf("📊 Coverage: %.1f%% - Skipping all recommendations\n", coverage)
+		return []Recommendation{}
+	}
+
+	AppLogger.Printf("📊 Applying %.1f%% coverage to %d recommendations\n", coverage, len(recs))
+
 	filtered := make([]Recommendation, 0, len(recs))
+	totalOriginalInstances := int32(0)
+	totalAdjustedInstances := int32(0)
+
 	for _, rec := range recs {
-		adjustedCount := int32(float64(rec.Count) * (coverage / 100.0))
+		originalCount := rec.Count
+		totalOriginalInstances += originalCount
+
+		// Use ceiling to ensure we always get at least 1 instance for any coverage > 0
+		adjustedCount := int32(math.Ceil(float64(rec.Count) * (coverage / 100.0)))
+
 		if adjustedCount > 0 {
 			recCopy := rec
 			recCopy.Count = adjustedCount
 			filtered = append(filtered, recCopy)
+			totalAdjustedInstances += adjustedCount
+
+			// Log each adjustment
+			if originalCount != adjustedCount {
+				engine := ""
+				switch details := rec.ServiceDetails.(type) {
+				case *ElastiCacheDetails:
+					engine = details.Engine + " "
+				case *RDSDetails:
+					engine = details.Engine + " "
+				}
+				AppLogger.Printf("  ↳ %s%s: %d instances → %d instances (%.1f%%)\n",
+					engine, rec.InstanceType, originalCount, adjustedCount, coverage)
+			}
 		}
 	}
+
+	if totalOriginalInstances != totalAdjustedInstances {
+		AppLogger.Printf("📊 Coverage Summary: %d total instances → %d instances after %.1f%% coverage\n",
+			totalOriginalInstances, totalAdjustedInstances, coverage)
+	}
+
 	return filtered
 }
 
@@ -298,4 +339,94 @@ func ValidateRecommendation(rec Recommendation) bool {
 		return false
 	}
 	return true
+}
+
+// ApplyInstanceLimit applies a maximum instance limit to recommendations
+func ApplyInstanceLimit(recs []Recommendation, maxInstances int32) []Recommendation {
+	if maxInstances <= 0 {
+		// No limit
+		return recs
+	}
+
+	totalInstances := CalculateTotalInstances(recs)
+
+	if totalInstances <= maxInstances {
+		// Already under the limit
+		AppLogger.Printf("📊 Instance limit: %d instances (already under %d limit)\n", totalInstances, maxInstances)
+		return recs
+	}
+
+	AppLogger.Printf("📊 Applying instance limit: %d instances → %d instances (max limit)\n", totalInstances, maxInstances)
+
+	// Sort by savings to keep the most valuable recommendations
+	sorted := SortRecommendationsBySavings(recs)
+
+	limited := make([]Recommendation, 0, len(sorted))
+	instanceCount := int32(0)
+
+	for _, rec := range sorted {
+		if instanceCount+rec.Count <= maxInstances {
+			// Can add all instances from this recommendation
+			limited = append(limited, rec)
+			instanceCount += rec.Count
+			AppLogger.Printf("  ↳ Including: %s - %d instances (total: %d/%d)\n",
+				rec.InstanceType, rec.Count, instanceCount, maxInstances)
+		} else if instanceCount < maxInstances {
+			// Can only add partial instances from this recommendation
+			remaining := maxInstances - instanceCount
+			if remaining > 0 {
+				recCopy := rec
+				recCopy.Count = remaining
+				limited = append(limited, recCopy)
+				AppLogger.Printf("  ↳ Partial: %s - %d of %d instances (total: %d/%d)\n",
+					rec.InstanceType, remaining, rec.Count, maxInstances, maxInstances)
+				instanceCount = maxInstances
+			}
+		} else {
+			// Already at limit, skip this recommendation
+			AppLogger.Printf("  ↳ Skipping: %s - %d instances (limit reached)\n",
+				rec.InstanceType, rec.Count)
+		}
+
+		if instanceCount >= maxInstances {
+			break
+		}
+	}
+
+	AppLogger.Printf("📊 Instance limit applied: %d total instances after limiting\n", instanceCount)
+	return limited
+}
+
+// ConfirmPurchase asks for user confirmation before making actual purchases
+func ConfirmPurchase(totalInstances int32, totalCost float64, skipConfirmation bool) bool {
+	if skipConfirmation {
+		AppLogger.Printf("⚠️  Confirmation skipped (--yes flag used)\n")
+		return true
+	}
+
+	fmt.Printf("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	fmt.Printf("⚠️  PURCHASE CONFIRMATION REQUIRED\n")
+	fmt.Printf("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+	fmt.Printf("You are about to purchase:\n")
+	fmt.Printf("  • Total instances: %d\n", totalInstances)
+	fmt.Printf("  • Estimated monthly cost: $%.2f\n", totalCost)
+	fmt.Printf("\nThis action CANNOT be undone and will result in actual AWS charges.\n")
+	fmt.Printf("\nDo you want to proceed? (yes/no): ")
+
+	reader := bufio.NewReader(os.Stdin)
+	response, err := reader.ReadString('\n')
+	if err != nil {
+		AppLogger.Printf("❌ Error reading confirmation: %v\n", err)
+		return false
+	}
+
+	response = strings.TrimSpace(strings.ToLower(response))
+
+	if response == "yes" || response == "y" {
+		fmt.Printf("✅ Purchase confirmed. Proceeding...\n\n")
+		return true
+	}
+
+	fmt.Printf("❌ Purchase cancelled by user.\n")
+	return false
 }

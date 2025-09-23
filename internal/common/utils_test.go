@@ -243,6 +243,174 @@ func BenchmarkNormalizeRegionName(b *testing.B) {
 	}
 }
 
+// TestApplyCoverageWithCeiling tests the improved coverage algorithm that uses ceiling
+func TestApplyCoverageWithCeiling(t *testing.T) {
+	tests := []struct {
+		name     string
+		recs     []Recommendation
+		coverage float64
+		expected []Recommendation
+	}{
+		{
+			name: "100% coverage returns all",
+			recs: []Recommendation{
+				{Count: 10, EstimatedCost: 1000},
+				{Count: 5, EstimatedCost: 500},
+			},
+			coverage: 100.0,
+			expected: []Recommendation{
+				{Count: 10, EstimatedCost: 1000},
+				{Count: 5, EstimatedCost: 500},
+			},
+		},
+		{
+			name: "0% coverage returns empty",
+			recs: []Recommendation{
+				{Count: 10, EstimatedCost: 1000},
+			},
+			coverage: 0.0,
+			expected: []Recommendation{},
+		},
+		{
+			name: "50% coverage with ceiling - prevents truncation",
+			recs: []Recommendation{
+				{Count: 1, EstimatedCost: 100}, // 1 * 0.5 = 0.5 -> 1 (ceiling)
+				{Count: 3, EstimatedCost: 300}, // 3 * 0.5 = 1.5 -> 2 (ceiling)
+				{Count: 10, EstimatedCost: 1000}, // 10 * 0.5 = 5
+			},
+			coverage: 50.0,
+			expected: []Recommendation{
+				{Count: 1, EstimatedCost: 100},
+				{Count: 2, EstimatedCost: 300},
+				{Count: 5, EstimatedCost: 1000},
+			},
+		},
+		{
+			name: "25% coverage with ceiling",
+			recs: []Recommendation{
+				{Count: 1, EstimatedCost: 100}, // 1 * 0.25 = 0.25 -> 1 (ceiling)
+				{Count: 4, EstimatedCost: 400}, // 4 * 0.25 = 1
+				{Count: 10, EstimatedCost: 1000}, // 10 * 0.25 = 2.5 -> 3 (ceiling)
+			},
+			coverage: 25.0,
+			expected: []Recommendation{
+				{Count: 1, EstimatedCost: 100},
+				{Count: 1, EstimatedCost: 400},
+				{Count: 3, EstimatedCost: 1000},
+			},
+		},
+		{
+			name: "Negative coverage returns empty",
+			recs: []Recommendation{
+				{Count: 10, EstimatedCost: 1000},
+			},
+			coverage: -10.0,
+			expected: []Recommendation{},
+		},
+		{
+			name: "Coverage > 100% returns all",
+			recs: []Recommendation{
+				{Count: 5, EstimatedCost: 500},
+			},
+			coverage: 150.0,
+			expected: []Recommendation{
+				{Count: 5, EstimatedCost: 500},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ApplyCoverage(tt.recs, tt.coverage)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}
+
+func TestApplyInstanceLimit(t *testing.T) {
+	tests := []struct {
+		name         string
+		recs         []Recommendation
+		maxInstances int32
+		wantCount    int32
+		wantRecCount int
+	}{
+		{
+			name: "No limit applied",
+			recs: []Recommendation{
+				{InstanceType: "db.t3.micro", Count: 5, EstimatedCost: 100, SavingsPercent: 20},
+				{InstanceType: "db.t3.small", Count: 3, EstimatedCost: 150, SavingsPercent: 25},
+			},
+			maxInstances: 0, // No limit
+			wantCount:    8,
+			wantRecCount: 2,
+		},
+		{
+			name: "Under limit",
+			recs: []Recommendation{
+				{InstanceType: "db.t3.micro", Count: 5, EstimatedCost: 100, SavingsPercent: 20},
+				{InstanceType: "db.t3.small", Count: 3, EstimatedCost: 150, SavingsPercent: 25},
+			},
+			maxInstances: 10,
+			wantCount:    8,
+			wantRecCount: 2,
+		},
+		{
+			name: "Exact limit",
+			recs: []Recommendation{
+				{InstanceType: "db.t3.micro", Count: 5, EstimatedCost: 100, SavingsPercent: 20},
+				{InstanceType: "db.t3.small", Count: 3, EstimatedCost: 150, SavingsPercent: 25},
+			},
+			maxInstances: 8,
+			wantCount:    8,
+			wantRecCount: 2,
+		},
+		{
+			name: "Partial limit - keep higher savings",
+			recs: []Recommendation{
+				{InstanceType: "db.t3.micro", Count: 5, EstimatedCost: 100, SavingsPercent: 20},
+				{InstanceType: "db.t3.small", Count: 3, EstimatedCost: 150, SavingsPercent: 25},
+				{InstanceType: "db.t3.large", Count: 4, EstimatedCost: 200, SavingsPercent: 30},
+			},
+			maxInstances: 7,
+			wantCount:    7, // Should keep db.t3.large (4) + partial db.t3.small (3)
+			wantRecCount: 2,
+		},
+		{
+			name: "Very low limit",
+			recs: []Recommendation{
+				{InstanceType: "db.t3.micro", Count: 5, EstimatedCost: 100, SavingsPercent: 20},
+				{InstanceType: "db.t3.small", Count: 3, EstimatedCost: 150, SavingsPercent: 25},
+			},
+			maxInstances: 2,
+			wantCount:    2, // Should take partial from highest savings
+			wantRecCount: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ApplyInstanceLimit(tt.recs, tt.maxInstances)
+
+			// Calculate total instances
+			totalCount := CalculateTotalInstances(result)
+
+			if totalCount != tt.wantCount {
+				t.Errorf("ApplyInstanceLimit() total instances = %d, want %d", totalCount, tt.wantCount)
+			}
+
+			if len(result) != tt.wantRecCount {
+				t.Errorf("ApplyInstanceLimit() recommendations count = %d, want %d", len(result), tt.wantRecCount)
+			}
+
+			// Verify we don't exceed the limit
+			if tt.maxInstances > 0 && totalCount > tt.maxInstances {
+				t.Errorf("ApplyInstanceLimit() exceeded limit: %d > %d", totalCount, tt.maxInstances)
+			}
+		})
+	}
+}
+
 func BenchmarkIsRegionCode(b *testing.B) {
 	testCases := []string{
 		"us-east-1",
