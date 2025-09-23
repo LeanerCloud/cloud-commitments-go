@@ -258,3 +258,10 @@ func (c *PurchaseClient) createPurchaseTags(rec common.Recommendation) []types.T
 		},
 	}
 }
+
+// GetExistingReservedInstances retrieves existing reserved nodes
+func (c *PurchaseClient) GetExistingReservedInstances(ctx context.Context) ([]common.ExistingRI, error) {
+	// TODO: Implement for MemoryDB using DescribeReservedNodes
+	// MemoryDB has reserved nodes similar to ElastiCache
+	return []common.ExistingRI{}, nil
+}

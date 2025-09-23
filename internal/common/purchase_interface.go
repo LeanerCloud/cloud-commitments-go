@@ -18,6 +18,9 @@ type PurchaseClient interface {
 
 	// BatchPurchase purchases multiple RIs with error handling and rate limiting
 	BatchPurchase(ctx context.Context, recommendations []Recommendation, delayBetweenPurchases time.Duration) []PurchaseResult
+
+	// GetExistingReservedInstances retrieves existing reserved instances
+	GetExistingReservedInstances(ctx context.Context) ([]ExistingRI, error)
 }
 
 // BasePurchaseClient provides common functionality for all purchase clients

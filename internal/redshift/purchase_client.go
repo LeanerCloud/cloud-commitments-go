@@ -205,3 +205,10 @@ func (c *PurchaseClient) BatchPurchase(ctx context.Context, recommendations []co
 func (c *PurchaseClient) GetServiceType() common.ServiceType {
 	return common.ServiceRedshift
 }
+
+// GetExistingReservedInstances retrieves existing reserved nodes
+func (c *PurchaseClient) GetExistingReservedInstances(ctx context.Context) ([]common.ExistingRI, error) {
+	// TODO: Implement for Redshift using DescribeReservedNodes
+	// Redshift has reserved nodes similar to ElastiCache
+	return []common.ExistingRI{}, nil
+}

@@ -251,3 +251,64 @@ func (c *PurchaseClient) createPurchaseTags(rec common.Recommendation) []types.T
 		},
 	}
 }
+
+// GetExistingReservedInstances retrieves existing reserved DB instances
+func (c *PurchaseClient) GetExistingReservedInstances(ctx context.Context) ([]common.ExistingRI, error) {
+	var existingRIs []common.ExistingRI
+	var marker *string
+
+	for {
+		input := &rds.DescribeReservedDBInstancesInput{
+			Marker:     marker,
+			MaxRecords: aws.Int32(100),
+		}
+
+		response, err := c.client.DescribeReservedDBInstances(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("failed to describe reserved DB instances: %w", err)
+		}
+
+		for _, instance := range response.ReservedDBInstances {
+			// Only include active or payment-pending reservations
+			state := aws.ToString(instance.State)
+			if state != "active" && state != "payment-pending" {
+				continue
+			}
+
+			// Extract engine from product description
+			engine := aws.ToString(instance.ProductDescription)
+
+			// Calculate term in months based on duration
+			duration := aws.ToInt32(instance.Duration)
+			termMonths := 12
+			if duration == 94608000 { // 3 years in seconds
+				termMonths = 36
+			}
+
+			existingRI := common.ExistingRI{
+				ReservationID: aws.ToString(instance.ReservedDBInstanceId),
+				InstanceType:  aws.ToString(instance.DBInstanceClass),
+				Engine:        engine,
+				Region:        c.Region,
+				Count:         aws.ToInt32(instance.DBInstanceCount),
+				State:         state,
+				StartTime:     aws.ToTime(instance.StartTime),
+				PaymentOption: aws.ToString(instance.OfferingType),
+				Term:          termMonths,
+			}
+
+			// Calculate end time based on start time and term
+			existingRI.EndTime = existingRI.StartTime.AddDate(0, termMonths, 0)
+
+			existingRIs = append(existingRIs, existingRI)
+		}
+
+		// Check if there are more results
+		if response.Marker == nil || aws.ToString(response.Marker) == "" {
+			break
+		}
+		marker = response.Marker
+	}
+
+	return existingRIs, nil
+}

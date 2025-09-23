@@ -269,3 +269,17 @@ type OfferingDetails struct {
 	CurrencyCode  string
 	OfferingType  string
 }
+
+// ExistingRI represents an existing Reserved Instance
+type ExistingRI struct {
+	ReservationID string
+	InstanceType  string
+	Engine        string // For database services
+	Region        string
+	Count         int32
+	State         string // active, payment-pending, retired, etc.
+	StartTime     time.Time
+	EndTime       time.Time
+	PaymentOption string
+	Term          int // in months
+}

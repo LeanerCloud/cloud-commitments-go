@@ -253,3 +253,51 @@ func (c *PurchaseClient) getOfferingType(paymentOption string) types.OfferingTyp
 		return types.OfferingTypeValuesPartialUpfront
 	}
 }
+
+// GetExistingReservedInstances retrieves existing EC2 reserved instances
+func (c *PurchaseClient) GetExistingReservedInstances(ctx context.Context) ([]common.ExistingRI, error) {
+	var existingRIs []common.ExistingRI
+
+	input := &ec2.DescribeReservedInstancesInput{
+		Filters: []types.Filter{
+			{
+				Name:   aws.String("state"),
+				Values: []string{"active", "payment-pending"},
+			},
+		},
+	}
+
+	response, err := c.client.DescribeReservedInstances(ctx, input)
+	if err != nil {
+		return nil, fmt.Errorf("failed to describe reserved instances: %w", err)
+	}
+
+	for _, ri := range response.ReservedInstances {
+		// Extract platform from product description
+		platform := string(ri.ProductDescription)
+
+		// Calculate term in months
+		duration := aws.ToInt64(ri.Duration)
+		termMonths := 12
+		if duration == 94608000 { // 3 years in seconds
+			termMonths = 36
+		}
+
+		existingRI := common.ExistingRI{
+			ReservationID: aws.ToString(ri.ReservedInstancesId),
+			InstanceType:  string(ri.InstanceType),
+			Engine:        platform, // For EC2, we use platform as "engine"
+			Region:        c.Region,
+			Count:         aws.ToInt32(ri.InstanceCount),
+			State:         string(ri.State),
+			StartTime:     aws.ToTime(ri.Start),
+			EndTime:       aws.ToTime(ri.End),
+			PaymentOption: string(ri.OfferingType),
+			Term:          termMonths,
+		}
+
+		existingRIs = append(existingRIs, existingRI)
+	}
+
+	return existingRIs, nil
+}

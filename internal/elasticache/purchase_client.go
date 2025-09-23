@@ -3,6 +3,7 @@ package elasticache
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/LeanerCloud/rds-ri-purchase-tool/internal/common"
@@ -49,8 +50,15 @@ func (c *PurchaseClient) PurchaseRI(ctx context.Context, rec common.Recommendati
 		return result
 	}
 
-	// Create a unique reservation ID for tracking
-	reservationID := fmt.Sprintf("elasticache-ri-%s-%d", rec.Region, time.Now().Unix())
+	// Create a unique reservation ID for tracking with engine and instance type
+	details, _ := rec.ServiceDetails.(*common.ElastiCacheDetails)
+	engine := "unknown"
+	if details != nil {
+		engine = strings.ToLower(details.Engine)
+	}
+	instanceType := strings.ReplaceAll(rec.InstanceType, ".", "-")
+	timestamp := time.Now().Format("20060102-150405")
+	reservationID := fmt.Sprintf("elasticache-%s-%s-%s-%dx-%s", engine, instanceType, rec.Region, rec.Count, timestamp)
 
 	// Create the purchase request
 	input := &elasticache.PurchaseReservedCacheNodesOfferingInput{
@@ -59,6 +67,9 @@ func (c *PurchaseClient) PurchaseRI(ctx context.Context, rec common.Recommendati
 		ReservedCacheNodeId:          aws.String(reservationID),
 		Tags:                         c.createPurchaseTags(rec),
 	}
+
+	// Log what we're about to purchase
+	common.AppLogger.Printf("    🔸 ElastiCache API Call: Purchasing %d nodes (OfferingID: %s)\n", rec.Count, offeringID)
 
 	// Execute the purchase
 	response, err := c.client.PurchaseReservedCacheNodesOffering(ctx, input)
@@ -220,4 +231,65 @@ func (c *PurchaseClient) createPurchaseTags(rec common.Recommendation) []types.T
 			Value: aws.String(fmt.Sprintf("%d-months", rec.Term)),
 		},
 	}
+}
+
+// GetExistingReservedInstances retrieves existing reserved cache nodes
+func (c *PurchaseClient) GetExistingReservedInstances(ctx context.Context) ([]common.ExistingRI, error) {
+	var existingRIs []common.ExistingRI
+	var marker *string
+
+	for {
+		input := &elasticache.DescribeReservedCacheNodesInput{
+			Marker:     marker,
+			MaxRecords: aws.Int32(100),
+		}
+
+		response, err := c.client.DescribeReservedCacheNodes(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("failed to describe reserved cache nodes: %w", err)
+		}
+
+		for _, node := range response.ReservedCacheNodes {
+			// Only include active or payment-pending reservations
+			state := aws.ToString(node.State)
+			if state != "active" && state != "payment-pending" {
+				continue
+			}
+
+			// Extract engine from product description
+			engine := aws.ToString(node.ProductDescription)
+
+			// Calculate term in months
+			duration := aws.ToInt32(node.Duration)
+			termMonths := 12
+			if duration == 94608000 { // 3 years in seconds
+				termMonths = 36
+			}
+
+			existingRI := common.ExistingRI{
+				ReservationID: aws.ToString(node.ReservedCacheNodeId),
+				InstanceType:  aws.ToString(node.CacheNodeType),
+				Engine:        engine,
+				Region:        c.Region,
+				Count:         aws.ToInt32(node.CacheNodeCount),
+				State:         state,
+				StartTime:     aws.ToTime(node.StartTime),
+				PaymentOption: aws.ToString(node.OfferingType),
+				Term:          termMonths,
+			}
+
+			// Calculate end time based on start time and term
+			existingRI.EndTime = existingRI.StartTime.AddDate(0, termMonths, 0)
+
+			existingRIs = append(existingRIs, existingRI)
+		}
+
+		// Check if there are more results
+		if response.Marker == nil || aws.ToString(response.Marker) == "" {
+			break
+		}
+		marker = response.Marker
+	}
+
+	return existingRIs, nil
 }

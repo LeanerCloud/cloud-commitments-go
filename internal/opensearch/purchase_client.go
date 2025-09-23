@@ -190,3 +190,11 @@ func (c *PurchaseClient) BatchPurchase(ctx context.Context, recommendations []co
 func (c *PurchaseClient) GetServiceType() common.ServiceType {
 	return common.ServiceOpenSearch
 }
+
+// GetExistingReservedInstances retrieves existing reserved instances
+func (c *PurchaseClient) GetExistingReservedInstances(ctx context.Context) ([]common.ExistingRI, error) {
+	// TODO: OpenSearch doesn't have traditional reserved instances like RDS/EC2
+	// It uses Reserved Instance pricing but not actual Reserved Instance purchases
+	// Return empty for now
+	return []common.ExistingRI{}, nil
+}
