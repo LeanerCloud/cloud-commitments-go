@@ -147,6 +147,23 @@ func (c *RecommendationsClient) parseRecommendationDetail(awsRec types.Reservati
 		return nil, fmt.Errorf("failed to parse cost information: %w", err)
 	}
 
+	// Parse AWS-provided cost details
+	if details.UpfrontCost != nil {
+		if upfront, err := strconv.ParseFloat(*details.UpfrontCost, 64); err == nil {
+			rec.UpfrontCost = upfront
+		}
+	}
+	if details.RecurringStandardMonthlyCost != nil {
+		if monthly, err := strconv.ParseFloat(*details.RecurringStandardMonthlyCost, 64); err == nil {
+			rec.RecurringMonthlyCost = monthly
+		}
+	}
+	if details.EstimatedMonthlyOnDemandCost != nil {
+		if onDemand, err := strconv.ParseFloat(*details.EstimatedMonthlyOnDemandCost, 64); err == nil {
+			rec.EstimatedMonthlyOnDemand = onDemand
+		}
+	}
+
 	// Parse service-specific details
 	switch params.Service {
 	case ServiceRDS:

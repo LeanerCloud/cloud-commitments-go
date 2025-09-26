@@ -61,7 +61,12 @@ func (w *Writer) WriteResults(results []purchase.Result, filename string) error 
 		"Purchase ID",
 		"Reservation ID",
 		"Actual Cost",
-		"Estimated Cost",
+		"RI Monthly Cost",
+		"On-Demand Hourly (per instance)",
+		"RI Hourly (per instance)",
+		"Upfront Cost (per instance)",
+		"Total Upfront (all instances)",
+		"Amortized Hourly (per instance)",
 		"Savings Percent",
 		"Message",
 		"Description",
@@ -227,6 +232,48 @@ func (w *Writer) WritePurchaseStats(stats purchase.PurchaseStats, filename strin
 // Helper methods to convert data structures to CSV rows
 
 func (w *Writer) resultToRow(result purchase.Result) []string {
+	// Calculate cost metrics
+	// IMPORTANT: EstimatedCost is actually the monthly SAVINGS amount, not RI cost
+	monthlySavings := result.Config.EstimatedCost
+	savingsPercent := result.Config.SavingsPercent
+	termMonths := float64(result.Config.Term)
+	instanceCount := float64(result.Config.Count)
+
+	// Calculate on-demand and RI monthly costs from savings
+	// If we save $X at Y% savings rate, then:
+	// On-Demand Cost = Savings / Savings%
+	// RI Cost = On-Demand - Savings
+	monthlyOnDemand := monthlySavings / (savingsPercent / 100.0)
+	monthlyRI := monthlyOnDemand - monthlySavings
+
+	// Calculate hourly costs (assuming 730 hours per month average)
+	hoursPerMonth := 730.0
+	onDemandHourly := monthlyOnDemand / hoursPerMonth / instanceCount
+
+	// Calculate upfront and amortized costs from AWS data
+	var upfrontPerInstance, totalUpfront, riHourly, amortizedHourly float64
+
+	// Use AWS-provided upfront cost
+	totalUpfront = result.Config.UpfrontCost
+	upfrontPerInstance = totalUpfront / instanceCount
+
+	// Calculate RI hourly and amortized hourly based on AWS data
+	if result.Config.RecurringMonthlyCost > 0 {
+		// RI Hourly = just the recurring charges (no upfront amortization)
+		riHourly = result.Config.RecurringMonthlyCost / hoursPerMonth / instanceCount
+
+		// Amortized hourly = upfront amortized + recurring hourly
+		amortizedHourly = (upfrontPerInstance/(termMonths*hoursPerMonth)) + riHourly
+	} else if totalUpfront > 0 {
+		// All-upfront case: no recurring charges, RI hourly is 0
+		riHourly = 0
+		amortizedHourly = upfrontPerInstance / (termMonths * hoursPerMonth)
+	} else {
+		// No-upfront case: all costs are recurring
+		riHourly = monthlyRI / hoursPerMonth / instanceCount
+		amortizedHourly = riHourly
+	}
+
 	return []string{
 		result.GetFormattedTimestamp(),
 		result.GetStatusString(),
@@ -240,7 +287,12 @@ func (w *Writer) resultToRow(result purchase.Result) []string {
 		result.PurchaseID,
 		result.ReservationID,
 		result.GetCostString(),
-		fmt.Sprintf("%.2f", result.Config.EstimatedCost),
+		fmt.Sprintf("%.2f", monthlyRI),  // Show actual RI monthly cost, not savings
+		fmt.Sprintf("%.4f", onDemandHourly),
+		fmt.Sprintf("%.4f", riHourly),
+		fmt.Sprintf("%.2f", upfrontPerInstance),
+		fmt.Sprintf("%.2f", totalUpfront),
+		fmt.Sprintf("%.4f", amortizedHourly),
 		fmt.Sprintf("%.2f", result.Config.SavingsPercent),
 		result.Message,
 		result.Config.Description,

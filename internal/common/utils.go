@@ -223,6 +223,16 @@ func ApplyCoverage(recs []Recommendation, coverage float64) []Recommendation {
 		if adjustedCount > 0 {
 			recCopy := rec
 			recCopy.Count = adjustedCount
+
+			// Adjust AWS cost fields proportionally to the instance count change
+			if originalCount > 0 {
+				adjustmentRatio := float64(adjustedCount) / float64(originalCount)
+				recCopy.UpfrontCost = rec.UpfrontCost * adjustmentRatio
+				recCopy.RecurringMonthlyCost = rec.RecurringMonthlyCost * adjustmentRatio
+				// Note: EstimatedCost is the savings amount, also needs adjustment
+				recCopy.EstimatedCost = rec.EstimatedCost * adjustmentRatio
+			}
+
 			filtered = append(filtered, recCopy)
 			totalAdjustedInstances += adjustedCount
 

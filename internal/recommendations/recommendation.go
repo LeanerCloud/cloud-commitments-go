@@ -19,6 +19,11 @@ type Recommendation struct {
 	SavingsPercent float64   `json:"savings_percent"`
 	Description    string    `json:"description"`
 	Timestamp      time.Time `json:"timestamp"`
+
+	// AWS-provided cost details
+	UpfrontCost               float64 `json:"upfront_cost"`
+	RecurringMonthlyCost      float64 `json:"recurring_monthly_cost"`
+	EstimatedMonthlyOnDemand  float64 `json:"estimated_monthly_on_demand"`
 }
 
 // RecommendationParams holds parameters for fetching recommendations

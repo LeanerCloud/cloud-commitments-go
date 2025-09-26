@@ -39,6 +39,11 @@ type Recommendation struct {
 	Timestamp      time.Time
 	Description    string
 
+	// AWS-provided cost details
+	UpfrontCost               float64 // Total upfront cost from AWS
+	RecurringMonthlyCost      float64 // Monthly cost after upfront
+	EstimatedMonthlyOnDemand  float64 // Monthly on-demand cost
+
 	// Service-specific details
 	ServiceDetails ServiceDetails
 }
