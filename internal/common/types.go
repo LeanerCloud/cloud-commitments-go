@@ -2,6 +2,7 @@ package common
 
 import (
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -38,6 +39,9 @@ type Recommendation struct {
 	SavingsPercent float64
 	Timestamp      time.Time
 	Description    string
+	AccountID      string // AWS Account ID (for organization-level recommendations)
+	AccountName    string // Friendly account name from AWS Organizations
+	Coverage       float64 // Coverage percentage applied (e.g., 50.0 for 50%)
 
 	// AWS-provided cost details
 	UpfrontCost               float64 // Total upfront cost from AWS
@@ -46,6 +50,32 @@ type Recommendation struct {
 
 	// Service-specific details
 	ServiceDetails ServiceDetails
+}
+
+// GenerateReservationID creates a descriptive reservation ID with account alias and coverage percentage
+func GenerateReservationID(servicePrefix, accountAlias, engine, instanceType, region string, count int32, coverage float64) string {
+	// Sanitize components
+	engine = strings.ToLower(strings.ReplaceAll(engine, " ", "-"))
+	instanceType = strings.ReplaceAll(instanceType, ".", "-")
+	timestamp := time.Now().Format("20060102-150405")
+
+	// Build reservation ID with optional account prefix
+	var parts []string
+	parts = append(parts, servicePrefix)
+
+	if accountAlias != "" && accountAlias != "unknown" {
+		// Sanitize and limit account alias length
+		alias := sanitizeForReservationID(accountAlias)
+		if len(alias) > 15 {
+			alias = alias[:15]
+		}
+		parts = append(parts, alias)
+	}
+
+	coveragePct := fmt.Sprintf("%.0fpct", coverage)
+	parts = append(parts, engine, instanceType, region, fmt.Sprintf("%dx", count), coveragePct, timestamp)
+
+	return strings.Join(parts, "-")
 }
 
 // RDSDetails contains RDS-specific recommendation details

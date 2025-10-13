@@ -113,8 +113,8 @@ func TestApplyCoverage(t *testing.T) {
 			},
 			coverage: 100.0,
 			expected: []Recommendation{
-				{Count: 10, EstimatedCost: 1000},
-				{Count: 5, EstimatedCost: 500},
+				{Count: 10, EstimatedCost: 1000, Coverage: 100},
+				{Count: 5, EstimatedCost: 500, Coverage: 100},
 			},
 		},
 		{
@@ -126,9 +126,9 @@ func TestApplyCoverage(t *testing.T) {
 			},
 			coverage: 50.0,
 			expected: []Recommendation{
-				{Count: 5, EstimatedCost: 1000},  // 10 * 0.5 = 5
-				{Count: 3, EstimatedCost: 500},   // 5 * 0.5 = 2.5 → 3 (ceiling)
-				{Count: 1, EstimatedCost: 100},   // 1 * 0.5 = 0.5 → 1 (ceiling)
+				{Count: 5, EstimatedCost: 500, Coverage: 50},  // 10 * 0.5 = 5, cost scaled to 500
+				{Count: 3, EstimatedCost: 300, Coverage: 50},  // 5 * 0.5 = 2.5 → 3 (ceiling), cost scaled to 300
+				{Count: 1, EstimatedCost: 100, Coverage: 50},  // 1 * 0.5 = 0.5 → 1 (ceiling), cost remains 100
 			},
 		},
 		{
@@ -139,8 +139,8 @@ func TestApplyCoverage(t *testing.T) {
 			},
 			coverage: 75.0,
 			expected: []Recommendation{
-				{Count: 6, EstimatedCost: 800},
-				{Count: 3, EstimatedCost: 400},
+				{Count: 6, EstimatedCost: 600, Coverage: 75},  // 8 * 0.75 = 6, cost scaled to 600
+				{Count: 3, EstimatedCost: 300, Coverage: 75},  // 4 * 0.75 = 3, cost scaled to 300
 			},
 		},
 		{
@@ -157,8 +157,8 @@ func TestApplyCoverage(t *testing.T) {
 			},
 			coverage: 40.0,
 			expected: []Recommendation{
-				{Count: 1, EstimatedCost: 100},  // 1 * 0.4 = 0.4 → 1 (ceiling)
-				{Count: 1, EstimatedCost: 200},  // 1 * 0.4 = 0.4 → 1 (ceiling)
+				{Count: 1, EstimatedCost: 100, Coverage: 40},  // 1 * 0.4 = 0.4 → 1 (ceiling)
+				{Count: 1, EstimatedCost: 200, Coverage: 40},  // 1 * 0.4 = 0.4 → 1 (ceiling)
 			},
 		},
 	}

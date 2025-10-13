@@ -259,8 +259,8 @@ func TestApplyCoverageWithCeiling(t *testing.T) {
 			},
 			coverage: 100.0,
 			expected: []Recommendation{
-				{Count: 10, EstimatedCost: 1000},
-				{Count: 5, EstimatedCost: 500},
+				{Count: 10, EstimatedCost: 1000, Coverage: 100},
+				{Count: 5, EstimatedCost: 500, Coverage: 100},
 			},
 		},
 		{
@@ -280,9 +280,9 @@ func TestApplyCoverageWithCeiling(t *testing.T) {
 			},
 			coverage: 50.0,
 			expected: []Recommendation{
-				{Count: 1, EstimatedCost: 100},
-				{Count: 2, EstimatedCost: 300},
-				{Count: 5, EstimatedCost: 1000},
+				{Count: 1, EstimatedCost: 100, Coverage: 50}, // 1/1 * 100 = 100
+				{Count: 2, EstimatedCost: 200, Coverage: 50}, // 2/3 * 300 = 200
+				{Count: 5, EstimatedCost: 500, Coverage: 50}, // 5/10 * 1000 = 500
 			},
 		},
 		{
@@ -294,9 +294,9 @@ func TestApplyCoverageWithCeiling(t *testing.T) {
 			},
 			coverage: 25.0,
 			expected: []Recommendation{
-				{Count: 1, EstimatedCost: 100},
-				{Count: 1, EstimatedCost: 400},
-				{Count: 3, EstimatedCost: 1000},
+				{Count: 1, EstimatedCost: 100, Coverage: 25}, // 1/1 * 100 = 100
+				{Count: 1, EstimatedCost: 100, Coverage: 25}, // 1/4 * 400 = 100
+				{Count: 3, EstimatedCost: 300, Coverage: 25}, // 3/10 * 1000 = 300
 			},
 		},
 		{
@@ -314,7 +314,7 @@ func TestApplyCoverageWithCeiling(t *testing.T) {
 			},
 			coverage: 150.0,
 			expected: []Recommendation{
-				{Count: 5, EstimatedCost: 500},
+				{Count: 5, EstimatedCost: 500, Coverage: 150},
 			},
 		},
 	}
@@ -440,5 +440,188 @@ func BenchmarkConvertPaymentOption(b *testing.B) {
 		for _, opt := range options {
 			_ = ConvertPaymentOption(opt)
 		}
+	}
+}
+
+// TestApplyCountOverride tests the count override functionality
+func TestApplyCountOverride(t *testing.T) {
+	tests := []struct {
+		name          string
+		recs          []Recommendation
+		overrideCount int32
+		wantCount     int32     // total instances after override
+		wantRecCount  int       // number of recommendations
+		wantInstances []int32   // expected instance counts for each rec
+	}{
+		{
+			name: "Override disabled (0)",
+			recs: []Recommendation{
+				{InstanceType: "db.t3.micro", Count: 5, EstimatedCost: 100, UpfrontCost: 500, RecurringMonthlyCost: 50},
+				{InstanceType: "db.t3.small", Count: 10, EstimatedCost: 200, UpfrontCost: 1000, RecurringMonthlyCost: 100},
+			},
+			overrideCount: 0,
+			wantCount:     15, // Original counts preserved
+			wantRecCount:  2,
+			wantInstances: []int32{5, 10},
+		},
+		{
+			name: "Override to 1 instance each",
+			recs: []Recommendation{
+				{InstanceType: "db.t3.micro", Count: 5, EstimatedCost: 100, UpfrontCost: 500, RecurringMonthlyCost: 50},
+				{InstanceType: "db.t3.small", Count: 10, EstimatedCost: 200, UpfrontCost: 1000, RecurringMonthlyCost: 100},
+			},
+			overrideCount: 1,
+			wantCount:     2, // 1 + 1
+			wantRecCount:  2,
+			wantInstances: []int32{1, 1},
+		},
+		{
+			name: "Override to 73 instances each (Valkey test case)",
+			recs: []Recommendation{
+				{InstanceType: "cache.t4g.micro", Count: 91, EstimatedCost: 467, UpfrontCost: 0, RecurringMonthlyCost: 467},
+			},
+			overrideCount: 73,
+			wantCount:     73,
+			wantRecCount:  1,
+			wantInstances: []int32{73},
+		},
+		{
+			name: "Override increases count",
+			recs: []Recommendation{
+				{InstanceType: "db.t3.micro", Count: 2, EstimatedCost: 40, UpfrontCost: 200, RecurringMonthlyCost: 20},
+			},
+			overrideCount: 5,
+			wantCount:     5,
+			wantRecCount:  1,
+			wantInstances: []int32{5},
+		},
+		{
+			name: "Override decreases count",
+			recs: []Recommendation{
+				{InstanceType: "db.t3.small", Count: 20, EstimatedCost: 400, UpfrontCost: 2000, RecurringMonthlyCost: 200},
+			},
+			overrideCount: 10,
+			wantCount:     10,
+			wantRecCount:  1,
+			wantInstances: []int32{10},
+		},
+		{
+			name: "Empty recommendations",
+			recs: []Recommendation{},
+			overrideCount: 5,
+			wantCount:     0,
+			wantRecCount:  0,
+			wantInstances: []int32{},
+		},
+		{
+			name: "Negative override (should behave like disabled)",
+			recs: []Recommendation{
+				{InstanceType: "db.t3.micro", Count: 5, EstimatedCost: 100, UpfrontCost: 500, RecurringMonthlyCost: 50},
+			},
+			overrideCount: -1,
+			wantCount:     5, // Original count preserved
+			wantRecCount:  1,
+			wantInstances: []int32{5},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := ApplyCountOverride(tt.recs, tt.overrideCount)
+
+			// Check recommendation count
+			assert.Equal(t, tt.wantRecCount, len(result), "recommendation count mismatch")
+
+			// Calculate total instances
+			totalCount := CalculateTotalInstances(result)
+			assert.Equal(t, tt.wantCount, totalCount, "total instance count mismatch")
+
+			// Check individual instance counts
+			for i, rec := range result {
+				if i < len(tt.wantInstances) {
+					assert.Equal(t, tt.wantInstances[i], rec.Count, "instance count mismatch for rec %d", i)
+				}
+			}
+
+			// Verify cost proportions are maintained when override is active
+			if tt.overrideCount > 0 && len(tt.recs) > 0 && len(result) > 0 {
+				for i, rec := range result {
+					if i < len(tt.recs) && tt.recs[i].Count > 0 && tt.recs[i].UpfrontCost > 0 {
+						expectedRatio := float64(tt.overrideCount) / float64(tt.recs[i].Count)
+						actualRatio := rec.UpfrontCost / tt.recs[i].UpfrontCost
+						assert.InDelta(t, expectedRatio, actualRatio, 0.01, "cost ratio should match count ratio")
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestApplyCountOverrideWithServiceDetails tests override with different service types
+func TestApplyCountOverrideWithServiceDetails(t *testing.T) {
+	tests := []struct {
+		name          string
+		rec           Recommendation
+		overrideCount int32
+		wantCount     int32
+	}{
+		{
+			name: "ElastiCache Redis",
+			rec: Recommendation{
+				Service:      ServiceElastiCache,
+				InstanceType: "cache.t4g.micro",
+				Count:        10,
+				EstimatedCost: 200,
+				ServiceDetails: &ElastiCacheDetails{
+					Engine:   "redis",
+					NodeType: "cache.t4g.micro",
+				},
+			},
+			overrideCount: 5,
+			wantCount:     5,
+		},
+		{
+			name: "RDS Aurora MySQL",
+			rec: Recommendation{
+				Service:      ServiceRDS,
+				InstanceType: "db.t4g.medium",
+				Count:        18,
+				EstimatedCost: 508,
+				ServiceDetails: &RDSDetails{
+					Engine:   "Aurora MySQL",
+					AZConfig: "single-az",
+				},
+			},
+			overrideCount: 2,
+			wantCount:     2,
+		},
+		{
+			name: "EC2 instance",
+			rec: Recommendation{
+				Service:      ServiceEC2,
+				InstanceType: "t3.medium",
+				Count:        50,
+				EstimatedCost: 1000,
+				ServiceDetails: &EC2Details{
+					Platform: "Linux/UNIX",
+					Tenancy:  "default",
+					Scope:    "region",
+				},
+			},
+			overrideCount: 25,
+			wantCount:     25,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recs := []Recommendation{tt.rec}
+			result := ApplyCountOverride(recs, tt.overrideCount)
+
+			assert.Equal(t, 1, len(result), "should have one recommendation")
+			assert.Equal(t, tt.wantCount, result[0].Count, "count should be overridden")
+			assert.Equal(t, tt.rec.Service, result[0].Service, "service type should be preserved")
+			assert.Equal(t, tt.rec.ServiceDetails, result[0].ServiceDetails, "service details should be preserved")
+		})
 	}
 }

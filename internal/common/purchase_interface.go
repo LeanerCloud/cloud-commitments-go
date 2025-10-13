@@ -21,6 +21,9 @@ type PurchaseClient interface {
 
 	// GetExistingReservedInstances retrieves existing reserved instances
 	GetExistingReservedInstances(ctx context.Context) ([]ExistingRI, error)
+
+	// GetValidInstanceTypes returns a list of valid instance types for this service
+	GetValidInstanceTypes(ctx context.Context) ([]string, error)
 }
 
 // BasePurchaseClient provides common functionality for all purchase clients

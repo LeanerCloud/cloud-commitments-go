@@ -199,6 +199,10 @@ func GetServiceStringForCostExplorer(service ServiceType) string {
 func ApplyCoverage(recs []Recommendation, coverage float64) []Recommendation {
 	if coverage >= 100.0 {
 		AppLogger.Printf("📊 Coverage: %.1f%% - Using all recommendations without adjustment\n", coverage)
+		// Set coverage field on all recommendations
+		for i := range recs {
+			recs[i].Coverage = coverage
+		}
 		return recs
 	}
 
@@ -223,6 +227,7 @@ func ApplyCoverage(recs []Recommendation, coverage float64) []Recommendation {
 		if adjustedCount > 0 {
 			recCopy := rec
 			recCopy.Count = adjustedCount
+			recCopy.Coverage = coverage
 
 			// Adjust AWS cost fields proportionally to the instance count change
 			if originalCount > 0 {
@@ -405,6 +410,60 @@ func ApplyInstanceLimit(recs []Recommendation, maxInstances int32) []Recommendat
 
 	AppLogger.Printf("📊 Instance limit applied: %d total instances after limiting\n", instanceCount)
 	return limited
+}
+
+// ApplyCountOverride replaces the count for all selected recommendations with a fixed override value
+func ApplyCountOverride(recs []Recommendation, overrideCount int32) []Recommendation {
+	if overrideCount <= 0 {
+		// No override - return original recommendations
+		return recs
+	}
+
+	AppLogger.Printf("📊 Applying count override: Setting all recommendations to %d instances\n", overrideCount)
+
+	overridden := make([]Recommendation, 0, len(recs))
+	totalOriginalInstances := int32(0)
+	totalOverriddenInstances := int32(0)
+
+	for _, rec := range recs {
+		originalCount := rec.Count
+		totalOriginalInstances += originalCount
+
+		recCopy := rec
+		recCopy.Count = overrideCount
+		totalOverriddenInstances += overrideCount
+
+		// Adjust AWS cost fields proportionally to the instance count change
+		if originalCount > 0 {
+			adjustmentRatio := float64(overrideCount) / float64(originalCount)
+			recCopy.UpfrontCost = rec.UpfrontCost * adjustmentRatio
+			recCopy.RecurringMonthlyCost = rec.RecurringMonthlyCost * adjustmentRatio
+			// Note: EstimatedCost is the savings amount, also needs adjustment
+			recCopy.EstimatedCost = rec.EstimatedCost * adjustmentRatio
+		}
+
+		overridden = append(overridden, recCopy)
+
+		// Log each adjustment
+		if originalCount != overrideCount {
+			engine := ""
+			switch details := rec.ServiceDetails.(type) {
+			case *ElastiCacheDetails:
+				engine = details.Engine + " "
+			case *RDSDetails:
+				engine = details.Engine + " "
+			}
+			AppLogger.Printf("  ↳ %s%s: %d instances → %d instances (override)\n",
+				engine, rec.InstanceType, originalCount, overrideCount)
+		}
+	}
+
+	if totalOriginalInstances != totalOverriddenInstances {
+		AppLogger.Printf("📊 Override Summary: %d total instances → %d instances after override\n",
+			totalOriginalInstances, totalOverriddenInstances)
+	}
+
+	return overridden
 }
 
 // ConfirmPurchase asks for user confirmation before making actual purchases

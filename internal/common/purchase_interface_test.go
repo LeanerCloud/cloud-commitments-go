@@ -46,6 +46,14 @@ func (m *MockPurchaseClient) GetExistingReservedInstances(ctx context.Context) (
 	return args.Get(0).([]ExistingRI), args.Error(1)
 }
 
+func (m *MockPurchaseClient) GetValidInstanceTypes(ctx context.Context) ([]string, error) {
+	args := m.Called(ctx)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).([]string), args.Error(1)
+}
+
 // Test BasePurchaseClient
 func TestBasePurchaseClient_Basic(t *testing.T) {
 	baseClient := &BasePurchaseClient{
