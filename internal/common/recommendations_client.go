@@ -14,6 +14,7 @@ import (
 // CostExplorerAPI defines the interface for Cost Explorer operations
 type CostExplorerAPI interface {
 	GetReservationPurchaseRecommendation(ctx context.Context, params *costexplorer.GetReservationPurchaseRecommendationInput, optFns ...func(*costexplorer.Options)) (*costexplorer.GetReservationPurchaseRecommendationOutput, error)
+	GetSavingsPlansPurchaseRecommendation(ctx context.Context, params *costexplorer.GetSavingsPlansPurchaseRecommendationInput, optFns ...func(*costexplorer.Options)) (*costexplorer.GetSavingsPlansPurchaseRecommendationOutput, error)
 }
 
 // RecommendationsClientInterface defines the interface for recommendations client operations
@@ -64,6 +65,11 @@ func NewRecommendationsClientWithAPIAndRateLimiter(api CostExplorerAPI, region s
 
 // GetRecommendations fetches Reserved Instance recommendations for any service
 func (c *RecommendationsClient) GetRecommendations(ctx context.Context, params RecommendationParams) ([]Recommendation, error) {
+	// Handle Savings Plans separately as they use a different API
+	if params.Service == ServiceSavingsPlans {
+		return c.getSavingsPlansRecommendations(ctx, params)
+	}
+
 	input := &costexplorer.GetReservationPurchaseRecommendationInput{
 		Service:              aws.String(GetServiceStringForCostExplorer(params.Service)),
 		PaymentOption:        ConvertPaymentOption(params.PaymentOption),
@@ -439,4 +445,214 @@ func (c *RecommendationsClient) GetRecommendationsForDiscovery(ctx context.Conte
 	}
 
 	return c.GetRecommendations(ctx, params)
+}
+
+// getSavingsPlansRecommendations fetches Savings Plans recommendations from Cost Explorer
+func (c *RecommendationsClient) getSavingsPlansRecommendations(ctx context.Context, params RecommendationParams) ([]Recommendation, error) {
+	// For Savings Plans, we need to query all three types: Compute, EC2Instance, SageMaker
+	planTypes := []types.SupportedSavingsPlansType{
+		types.SupportedSavingsPlansTypeComputeSp,
+		types.SupportedSavingsPlansTypeEc2InstanceSp,
+		types.SupportedSavingsPlansTypeSagemakerSp, // Note: lowercase 'm' in 'maker'
+	}
+
+	var allRecommendations []Recommendation
+
+	for _, planType := range planTypes {
+		input := &costexplorer.GetSavingsPlansPurchaseRecommendationInput{
+			SavingsPlansType:     planType,
+			PaymentOption:        ConvertSavingsPlansPaymentOption(params.PaymentOption),
+			TermInYears:          ConvertSavingsPlansTermInYears(params.TermInYears),
+			LookbackPeriodInDays: ConvertSavingsPlansLookbackPeriod(params.LookbackPeriodDays),
+			AccountScope:         types.AccountScopeLinked,
+		}
+
+		// Note: Savings Plans API doesn't support AccountId filter
+
+		// Implement rate limiting with exponential backoff
+		var result *costexplorer.GetSavingsPlansPurchaseRecommendationOutput
+		var err error
+
+		c.rateLimiter.Reset()
+		for {
+			if waitErr := c.rateLimiter.Wait(ctx); waitErr != nil {
+				return nil, fmt.Errorf("rate limiter wait failed: %w", waitErr)
+			}
+
+			result, err = c.costExplorerClient.GetSavingsPlansPurchaseRecommendation(ctx, input)
+			if !c.rateLimiter.ShouldRetry(err) {
+				break
+			}
+		}
+
+		if err != nil {
+			// Log error but continue with other plan types
+			fmt.Printf("Warning: Failed to get %s recommendations: %v\n", planType, err)
+			continue
+		}
+
+		// Parse recommendations for this plan type
+		if result.SavingsPlansPurchaseRecommendation != nil {
+			recs, err := c.parseSavingsPlansRecommendations(result.SavingsPlansPurchaseRecommendation, params, planType)
+			if err != nil {
+				fmt.Printf("Warning: Failed to parse %s recommendations: %v\n", planType, err)
+				continue
+			}
+			allRecommendations = append(allRecommendations, recs...)
+		}
+	}
+
+	return allRecommendations, nil
+}
+
+// parseSavingsPlansRecommendations converts Savings Plans recommendations to our internal format
+func (c *RecommendationsClient) parseSavingsPlansRecommendations(
+	spRec *types.SavingsPlansPurchaseRecommendation,
+	params RecommendationParams,
+	planType types.SupportedSavingsPlansType,
+) ([]Recommendation, error) {
+	var recommendations []Recommendation
+
+	// Parse each recommendation detail
+	for i, detail := range spRec.SavingsPlansPurchaseRecommendationDetails {
+		rec, err := c.parseSavingsPlanDetail(&detail, params, planType)
+		if err != nil {
+			fmt.Printf("Warning: Failed to parse Savings Plan detail %d: %v\n", i, err)
+			continue
+		}
+
+		if rec != nil {
+			recommendations = append(recommendations, *rec)
+		}
+	}
+
+	return recommendations, nil
+}
+
+// parseSavingsPlanDetail converts a single Savings Plan recommendation detail
+func (c *RecommendationsClient) parseSavingsPlanDetail(
+	detail *types.SavingsPlansPurchaseRecommendationDetail,
+	params RecommendationParams,
+	planType types.SupportedSavingsPlansType,
+) (*Recommendation, error) {
+	// Extract hourly commitment
+	var hourlyCommitment float64
+	if detail.HourlyCommitmentToPurchase != nil {
+		if parsed, err := strconv.ParseFloat(*detail.HourlyCommitmentToPurchase, 64); err == nil {
+			hourlyCommitment = parsed
+		}
+	}
+
+	// Extract monthly savings
+	var monthlySavings float64
+	if detail.EstimatedMonthlySavingsAmount != nil {
+		if parsed, err := strconv.ParseFloat(*detail.EstimatedMonthlySavingsAmount, 64); err == nil {
+			monthlySavings = parsed
+		}
+	}
+
+	// Extract savings percentage
+	var savingsPercent float64
+	if detail.EstimatedSavingsPercentage != nil {
+		if parsed, err := strconv.ParseFloat(*detail.EstimatedSavingsPercentage, 64); err == nil {
+			savingsPercent = parsed
+		}
+	}
+
+	// Extract upfront cost
+	var upfrontCost float64
+	if detail.UpfrontCost != nil {
+		if parsed, err := strconv.ParseFloat(*detail.UpfrontCost, 64); err == nil {
+			upfrontCost = parsed
+		}
+	}
+
+	// Extract estimated monthly SP cost
+	var estimatedSPCost float64
+	if detail.EstimatedSPCost != nil {
+		if parsed, err := strconv.ParseFloat(*detail.EstimatedSPCost, 64); err == nil {
+			estimatedSPCost = parsed
+		}
+	}
+
+	// Convert plan type to string
+	planTypeStr := string(planType)
+	switch planType {
+	case types.SupportedSavingsPlansTypeComputeSp:
+		planTypeStr = "Compute"
+	case types.SupportedSavingsPlansTypeEc2InstanceSp:
+		planTypeStr = "EC2Instance"
+	case types.SupportedSavingsPlansTypeSagemakerSp:
+		planTypeStr = "SageMaker"
+	}
+
+	// Extract account ID if available
+	accountID := ""
+	if detail.AccountId != nil {
+		accountID = aws.ToString(detail.AccountId)
+	}
+
+	// Create recommendation
+	rec := &Recommendation{
+		Service:       ServiceSavingsPlans,
+		Region:        "",   // Savings Plans are global (region-flexible) or regional depending on type
+		InstanceType:  "",   // Not applicable for Savings Plans
+		PaymentOption: params.PaymentOption,
+		Term:          params.TermInYears * 12,
+		Count:         1, // Savings Plans don't have a count - they have hourly commitment
+		EstimatedCost: monthlySavings,
+		SavingsPercent: savingsPercent,
+		UpfrontCost:    upfrontCost,
+		RecurringMonthlyCost: estimatedSPCost,
+		Timestamp:      time.Now(),
+		AccountID:      accountID,
+		ServiceDetails: &SavingsPlanDetails{
+			PlanType:         planTypeStr,
+			HourlyCommitment: hourlyCommitment,
+			Coverage:         fmt.Sprintf("%.1f%%", savingsPercent),
+		},
+	}
+
+	rec.Description = rec.GetDescription()
+	return rec, nil
+}
+
+// ConvertSavingsPlansPaymentOption converts payment option string to Savings Plans type
+func ConvertSavingsPlansPaymentOption(option string) types.PaymentOption {
+	switch option {
+	case "all-upfront":
+		return types.PaymentOptionAllUpfront
+	case "partial-upfront":
+		return types.PaymentOptionPartialUpfront
+	case "no-upfront":
+		return types.PaymentOptionNoUpfront
+	default:
+		return types.PaymentOptionNoUpfront
+	}
+}
+
+// ConvertSavingsPlansTermInYears converts term in years to Savings Plans type
+func ConvertSavingsPlansTermInYears(years int) types.TermInYears {
+	switch years {
+	case 1:
+		return types.TermInYearsOneYear
+	case 3:
+		return types.TermInYearsThreeYears
+	default:
+		return types.TermInYearsThreeYears
+	}
+}
+
+// ConvertSavingsPlansLookbackPeriod converts lookback days to Savings Plans type
+func ConvertSavingsPlansLookbackPeriod(days int) types.LookbackPeriodInDays {
+	switch days {
+	case 7:
+		return types.LookbackPeriodInDaysSevenDays
+	case 30:
+		return types.LookbackPeriodInDaysThirtyDays
+	case 60:
+		return types.LookbackPeriodInDaysSixtyDays
+	default:
+		return types.LookbackPeriodInDaysSevenDays
+	}
 }

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LeanerCloud/rds-ri-purchase-tool/internal/purchase"
-	"github.com/LeanerCloud/rds-ri-purchase-tool/internal/recommendations"
+	"github.com/LeanerCloud/CUDly/internal/purchase"
+	"github.com/LeanerCloud/CUDly/internal/recommendations"
 )
 
 // Writer handles CSV output for purchase results and recommendations

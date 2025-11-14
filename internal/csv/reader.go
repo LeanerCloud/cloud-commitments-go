@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LeanerCloud/rds-ri-purchase-tool/internal/common"
+	"github.com/LeanerCloud/CUDly/internal/common"
 )
 
 // Reader handles CSV input for recommendations

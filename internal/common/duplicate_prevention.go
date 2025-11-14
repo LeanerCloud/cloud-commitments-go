@@ -56,7 +56,7 @@ func (dc *DuplicateChecker) filterRecentRIs(existingRIs []ExistingRI, cutoffTime
 	var recent []ExistingRI
 	for _, ri := range existingRIs {
 		// Only include active or payment-pending RIs purchased after cutoff
-		if (ri.State == "active" || ri.State == "payment-pending") && ri.StartTime.After(cutoffTime) {
+		if (ri.State == "active" || ri.State == "payment-pending") && ri.StartDate.After(cutoffTime) {
 			recent = append(recent, ri)
 		}
 	}

@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/LeanerCloud/rds-ri-purchase-tool/internal/recommendations"
+	"github.com/LeanerCloud/CUDly/internal/recommendations"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/rds/types"

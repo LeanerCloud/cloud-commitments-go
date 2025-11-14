@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/LeanerCloud/rds-ri-purchase-tool/internal/common"
+	"github.com/LeanerCloud/CUDly/internal/common"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/opensearch"
 	"github.com/aws/aws-sdk-go-v2/service/opensearch/types"
@@ -198,10 +198,60 @@ func (c *PurchaseClient) GetServiceType() common.ServiceType {
 
 // GetExistingReservedInstances retrieves existing reserved instances
 func (c *PurchaseClient) GetExistingReservedInstances(ctx context.Context) ([]common.ExistingRI, error) {
-	// TODO: OpenSearch doesn't have traditional reserved instances like RDS/EC2
-	// It uses Reserved Instance pricing but not actual Reserved Instance purchases
-	// Return empty for now
-	return []common.ExistingRI{}, nil
+	var existingRIs []common.ExistingRI
+	var nextToken *string
+
+	for {
+		input := &opensearch.DescribeReservedInstancesInput{
+			NextToken:  nextToken,
+			MaxResults: 100,
+		}
+
+		response, err := c.client.DescribeReservedInstances(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("failed to describe reserved instances: %w", err)
+		}
+
+		for _, ri := range response.ReservedInstances {
+			// Only include active or payment-pending reservations
+			state := aws.ToString(ri.State)
+			if state != "active" && state != "payment-pending" {
+				continue
+			}
+
+			// Calculate term in months from duration (in seconds)
+			duration := ri.Duration
+			termMonths := 12
+			if duration == 94608000 { // 3 years in seconds
+				termMonths = 36
+			}
+
+			existingRI := common.ExistingRI{
+				ReservationID: aws.ToString(ri.ReservedInstanceId),
+				InstanceType:  string(ri.InstanceType),
+				Engine:        "opensearch",
+				Region:        c.Region,
+				Count:         ri.InstanceCount,
+				State:         state,
+				StartDate:     aws.ToTime(ri.StartTime),
+				PaymentOption: string(ri.PaymentOption),
+				Term:          termMonths,
+			}
+
+			// Calculate end time based on start time and term
+			existingRI.EndDate = existingRI.StartDate.AddDate(0, termMonths, 0)
+
+			existingRIs = append(existingRIs, existingRI)
+		}
+
+		// Check if there are more results
+		if response.NextToken == nil || aws.ToString(response.NextToken) == "" {
+			break
+		}
+		nextToken = response.NextToken
+	}
+
+	return existingRIs, nil
 }
 // GetValidInstanceTypes returns the static list of valid instance types for opensearch
 func (c *PurchaseClient) GetValidInstanceTypes(ctx context.Context) ([]string, error) {

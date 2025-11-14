@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/LeanerCloud/rds-ri-purchase-tool/internal/common"
+	"github.com/LeanerCloud/CUDly/internal/common"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/elasticache"
 	"github.com/aws/aws-sdk-go-v2/service/elasticache/types"
@@ -271,13 +271,13 @@ func (c *PurchaseClient) GetExistingReservedInstances(ctx context.Context) ([]co
 				Region:        c.Region,
 				Count:         aws.ToInt32(node.CacheNodeCount),
 				State:         state,
-				StartTime:     aws.ToTime(node.StartTime),
+				StartDate:     aws.ToTime(node.StartTime),
 				PaymentOption: aws.ToString(node.OfferingType),
 				Term:          termMonths,
 			}
 
 			// Calculate end time based on start time and term
-			existingRI.EndTime = existingRI.StartTime.AddDate(0, termMonths, 0)
+			existingRI.EndDate = existingRI.StartDate.AddDate(0, termMonths, 0)
 
 			existingRIs = append(existingRIs, existingRI)
 		}

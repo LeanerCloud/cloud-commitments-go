@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/LeanerCloud/rds-ri-purchase-tool/internal/common"
+	"github.com/LeanerCloud/CUDly/internal/common"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/memorydb"
 	"github.com/aws/aws-sdk-go-v2/service/memorydb/types"
@@ -261,9 +261,60 @@ func (c *PurchaseClient) createPurchaseTags(rec common.Recommendation) []types.T
 
 // GetExistingReservedInstances retrieves existing reserved nodes
 func (c *PurchaseClient) GetExistingReservedInstances(ctx context.Context) ([]common.ExistingRI, error) {
-	// TODO: Implement for MemoryDB using DescribeReservedNodes
-	// MemoryDB has reserved nodes similar to ElastiCache
-	return []common.ExistingRI{}, nil
+	var existingRIs []common.ExistingRI
+	var nextToken *string
+
+	for {
+		input := &memorydb.DescribeReservedNodesInput{
+			NextToken:  nextToken,
+			MaxResults: aws.Int32(100),
+		}
+
+		response, err := c.client.DescribeReservedNodes(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("failed to describe reserved nodes: %w", err)
+		}
+
+		for _, node := range response.ReservedNodes {
+			// Only include active or payment-pending reservations
+			state := aws.ToString(node.State)
+			if state != "active" && state != "payment-pending" {
+				continue
+			}
+
+			// Calculate term in months from duration (in seconds)
+			duration := node.Duration
+			termMonths := 12
+			if duration == 94608000 { // 3 years in seconds
+				termMonths = 36
+			}
+
+			existingRI := common.ExistingRI{
+				ReservationID: aws.ToString(node.ReservationId),
+				InstanceType:  aws.ToString(node.NodeType),
+				Engine:        "memorydb", // MemoryDB is Redis-compatible
+				Region:        c.Region,
+				Count:         node.NodeCount,
+				State:         state,
+				StartDate:     aws.ToTime(node.StartTime),
+				PaymentOption: aws.ToString(node.OfferingType),
+				Term:          termMonths,
+			}
+
+			// Calculate end time based on start time and term
+			existingRI.EndDate = existingRI.StartDate.AddDate(0, termMonths, 0)
+
+			existingRIs = append(existingRIs, existingRI)
+		}
+
+		// Check if there are more results
+		if response.NextToken == nil || aws.ToString(response.NextToken) == "" {
+			break
+		}
+		nextToken = response.NextToken
+	}
+
+	return existingRIs, nil
 }
 // GetValidInstanceTypes returns the static list of valid instance types for memorydb
 func (c *PurchaseClient) GetValidInstanceTypes(ctx context.Context) ([]string, error) {

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/LeanerCloud/rds-ri-purchase-tool/internal/recommendations"
+	"github.com/LeanerCloud/CUDly/internal/recommendations"
 )
 
 // Result represents the result of a Reserved Instance purchase operation

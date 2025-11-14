@@ -10,13 +10,14 @@ import (
 type ServiceType string
 
 const (
-	ServiceRDS         ServiceType = "Amazon Relational Database Service"
-	ServiceElastiCache ServiceType = "Amazon ElastiCache"
-	ServiceEC2         ServiceType = "Amazon Elastic Compute Cloud"
-	ServiceOpenSearch  ServiceType = "Amazon OpenSearch Service"
+	ServiceRDS           ServiceType = "Amazon Relational Database Service"
+	ServiceElastiCache   ServiceType = "Amazon ElastiCache"
+	ServiceEC2           ServiceType = "Amazon Elastic Compute Cloud"
+	ServiceOpenSearch    ServiceType = "Amazon OpenSearch Service"
 	ServiceElasticsearch ServiceType = "Amazon Elasticsearch Service" // Legacy name
-	ServiceRedshift    ServiceType = "Amazon Redshift"
-	ServiceMemoryDB    ServiceType = "Amazon MemoryDB"
+	ServiceRedshift      ServiceType = "Amazon Redshift"
+	ServiceMemoryDB      ServiceType = "Amazon MemoryDB"
+	ServiceSavingsPlans  ServiceType = "Amazon Savings Plans"
 )
 
 // ServiceDetails is an interface that all service-specific details must implement
@@ -33,10 +34,14 @@ type Recommendation struct {
 	Region         string
 	InstanceType   string
 	Count          int32
-	PaymentOption  string
-	Term           int // in months
-	EstimatedCost  float64
-	SavingsPercent float64
+	PaymentOption  string  // Alias for PaymentType for backward compatibility
+	PaymentType    string  // Preferred: all-upfront, partial-upfront, no-upfront
+	Term           int     // in months (12 or 36)
+	EstimatedCost  float64 // Estimated RI cost
+	CurrentCost    float64 // Current on-demand cost
+	EstimatedSavings float64 // Savings amount
+	SavingsPercent float64 // Savings percentage (0-100)
+	SavingsPercentage float64 // Alias for SavingsPercent
 	Timestamp      time.Time
 	Description    string
 	AccountID      string // AWS Account ID (for organization-level recommendations)
@@ -185,6 +190,23 @@ func (m *MemoryDBDetails) GetDetailDescription() string {
 	return fmt.Sprintf("%s %d-node %d-shard", m.NodeType, m.NumberOfNodes, m.ShardCount)
 }
 
+// SavingsPlanDetails contains Savings Plans-specific recommendation details
+type SavingsPlanDetails struct {
+	PlanType         string  // Compute, EC2Instance, SageMaker
+	HourlyCommitment float64 // Hourly commitment amount in USD
+	Coverage         string  // Coverage percentage
+}
+
+// GetServiceType returns the service type
+func (s *SavingsPlanDetails) GetServiceType() ServiceType {
+	return ServiceSavingsPlans
+}
+
+// GetDetailDescription returns a service-specific description
+func (s *SavingsPlanDetails) GetDetailDescription() string {
+	return fmt.Sprintf("%s $%.2f/hour", s.PlanType, s.HourlyCommitment)
+}
+
 // GetDescription returns a human-readable description of the recommendation
 func (r *Recommendation) GetDescription() string {
 	switch details := r.ServiceDetails.(type) {
@@ -204,6 +226,8 @@ func (r *Recommendation) GetDescription() string {
 		return fmt.Sprintf("Redshift %s %d-node %s", details.NodeType, details.NumberOfNodes, details.ClusterType)
 	case *MemoryDBDetails:
 		return fmt.Sprintf("MemoryDB %s %d-node %d-shard", details.NodeType, details.NumberOfNodes, details.ShardCount)
+	case *SavingsPlanDetails:
+		return fmt.Sprintf("Savings Plan %s $%.2f/hour", details.PlanType, details.HourlyCommitment)
 	default:
 		return fmt.Sprintf("%s %dx", r.InstanceType, r.Count)
 	}
@@ -224,6 +248,8 @@ func (r *Recommendation) GetServiceName() string {
 		return "Redshift"
 	case ServiceMemoryDB:
 		return "MemoryDB"
+	case ServiceSavingsPlans:
+		return "SavingsPlans"
 	default:
 		return "Unknown"
 	}
@@ -254,6 +280,7 @@ type PurchaseResult struct {
 	ReservationID string
 	Message       string
 	ActualCost    float64
+	Cost          float64 // Alias for ActualCost
 	Timestamp     time.Time
 }
 
@@ -291,30 +318,37 @@ type CostEstimate struct {
 
 // OfferingDetails contains details about a Reserved Instance offering
 type OfferingDetails struct {
-	OfferingID    string
-	InstanceType  string
-	Engine        string  // For RDS/ElastiCache/MemoryDB
-	Platform      string  // For EC2
-	NodeType      string  // For Redshift
-	Duration      string
-	PaymentOption string
-	MultiAZ       bool    // For RDS
-	FixedPrice    float64
-	UsagePrice    float64
-	CurrencyCode  string
-	OfferingType  string
+	OfferingID          string
+	InstanceType        string
+	Engine              string  // For RDS/ElastiCache/MemoryDB
+	Platform            string  // For EC2
+	NodeType            string  // For Redshift
+	Duration            string
+	Term                string
+	PaymentOption       string
+	MultiAZ             bool    // For RDS
+	FixedPrice          float64
+	UsagePrice          float64
+	UpfrontCost         float64
+	RecurringCost       float64
+	TotalCost           float64
+	EffectiveHourlyRate float64
+	CurrencyCode        string
+	Currency            string
+	OfferingType        string
 }
 
 // ExistingRI represents an existing Reserved Instance
 type ExistingRI struct {
 	ReservationID string
+	Service       ServiceType
 	InstanceType  string
 	Engine        string // For database services
 	Region        string
 	Count         int32
 	State         string // active, payment-pending, retired, etc.
-	StartTime     time.Time
-	EndTime       time.Time
+	StartDate     time.Time
+	EndDate       time.Time
 	PaymentOption string
 	Term          int // in months
 }

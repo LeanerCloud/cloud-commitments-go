@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LeanerCloud/rds-ri-purchase-tool/internal/common"
-	"github.com/LeanerCloud/rds-ri-purchase-tool/internal/mocks"
+	"github.com/LeanerCloud/CUDly/internal/common"
+	"github.com/LeanerCloud/CUDly/internal/mocks"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/elasticache"

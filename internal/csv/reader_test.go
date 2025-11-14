@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LeanerCloud/rds-ri-purchase-tool/internal/recommendations"
+	"github.com/LeanerCloud/CUDly/internal/recommendations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

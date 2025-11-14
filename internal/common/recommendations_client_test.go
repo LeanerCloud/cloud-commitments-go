@@ -25,6 +25,14 @@ func (m *MockCostExplorerAPI) GetReservationPurchaseRecommendation(ctx context.C
 	return args.Get(0).(*costexplorer.GetReservationPurchaseRecommendationOutput), args.Error(1)
 }
 
+func (m *MockCostExplorerAPI) GetSavingsPlansPurchaseRecommendation(ctx context.Context, params *costexplorer.GetSavingsPlansPurchaseRecommendationInput, optFns ...func(*costexplorer.Options)) (*costexplorer.GetSavingsPlansPurchaseRecommendationOutput, error) {
+	args := m.Called(ctx, params)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*costexplorer.GetSavingsPlansPurchaseRecommendationOutput), args.Error(1)
+}
+
 func TestNewRecommendationsClient(t *testing.T) {
 	cfg := aws.Config{
 		Region: "eu-west-1",

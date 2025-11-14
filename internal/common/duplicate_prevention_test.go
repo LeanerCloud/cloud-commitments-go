@@ -62,7 +62,7 @@ func TestAdjustRecommendationsForExistingRIs(t *testing.T) {
 					Count:        5,
 					Engine:       "mysql",
 					State:        "active",
-					StartTime:    time.Now().Add(-72 * time.Hour), // 3 days old
+					StartDate:    time.Now().Add(-72 * time.Hour), // 3 days old
 				},
 			},
 			expectedCount: 1,

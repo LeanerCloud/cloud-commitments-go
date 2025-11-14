@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/LeanerCloud/rds-ri-purchase-tool/internal/common"
+	"github.com/LeanerCloud/CUDly/internal/common"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -291,8 +291,8 @@ func (c *PurchaseClient) GetExistingReservedInstances(ctx context.Context) ([]co
 			Region:        c.Region,
 			Count:         aws.ToInt32(ri.InstanceCount),
 			State:         string(ri.State),
-			StartTime:     aws.ToTime(ri.Start),
-			EndTime:       aws.ToTime(ri.End),
+			StartDate:     aws.ToTime(ri.Start),
+			EndDate:       aws.ToTime(ri.End),
 			PaymentOption: string(ri.OfferingType),
 			Term:          termMonths,
 		}
