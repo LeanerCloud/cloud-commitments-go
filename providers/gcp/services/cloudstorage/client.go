@@ -17,12 +17,48 @@ import (
 	"github.com/LeanerCloud/CUDly/pkg/common"
 )
 
+// StorageService interface for storage operations (enables mocking)
+type StorageService interface {
+	Buckets(ctx context.Context, projectID string) BucketIterator
+	Bucket(name string) BucketHandle
+	Close() error
+}
+
+// BucketIterator interface for bucket iteration (enables mocking)
+type BucketIterator interface {
+	Next() (*storage.BucketAttrs, error)
+}
+
+// BucketHandle interface for bucket operations (enables mocking)
+type BucketHandle interface {
+	Create(ctx context.Context, projectID string, attrs *storage.BucketAttrs) error
+}
+
+// RecommenderClient interface for recommender operations (enables mocking)
+type RecommenderClient interface {
+	ListRecommendations(ctx context.Context, req *recommenderpb.ListRecommendationsRequest) RecommenderIterator
+	Close() error
+}
+
+// RecommenderIterator interface for recommender iteration (enables mocking)
+type RecommenderIterator interface {
+	Next() (*recommenderpb.Recommendation, error)
+}
+
+// BillingService interface for billing operations (enables mocking)
+type BillingService interface {
+	ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error)
+}
+
 // CloudStorageClient handles GCP Cloud Storage commitments
 type CloudStorageClient struct {
-	ctx        context.Context
-	projectID  string
-	region     string
-	clientOpts []option.ClientOption
+	ctx               context.Context
+	projectID         string
+	region            string
+	clientOpts        []option.ClientOption
+	storageService    StorageService
+	recommenderClient RecommenderClient
+	billingService    BillingService
 }
 
 // NewClient creates a new GCP Cloud Storage client
@@ -33,6 +69,78 @@ func NewClient(ctx context.Context, projectID, region string, opts ...option.Cli
 		region:     region,
 		clientOpts: opts,
 	}, nil
+}
+
+// SetStorageService sets the storage service (for testing)
+func (c *CloudStorageClient) SetStorageService(svc StorageService) {
+	c.storageService = svc
+}
+
+// SetRecommenderClient sets the recommender client (for testing)
+func (c *CloudStorageClient) SetRecommenderClient(client RecommenderClient) {
+	c.recommenderClient = client
+}
+
+// SetBillingService sets the billing service (for testing)
+func (c *CloudStorageClient) SetBillingService(svc BillingService) {
+	c.billingService = svc
+}
+
+// realStorageService wraps the real storage.Client
+type realStorageService struct {
+	client *storage.Client
+}
+
+func (r *realStorageService) Buckets(ctx context.Context, projectID string) BucketIterator {
+	return r.client.Buckets(ctx, projectID)
+}
+
+func (r *realStorageService) Bucket(name string) BucketHandle {
+	return &realBucketHandle{bucket: r.client.Bucket(name)}
+}
+
+func (r *realStorageService) Close() error {
+	return r.client.Close()
+}
+
+// realBucketHandle wraps the real storage.BucketHandle
+type realBucketHandle struct {
+	bucket *storage.BucketHandle
+}
+
+func (r *realBucketHandle) Create(ctx context.Context, projectID string, attrs *storage.BucketAttrs) error {
+	return r.bucket.Create(ctx, projectID, attrs)
+}
+
+// realRecommenderIterator wraps the real recommender iterator
+type realRecommenderIterator struct {
+	it *recommender.RecommendationIterator
+}
+
+func (r *realRecommenderIterator) Next() (*recommenderpb.Recommendation, error) {
+	return r.it.Next()
+}
+
+// realRecommenderClient wraps the real recommender client
+type realRecommenderClient struct {
+	client *recommender.Client
+}
+
+func (r *realRecommenderClient) ListRecommendations(ctx context.Context, req *recommenderpb.ListRecommendationsRequest) RecommenderIterator {
+	return &realRecommenderIterator{it: r.client.ListRecommendations(ctx, req)}
+}
+
+func (r *realRecommenderClient) Close() error {
+	return r.client.Close()
+}
+
+// realBillingService wraps the real cloudbilling.APIService
+type realBillingService struct {
+	service *cloudbilling.APIService
+}
+
+func (r *realBillingService) ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error) {
+	return r.service.Services.Skus.List(serviceID).Do()
 }
 
 // GetServiceType returns the service type
@@ -47,13 +155,20 @@ func (c *CloudStorageClient) GetRegion() string {
 
 // GetRecommendations gets Cloud Storage recommendations from GCP Recommender API
 func (c *CloudStorageClient) GetRecommendations(ctx context.Context, params common.RecommendationParams) ([]common.Recommendation, error) {
-	client, err := recommender.NewClient(ctx, c.clientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create recommender client: %w", err)
-	}
-	defer client.Close()
-
 	recommendations := make([]common.Recommendation, 0)
+
+	// Use injected client if available (for testing)
+	var recClient RecommenderClient
+	if c.recommenderClient != nil {
+		recClient = c.recommenderClient
+	} else {
+		client, err := recommender.NewClient(ctx, c.clientOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create recommender client: %w", err)
+		}
+		recClient = &realRecommenderClient{client: client}
+	}
+	defer recClient.Close()
 
 	// Cloud Storage commitment recommender
 	parent := fmt.Sprintf("projects/%s/locations/%s/recommenders/google.storage.bucket.CostRecommender",
@@ -63,7 +178,7 @@ func (c *CloudStorageClient) GetRecommendations(ctx context.Context, params comm
 		Parent: parent,
 	}
 
-	it := client.ListRecommendations(ctx, req)
+	it := recClient.ListRecommendations(ctx, req)
 	for {
 		rec, err := it.Next()
 		if err == iterator.Done {
@@ -84,16 +199,23 @@ func (c *CloudStorageClient) GetRecommendations(ctx context.Context, params comm
 
 // GetExistingCommitments retrieves existing Cloud Storage commitments
 func (c *CloudStorageClient) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
-	client, err := storage.NewClient(ctx, c.clientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create storage client: %w", err)
-	}
-	defer client.Close()
-
 	commitments := make([]common.Commitment, 0)
 
+	// Use injected service if available (for testing)
+	var svc StorageService
+	if c.storageService != nil {
+		svc = c.storageService
+	} else {
+		client, err := storage.NewClient(ctx, c.clientOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create storage client: %w", err)
+		}
+		svc = &realStorageService{client: client}
+	}
+	defer svc.Close()
+
 	// List all buckets in the project
-	it := client.Buckets(ctx, c.projectID)
+	it := svc.Buckets(ctx, c.projectID)
 	for {
 		bucket, err := it.Next()
 		if err == iterator.Done {
@@ -132,23 +254,30 @@ func (c *CloudStorageClient) PurchaseCommitment(ctx context.Context, rec common.
 		Timestamp:      time.Now(),
 	}
 
-	client, err := storage.NewClient(ctx, c.clientOpts...)
-	if err != nil {
-		result.Error = fmt.Errorf("failed to create storage client: %w", err)
-		return result, result.Error
+	// Use injected service if available (for testing)
+	var svc StorageService
+	if c.storageService != nil {
+		svc = c.storageService
+	} else {
+		client, err := storage.NewClient(ctx, c.clientOpts...)
+		if err != nil {
+			result.Error = fmt.Errorf("failed to create storage client: %w", err)
+			return result, result.Error
+		}
+		svc = &realStorageService{client: client}
 	}
-	defer client.Close()
+	defer svc.Close()
 
 	// Create a new Cloud Storage bucket with committed storage class
 	bucketName := fmt.Sprintf("storage-committed-%d", time.Now().Unix())
 
-	bucket := client.Bucket(bucketName)
+	bucket := svc.Bucket(bucketName)
 	attrs := &storage.BucketAttrs{
 		Location:     c.region,
 		StorageClass: rec.ResourceType,
 	}
 
-	err = bucket.Create(ctx, c.projectID, attrs)
+	err := bucket.Create(ctx, c.projectID, attrs)
 	if err != nil {
 		result.Error = fmt.Errorf("failed to create storage bucket with commitment: %w", err)
 		return result, result.Error
@@ -240,14 +369,21 @@ type StoragePricing struct {
 
 // getStoragePricing gets pricing from GCP Cloud Billing Catalog API
 func (c *CloudStorageClient) getStoragePricing(ctx context.Context, storageClass, region string, termYears int) (*StoragePricing, error) {
-	service, err := cloudbilling.NewService(ctx, c.clientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create billing service: %w", err)
+	// Use injected service if available (for testing)
+	var svc BillingService
+	if c.billingService != nil {
+		svc = c.billingService
+	} else {
+		service, err := cloudbilling.NewService(ctx, c.clientOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create billing service: %w", err)
+		}
+		svc = &realBillingService{service: service}
 	}
 
 	// Cloud Storage service ID
 	serviceID := "services/95FF-2EF5-5EA1"
-	skus, err := service.Services.Skus.List(serviceID).Do()
+	skus, err := svc.ListSKUs(serviceID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list SKUs: %w", err)
 	}

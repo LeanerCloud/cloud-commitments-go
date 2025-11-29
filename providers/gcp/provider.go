@@ -20,11 +20,79 @@ import (
 	"github.com/LeanerCloud/CUDly/providers/gcp/services/computeengine"
 )
 
+// ProjectsClient interface for project operations (enables mocking)
+type ProjectsClient interface {
+	GetProject(ctx context.Context, req *resourcemanagerpb.GetProjectRequest) (*resourcemanagerpb.Project, error)
+	Close() error
+}
+
+// RegionsClient interface for regions operations (enables mocking)
+type RegionsClient interface {
+	List(ctx context.Context, req *computepb.ListRegionsRequest) RegionsIterator
+	Close() error
+}
+
+// RegionsIterator interface for regions iteration (enables mocking)
+type RegionsIterator interface {
+	Next() (*computepb.Region, error)
+}
+
+// ResourceManagerService interface for resource manager operations (enables mocking)
+type ResourceManagerService interface {
+	ListProjects(ctx context.Context) ([]*cloudresourcemanager.Project, error)
+}
+
+// realProjectsClient wraps the real resourcemanager.ProjectsClient
+type realProjectsClient struct {
+	client *resourcemanager.ProjectsClient
+}
+
+func (r *realProjectsClient) GetProject(ctx context.Context, req *resourcemanagerpb.GetProjectRequest) (*resourcemanagerpb.Project, error) {
+	return r.client.GetProject(ctx, req)
+}
+
+func (r *realProjectsClient) Close() error {
+	return r.client.Close()
+}
+
+// realRegionsClient wraps the real compute.RegionsClient
+type realRegionsClient struct {
+	client *compute.RegionsClient
+}
+
+func (r *realRegionsClient) List(ctx context.Context, req *computepb.ListRegionsRequest) RegionsIterator {
+	return r.client.List(ctx, req)
+}
+
+func (r *realRegionsClient) Close() error {
+	return r.client.Close()
+}
+
+// realResourceManagerService wraps the real cloudresourcemanager service
+type realResourceManagerService struct {
+	service *cloudresourcemanager.Service
+}
+
+func (r *realResourceManagerService) ListProjects(ctx context.Context) ([]*cloudresourcemanager.Project, error) {
+	projects := make([]*cloudresourcemanager.Project, 0)
+	req := r.service.Projects.List()
+	if err := req.Pages(ctx, func(page *cloudresourcemanager.ListProjectsResponse) error {
+		projects = append(projects, page.Projects...)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return projects, nil
+}
+
 // GCPProvider implements the Provider interface for Google Cloud Platform
 type GCPProvider struct {
-	ctx        context.Context
-	projectID  string
-	clientOpts []option.ClientOption
+	ctx                    context.Context
+	projectID              string
+	clientOpts             []option.ClientOption
+	projectsClient         ProjectsClient
+	regionsClient          RegionsClient
+	resourceManagerService ResourceManagerService
 }
 
 // NewProvider creates a new GCP provider
@@ -62,6 +130,21 @@ func NewProviderWithProject(ctx context.Context, projectID string, opts ...optio
 	}
 }
 
+// SetProjectsClient sets the projects client (for testing)
+func (p *GCPProvider) SetProjectsClient(client ProjectsClient) {
+	p.projectsClient = client
+}
+
+// SetRegionsClient sets the regions client (for testing)
+func (p *GCPProvider) SetRegionsClient(client RegionsClient) {
+	p.regionsClient = client
+}
+
+// SetResourceManagerService sets the resource manager service (for testing)
+func (p *GCPProvider) SetResourceManagerService(svc ResourceManagerService) {
+	p.resourceManagerService = svc
+}
+
 // Name returns the provider name
 func (p *GCPProvider) Name() string {
 	return string(common.ProviderGCP)
@@ -74,16 +157,24 @@ func (p *GCPProvider) DisplayName() string {
 
 // IsConfigured checks if GCP credentials are configured
 func (p *GCPProvider) IsConfigured() bool {
-	// Try to create a simple client to test credentials
 	ctx := context.Background()
-	client, err := resourcemanager.NewProjectsClient(ctx, p.clientOpts...)
-	if err != nil {
-		return false
+
+	// Use injected client if available (for testing)
+	var projectsClient ProjectsClient
+	if p.projectsClient != nil {
+		projectsClient = p.projectsClient
+	} else {
+		// Try to create a simple client to test credentials
+		client, err := resourcemanager.NewProjectsClient(ctx, p.clientOpts...)
+		if err != nil {
+			return false
+		}
+		projectsClient = &realProjectsClient{client: client}
 	}
-	defer client.Close()
+	defer projectsClient.Close()
 
 	// Try to get the project to verify credentials work
-	_, err = client.GetProject(ctx, &resourcemanagerpb.GetProjectRequest{
+	_, err := projectsClient.GetProject(ctx, &resourcemanagerpb.GetProjectRequest{
 		Name: fmt.Sprintf("projects/%s", p.projectID),
 	})
 
@@ -92,14 +183,21 @@ func (p *GCPProvider) IsConfigured() bool {
 
 // ValidateCredentials validates that GCP credentials are valid
 func (p *GCPProvider) ValidateCredentials(ctx context.Context) error {
-	client, err := resourcemanager.NewProjectsClient(ctx, p.clientOpts...)
-	if err != nil {
-		return fmt.Errorf("failed to create resource manager client: %w", err)
+	// Use injected client if available (for testing)
+	var projectsClient ProjectsClient
+	if p.projectsClient != nil {
+		projectsClient = p.projectsClient
+	} else {
+		client, err := resourcemanager.NewProjectsClient(ctx, p.clientOpts...)
+		if err != nil {
+			return fmt.Errorf("failed to create resource manager client: %w", err)
+		}
+		projectsClient = &realProjectsClient{client: client}
 	}
-	defer client.Close()
+	defer projectsClient.Close()
 
 	// Verify we can access the project
-	project, err := client.GetProject(ctx, &resourcemanagerpb.GetProjectRequest{
+	project, err := projectsClient.GetProject(ctx, &resourcemanagerpb.GetProjectRequest{
 		Name: fmt.Sprintf("projects/%s", p.projectID),
 	})
 	if err != nil {
@@ -148,28 +246,34 @@ func (p *GCPProvider) GetDefaultRegion() string {
 
 // GetAccounts returns all accessible GCP projects
 func (p *GCPProvider) GetAccounts(ctx context.Context) ([]common.Account, error) {
-	// For GCP, accounts are projects
-	service, err := cloudresourcemanager.NewService(ctx, p.clientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create resource manager service: %w", err)
-	}
-
 	accounts := make([]common.Account, 0)
 
-	// List all projects the credentials have access to
-	req := service.Projects.List()
-	if err := req.Pages(ctx, func(page *cloudresourcemanager.ListProjectsResponse) error {
-		for _, project := range page.Projects {
-			if project.LifecycleState == "ACTIVE" {
-				accounts = append(accounts, common.Account{
-					ID:   project.ProjectId,
-					Name: project.Name,
-				})
-			}
+	// Use injected service if available (for testing)
+	var rmService ResourceManagerService
+	if p.resourceManagerService != nil {
+		rmService = p.resourceManagerService
+	} else {
+		// For GCP, accounts are projects
+		service, err := cloudresourcemanager.NewService(ctx, p.clientOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create resource manager service: %w", err)
 		}
-		return nil
-	}); err != nil {
+		rmService = &realResourceManagerService{service: service}
+	}
+
+	// List all projects the credentials have access to
+	projects, err := rmService.ListProjects(ctx)
+	if err != nil {
 		return nil, fmt.Errorf("failed to list projects: %w", err)
+	}
+
+	for _, project := range projects {
+		if project.LifecycleState == "ACTIVE" {
+			accounts = append(accounts, common.Account{
+				ID:   project.ProjectId,
+				Name: project.Name,
+			})
+		}
 	}
 
 	// If no projects found, return at least the default project
@@ -185,18 +289,25 @@ func (p *GCPProvider) GetAccounts(ctx context.Context) ([]common.Account, error)
 
 // GetRegions returns all available GCP regions using Compute Engine API
 func (p *GCPProvider) GetRegions(ctx context.Context) ([]common.Region, error) {
-	client, err := compute.NewRegionsRESTClient(ctx, p.clientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create compute client: %w", err)
+	// Use injected client if available (for testing)
+	var regClient RegionsClient
+	if p.regionsClient != nil {
+		regClient = p.regionsClient
+	} else {
+		client, err := compute.NewRegionsRESTClient(ctx, p.clientOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create compute client: %w", err)
+		}
+		regClient = &realRegionsClient{client: client}
 	}
-	defer client.Close()
+	defer regClient.Close()
 
 	req := &computepb.ListRegionsRequest{
 		Project: p.projectID,
 	}
 
 	regions := make([]common.Region, 0)
-	it := client.List(ctx, req)
+	it := regClient.List(ctx, req)
 
 	for {
 		region, err := it.Next()

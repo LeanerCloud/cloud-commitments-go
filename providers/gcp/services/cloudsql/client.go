@@ -17,12 +17,38 @@ import (
 	"github.com/LeanerCloud/CUDly/pkg/common"
 )
 
+// SQLAdminService interface for SQL admin operations (enables mocking)
+type SQLAdminService interface {
+	ListInstances(projectID string) (*sqladmin.InstancesListResponse, error)
+	InsertInstance(projectID string, instance *sqladmin.DatabaseInstance) (*sqladmin.Operation, error)
+	ListTiers(projectID string) (*sqladmin.TiersListResponse, error)
+}
+
+// BillingService interface for billing operations (enables mocking)
+type BillingService interface {
+	ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error)
+}
+
+// RecommenderIterator interface for recommender iteration (enables mocking)
+type RecommenderIterator interface {
+	Next() (*recommenderpb.Recommendation, error)
+}
+
+// RecommenderClient interface for recommender operations (enables mocking)
+type RecommenderClient interface {
+	ListRecommendations(ctx context.Context, req *recommenderpb.ListRecommendationsRequest) RecommenderIterator
+	Close() error
+}
+
 // CloudSQLClient handles GCP Cloud SQL commitments
 type CloudSQLClient struct {
-	ctx        context.Context
-	projectID  string
-	region     string
-	clientOpts []option.ClientOption
+	ctx               context.Context
+	projectID         string
+	region            string
+	clientOpts        []option.ClientOption
+	sqlAdminService   SQLAdminService
+	billingService    BillingService
+	recommenderClient RecommenderClient
 }
 
 // NewClient creates a new GCP Cloud SQL client
@@ -33,6 +59,69 @@ func NewClient(ctx context.Context, projectID, region string, opts ...option.Cli
 		region:     region,
 		clientOpts: opts,
 	}, nil
+}
+
+// SetSQLAdminService sets the SQL admin service (for testing)
+func (c *CloudSQLClient) SetSQLAdminService(svc SQLAdminService) {
+	c.sqlAdminService = svc
+}
+
+// SetBillingService sets the billing service (for testing)
+func (c *CloudSQLClient) SetBillingService(svc BillingService) {
+	c.billingService = svc
+}
+
+// SetRecommenderClient sets the recommender client (for testing)
+func (c *CloudSQLClient) SetRecommenderClient(client RecommenderClient) {
+	c.recommenderClient = client
+}
+
+// realSQLAdminService wraps the real sqladmin.Service
+type realSQLAdminService struct {
+	service *sqladmin.Service
+}
+
+func (r *realSQLAdminService) ListInstances(projectID string) (*sqladmin.InstancesListResponse, error) {
+	return r.service.Instances.List(projectID).Do()
+}
+
+func (r *realSQLAdminService) InsertInstance(projectID string, instance *sqladmin.DatabaseInstance) (*sqladmin.Operation, error) {
+	return r.service.Instances.Insert(projectID, instance).Do()
+}
+
+func (r *realSQLAdminService) ListTiers(projectID string) (*sqladmin.TiersListResponse, error) {
+	return r.service.Tiers.List(projectID).Do()
+}
+
+// realBillingService wraps the real cloudbilling.APIService
+type realBillingService struct {
+	service *cloudbilling.APIService
+}
+
+func (r *realBillingService) ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error) {
+	return r.service.Services.Skus.List(serviceID).Do()
+}
+
+// realRecommenderIterator wraps the real recommender iterator
+type realRecommenderIterator struct {
+	it *recommender.RecommendationIterator
+}
+
+func (r *realRecommenderIterator) Next() (*recommenderpb.Recommendation, error) {
+	return r.it.Next()
+}
+
+// realRecommenderClient wraps the real recommender client
+type realRecommenderClient struct {
+	client *recommender.Client
+}
+
+func (r *realRecommenderClient) ListRecommendations(ctx context.Context, req *recommenderpb.ListRecommendationsRequest) RecommenderIterator {
+	return &realRecommenderIterator{it: r.client.ListRecommendations(ctx, req)}
+}
+
+func (r *realRecommenderClient) Close() error {
+	return r.client.Close()
 }
 
 // GetServiceType returns the service type
@@ -47,13 +136,20 @@ func (c *CloudSQLClient) GetRegion() string {
 
 // GetRecommendations gets Cloud SQL recommendations from GCP Recommender API
 func (c *CloudSQLClient) GetRecommendations(ctx context.Context, params common.RecommendationParams) ([]common.Recommendation, error) {
-	client, err := recommender.NewClient(ctx, c.clientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create recommender client: %w", err)
-	}
-	defer client.Close()
-
 	recommendations := make([]common.Recommendation, 0)
+
+	// Use injected client if available (for testing)
+	var recClient RecommenderClient
+	if c.recommenderClient != nil {
+		recClient = c.recommenderClient
+	} else {
+		client, err := recommender.NewClient(ctx, c.clientOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create recommender client: %w", err)
+		}
+		recClient = &realRecommenderClient{client: client}
+	}
+	defer recClient.Close()
 
 	// Cloud SQL commitment recommender
 	parent := fmt.Sprintf("projects/%s/locations/%s/recommenders/google.cloudsql.instance.PerformanceRecommender",
@@ -63,7 +159,7 @@ func (c *CloudSQLClient) GetRecommendations(ctx context.Context, params common.R
 		Parent: parent,
 	}
 
-	it := client.ListRecommendations(ctx, req)
+	it := recClient.ListRecommendations(ctx, req)
 	for {
 		rec, err := it.Next()
 		if err == iterator.Done {
@@ -84,16 +180,22 @@ func (c *CloudSQLClient) GetRecommendations(ctx context.Context, params common.R
 
 // GetExistingCommitments retrieves existing Cloud SQL commitments
 func (c *CloudSQLClient) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
-	service, err := sqladmin.NewService(ctx, c.clientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create SQL admin service: %w", err)
-	}
-
 	commitments := make([]common.Commitment, 0)
 
+	// Use injected service if available (for testing)
+	var svc SQLAdminService
+	if c.sqlAdminService != nil {
+		svc = c.sqlAdminService
+	} else {
+		service, err := sqladmin.NewService(ctx, c.clientOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create SQL admin service: %w", err)
+		}
+		svc = &realSQLAdminService{service: service}
+	}
+
 	// List all SQL instances in the project
-	instancesCall := service.Instances.List(c.projectID)
-	instances, err := instancesCall.Do()
+	instances, err := svc.ListInstances(c.projectID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list SQL instances: %w", err)
 	}
@@ -133,10 +235,17 @@ func (c *CloudSQLClient) PurchaseCommitment(ctx context.Context, rec common.Reco
 		Timestamp:      time.Now(),
 	}
 
-	service, err := sqladmin.NewService(ctx, c.clientOpts...)
-	if err != nil {
-		result.Error = fmt.Errorf("failed to create SQL admin service: %w", err)
-		return result, result.Error
+	// Use injected service if available (for testing)
+	var svc SQLAdminService
+	if c.sqlAdminService != nil {
+		svc = c.sqlAdminService
+	} else {
+		service, err := sqladmin.NewService(ctx, c.clientOpts...)
+		if err != nil {
+			result.Error = fmt.Errorf("failed to create SQL admin service: %w", err)
+			return result, result.Error
+		}
+		svc = &realSQLAdminService{service: service}
 	}
 
 	// Create a new Cloud SQL instance with commitment pricing
@@ -152,8 +261,7 @@ func (c *CloudSQLClient) PurchaseCommitment(ctx context.Context, rec common.Reco
 		},
 	}
 
-	insertCall := service.Instances.Insert(c.projectID, instance)
-	op, err := insertCall.Do()
+	op, err := svc.InsertInstance(c.projectID, instance)
 	if err != nil {
 		result.Error = fmt.Errorf("failed to create SQL instance with commitment: %w", err)
 		return result, result.Error
@@ -229,14 +337,20 @@ func (c *CloudSQLClient) GetOfferingDetails(ctx context.Context, rec common.Reco
 
 // GetValidResourceTypes returns valid Cloud SQL tiers
 func (c *CloudSQLClient) GetValidResourceTypes(ctx context.Context) ([]string, error) {
-	service, err := sqladmin.NewService(ctx, c.clientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create SQL admin service: %w", err)
+	// Use injected service if available (for testing)
+	var svc SQLAdminService
+	if c.sqlAdminService != nil {
+		svc = c.sqlAdminService
+	} else {
+		service, err := sqladmin.NewService(ctx, c.clientOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create SQL admin service: %w", err)
+		}
+		svc = &realSQLAdminService{service: service}
 	}
 
 	// List available tiers for the region
-	tiersCall := service.Tiers.List(c.projectID)
-	tiers, err := tiersCall.Do()
+	tiers, err := svc.ListTiers(c.projectID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list SQL tiers: %w", err)
 	}
@@ -267,14 +381,21 @@ type SQLPricing struct {
 
 // getSQLPricing gets pricing from GCP Cloud Billing Catalog API
 func (c *CloudSQLClient) getSQLPricing(ctx context.Context, tier, region string, termYears int) (*SQLPricing, error) {
-	service, err := cloudbilling.NewService(ctx, c.clientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create billing service: %w", err)
+	// Use injected service if available (for testing)
+	var svc BillingService
+	if c.billingService != nil {
+		svc = c.billingService
+	} else {
+		service, err := cloudbilling.NewService(ctx, c.clientOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create billing service: %w", err)
+		}
+		svc = &realBillingService{service: service}
 	}
 
 	// Cloud SQL service ID
 	serviceID := "services/9662-B51E-5089"
-	skus, err := service.Services.Skus.List(serviceID).Do()
+	skus, err := svc.ListSKUs(serviceID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list SKUs: %w", err)
 	}

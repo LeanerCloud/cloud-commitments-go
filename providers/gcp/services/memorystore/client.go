@@ -11,6 +11,7 @@ import (
 	"cloud.google.com/go/recommender/apiv1/recommenderpb"
 	"cloud.google.com/go/redis/apiv1"
 	"cloud.google.com/go/redis/apiv1/redispb"
+	gax "github.com/googleapis/gax-go/v2"
 	"google.golang.org/api/cloudbilling/v1"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
@@ -18,12 +19,48 @@ import (
 	"github.com/LeanerCloud/CUDly/pkg/common"
 )
 
+// RedisService interface for Redis operations
+type RedisService interface {
+	ListInstances(ctx context.Context, req *redispb.ListInstancesRequest) RedisIterator
+	CreateInstance(ctx context.Context, req *redispb.CreateInstanceRequest) (CreateInstanceOperation, error)
+	Close() error
+}
+
+// RedisIterator interface for iterating Redis instances
+type RedisIterator interface {
+	Next() (*redispb.Instance, error)
+}
+
+// CreateInstanceOperation interface for create instance operation
+type CreateInstanceOperation interface {
+	Wait(ctx context.Context, opts ...gax.CallOption) (*redispb.Instance, error)
+}
+
+// BillingService interface for Cloud Billing operations
+type BillingService interface {
+	ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error)
+}
+
+// RecommenderIterator interface for iterating recommendations
+type RecommenderIterator interface {
+	Next() (*recommenderpb.Recommendation, error)
+}
+
+// RecommenderClient interface for recommender operations
+type RecommenderClient interface {
+	ListRecommendations(ctx context.Context, req *recommenderpb.ListRecommendationsRequest) RecommenderIterator
+	Close() error
+}
+
 // MemorystoreClient handles GCP Memorystore (Redis) commitments
 type MemorystoreClient struct {
-	ctx        context.Context
-	projectID  string
-	region     string
-	clientOpts []option.ClientOption
+	ctx               context.Context
+	projectID         string
+	region            string
+	clientOpts        []option.ClientOption
+	redisService      RedisService
+	billingService    BillingService
+	recommenderClient RecommenderClient
 }
 
 // NewClient creates a new GCP Memorystore client
@@ -34,6 +71,60 @@ func NewClient(ctx context.Context, projectID, region string, opts ...option.Cli
 		region:     region,
 		clientOpts: opts,
 	}, nil
+}
+
+// SetRedisService sets the Redis service (for testing)
+func (c *MemorystoreClient) SetRedisService(svc RedisService) {
+	c.redisService = svc
+}
+
+// SetBillingService sets the billing service (for testing)
+func (c *MemorystoreClient) SetBillingService(svc BillingService) {
+	c.billingService = svc
+}
+
+// SetRecommenderClient sets the recommender client (for testing)
+func (c *MemorystoreClient) SetRecommenderClient(client RecommenderClient) {
+	c.recommenderClient = client
+}
+
+// realRedisService wraps the actual Redis client
+type realRedisService struct {
+	client *redis.CloudRedisClient
+}
+
+func (r *realRedisService) ListInstances(ctx context.Context, req *redispb.ListInstancesRequest) RedisIterator {
+	return r.client.ListInstances(ctx, req)
+}
+
+func (r *realRedisService) CreateInstance(ctx context.Context, req *redispb.CreateInstanceRequest) (CreateInstanceOperation, error) {
+	return r.client.CreateInstance(ctx, req)
+}
+
+func (r *realRedisService) Close() error {
+	return r.client.Close()
+}
+
+// realBillingService wraps the actual Cloud Billing service
+type realBillingService struct {
+	service *cloudbilling.APIService
+}
+
+func (r *realBillingService) ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error) {
+	return r.service.Services.Skus.List(serviceID).Do()
+}
+
+// realRecommenderClient wraps the actual recommender client
+type realRecommenderClient struct {
+	client *recommender.Client
+}
+
+func (r *realRecommenderClient) ListRecommendations(ctx context.Context, req *recommenderpb.ListRecommendationsRequest) RecommenderIterator {
+	return r.client.ListRecommendations(ctx, req)
+}
+
+func (r *realRecommenderClient) Close() error {
+	return r.client.Close()
 }
 
 // GetServiceType returns the service type
@@ -48,11 +139,15 @@ func (c *MemorystoreClient) GetRegion() string {
 
 // GetRecommendations gets Memorystore Redis recommendations from GCP Recommender API
 func (c *MemorystoreClient) GetRecommendations(ctx context.Context, params common.RecommendationParams) ([]common.Recommendation, error) {
-	client, err := recommender.NewClient(ctx, c.clientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create recommender client: %w", err)
+	recClient := c.recommenderClient
+	if recClient == nil {
+		client, err := recommender.NewClient(ctx, c.clientOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create recommender client: %w", err)
+		}
+		recClient = &realRecommenderClient{client: client}
 	}
-	defer client.Close()
+	defer recClient.Close()
 
 	recommendations := make([]common.Recommendation, 0)
 
@@ -64,7 +159,7 @@ func (c *MemorystoreClient) GetRecommendations(ctx context.Context, params commo
 		Parent: parent,
 	}
 
-	it := client.ListRecommendations(ctx, req)
+	it := recClient.ListRecommendations(ctx, req)
 	for {
 		rec, err := it.Next()
 		if err == iterator.Done {
@@ -85,11 +180,15 @@ func (c *MemorystoreClient) GetRecommendations(ctx context.Context, params commo
 
 // GetExistingCommitments retrieves existing Memorystore Redis commitments
 func (c *MemorystoreClient) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
-	client, err := redis.NewCloudRedisClient(ctx, c.clientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create redis client: %w", err)
+	redisSvc := c.redisService
+	if redisSvc == nil {
+		client, err := redis.NewCloudRedisClient(ctx, c.clientOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create redis client: %w", err)
+		}
+		redisSvc = &realRedisService{client: client}
 	}
-	defer client.Close()
+	defer redisSvc.Close()
 
 	commitments := make([]common.Commitment, 0)
 
@@ -99,7 +198,7 @@ func (c *MemorystoreClient) GetExistingCommitments(ctx context.Context) ([]commo
 		Parent: parent,
 	}
 
-	it := client.ListInstances(ctx, req)
+	it := redisSvc.ListInstances(ctx, req)
 	for {
 		instance, err := it.Next()
 		if err == iterator.Done {
@@ -110,7 +209,7 @@ func (c *MemorystoreClient) GetExistingCommitments(ctx context.Context) ([]commo
 		}
 
 		// Check if instance has committed use pricing
-		if instance.ReservedIPRange != "" {
+		if instance.ReservedIpRange != "" {
 			commitment := common.Commitment{
 				Provider:       common.ProviderGCP,
 				Account:        c.projectID,
@@ -138,23 +237,27 @@ func (c *MemorystoreClient) PurchaseCommitment(ctx context.Context, rec common.R
 		Timestamp:      time.Now(),
 	}
 
-	client, err := redis.NewCloudRedisClient(ctx, c.clientOpts...)
-	if err != nil {
-		result.Error = fmt.Errorf("failed to create redis client: %w", err)
-		return result, result.Error
+	redisSvc := c.redisService
+	if redisSvc == nil {
+		client, err := redis.NewCloudRedisClient(ctx, c.clientOpts...)
+		if err != nil {
+			result.Error = fmt.Errorf("failed to create redis client: %w", err)
+			return result, result.Error
+		}
+		redisSvc = &realRedisService{client: client}
 	}
-	defer client.Close()
+	defer redisSvc.Close()
 
 	// Create a new Memorystore Redis instance with committed pricing
 	instanceName := fmt.Sprintf("redis-committed-%d", time.Now().Unix())
 	parent := fmt.Sprintf("projects/%s/locations/%s", c.projectID, c.region)
 
 	instance := &redispb.Instance{
-		Name:       fmt.Sprintf("%s/instances/%s", parent, instanceName),
-		Tier:       redispb.Instance_STANDARD_HA,
+		Name:         fmt.Sprintf("%s/instances/%s", parent, instanceName),
+		Tier:         redispb.Instance_STANDARD_HA,
 		MemorySizeGb: 1, // Minimum size
 		// Setting reserved IP range indicates committed use
-		ReservedIPRange: "10.0.0.0/29",
+		ReservedIpRange: "10.0.0.0/29",
 	}
 
 	insertReq := &redispb.CreateInstanceRequest{
@@ -163,7 +266,7 @@ func (c *MemorystoreClient) PurchaseCommitment(ctx context.Context, rec common.R
 		Instance:   instance,
 	}
 
-	op, err := client.CreateInstance(ctx, insertReq)
+	op, err := redisSvc.CreateInstance(ctx, insertReq)
 	if err != nil {
 		result.Error = fmt.Errorf("failed to create redis instance with commitment: %w", err)
 		return result, result.Error
@@ -260,14 +363,18 @@ type RedisPricing struct {
 
 // getRedisPricing gets pricing from GCP Cloud Billing Catalog API
 func (c *MemorystoreClient) getRedisPricing(ctx context.Context, tier, region string, termYears int) (*RedisPricing, error) {
-	service, err := cloudbilling.NewService(ctx, c.clientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create billing service: %w", err)
+	billingSvc := c.billingService
+	if billingSvc == nil {
+		service, err := cloudbilling.NewService(ctx, c.clientOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create billing service: %w", err)
+		}
+		billingSvc = &realBillingService{service: service}
 	}
 
 	// Memorystore Redis service ID
 	serviceID := "services/D559-82DA-3A56"
-	skus, err := service.Services.Skus.List(serviceID).Do()
+	skus, err := billingSvc.ListSKUs(serviceID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list SKUs: %w", err)
 	}

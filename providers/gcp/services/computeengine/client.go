@@ -11,6 +11,7 @@ import (
 	"cloud.google.com/go/compute/apiv1/computepb"
 	"cloud.google.com/go/recommender/apiv1"
 	"cloud.google.com/go/recommender/apiv1/recommenderpb"
+	gax "github.com/googleapis/gax-go/v2"
 	"google.golang.org/api/cloudbilling/v1"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
@@ -18,12 +19,60 @@ import (
 	"github.com/LeanerCloud/CUDly/pkg/common"
 )
 
+// CommitmentsService interface for commitments operations (enables mocking)
+type CommitmentsService interface {
+	List(ctx context.Context, req *computepb.ListRegionCommitmentsRequest) CommitmentsIterator
+	Insert(ctx context.Context, req *computepb.InsertRegionCommitmentRequest) (CommitmentsOperation, error)
+	Close() error
+}
+
+// CommitmentsIterator interface for commitments iteration (enables mocking)
+type CommitmentsIterator interface {
+	Next() (*computepb.Commitment, error)
+}
+
+// CommitmentsOperation interface for commitment operations (enables mocking)
+type CommitmentsOperation interface {
+	Wait(ctx context.Context, opts ...gax.CallOption) error
+}
+
+// MachineTypesService interface for machine types operations (enables mocking)
+type MachineTypesService interface {
+	List(ctx context.Context, req *computepb.ListMachineTypesRequest) MachineTypesIterator
+	Close() error
+}
+
+// MachineTypesIterator interface for machine types iteration (enables mocking)
+type MachineTypesIterator interface {
+	Next() (*computepb.MachineType, error)
+}
+
+// BillingService interface for billing operations (enables mocking)
+type BillingService interface {
+	ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error)
+}
+
+// RecommenderIterator interface for recommender iteration (enables mocking)
+type RecommenderIterator interface {
+	Next() (*recommenderpb.Recommendation, error)
+}
+
+// RecommenderClient interface for recommender operations (enables mocking)
+type RecommenderClient interface {
+	ListRecommendations(ctx context.Context, req *recommenderpb.ListRecommendationsRequest) RecommenderIterator
+	Close() error
+}
+
 // ComputeEngineClient handles GCP Compute Engine Committed Use Discounts
 type ComputeEngineClient struct {
-	ctx        context.Context
-	projectID  string
-	region     string
-	clientOpts []option.ClientOption
+	ctx                 context.Context
+	projectID           string
+	region              string
+	clientOpts          []option.ClientOption
+	commitmentsService  CommitmentsService
+	machineTypesService MachineTypesService
+	billingService      BillingService
+	recommenderClient   RecommenderClient
 }
 
 // NewClient creates a new GCP Compute Engine client
@@ -34,6 +83,87 @@ func NewClient(ctx context.Context, projectID, region string, opts ...option.Cli
 		region:     region,
 		clientOpts: opts,
 	}, nil
+}
+
+// SetCommitmentsService sets the commitments service (for testing)
+func (c *ComputeEngineClient) SetCommitmentsService(svc CommitmentsService) {
+	c.commitmentsService = svc
+}
+
+// SetMachineTypesService sets the machine types service (for testing)
+func (c *ComputeEngineClient) SetMachineTypesService(svc MachineTypesService) {
+	c.machineTypesService = svc
+}
+
+// SetBillingService sets the billing service (for testing)
+func (c *ComputeEngineClient) SetBillingService(svc BillingService) {
+	c.billingService = svc
+}
+
+// SetRecommenderClient sets the recommender client (for testing)
+func (c *ComputeEngineClient) SetRecommenderClient(client RecommenderClient) {
+	c.recommenderClient = client
+}
+
+// realCommitmentsService wraps the real compute.RegionCommitmentsClient
+type realCommitmentsService struct {
+	client *compute.RegionCommitmentsClient
+}
+
+func (r *realCommitmentsService) List(ctx context.Context, req *computepb.ListRegionCommitmentsRequest) CommitmentsIterator {
+	return r.client.List(ctx, req)
+}
+
+func (r *realCommitmentsService) Insert(ctx context.Context, req *computepb.InsertRegionCommitmentRequest) (CommitmentsOperation, error) {
+	return r.client.Insert(ctx, req)
+}
+
+func (r *realCommitmentsService) Close() error {
+	return r.client.Close()
+}
+
+// realMachineTypesService wraps the real compute.MachineTypesClient
+type realMachineTypesService struct {
+	client *compute.MachineTypesClient
+}
+
+func (r *realMachineTypesService) List(ctx context.Context, req *computepb.ListMachineTypesRequest) MachineTypesIterator {
+	return r.client.List(ctx, req)
+}
+
+func (r *realMachineTypesService) Close() error {
+	return r.client.Close()
+}
+
+// realBillingService wraps the real cloudbilling.APIService
+type realBillingService struct {
+	service *cloudbilling.APIService
+}
+
+func (r *realBillingService) ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error) {
+	return r.service.Services.Skus.List(serviceID).Do()
+}
+
+// realRecommenderIterator wraps the real recommender iterator
+type realRecommenderIterator struct {
+	it *recommender.RecommendationIterator
+}
+
+func (r *realRecommenderIterator) Next() (*recommenderpb.Recommendation, error) {
+	return r.it.Next()
+}
+
+// realRecommenderClient wraps the real recommender client
+type realRecommenderClient struct {
+	client *recommender.Client
+}
+
+func (r *realRecommenderClient) ListRecommendations(ctx context.Context, req *recommenderpb.ListRecommendationsRequest) RecommenderIterator {
+	return &realRecommenderIterator{it: r.client.ListRecommendations(ctx, req)}
+}
+
+func (r *realRecommenderClient) Close() error {
+	return r.client.Close()
 }
 
 // GetServiceType returns the service type
@@ -48,13 +178,20 @@ func (c *ComputeEngineClient) GetRegion() string {
 
 // GetRecommendations gets CUD recommendations from GCP Recommender API
 func (c *ComputeEngineClient) GetRecommendations(ctx context.Context, params common.RecommendationParams) ([]common.Recommendation, error) {
-	client, err := recommender.NewClient(ctx, c.clientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create recommender client: %w", err)
-	}
-	defer client.Close()
-
 	recommendations := make([]common.Recommendation, 0)
+
+	// Use injected client if available (for testing)
+	var recClient RecommenderClient
+	if c.recommenderClient != nil {
+		recClient = c.recommenderClient
+	} else {
+		client, err := recommender.NewClient(ctx, c.clientOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create recommender client: %w", err)
+		}
+		recClient = &realRecommenderClient{client: client}
+	}
+	defer recClient.Close()
 
 	// Recommender name for Compute Engine CUD recommendations
 	parent := fmt.Sprintf("projects/%s/locations/%s/recommenders/google.compute.commitment.UsageCommitmentRecommender",
@@ -64,7 +201,7 @@ func (c *ComputeEngineClient) GetRecommendations(ctx context.Context, params com
 		Parent: parent,
 	}
 
-	it := client.ListRecommendations(ctx, req)
+	it := recClient.ListRecommendations(ctx, req)
 	for {
 		rec, err := it.Next()
 		if err == iterator.Done {
@@ -86,20 +223,27 @@ func (c *ComputeEngineClient) GetRecommendations(ctx context.Context, params com
 
 // GetExistingCommitments retrieves existing Compute Engine CUDs
 func (c *ComputeEngineClient) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
-	client, err := compute.NewRegionCommitmentsRESTClient(ctx, c.clientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create commitments client: %w", err)
-	}
-	defer client.Close()
-
 	commitments := make([]common.Commitment, 0)
+
+	// Use injected service if available (for testing)
+	var svc CommitmentsService
+	if c.commitmentsService != nil {
+		svc = c.commitmentsService
+	} else {
+		client, err := compute.NewRegionCommitmentsRESTClient(ctx, c.clientOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create commitments client: %w", err)
+		}
+		svc = &realCommitmentsService{client: client}
+	}
+	defer svc.Close()
 
 	req := &computepb.ListRegionCommitmentsRequest{
 		Project: c.projectID,
 		Region:  c.region,
 	}
 
-	it := client.List(ctx, req)
+	it := svc.List(ctx, req)
 	for {
 		commitment, err := it.Next()
 		if err == iterator.Done {
@@ -156,12 +300,19 @@ func (c *ComputeEngineClient) PurchaseCommitment(ctx context.Context, rec common
 		Timestamp:      time.Now(),
 	}
 
-	client, err := compute.NewRegionCommitmentsRESTClient(ctx, c.clientOpts...)
-	if err != nil {
-		result.Error = fmt.Errorf("failed to create commitments client: %w", err)
-		return result, result.Error
+	// Use injected service if available (for testing)
+	var svc CommitmentsService
+	if c.commitmentsService != nil {
+		svc = c.commitmentsService
+	} else {
+		client, err := compute.NewRegionCommitmentsRESTClient(ctx, c.clientOpts...)
+		if err != nil {
+			result.Error = fmt.Errorf("failed to create commitments client: %w", err)
+			return result, result.Error
+		}
+		svc = &realCommitmentsService{client: client}
 	}
-	defer client.Close()
+	defer svc.Close()
 
 	// Determine plan based on term
 	plan := "TWELVE_MONTH"
@@ -184,12 +335,12 @@ func (c *ComputeEngineClient) PurchaseCommitment(ctx context.Context, rec common
 	}
 
 	req := &computepb.InsertRegionCommitmentRequest{
-		Project:             c.projectID,
-		Region:              c.region,
-		CommitmentResource:  commitment,
+		Project:            c.projectID,
+		Region:             c.region,
+		CommitmentResource: commitment,
 	}
 
-	op, err := client.Insert(ctx, req)
+	op, err := svc.Insert(ctx, req)
 	if err != nil {
 		result.Error = fmt.Errorf("failed to create commitment: %w", err)
 		return result, result.Error
@@ -265,11 +416,18 @@ func (c *ComputeEngineClient) GetOfferingDetails(ctx context.Context, rec common
 
 // GetValidResourceTypes returns valid machine types from GCP Compute API
 func (c *ComputeEngineClient) GetValidResourceTypes(ctx context.Context) ([]string, error) {
-	client, err := compute.NewMachineTypesRESTClient(ctx, c.clientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create machine types client: %w", err)
+	// Use injected service if available (for testing)
+	var svc MachineTypesService
+	if c.machineTypesService != nil {
+		svc = c.machineTypesService
+	} else {
+		client, err := compute.NewMachineTypesRESTClient(ctx, c.clientOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create machine types client: %w", err)
+		}
+		svc = &realMachineTypesService{client: client}
 	}
-	defer client.Close()
+	defer svc.Close()
 
 	req := &computepb.ListMachineTypesRequest{
 		Project: c.projectID,
@@ -277,7 +435,7 @@ func (c *ComputeEngineClient) GetValidResourceTypes(ctx context.Context) ([]stri
 	}
 
 	machineTypes := make([]string, 0)
-	it := client.List(ctx, req)
+	it := svc.List(ctx, req)
 
 	for {
 		machineType, err := it.Next()
@@ -311,14 +469,20 @@ type ComputePricing struct {
 
 // getComputePricing gets pricing from GCP Cloud Billing Catalog API
 func (c *ComputeEngineClient) getComputePricing(ctx context.Context, machineType, region string, termYears int) (*ComputePricing, error) {
-	// Use Cloud Billing Catalog API to get pricing
-	service, err := cloudbilling.NewService(ctx, c.clientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create billing service: %w", err)
+	// Use injected service if available (for testing)
+	var svc BillingService
+	if c.billingService != nil {
+		svc = c.billingService
+	} else {
+		service, err := cloudbilling.NewService(ctx, c.clientOpts...)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create billing service: %w", err)
+		}
+		svc = &realBillingService{service: service}
 	}
 
 	// List SKUs for Compute Engine
-	skus, err := service.Services.Skus.List("services/6F81-5844-456A").Do()
+	skus, err := svc.ListSKUs("services/6F81-5844-456A")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list SKUs: %w", err)
 	}
