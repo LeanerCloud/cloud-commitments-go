@@ -171,6 +171,9 @@ type RecommendationParams struct {
 	AccountFilter  []string
 	IncludeRegions []string
 	ExcludeRegions []string
+	// Savings Plans specific filters
+	IncludeSPTypes []string // Compute, EC2Instance, SageMaker, Database
+	ExcludeSPTypes []string
 }
 
 // Account represents a cloud account/subscription/project

@@ -409,10 +409,11 @@ func (c *Client) parseCostInformation(details *types.ReservationPurchaseRecommen
 
 // getSavingsPlansRecommendations fetches Savings Plans recommendations
 func (c *Client) getSavingsPlansRecommendations(ctx context.Context, params common.RecommendationParams) ([]common.Recommendation, error) {
-	planTypes := []types.SupportedSavingsPlansType{
-		types.SupportedSavingsPlansTypeComputeSp,
-		types.SupportedSavingsPlansTypeEc2InstanceSp,
-		types.SupportedSavingsPlansTypeSagemakerSp,
+	// Build list of plan types to query based on filters
+	planTypes := c.getFilteredPlanTypes(params.IncludeSPTypes, params.ExcludeSPTypes)
+
+	if len(planTypes) == 0 {
+		return []common.Recommendation{}, nil
 	}
 
 	var allRecommendations []common.Recommendation
@@ -502,6 +503,8 @@ func (c *Client) parseSavingsPlanDetail(
 		planTypeStr = "EC2Instance"
 	case types.SupportedSavingsPlansTypeSagemakerSp:
 		planTypeStr = "SageMaker"
+	case types.SupportedSavingsPlansTypeDatabaseSp:
+		planTypeStr = "Database"
 	}
 
 	accountID := ""
@@ -593,6 +596,49 @@ func convertSavingsPlansTermInYears(term string) types.TermInYears {
 
 func convertSavingsPlansLookbackPeriod(period string) types.LookbackPeriodInDays {
 	return convertLookbackPeriod(period)
+}
+
+// getFilteredPlanTypes returns the list of Savings Plan types to query based on include/exclude filters
+func (c *Client) getFilteredPlanTypes(includeSPTypes, excludeSPTypes []string) []types.SupportedSavingsPlansType {
+	// All available plan types
+	allPlanTypes := map[string]types.SupportedSavingsPlansType{
+		"compute":     types.SupportedSavingsPlansTypeComputeSp,
+		"ec2instance": types.SupportedSavingsPlansTypeEc2InstanceSp,
+		"sagemaker":   types.SupportedSavingsPlansTypeSagemakerSp,
+		"database":    types.SupportedSavingsPlansTypeDatabaseSp,
+	}
+
+	// Normalize filter values to lowercase
+	normalizeFilters := func(filters []string) map[string]bool {
+		result := make(map[string]bool)
+		for _, f := range filters {
+			result[strings.ToLower(f)] = true
+		}
+		return result
+	}
+
+	includeMap := normalizeFilters(includeSPTypes)
+	excludeMap := normalizeFilters(excludeSPTypes)
+
+	var result []types.SupportedSavingsPlansType
+
+	// If include list is specified, only include those types
+	if len(includeMap) > 0 {
+		for name, planType := range allPlanTypes {
+			if includeMap[name] && !excludeMap[name] {
+				result = append(result, planType)
+			}
+		}
+	} else {
+		// Include all types except those in the exclude list
+		for name, planType := range allPlanTypes {
+			if !excludeMap[name] {
+				result = append(result, planType)
+			}
+		}
+	}
+
+	return result
 }
 
 func normalizeRegionName(region string) string {

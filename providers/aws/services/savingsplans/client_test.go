@@ -204,6 +204,7 @@ func TestClient_GetValidResourceTypes(t *testing.T) {
 	assert.Contains(t, result, "Compute")
 	assert.Contains(t, result, "EC2Instance")
 	assert.Contains(t, result, "SageMaker")
+	assert.Contains(t, result, "Database")
 }
 
 func TestClient_ValidateOffering(t *testing.T) {
@@ -600,6 +601,7 @@ func TestClient_FindOfferingID_AllPlanTypes(t *testing.T) {
 		{"EC2Instance plan type", "EC2Instance", false},
 		{"SageMaker plan type", "SageMaker", false},
 		{"Sagemaker lowercase", "Sagemaker", false},
+		{"Database plan type", "Database", false},
 		{"Unknown plan type", "Unknown", true},
 	}
 

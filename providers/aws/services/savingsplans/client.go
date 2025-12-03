@@ -166,6 +166,8 @@ func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation) 
 		planType = types.SavingsPlanTypeEc2Instance
 	case "SageMaker", "Sagemaker":
 		planType = types.SavingsPlanTypeSagemaker
+	case "Database":
+		planType = types.SavingsPlanTypeDatabase
 	default:
 		return "", fmt.Errorf("unsupported Savings Plan type: %s", spDetails.PlanType)
 	}
@@ -279,5 +281,6 @@ func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 		"Compute",
 		"EC2Instance",
 		"SageMaker",
+		"Database",
 	}, nil
 }
