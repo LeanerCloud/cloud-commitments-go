@@ -219,7 +219,7 @@ func TestClient_ValidateOffering(t *testing.T) {
 		ResourceType:  "Compute",
 		PaymentOption: "all-upfront",
 		Term:          "1yr",
-		Details: common.SavingsPlanDetails{
+		Details: &common.SavingsPlanDetails{
 			PlanType:         "Compute",
 			HourlyCommitment: 10.0,
 		},
@@ -268,7 +268,7 @@ func TestClient_PurchaseCommitment(t *testing.T) {
 		Count:         1,
 		PaymentOption: "all-upfront",
 		Term:          "1yr",
-		Details: common.SavingsPlanDetails{
+		Details: &common.SavingsPlanDetails{
 			PlanType:         "Compute",
 			HourlyCommitment: 10.0,
 		},
@@ -325,7 +325,7 @@ func TestClient_PurchaseCommitment_OfferingNotFound(t *testing.T) {
 		Service:       common.ServiceSavingsPlans,
 		PaymentOption: "all-upfront",
 		Term:          "1yr",
-		Details: common.SavingsPlanDetails{
+		Details: &common.SavingsPlanDetails{
 			PlanType:         "Compute",
 			HourlyCommitment: 10.0,
 		},
@@ -355,7 +355,7 @@ func TestClient_PurchaseCommitment_CreateFails(t *testing.T) {
 		Service:       common.ServiceSavingsPlans,
 		PaymentOption: "all-upfront",
 		Term:          "1yr",
-		Details: common.SavingsPlanDetails{
+		Details: &common.SavingsPlanDetails{
 			PlanType:         "Compute",
 			HourlyCommitment: 10.0,
 		},
@@ -390,7 +390,7 @@ func TestClient_PurchaseCommitment_EmptyResponse(t *testing.T) {
 		Service:       common.ServiceSavingsPlans,
 		PaymentOption: "all-upfront",
 		Term:          "1yr",
-		Details: common.SavingsPlanDetails{
+		Details: &common.SavingsPlanDetails{
 			PlanType:         "Compute",
 			HourlyCommitment: 10.0,
 		},
@@ -428,7 +428,7 @@ func TestClient_GetOfferingDetails(t *testing.T) {
 		ResourceType:  "Compute",
 		PaymentOption: "all-upfront",
 		Term:          "1yr",
-		Details: common.SavingsPlanDetails{
+		Details: &common.SavingsPlanDetails{
 			PlanType:         "Compute",
 			HourlyCommitment: 10.0,
 		},
@@ -469,7 +469,7 @@ func TestClient_GetOfferingDetails_3YearTerm(t *testing.T) {
 		ResourceType:  "EC2Instance",
 		PaymentOption: "partial-upfront",
 		Term:          "3yr",
-		Details: common.SavingsPlanDetails{
+		Details: &common.SavingsPlanDetails{
 			PlanType:         "EC2Instance",
 			HourlyCommitment: 5.0,
 		},
@@ -509,7 +509,7 @@ func TestClient_GetOfferingDetails_NoUpfront(t *testing.T) {
 		ResourceType:  "Compute",
 		PaymentOption: "no-upfront",
 		Term:          "1yr",
-		Details: common.SavingsPlanDetails{
+		Details: &common.SavingsPlanDetails{
 			PlanType:         "Compute",
 			HourlyCommitment: 10.0,
 		},
@@ -567,7 +567,7 @@ func TestClient_GetOfferingDetails_RatesError(t *testing.T) {
 		Service:       common.ServiceSavingsPlans,
 		PaymentOption: "all-upfront",
 		Term:          "1yr",
-		Details: common.SavingsPlanDetails{
+		Details: &common.SavingsPlanDetails{
 			PlanType:         "Compute",
 			HourlyCommitment: 10.0,
 		},
@@ -617,7 +617,7 @@ func TestClient_FindOfferingID_AllPlanTypes(t *testing.T) {
 				Service:       common.ServiceSavingsPlans,
 				PaymentOption: "all-upfront",
 				Term:          "1yr",
-				Details: common.SavingsPlanDetails{
+				Details: &common.SavingsPlanDetails{
 					PlanType:         tt.planType,
 					HourlyCommitment: 10.0,
 				},
@@ -671,7 +671,7 @@ func TestClient_FindOfferingID_AllPaymentOptions(t *testing.T) {
 				Service:       common.ServiceSavingsPlans,
 				PaymentOption: tt.paymentOption,
 				Term:          "1yr",
-				Details: common.SavingsPlanDetails{
+				Details: &common.SavingsPlanDetails{
 					PlanType:         "Compute",
 					HourlyCommitment: 10.0,
 				},
@@ -714,7 +714,7 @@ func TestClient_FindOfferingID_TermVariations(t *testing.T) {
 				Service:       common.ServiceSavingsPlans,
 				PaymentOption: "all-upfront",
 				Term:          tt.term,
-				Details: common.SavingsPlanDetails{
+				Details: &common.SavingsPlanDetails{
 					PlanType:         "Compute",
 					HourlyCommitment: 10.0,
 				},
@@ -745,7 +745,7 @@ func TestClient_FindOfferingID_APIError(t *testing.T) {
 		Service:       common.ServiceSavingsPlans,
 		PaymentOption: "all-upfront",
 		Term:          "1yr",
-		Details: common.SavingsPlanDetails{
+		Details: &common.SavingsPlanDetails{
 			PlanType:         "Compute",
 			HourlyCommitment: 10.0,
 		},

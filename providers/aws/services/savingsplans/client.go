@@ -114,7 +114,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		Timestamp:      time.Now(),
 	}
 
-	spDetails, ok := rec.Details.(common.SavingsPlanDetails)
+	spDetails, ok := rec.Details.(*common.SavingsPlanDetails)
 	if !ok {
 		result.Error = fmt.Errorf("invalid service details for Savings Plans")
 		return result, result.Error
@@ -152,7 +152,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 
 // findOfferingID finds the appropriate Savings Plans offering ID
 func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation) (string, error) {
-	spDetails, ok := rec.Details.(common.SavingsPlanDetails)
+	spDetails, ok := rec.Details.(*common.SavingsPlanDetails)
 	if !ok {
 		return "", fmt.Errorf("invalid service details for Savings Plans")
 	}
@@ -220,7 +220,7 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 		return nil, err
 	}
 
-	spDetails, ok := rec.Details.(common.SavingsPlanDetails)
+	spDetails, ok := rec.Details.(*common.SavingsPlanDetails)
 	if !ok {
 		return nil, fmt.Errorf("invalid service details for Savings Plans")
 	}
