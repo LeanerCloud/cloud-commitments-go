@@ -127,8 +127,8 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		return result, result.Error
 	}
 
-	// Generate reservation ID
-	reservationID := fmt.Sprintf("rds-%s-%d", rec.ResourceType, time.Now().Unix())
+	// Generate reservation ID (letters, digits, hyphens only; no leading/trailing/double hyphen)
+	reservationID := c.sanitizeReservedDBInstanceID(fmt.Sprintf("rds-%s-%d", rec.ResourceType, time.Now().Unix()))
 
 	// Create the purchase request
 	input := &rds.PurchaseReservedDBInstancesOfferingInput{
@@ -160,8 +160,8 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 
 // findOfferingID finds the appropriate RDS Reserved Instance offering ID
 func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation) (string, error) {
-	details, ok := rec.Details.(common.DatabaseDetails)
-	if !ok {
+	details, ok := rec.Details.(*common.DatabaseDetails)
+	if !ok || details == nil {
 		return "", fmt.Errorf("invalid service details for RDS")
 	}
 
@@ -282,6 +282,30 @@ func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 
 	sort.Strings(instanceTypes)
 	return instanceTypes, nil
+}
+
+// sanitizeReservedDBInstanceID returns an ID valid for ReservedDBInstanceId:
+// only ASCII letters, digits, hyphens; no leading/trailing hyphen; no consecutive hyphens.
+func (c *Client) sanitizeReservedDBInstanceID(id string) string {
+	var b strings.Builder
+	for _, r := range id {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' {
+			b.WriteRune(r)
+		} else if r == '.' {
+			b.WriteRune('-')
+		}
+		// drop any other character
+	}
+	s := b.String()
+	// collapse consecutive hyphens
+	for strings.Contains(s, "--") {
+		s = strings.ReplaceAll(s, "--", "-")
+	}
+	s = strings.Trim(s, "-")
+	if s == "" {
+		s = "rds-reserved-" + strconv.FormatInt(time.Now().Unix(), 10)
+	}
+	return s
 }
 
 // getDurationString converts term string to duration string for RDS API
