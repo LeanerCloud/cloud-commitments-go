@@ -4,8 +4,6 @@ package opensearch
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -120,7 +118,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		return result, result.Error
 	}
 
-	reservationID := c.sanitizeReservationName(fmt.Sprintf("opensearch-%s-%d", rec.ResourceType, time.Now().Unix()))
+	reservationID := common.SanitizeReservationID(fmt.Sprintf("opensearch-%s-%d", rec.ResourceType, time.Now().Unix()), "opensearch-reserved-")
 
 	input := &opensearch.PurchaseReservedInstanceOfferingInput{
 		ReservedInstanceOfferingId: aws.String(offeringID),
@@ -232,28 +230,6 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	}
 
 	return details, nil
-}
-
-// sanitizeReservationName normalizes the reservation name for OpenSearch:
-// letters, digits, and hyphens only, with no leading/trailing or consecutive hyphens.
-func (c *Client) sanitizeReservationName(name string) string {
-	var b strings.Builder
-	for _, r := range name {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' {
-			b.WriteRune(r)
-		} else if r == '.' {
-			b.WriteRune('-')
-		}
-	}
-	s := b.String()
-	for strings.Contains(s, "--") {
-		s = strings.ReplaceAll(s, "--", "-")
-	}
-	s = strings.Trim(s, "-")
-	if s == "" {
-		s = "opensearch-reserved-" + strconv.FormatInt(time.Now().Unix(), 10)
-	}
-	return s
 }
 
 // GetValidResourceTypes returns valid OpenSearch instance types (static list)
