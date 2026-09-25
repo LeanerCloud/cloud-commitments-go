@@ -230,8 +230,11 @@ func TestCosmosDBClient_GetOfferingDetails_WithMock(t *testing.T) {
 	mockHTTP := &MockHTTPClient{}
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
 
-	mockHTTP.On("Do", mock.Anything).Return(
-		createMockHTTPResponse(http.StatusOK, createSampleCosmosPricingResponse()),
+	response1 := createMockHTTPResponse(http.StatusOK, createSampleCosmosPricingResponse())
+	t.Cleanup(func() {
+		require.NoError(t, response1.Body.Close())
+	})
+	mockHTTP.On("Do", mock.Anything).Return(response1,
 		nil,
 	)
 
@@ -254,8 +257,11 @@ func TestCosmosDBClient_GetOfferingDetails_3YearTerm(t *testing.T) {
 	mockHTTP := &MockHTTPClient{}
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
 
-	mockHTTP.On("Do", mock.Anything).Return(
-		createMockHTTPResponse(http.StatusOK, createSampleCosmosPricingResponse()),
+	response2 := createMockHTTPResponse(http.StatusOK, createSampleCosmosPricingResponse())
+	t.Cleanup(func() {
+		require.NoError(t, response2.Body.Close())
+	})
+	mockHTTP.On("Do", mock.Anything).Return(response2,
 		nil,
 	)
 
@@ -277,8 +283,11 @@ func TestCosmosDBClient_GetOfferingDetails_NoUpfront(t *testing.T) {
 	mockHTTP := &MockHTTPClient{}
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
 
-	mockHTTP.On("Do", mock.Anything).Return(
-		createMockHTTPResponse(http.StatusOK, createSampleCosmosPricingResponse()),
+	response3 := createMockHTTPResponse(http.StatusOK, createSampleCosmosPricingResponse())
+	t.Cleanup(func() {
+		require.NoError(t, response3.Body.Close())
+	})
+	mockHTTP.On("Do", mock.Anything).Return(response3,
 		nil,
 	)
 
@@ -300,8 +309,11 @@ func TestCosmosDBClient_GetOfferingDetails_APIError(t *testing.T) {
 	mockHTTP := &MockHTTPClient{}
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
 
-	mockHTTP.On("Do", mock.Anything).Return(
-		createMockHTTPResponse(http.StatusInternalServerError, "Internal Server Error"),
+	response4 := createMockHTTPResponse(http.StatusInternalServerError, "Internal Server Error")
+	t.Cleanup(func() {
+		require.NoError(t, response4.Body.Close())
+	})
+	mockHTTP.On("Do", mock.Anything).Return(response4,
 		nil,
 	)
 
@@ -321,8 +333,11 @@ func TestCosmosDBClient_GetOfferingDetails_NoPricing(t *testing.T) {
 	mockHTTP := &MockHTTPClient{}
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
 
-	mockHTTP.On("Do", mock.Anything).Return(
-		createMockHTTPResponse(http.StatusOK, `{"Items": []}`),
+	response5 := createMockHTTPResponse(http.StatusOK, `{"Items": []}`)
+	t.Cleanup(func() {
+		require.NoError(t, response5.Body.Close())
+	})
+	mockHTTP.On("Do", mock.Anything).Return(response5,
 		nil,
 	)
 
@@ -362,7 +377,11 @@ func TestCosmosDBClient_GetOfferingDetails_NoReservationPricing(t *testing.T) {
 
 	mockHTTP := &MockHTTPClient{}
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
-	mockHTTP.On("Do", mock.Anything).Return(createMockHTTPResponse(http.StatusOK, onDemandOnly), nil)
+	response6 := createMockHTTPResponse(http.StatusOK, onDemandOnly)
+	t.Cleanup(func() {
+		require.NoError(t, response6.Body.Close())
+	})
+	mockHTTP.On("Do", mock.Anything).Return(response6, nil)
 
 	rec := common.Recommendation{
 		ResourceType:  "100RU",
@@ -816,12 +835,20 @@ func TestCosmosDBClient_PurchaseCommitment_Success(t *testing.T) {
 	mockCred := &MockTokenCredential{token: "test-token"}
 	client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
+	calculateResp7 := createMockHTTPResponse(http.StatusOK, calcPriceRespJSON("cosmos-order-001"))
+	t.Cleanup(func() {
+		require.NoError(t, calculateResp7.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/calculatePrice"
-	})).Return(createMockHTTPResponse(http.StatusOK, calcPriceRespJSON("cosmos-order-001")), nil).Once()
+	})).Return(calculateResp7, nil).Once()
+	purchaseResp8 := createMockHTTPResponse(http.StatusOK, `{}`)
+	t.Cleanup(func() {
+		require.NoError(t, purchaseResp8.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/cosmos-order-001/purchase"
-	})).Return(createMockHTTPResponse(http.StatusOK, `{}`), nil).Once()
+	})).Return(purchaseResp8, nil).Once()
 
 	rec := common.Recommendation{
 		ResourceType:   "EnableCassandra",
@@ -845,12 +872,20 @@ func TestCosmosDBClient_PurchaseCommitment_3YearTerm(t *testing.T) {
 	mockCred := &MockTokenCredential{token: "test-token"}
 	client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
+	calculateResp9 := createMockHTTPResponse(http.StatusOK, calcPriceRespJSON("cosmos-order-3yr"))
+	t.Cleanup(func() {
+		require.NoError(t, calculateResp9.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/calculatePrice"
-	})).Return(createMockHTTPResponse(http.StatusOK, calcPriceRespJSON("cosmos-order-3yr")), nil).Once()
+	})).Return(calculateResp9, nil).Once()
+	purchaseResp10 := createMockHTTPResponse(http.StatusCreated, `{}`)
+	t.Cleanup(func() {
+		require.NoError(t, purchaseResp10.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/cosmos-order-3yr/purchase"
-	})).Return(createMockHTTPResponse(http.StatusCreated, `{}`), nil).Once()
+	})).Return(purchaseResp10, nil).Once()
 
 	rec := common.Recommendation{
 		ResourceType:   "EnableCassandra",
@@ -873,12 +908,20 @@ func TestCosmosDBClient_PurchaseCommitment_Accepted(t *testing.T) {
 	mockCred := &MockTokenCredential{token: "test-token"}
 	client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
+	calculateResp11 := createMockHTTPResponse(http.StatusOK, calcPriceRespJSON("cosmos-order-202"))
+	t.Cleanup(func() {
+		require.NoError(t, calculateResp11.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/calculatePrice"
-	})).Return(createMockHTTPResponse(http.StatusOK, calcPriceRespJSON("cosmos-order-202")), nil).Once()
+	})).Return(calculateResp11, nil).Once()
+	purchaseResp12 := createMockHTTPResponse(http.StatusAccepted, `{}`)
+	t.Cleanup(func() {
+		require.NoError(t, purchaseResp12.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/cosmos-order-202/purchase"
-	})).Return(createMockHTTPResponse(http.StatusAccepted, `{}`), nil).Once()
+	})).Return(purchaseResp12, nil).Once()
 
 	rec := common.Recommendation{
 		ResourceType:   "EnableCassandra",
@@ -942,12 +985,20 @@ func TestCosmosDBClient_PurchaseCommitment_BadStatus(t *testing.T) {
 	mockCred := &MockTokenCredential{token: "test-token"}
 	client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
+	calculateResp13 := createMockHTTPResponse(http.StatusOK, calcPriceRespJSON("cosmos-order-bad"))
+	t.Cleanup(func() {
+		require.NoError(t, calculateResp13.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/calculatePrice"
-	})).Return(createMockHTTPResponse(http.StatusOK, calcPriceRespJSON("cosmos-order-bad")), nil).Once()
+	})).Return(calculateResp13, nil).Once()
+	purchaseResp14 := createMockHTTPResponse(http.StatusBadRequest, `{"error": "invalid request"}`)
+	t.Cleanup(func() {
+		require.NoError(t, purchaseResp14.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/cosmos-order-bad/purchase"
-	})).Return(createMockHTTPResponse(http.StatusBadRequest, `{"error": "invalid request"}`), nil).Once()
+	})).Return(purchaseResp14, nil).Once()
 
 	rec := common.Recommendation{
 		ResourceType:  "EnableCassandra",
@@ -979,6 +1030,10 @@ func TestCosmosDBClient_PurchaseCommitment_TagInjection(t *testing.T) {
 	client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
 	var capturedBody []byte
+	calculateResp15 := createMockHTTPResponse(http.StatusOK, calcPriceRespJSON(orderID))
+	t.Cleanup(func() {
+		require.NoError(t, calculateResp15.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		if r.URL.Path != "/providers/Microsoft.Capacity/calculatePrice" {
 			return false
@@ -986,10 +1041,14 @@ func TestCosmosDBClient_PurchaseCommitment_TagInjection(t *testing.T) {
 		capturedBody, _ = io.ReadAll(r.Body)
 		r.Body = io.NopCloser(bytes.NewReader(capturedBody))
 		return true
-	})).Return(createMockHTTPResponse(http.StatusOK, calcPriceRespJSON(orderID)), nil).Once()
+	})).Return(calculateResp15, nil).Once()
+	purchaseResp16 := createMockHTTPResponse(http.StatusOK, `{}`)
+	t.Cleanup(func() {
+		require.NoError(t, purchaseResp16.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/"+orderID+"/purchase"
-	})).Return(createMockHTTPResponse(http.StatusOK, `{}`), nil).Once()
+	})).Return(purchaseResp16, nil).Once()
 
 	rec := common.Recommendation{ResourceType: "EnableCassandra", Term: "1yr", Count: 1, CommitmentCost: 4000.0, PaymentOption: "no-upfront"}
 	result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{Source: source})
@@ -1043,6 +1102,10 @@ func TestCosmosDBClient_PurchaseCommitment_BillingPlan(t *testing.T) {
 
 			const orderID = "cosmos-billingplan-test"
 			var capturedBody []byte
+			calculateResp17 := createMockHTTPResponse(http.StatusOK, calcPriceRespJSON(orderID))
+			t.Cleanup(func() {
+				require.NoError(t, calculateResp17.Body.Close())
+			})
 			mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 				if r.URL.Path != "/providers/Microsoft.Capacity/calculatePrice" {
 					return false
@@ -1050,10 +1113,14 @@ func TestCosmosDBClient_PurchaseCommitment_BillingPlan(t *testing.T) {
 				capturedBody, _ = io.ReadAll(r.Body)
 				r.Body = io.NopCloser(bytes.NewReader(capturedBody))
 				return true
-			})).Return(createMockHTTPResponse(http.StatusOK, calcPriceRespJSON(orderID)), nil).Once()
+			})).Return(calculateResp17, nil).Once()
+			purchaseResp18 := createMockHTTPResponse(http.StatusOK, `{}`)
+			t.Cleanup(func() {
+				require.NoError(t, purchaseResp18.Body.Close())
+			})
 			mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 				return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/"+orderID+"/purchase"
-			})).Return(createMockHTTPResponse(http.StatusOK, `{}`), nil).Once()
+			})).Return(purchaseResp18, nil).Once()
 
 			result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
 			require.NoError(t, err)
@@ -1349,6 +1416,10 @@ func TestCosmosDBClient_PurchaseCommitment_DisplayNameConformsToAzureAllowlist(t
 
 	const orderID = "azure-cosmos-displayname"
 	var capturedDisplayName string
+	calculateResp19 := createMockHTTPResponse(http.StatusOK, calcPriceRespJSON(orderID))
+	t.Cleanup(func() {
+		require.NoError(t, calculateResp19.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		if r.Method != http.MethodPost || r.URL.Path != "/providers/Microsoft.Capacity/calculatePrice" {
 			return false
@@ -1367,11 +1438,15 @@ func TestCosmosDBClient_PurchaseCommitment_DisplayNameConformsToAzureAllowlist(t
 			}
 		}
 		return true
-	})).Return(createMockHTTPResponse(http.StatusOK, calcPriceRespJSON(orderID)), nil).Once()
+	})).Return(calculateResp19, nil).Once()
+	purchaseResp20 := createMockHTTPResponse(http.StatusOK, `{}`)
+	t.Cleanup(func() {
+		require.NoError(t, purchaseResp20.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.Method == http.MethodPost &&
 			r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/"+orderID+"/purchase"
-	})).Return(createMockHTTPResponse(http.StatusOK, `{}`), nil).Once()
+	})).Return(purchaseResp20, nil).Once()
 
 	rec := common.Recommendation{
 		ResourceType:   "EnableCassandra",

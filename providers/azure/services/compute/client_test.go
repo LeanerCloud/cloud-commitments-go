@@ -418,8 +418,11 @@ func TestComputeClient_GetOfferingDetails_WithMock(t *testing.T) {
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
 
 	// Setup mock HTTP response
-	mockHTTP.On("Do", mock.Anything).Return(
-		mocks.CreateMockHTTPResponse(http.StatusOK, mocks.CreateSampleVMPricingResponse()),
+	response1 := mocks.CreateMockHTTPResponse(http.StatusOK, mocks.CreateSampleVMPricingResponse())
+	t.Cleanup(func() {
+		require.NoError(t, response1.Body.Close())
+	})
+	mockHTTP.On("Do", mock.Anything).Return(response1,
 		nil,
 	)
 
@@ -444,8 +447,11 @@ func TestComputeClient_GetOfferingDetails_3YearTerm(t *testing.T) {
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
 
 	// Setup mock HTTP response
-	mockHTTP.On("Do", mock.Anything).Return(
-		mocks.CreateMockHTTPResponse(http.StatusOK, mocks.CreateSampleVMPricingResponse()),
+	response2 := mocks.CreateMockHTTPResponse(http.StatusOK, mocks.CreateSampleVMPricingResponse())
+	t.Cleanup(func() {
+		require.NoError(t, response2.Body.Close())
+	})
+	mockHTTP.On("Do", mock.Anything).Return(response2,
 		nil,
 	)
 
@@ -469,8 +475,11 @@ func TestComputeClient_GetOfferingDetails_APIError(t *testing.T) {
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
 
 	// Setup mock HTTP response with error status
-	mockHTTP.On("Do", mock.Anything).Return(
-		mocks.CreateMockHTTPResponse(http.StatusInternalServerError, "Internal Server Error"),
+	response3 := mocks.CreateMockHTTPResponse(http.StatusInternalServerError, "Internal Server Error")
+	t.Cleanup(func() {
+		require.NoError(t, response3.Body.Close())
+	})
+	mockHTTP.On("Do", mock.Anything).Return(response3,
 		nil,
 	)
 
@@ -492,8 +501,11 @@ func TestComputeClient_GetOfferingDetails_NoPricing(t *testing.T) {
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
 
 	// Setup mock HTTP response with empty items
-	mockHTTP.On("Do", mock.Anything).Return(
-		mocks.CreateMockHTTPResponse(http.StatusOK, `{"Items": []}`),
+	response4 := mocks.CreateMockHTTPResponse(http.StatusOK, `{"Items": []}`)
+	t.Cleanup(func() {
+		require.NoError(t, response4.Body.Close())
+	})
+	mockHTTP.On("Do", mock.Anything).Return(response4,
 		nil,
 	)
 
@@ -519,8 +531,11 @@ func TestComputeClient_GetOfferingDetails_UnsupportedPaymentOption(t *testing.T)
 
 	mockHTTP := &mocks.MockHTTPClient{}
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
-	mockHTTP.On("Do", mock.Anything).Return(
-		mocks.CreateMockHTTPResponse(http.StatusOK, mocks.CreateSampleVMPricingResponse()),
+	response5 := mocks.CreateMockHTTPResponse(http.StatusOK, mocks.CreateSampleVMPricingResponse())
+	t.Cleanup(func() {
+		require.NoError(t, response5.Body.Close())
+	})
+	mockHTTP.On("Do", mock.Anything).Return(response5,
 		nil,
 	)
 
@@ -560,9 +575,11 @@ func TestComputeClient_GetOfferingDetails_NoReservationPricing(t *testing.T) {
 
 	mockHTTP := &mocks.MockHTTPClient{}
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
-	mockHTTP.On("Do", mock.Anything).Return(
-		mocks.CreateMockHTTPResponse(http.StatusOK, onDemandOnly), nil,
-	)
+	response6 := mocks.CreateMockHTTPResponse(http.StatusOK, onDemandOnly)
+	t.Cleanup(func() {
+		require.NoError(t, response6.Body.Close())
+	})
+	mockHTTP.On("Do", mock.Anything).Return(response6, nil)
 
 	rec := common.Recommendation{
 		ResourceType:  "Standard_D2s_v3",
@@ -605,13 +622,17 @@ const capacityProviderRegistered = `{"registrationState":"Registered"}`
 
 // mockCapacityProviderCheck adds a mock expectation for the capacity provider
 // registration GET request made by ensureCapacityProviderRegistered.
-func mockCapacityProviderCheck(m *mocks.MockHTTPClient) {
+func mockCapacityProviderCheck(t *testing.T, m *mocks.MockHTTPClient) {
+	capacityResp24 := mocks.CreateMockHTTPResponse(http.StatusOK, capacityProviderRegistered)
+	t.Cleanup(func() {
+		require.NoError(t, capacityResp24.Body.Close())
+	})
 	m.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.Method == http.MethodGet &&
 			strings.Contains(r.URL.Path, "providers/Microsoft.Capacity") &&
 			!strings.Contains(r.URL.Path, "calculatePrice") &&
 			!strings.Contains(r.URL.Path, "reservationOrders")
-	})).Return(mocks.CreateMockHTTPResponse(http.StatusOK, capacityProviderRegistered), nil).Once()
+	})).Return(capacityResp24, nil).Once()
 }
 
 func TestComputeClient_PurchaseCommitment_Success(t *testing.T) {
@@ -620,15 +641,23 @@ func TestComputeClient_PurchaseCommitment_Success(t *testing.T) {
 	mockCred := &MockTokenCredential{token: "test-token"}
 	client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
-	mockCapacityProviderCheck(mockHTTP)
+	mockCapacityProviderCheck(t, mockHTTP)
 	// Step 1: calculatePrice returns a reservationOrderId.
+	calculateResp7 := mocks.CreateMockHTTPResponse(http.StatusOK, calcPriceRespJSON("order-vm-001"))
+	t.Cleanup(func() {
+		require.NoError(t, calculateResp7.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/calculatePrice"
-	})).Return(mocks.CreateMockHTTPResponse(http.StatusOK, calcPriceRespJSON("order-vm-001")), nil).Once()
+	})).Return(calculateResp7, nil).Once()
 	// Step 2: purchase with the Azure-minted order ID.
+	purchaseResp8 := mocks.CreateMockHTTPResponse(http.StatusOK, `{"id": "order-vm-001"}`)
+	t.Cleanup(func() {
+		require.NoError(t, purchaseResp8.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/order-vm-001/purchase"
-	})).Return(mocks.CreateMockHTTPResponse(http.StatusOK, `{"id": "order-vm-001"}`), nil).Once()
+	})).Return(purchaseResp8, nil).Once()
 
 	rec := common.Recommendation{
 		ResourceType:   "Standard_D2s_v3",
@@ -652,13 +681,21 @@ func TestComputeClient_PurchaseCommitment_3YearTerm(t *testing.T) {
 	mockCred := &MockTokenCredential{token: "test-token"}
 	client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
-	mockCapacityProviderCheck(mockHTTP)
+	mockCapacityProviderCheck(t, mockHTTP)
+	calculateResp9 := mocks.CreateMockHTTPResponse(http.StatusOK, calcPriceRespJSON("order-vm-3yr"))
+	t.Cleanup(func() {
+		require.NoError(t, calculateResp9.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/calculatePrice"
-	})).Return(mocks.CreateMockHTTPResponse(http.StatusOK, calcPriceRespJSON("order-vm-3yr")), nil).Once()
+	})).Return(calculateResp9, nil).Once()
+	purchaseResp10 := mocks.CreateMockHTTPResponse(http.StatusCreated, `{}`)
+	t.Cleanup(func() {
+		require.NoError(t, purchaseResp10.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/order-vm-3yr/purchase"
-	})).Return(mocks.CreateMockHTTPResponse(http.StatusCreated, `{}`), nil).Once()
+	})).Return(purchaseResp10, nil).Once()
 
 	rec := common.Recommendation{
 		ResourceType:   "Standard_D2s_v3",
@@ -681,13 +718,21 @@ func TestComputeClient_PurchaseCommitment_Accepted(t *testing.T) {
 	mockCred := &MockTokenCredential{token: "test-token"}
 	client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
-	mockCapacityProviderCheck(mockHTTP)
+	mockCapacityProviderCheck(t, mockHTTP)
+	calculateResp11 := mocks.CreateMockHTTPResponse(http.StatusOK, calcPriceRespJSON("order-vm-202"))
+	t.Cleanup(func() {
+		require.NoError(t, calculateResp11.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/calculatePrice"
-	})).Return(mocks.CreateMockHTTPResponse(http.StatusOK, calcPriceRespJSON("order-vm-202")), nil).Once()
+	})).Return(calculateResp11, nil).Once()
+	purchaseResp12 := mocks.CreateMockHTTPResponse(http.StatusAccepted, `{}`)
+	t.Cleanup(func() {
+		require.NoError(t, purchaseResp12.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/order-vm-202/purchase"
-	})).Return(mocks.CreateMockHTTPResponse(http.StatusAccepted, `{}`), nil).Once()
+	})).Return(purchaseResp12, nil).Once()
 
 	rec := common.Recommendation{
 		ResourceType:   "Standard_D2s_v3",
@@ -728,7 +773,7 @@ func TestComputeClient_PurchaseCommitment_HTTPError(t *testing.T) {
 	mockCred := &MockTokenCredential{token: "test-token"}
 	client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
-	mockCapacityProviderCheck(mockHTTP)
+	mockCapacityProviderCheck(t, mockHTTP)
 	// Network error on the calculatePrice call.
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/calculatePrice"
@@ -753,15 +798,22 @@ func TestComputeClient_PurchaseCommitment_BadStatus(t *testing.T) {
 	mockCred := &MockTokenCredential{token: "test-token"}
 	client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
-	mockCapacityProviderCheck(mockHTTP)
+	mockCapacityProviderCheck(t, mockHTTP)
 	// calculatePrice returns 200 with an order ID, but purchase returns 400.
+	calculateResp13 := mocks.CreateMockHTTPResponse(http.StatusOK, calcPriceRespJSON("order-bad"))
+	t.Cleanup(func() {
+		require.NoError(t, calculateResp13.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/calculatePrice"
-	})).Return(mocks.CreateMockHTTPResponse(http.StatusOK, calcPriceRespJSON("order-bad")), nil).Once()
+	})).Return(calculateResp13, nil).Once()
+	purchaseResp14 := mocks.CreateMockHTTPResponse(http.StatusBadRequest, `{"error":{"code":"InvalidScope","message":"invalid request"}}`)
+	t.Cleanup(func() {
+		require.NoError(t, purchaseResp14.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/order-bad/purchase"
-	})).Return(
-		mocks.CreateMockHTTPResponse(http.StatusBadRequest, `{"error":{"code":"InvalidScope","message":"invalid request"}}`),
+	})).Return(purchaseResp14,
 		nil,
 	).Once()
 
@@ -791,17 +843,25 @@ func TestComputeClient_PurchaseCommitment_TwoStepFlow(t *testing.T) {
 
 	const azureMintedOrderID = "azure-minted-order-677"
 
-	mockCapacityProviderCheck(mockHTTP)
+	mockCapacityProviderCheck(t, mockHTTP)
 	// Expect exactly one calculatePrice POST.
+	calculateResp15 := mocks.CreateMockHTTPResponse(http.StatusOK, calcPriceRespJSON(azureMintedOrderID))
+	t.Cleanup(func() {
+		require.NoError(t, calculateResp15.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/calculatePrice"
-	})).Return(mocks.CreateMockHTTPResponse(http.StatusOK, calcPriceRespJSON(azureMintedOrderID)), nil).Once()
+	})).Return(calculateResp15, nil).Once()
 
 	// Expect exactly one purchase POST to the Azure-minted order path.
+	purchaseResp16 := mocks.CreateMockHTTPResponse(http.StatusOK, `{}`)
+	t.Cleanup(func() {
+		require.NoError(t, purchaseResp16.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.Method == http.MethodPost &&
 			r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/"+azureMintedOrderID+"/purchase"
-	})).Return(mocks.CreateMockHTTPResponse(http.StatusOK, `{}`), nil).Once()
+	})).Return(purchaseResp16, nil).Once()
 
 	rec := common.Recommendation{
 		ResourceType:   "Standard_B2ats_v2", // The SKU that triggered issue #677.
@@ -832,24 +892,40 @@ func TestComputeClient_PurchaseCommitment_SessionTimeoutRetry(t *testing.T) {
 
 	sessionTimeoutBody := `{"error":{"code":"BadRequest","message":"Session timed out - Call CalculatePrice again and provide the new Reservation Order ID for purchase"}}`
 
-	mockCapacityProviderCheck(mockHTTP)
+	mockCapacityProviderCheck(t, mockHTTP)
 	// First calculatePrice: mints "order-first".
+	calculateResp17 := mocks.CreateMockHTTPResponse(http.StatusOK, calcPriceRespJSON("order-first"))
+	t.Cleanup(func() {
+		require.NoError(t, calculateResp17.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/calculatePrice"
-	})).Return(mocks.CreateMockHTTPResponse(http.StatusOK, calcPriceRespJSON("order-first")), nil).Once()
+	})).Return(calculateResp17, nil).Once()
 	// First purchase: session timeout.
+	purchaseResp18 := mocks.CreateMockHTTPResponse(http.StatusBadRequest, sessionTimeoutBody)
+	t.Cleanup(func() {
+		require.NoError(t, purchaseResp18.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/order-first/purchase"
-	})).Return(mocks.CreateMockHTTPResponse(http.StatusBadRequest, sessionTimeoutBody), nil).Once()
+	})).Return(purchaseResp18, nil).Once()
 
 	// Second calculatePrice: mints "order-second".
+	calculateResp19 := mocks.CreateMockHTTPResponse(http.StatusOK, calcPriceRespJSON("order-second"))
+	t.Cleanup(func() {
+		require.NoError(t, calculateResp19.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/calculatePrice"
-	})).Return(mocks.CreateMockHTTPResponse(http.StatusOK, calcPriceRespJSON("order-second")), nil).Once()
+	})).Return(calculateResp19, nil).Once()
 	// Second purchase: succeeds.
+	purchaseResp20 := mocks.CreateMockHTTPResponse(http.StatusOK, `{}`)
+	t.Cleanup(func() {
+		require.NoError(t, purchaseResp20.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/order-second/purchase"
-	})).Return(mocks.CreateMockHTTPResponse(http.StatusOK, `{}`), nil).Once()
+	})).Return(purchaseResp20, nil).Once()
 
 	rec := common.Recommendation{ResourceType: "Standard_B2ats_v2", Term: "1yr", Count: 1, PaymentOption: "no-upfront"}
 	result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
@@ -874,9 +950,13 @@ func TestComputeClient_PurchaseCommitment_TagInjection(t *testing.T) {
 	mockCred := &MockTokenCredential{token: "test-token"}
 	client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
-	mockCapacityProviderCheck(mockHTTP)
+	mockCapacityProviderCheck(t, mockHTTP)
 
 	var capturedBody []byte
+	calculateResp21 := mocks.CreateMockHTTPResponse(http.StatusOK, calcPriceRespJSON(orderID))
+	t.Cleanup(func() {
+		require.NoError(t, calculateResp21.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		if r.Method != http.MethodPost || r.URL.Path != "/providers/Microsoft.Capacity/calculatePrice" {
 			return false
@@ -884,11 +964,15 @@ func TestComputeClient_PurchaseCommitment_TagInjection(t *testing.T) {
 		capturedBody, _ = io.ReadAll(r.Body)
 		r.Body = io.NopCloser(bytes.NewReader(capturedBody))
 		return true
-	})).Return(mocks.CreateMockHTTPResponse(http.StatusOK, calcPriceRespJSON(orderID)), nil).Once()
+	})).Return(calculateResp21, nil).Once()
+	purchaseResp22 := mocks.CreateMockHTTPResponse(http.StatusOK, `{}`)
+	t.Cleanup(func() {
+		require.NoError(t, purchaseResp22.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.Method == http.MethodPost &&
 			r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/"+orderID+"/purchase"
-	})).Return(mocks.CreateMockHTTPResponse(http.StatusOK, `{}`), nil).Once()
+	})).Return(purchaseResp22, nil).Once()
 
 	rec := common.Recommendation{ResourceType: "Standard_D2s_v3", Term: "1yr", Count: 1, CommitmentCost: 2000.0, PaymentOption: "monthly"}
 	result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{Source: source})
@@ -1037,7 +1121,11 @@ func TestFetchAzurePricing_WrapperSmokeTest(t *testing.T) {
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
 
 	body := `{"Items":[{"armSkuName":"Standard_D2s_v3","reservationTerm":"1 Year","type":"Reservation","retailPrice":100.0,"unitPrice":100.0,"currencyCode":"USD"}],"NextPageLink":""}`
-	mockHTTP.On("Do", mock.Anything).Return(mocks.CreateMockHTTPResponse(http.StatusOK, body), nil).Once()
+	response23 := mocks.CreateMockHTTPResponse(http.StatusOK, body)
+	t.Cleanup(func() {
+		require.NoError(t, response23.Body.Close())
+	})
+	mockHTTP.On("Do", mock.Anything).Return(response23, nil).Once()
 
 	result, err := client.fetchAzurePricing(context.Background(), "anything")
 	require.NoError(t, err)
@@ -1363,10 +1451,14 @@ func TestComputeClient_PurchaseCommitment_DisplayNameConformsToAzureAllowlist(t 
 	mockCred := &MockTokenCredential{token: "test-token"}
 	client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
-	mockCapacityProviderCheck(mockHTTP)
+	mockCapacityProviderCheck(t, mockHTTP)
 
 	const orderID = "azure-vm-displayname"
 	var capturedDisplayName string
+	calculateResp24 := mocks.CreateMockHTTPResponse(http.StatusOK, calcPriceRespJSON(orderID))
+	t.Cleanup(func() {
+		require.NoError(t, calculateResp24.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		if r.Method != http.MethodPost || r.URL.Path != "/providers/Microsoft.Capacity/calculatePrice" {
 			return false
@@ -1385,11 +1477,15 @@ func TestComputeClient_PurchaseCommitment_DisplayNameConformsToAzureAllowlist(t 
 			}
 		}
 		return true
-	})).Return(mocks.CreateMockHTTPResponse(http.StatusOK, calcPriceRespJSON(orderID)), nil).Once()
+	})).Return(calculateResp24, nil).Once()
+	purchaseResp25 := mocks.CreateMockHTTPResponse(http.StatusOK, `{}`)
+	t.Cleanup(func() {
+		require.NoError(t, purchaseResp25.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.Method == http.MethodPost &&
 			r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/"+orderID+"/purchase"
-	})).Return(mocks.CreateMockHTTPResponse(http.StatusOK, `{}`), nil).Once()
+	})).Return(purchaseResp25, nil).Once()
 
 	rec := common.Recommendation{
 		ResourceType:   "Standard_D2s_v3",
@@ -1421,12 +1517,16 @@ func TestCheckAndRegisterCapacityProvider_NonTwoxx(t *testing.T) {
 	client := NewClientWithHTTP(cred, "sub", "eastus", mockHTTP)
 
 	// Return a 403 Forbidden instead of 200 Registered.
+	capacityResp26 := mocks.CreateMockHTTPResponse(http.StatusForbidden, `{"error":"AuthorizationFailed"}`)
+	t.Cleanup(func() {
+		require.NoError(t, capacityResp26.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.Method == http.MethodGet &&
 			strings.Contains(r.URL.Path, "providers/Microsoft.Capacity") &&
 			!strings.Contains(r.URL.Path, "reservationOrders") &&
 			!strings.Contains(r.URL.Path, "calculatePrice")
-	})).Return(mocks.CreateMockHTTPResponse(http.StatusForbidden, `{"error":"AuthorizationFailed"}`), nil).Once()
+	})).Return(capacityResp26, nil).Once()
 
 	err := client.checkAndRegisterCapacityProvider(ctx)
 	require.Error(t, err)
