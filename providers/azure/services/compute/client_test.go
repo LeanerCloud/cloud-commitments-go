@@ -521,7 +521,7 @@ func TestComputeClient_GetOfferingDetails_NoPricing(t *testing.T) {
 }
 
 // TestComputeClient_GetOfferingDetails_UnsupportedPaymentOption verifies that an
-// unrecognised payment option fails loud rather than being silently billed as
+// unrecognized payment option fails loud rather than being silently billed as
 // all-upfront (owner policy: no silent fallbacks on money-affecting fields).
 // Pricing is fully present, so the failure is solely on the payment-option
 // branch. Pre-fix the default branch set upfrontCost = totalCost and returned a
@@ -1113,7 +1113,7 @@ func TestComputeClient_ConvertAzureVMRecommendation_PopulatesAllFields(t *testin
 // wrapper around pricing.FetchAll — constructs the URL with filter +
 // api-version, passes the compute item type, and re-wraps the returned
 // slice in the service-local *AzureRetailPrice envelope. Exhaustive
-// pagination / self-referential / per-page-timeout behaviour lives in
+// pagination / self-referential / per-page-timeout behavior lives in
 // providers/azure/internal/pricing/retail_prices_test.go and is not
 // duplicated here.
 func TestFetchAzurePricing_WrapperSmokeTest(t *testing.T) {
@@ -1242,14 +1242,14 @@ func TestBuildReservationBody_IncludesIdempotencyTokenTag(t *testing.T) {
 	assert.Equal(t, token, tags[common.IdempotencyTagKey], "idempotency tag must be stamped when token is supplied")
 }
 
-// --- Issue #148: VCPU/MemoryGB enrichment via cached SKU catalogue ---
+// --- Issue #148: VCPU/MemoryGB enrichment via cached SKU catalog ---
 
 // vmSKUCatalogueMockPager is a multi-page-and-error-capable mock used
-// only by the issue-148 SKU-catalogue tests below. The shared
+// only by the issue-148 SKU-catalog tests below. The shared
 // mocks.MockResourceSKUsPager doesn't expose its page counter and
 // can't simulate a NextPage error — file-scoped here keeps the shared
 // mock surface untouched (matches the cosmosdb / cache test pattern
-// where each service defines its own catalogue mock).
+// where each service defines its own catalog mock).
 type vmSKUCatalogueMockPager struct {
 	pages    []armcompute.ResourceSKUsClientListResponse
 	index    int
@@ -1297,8 +1297,8 @@ func buildVMSKU(name, region string, vCPUs int, memoryGB string) *armcompute.Res
 }
 
 // TestComputeClient_ConvertAzureVMRecommendation_PopulatesVCPUAndMemoryFromSKUCache
-// asserts the cached SKU-catalogue lookup populates ComputeDetails.VCPU
-// and ComputeDetails.MemoryGB when the catalogue contains the SKU named
+// asserts the cached SKU-catalog lookup populates ComputeDetails.VCPU
+// and ComputeDetails.MemoryGB when the catalog contains the SKU named
 // in the recommendation. Pin for issue #148.
 func TestComputeClient_ConvertAzureVMRecommendation_PopulatesVCPUAndMemoryFromSKUCache(t *testing.T) {
 	client := NewClient(nil, "test-subscription", "eastus")
@@ -1331,7 +1331,7 @@ func TestComputeClient_ConvertAzureVMRecommendation_PopulatesVCPUAndMemoryFromSK
 }
 
 // TestComputeClient_ConvertAzureVMRecommendation_PagerErrorFallsBack
-// asserts that a SKU-catalogue fetch failure does NOT fail the
+// asserts that a SKU-catalog fetch failure does NOT fail the
 // conversion — VCPU/MemoryGB stay at 0 and the rest of Details is
 // populated from the recommendation payload. Graceful-degradation
 // contract from PR #81, now extended to compute.
@@ -1357,7 +1357,7 @@ func TestComputeClient_ConvertAzureVMRecommendation_PagerErrorFallsBack(t *testi
 }
 
 // TestComputeClient_ConvertAzureVMRecommendation_NoMatchLeavesFieldsZero
-// asserts that when the recommendation's SKU isn't in the catalogue
+// asserts that when the recommendation's SKU isn't in the catalog
 // (e.g. SKU listed for another region only), VCPU/MemoryGB stay at 0
 // and the conversion still produces a usable recommendation.
 func TestComputeClient_ConvertAzureVMRecommendation_NoMatchLeavesFieldsZero(t *testing.T) {
@@ -1377,7 +1377,7 @@ func TestComputeClient_ConvertAzureVMRecommendation_NoMatchLeavesFieldsZero(t *t
 
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithRegion("eastus"),
-		mocks.WithNormalizedSize("Standard_NC6s_v3"), // not in catalogue
+		mocks.WithNormalizedSize("Standard_NC6s_v3"), // not in catalog
 	)
 	out := client.convertAzureVMRecommendation(context.Background(), rec)
 	require.NotNil(t, out)
@@ -1391,7 +1391,7 @@ func TestComputeClient_ConvertAzureVMRecommendation_NoMatchLeavesFieldsZero(t *t
 // TestComputeClient_CachedSKULookup_FetchedOnce pins the perf
 // invariant from PR #81 (now also enforced for compute, per #148):
 // many converter calls in the same GetRecommendations run trigger
-// exactly ONE catalogue fetch.
+// exactly ONE catalog fetch.
 func TestComputeClient_CachedSKULookup_FetchedOnce(t *testing.T) {
 	client := NewClient(nil, "test-subscription", "eastus")
 	mockPager := &vmSKUCatalogueMockPager{
@@ -1414,8 +1414,8 @@ func TestComputeClient_CachedSKULookup_FetchedOnce(t *testing.T) {
 }
 
 // TestComputeClient_FetchSKUCatalogue_CancelledContextFallsBack asserts
-// that a cancelled context is terminal in the SKU catalogue pagination
-// loop — the catalogue returns nil and Details.VCPU/MemoryGB stay at 0,
+// that a canceled context is terminal in the SKU catalog pagination
+// loop — the catalog returns nil and Details.VCPU/MemoryGB stay at 0,
 // but the conversion itself succeeds (graceful-degradation contract).
 // Pins feedback_ctx_cancel_terminal.md for the compute SKU path.
 func TestComputeClient_FetchSKUCatalogue_CancelledContextFallsBack(t *testing.T) {
@@ -1534,7 +1534,7 @@ func TestCheckAndRegisterCapacityProvider_NonTwoxx(t *testing.T) {
 }
 
 // TestExtractVMPricing_SingularOneYear verifies that extractVMPricing correctly
-// recognises the "1 Year" singular form returned by the Azure Retail Prices API
+// recognizes the "1 Year" singular form returned by the Azure Retail Prices API
 // for 1-year reservation terms. Before the fix, the extractor used "%d Years"
 // unconditionally, so the 1-year reservation line was silently skipped and
 // reservationPrice remained 0, causing a false "no reservation pricing found"

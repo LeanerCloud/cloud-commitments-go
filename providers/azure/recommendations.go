@@ -97,7 +97,7 @@ func NewRecommendationsClientAdapter(cred azcore.TokenCredential, subscriptionID
 //
 // The Azure Consumption Reservation Recommendations API is subscription-scoped:
 // the response covers every region in one call. Iterating regions and calling each
-// service per region (the previous behaviour) produced ~60× duplicate results,
+// service per region (the previous behavior) produced ~60× duplicate results,
 // hammered the rate limit, and meant downstream consumers had to deduplicate.
 // We now call each service client exactly once. Region is intentionally left
 // blank on the client — converters must populate Region from the response data
@@ -263,7 +263,7 @@ type serviceResult struct {
 }
 
 // mergeServiceResults logs per-service errors (matches the previous sequential
-// behaviour where each error was logged inline via logging.Warnf) and appends
+// behavior where each error was logged inline via logging.Warnf) and appends
 // successful results in the order the slice is passed — callers must preserve
 // the canonical compute → database → cache → cosmosdb → savingsplans → advisor
 // order so that order-sensitive consumers remain stable. The advisor entry's
@@ -539,7 +539,7 @@ func serviceFromExtendedProperties(ext map[string]*string) string {
 // Advisor recommendation whose ID happens to carry a /locations/{region}/
 // segment (some reservation-scope resource IDs do).
 //
-// Returns "" when the ID has no recognisable region segment.
+// Returns "" when the ID has no recognizable region segment.
 func extractRegionFromResourceID(resourceID string) string {
 	// Case-insensitive scan for /locations/{region}/ — Azure is inconsistent
 	// between `locations`, `Locations`, `location`.

@@ -208,7 +208,7 @@ func TestNewAzureProvider_TokenCredentialInjection(t *testing.T) {
 		// The wrong-typed slot is now logged via logging.Warnf so mis-wirings
 		// surface in production logs rather than producing a confusing
 		// "ADC unavailable" error. We don't capture the log output here
-		// (the project has no log-capture harness); the behavioural assertion
+		// (the project has no log-capture harness); the behavioral assertion
 		// is unchanged: p.cred stays nil and NewAzureProvider doesn't error.
 		p, err := NewAzureProvider(&provider.ProviderConfig{
 			AzureSubscriptionID:  "sub-1",
@@ -1752,7 +1752,7 @@ func TestAzureProvider_GetRecommendationsClient_MultiSubscriptionFanOut(t *testi
 	})
 
 	// The happy path for the same branch: a target the principal CAN see is
-	// honoured, and scopes the client to exactly that subscription.
+	// honored, and scopes the client to exactly that subscription.
 	t.Run("AZURE_SUBSCRIPTION_ID matching a visible subscription is honoured", func(t *testing.T) {
 		t.Setenv("AZURE_SUBSCRIPTION_ID", "sub-1")
 		p := &AzureProvider{cred: &mockTokenCredential{}}

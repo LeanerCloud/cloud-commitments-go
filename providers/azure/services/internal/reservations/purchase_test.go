@@ -475,7 +475,7 @@ func TestFindReservationOrderByIdempotencyToken_NoMatch(t *testing.T) {
 }
 
 // TestFindReservationOrderByIdempotencyToken_SkipsTerminalFailed pins the
-// state filter: a cancelled/failed/expired order carrying the same idempotency
+// state filter: a canceled/failed/expired order carrying the same idempotency
 // tag MUST NOT short-circuit a legitimate fresh purchase. Mirrors the AWS EC2
 // findRIByIdempotencyToken filter (state in active|payment-pending).
 func TestFindReservationOrderByIdempotencyToken_SkipsTerminalFailed(t *testing.T) {
@@ -890,7 +890,7 @@ func TestDoIdempotentPurchaseTwoStep_PreservesTwoStepFlow(t *testing.T) {
 
 // TestParseTermYears verifies the canonical term parser (M4 regression:
 // before this fix, five service clients used a literal "3yr"||"3" check that
-// silently treated unrecognised terms as 1yr instead of returning an error).
+// silently treated unrecognized terms as 1yr instead of returning an error).
 func TestParseTermYears(t *testing.T) {
 	tests := []struct {
 		term    string
@@ -907,7 +907,7 @@ func TestParseTermYears(t *testing.T) {
 		{"1YR", 1, false},   // case-insensitive
 		{"3YR", 3, false},   // case-insensitive
 		{" 1yr ", 1, false}, // whitespace-tolerant
-		{"5yr", 0, true},    // unrecognised term must error (pre-fix: silently returned 1)
+		{"5yr", 0, true},    // unrecognized term must error (pre-fix: silently returned 1)
 		{"P1Y", 0, true},    // ISO 8601 form not supported by this parser
 		{"bogus", 0, true},
 	}

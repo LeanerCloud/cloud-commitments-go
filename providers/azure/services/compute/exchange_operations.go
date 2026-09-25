@@ -279,7 +279,7 @@ func isTerminalCtxErr(err error) bool {
 //
 // The Status check is not redundant with the Error check. Azure's contract
 // documents Error as "required if status == failed or status == canceled",
-// but a response that violates that contract (Failed/Cancelled with a nil
+// but a response that violates that contract (failed or canceled with a nil
 // Error) would otherwise yield a preview the execute handler immediately
 // commits. Status is only asserted when Azure populated it: an absent
 // status leaves the SessionID check as the guard, rather than inventing a
@@ -347,7 +347,7 @@ func (c *ComputeClient) ExecuteExchange(ctx context.Context, sessionID string) (
 // settled; PendingRefunds/PendingPurchases mean the swap was committed and
 // Azure is still settling one leg, which the caller surfaces as-is.
 //
-// Everything else -- Failed, Cancelled, and any status a future API version
+// Everything else -- failure, cancellation, and any status a future API version
 // adds that this SDK does not know -- is refused rather than reported as a
 // successful exchange. An unrecognized status after a commit attempt is
 // genuinely ambiguous, so the error tells the operator to check the portal

@@ -196,7 +196,7 @@ func TestCalculateExchange_EmptySessionIDError(t *testing.T) {
 }
 
 // TestCalculateExchange_NonSucceededStatusIsRefused pins the same invariant
-// on the quote side. A Failed/Cancelled quote that still carries a
+// on the quote side. A failed or canceled quote that still carries a
 // SessionID would otherwise be handed to executeAzureExchange, which
 // commits whatever session its fresh quote returned.
 func TestCalculateExchange_NonSucceededStatusIsRefused(t *testing.T) {

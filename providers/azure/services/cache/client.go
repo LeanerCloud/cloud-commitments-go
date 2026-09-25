@@ -35,7 +35,7 @@ const maxReservationsPages = 50
 // maxCachesPages caps Redis cache list pagination.
 const maxCachesPages = 20
 
-// redisSKUEntry holds the SKU-catalogue-derived fields the converter
+// redisSKUEntry holds the SKU-catalog-derived fields the converter
 // wants for each Redis SKU. Sourced from the cache's Properties:
 //   - shardCount: Properties.ShardCount (Premium-tier clustered caches).
 //
@@ -78,7 +78,7 @@ type CacheClient struct {
 	reservationsPager    ReservationsDetailsPager
 	redisCachesPager     RedisCachesPager
 
-	// Lazy SKU catalogue cache. armredis exposes no per-region "list all
+	// Lazy SKU catalog cache. armredis exposes no per-region "list all
 	// possible SKUs" surface, so we derive shard counts from the existing
 	// caches in the subscription (NewListBySubscriptionPager). Fetched
 	// ONCE per client lifetime; subsequent converter calls in the same
@@ -394,7 +394,7 @@ func (c *CacheClient) GetOfferingDetails(ctx context.Context, rec common.Recomme
 		upfrontCost = 0
 		recurringCost = totalCost / (float64(termYears) * 12)
 	default:
-		// Fail loud on an unrecognised payment option rather than silently
+		// Fail loud on an unrecognized payment option rather than silently
 		// billing it as all-upfront (owner policy: no silent fallbacks on
 		// money-affecting fields).
 		return nil, fmt.Errorf("unsupported payment option for Azure Cache for Redis offering details: %q", rec.PaymentOption)
@@ -620,8 +620,8 @@ func extractRedisPricing(items []pricing.RetailPriceItem, termYears int) (onDema
 // SDK-to-struct ladder. Returns nil when the SDK payload is unusable.
 //
 // Details populated by parsing the SKU string into Engine ("redis") and
-// NodeType, then enriched from the lazily-cached armredis catalogue
-// (cachedSKULookup). Shards is sourced from the catalogue when an
+// NodeType, then enriched from the lazily-cached armredis catalog
+// (cachedSKULookup). Shards is sourced from the catalog when an
 // existing cache in the subscription matches the recommendation's
 // Premium-tier SKU; otherwise stays 0 (zero means "unknown", not
 // "definitely zero shards" — see the redisSKUEntry godoc).
@@ -656,15 +656,15 @@ func (c *CacheClient) convertAzureRedisRecommendation(ctx context.Context, azure
 	}
 }
 
-// cachedSKULookup returns the SKU catalogue entry for skuName, fetching
-// the catalogue lazily on first call. The catalogue is fetched ONCE per
+// cachedSKULookup returns the SKU catalog entry for skuName, fetching
+// the catalog lazily on first call. The catalog is fetched ONCE per
 // client lifetime via armredis.Client.NewListBySubscriptionPager;
 // subsequent calls are O(1) map lookups. ok=false on cache miss OR
-// catalogue-fetch failure — the caller falls back to Shards=0 rather
+// catalog-fetch failure — the caller falls back to Shards=0 rather
 // than failing the whole conversion.
 //
 // Why source from existing caches: armredis exposes no "list all
-// possible SKUs" endpoint. The catalogue surface that does exist
+// possible SKUs" endpoint. The catalog surface that does exist
 // (existing cache instances in the subscription) gives us authoritative
 // shard counts for the SKUs the customer actually uses, which is the
 // set the recommendation engine recommends from anyway.

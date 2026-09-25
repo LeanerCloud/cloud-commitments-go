@@ -395,7 +395,7 @@ func (c *CosmosDBClient) GetOfferingDetails(ctx context.Context, rec common.Reco
 		upfrontCost = 0
 		recurringCost = totalCost / (float64(termYears) * 12)
 	default:
-		// Fail loud on an unrecognised payment option rather than silently
+		// Fail loud on an unrecognized payment option rather than silently
 		// billing it as all-upfront (owner policy: no silent fallbacks on
 		// money-affecting fields).
 		return nil, fmt.Errorf("unsupported payment option for Azure Cosmos DB offering details: %q", rec.PaymentOption)
@@ -664,7 +664,7 @@ func (c *CosmosDBClient) convertAzureCosmosRecommendation(ctx context.Context, a
 // via armcosmos.DatabaseAccountsClient.NewListPager — subsequent
 // converter calls in the same GetRecommendations run hit the cached
 // string. Failure is logged WARN once; the converter falls back to the
-// previous empty-APIType behaviour.
+// previous empty-APIType behavior.
 //
 // Why dominant-only: a Cosmos reservation SKU like "100RU" doesn't
 // reference an account, so we can't pick "the right" APIType per rec.

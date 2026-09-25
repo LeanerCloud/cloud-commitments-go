@@ -445,7 +445,7 @@ func TestCacheClient_GetExistingCommitments_Empty(t *testing.T) {
 
 	// Mock pager returns no pages — the empty-subscription case, distinct
 	// from the pager-error case below. Previously this test used a nil
-	// pager and relied on silent error-swallowing; that behaviour was
+	// pager and relied on silent error-swallowing; that behavior was
 	// unsafe and has been replaced with error propagation, so the test
 	// now uses an explicit empty mock.
 	client.SetReservationsPager(&MockReservationsDetailsPager{})
@@ -827,7 +827,7 @@ func TestCacheClient_ConvertAzureRedisRecommendation_NilGuards(t *testing.T) {
 
 // TestCacheClient_ConvertAzureRedisRecommendation_PopulatesAllFields asserts
 // the converter forwards every helper-extracted field + applies the
-// Cache-service-specific constants. An empty SKU catalogue (no caches in
+// Cache-service-specific constants. An empty SKU catalog (no caches in
 // the subscription) is the "no signal" baseline — Shards stays 0.
 func TestCacheClient_ConvertAzureRedisRecommendation_PopulatesAllFields(t *testing.T) {
 	client := NewClient(nil, "test-subscription", "eastus")
@@ -869,7 +869,7 @@ func TestCacheClient_ConvertAzureRedisRecommendation_PopulatesAllFields(t *testi
 }
 
 // TestCacheClient_ConvertAzureRedisRecommendation_PopulatesShardsFromSKUCache
-// asserts the new batched-SKU-catalogue lookup populates CacheDetails.Shards
+// asserts the new batched-SKU-catalog lookup populates CacheDetails.Shards
 // when the subscription has a Premium-tier clustered cache with the same
 // SKU as the recommendation. Single ListBySubscription call per client
 // lifetime feeds many converter calls; this test pins the contract.
@@ -919,7 +919,7 @@ func TestCacheClient_ConvertAzureRedisRecommendation_PopulatesShardsFromSKUCache
 }
 
 // TestCacheClient_ConvertAzureRedisRecommendation_PagerErrorFallsBack
-// asserts that a SKU-catalogue fetch failure does NOT fail the
+// asserts that a SKU-catalog fetch failure does NOT fail the
 // conversion — Shards just stays at 0 and the rest of Details is
 // populated from the recommendation payload as before. This is the
 // graceful-degradation contract the issue asks for.
@@ -946,7 +946,7 @@ func TestCacheClient_ConvertAzureRedisRecommendation_PagerErrorFallsBack(t *test
 
 // TestCacheClient_CachedSKULookup_FetchedOnce pins the perf invariant:
 // many converter calls in the same GetRecommendations run trigger
-// exactly ONE catalogue fetch. The mock pager counts pages served; the
+// exactly ONE catalog fetch. The mock pager counts pages served; the
 // assertion verifies the count stays at 1 after multiple lookups.
 func TestCacheClient_CachedSKULookup_FetchedOnce(t *testing.T) {
 	client := NewClient(nil, "test-subscription", "eastus")
@@ -1406,7 +1406,7 @@ func (p *infiniteRedisCachesPager) NextPage(_ context.Context) (armredis.ClientL
 }
 
 // TestCacheClient_GetValidResourceTypes_CtxCancelReturnsError asserts that a
-// cancelled context is treated as a hard stop and surfaces an error rather than
+// canceled context is treated as a hard stop and surfaces an error rather than
 // returning a silent partial result (feedback_ctx_cancel_terminal).
 func TestCacheClient_GetValidResourceTypes_CtxCancelReturnsError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1435,7 +1435,7 @@ func TestCacheClient_GetValidResourceTypes_PageCapFires(t *testing.T) {
 }
 
 // TestExtractRedisPricing_SingularOneYear verifies that extractRedisPricing
-// correctly recognises the "1 Year" singular form returned by the Azure Retail
+// correctly recognizes the "1 Year" singular form returned by the Azure Retail
 // Prices API for 1-year reservation terms. Before the fix, the extractor used
 // "%d Years" unconditionally, so the 1-year reservation line was silently
 // skipped and reservationPrice remained 0, causing a false "no reservation

@@ -329,7 +329,7 @@ func TestGetRecommendations_SavingsPlansServiceIncluded(t *testing.T) {
 
 // TestRecommendationsClientAdapter_GetRecommendations_PropagatesContextCancellation
 // pins the contract that GetRecommendations propagates ctx.Err() to its caller
-// after the errgroup Wait() — the parent context being cancelled or its
+// after the errgroup Wait() — the parent context being canceled or its
 // deadline exceeding must surface as an error rather than being swallowed by
 // the per-service error-isolation goroutines (which all return nil to the
 // errgroup so a single per-service failure does not cancel siblings).
@@ -346,8 +346,8 @@ func TestRecommendationsClientAdapter_GetRecommendations_PropagatesContextCancel
 
 	// Cancel the context BEFORE the call so we don't depend on race-y timing
 	// inside the SDK clients. The Azure clients constructed inside the
-	// goroutines will observe the cancelled gctx (derived from the parent ctx
-	// via errgroup.WithContext) and either short-circuit or return cancelled
+	// goroutines will observe the canceled gctx (derived from the parent ctx
+	// via errgroup.WithContext) and either short-circuit or return canceled
 	// errors; either way, our post-Wait ctx.Err() check returns context.Canceled.
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

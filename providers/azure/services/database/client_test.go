@@ -769,7 +769,7 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_PopulatesAllFields(t *test
 	assert.Equal(t, "upfront", out.PaymentOption)
 
 	// Details carries Engine=sqlserver + InstanceClass from the SKU
-	// string. EngineVersion stays empty when the catalogue has no
+	// string. EngineVersion stays empty when the catalog has no
 	// matching SKU (no signal); AZConfig/Deployment still need a
 	// per-server lookup and remain deferred.
 	require.NotNil(t, out.Details)
@@ -782,7 +782,7 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_PopulatesAllFields(t *test
 }
 
 // TestDatabaseClient_ConvertAzureSQLRecommendation_PopulatesEngineVersion
-// asserts the new batched-SKU-catalogue lookup populates
+// asserts the new batched-SKU-catalog lookup populates
 // DatabaseDetails.EngineVersion when the recommendation's SKU appears
 // in the location capabilities response.
 func TestDatabaseClient_ConvertAzureSQLRecommendation_PopulatesEngineVersion(t *testing.T) {

@@ -262,7 +262,7 @@ func (m *MultiSubscriptionRecommendationsClient) GetRecommendations(ctx context.
 // subset of accounts must not be handed another account's data by the Azure
 // path either. Before org-wide fan-out existed this was moot -- a
 // subscription-scoped client could only ever return its own subscription --
-// but a client covering every visible subscription has to honour the filter
+// but a client covering every visible subscription has to honor the filter
 // or it silently widens the caller's scope.
 //
 // Filtering BEFORE the fan-out (rather than discarding rows afterwards, as

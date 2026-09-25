@@ -363,7 +363,7 @@ func (p *AzureProvider) ValidateCredentials(ctx context.Context) error {
 // IsDefault is set to true for the subscription that matches (in priority order):
 //  1. The AzureSubscriptionID set in ProviderConfig (or the Profile fallback).
 //  2. The AZURE_SUBSCRIPTION_ID environment variable.
-//  3. The sole subscription, when exactly one is visible (mirrors AWS behaviour
+//  3. The sole subscription, when exactly one is visible (mirrors AWS behavior
 //     where the STS-identified account is always the default).
 func (p *AzureProvider) GetAccounts(ctx context.Context) ([]common.Account, error) {
 	if !p.IsConfigured() {

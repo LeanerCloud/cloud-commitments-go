@@ -51,7 +51,7 @@ type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-// vmSKUEntry holds the SKU-catalogue-derived fields the converter
+// vmSKUEntry holds the SKU-catalog-derived fields the converter
 // wants for each VM SKU. Sourced from
 // armcompute.ResourceSKU.Capabilities (a name/value-pair list):
 //   - vCPUs: Capabilities[Name=="vCPUs"].Value, parsed as int.
@@ -70,7 +70,7 @@ const maxRecsPages = 10
 const maxReservationsPages = 50
 
 // maxSKUPages caps Azure ResourceSKUs pagination.
-// The SKU catalogue for a subscription can run to many pages.
+// The SKU catalog for a subscription can run to many pages.
 const maxSKUPages = 20
 
 type vmSKUEntry struct {
@@ -94,7 +94,7 @@ type ComputeClient struct {
 	capacityProviderOnce sync.Once
 	capacityProviderErr  error
 
-	// Lazy SKU catalogue cache. armcompute.ResourceSKUsClient.NewListPager
+	// Lazy SKU catalog cache. armcompute.ResourceSKUsClient.NewListPager
 	// returns every SKU available to the subscription with its
 	// Capabilities (vCPUs, MemoryGB). Fetched ONCE per client lifetime;
 	// subsequent converter calls in the same GetRecommendations run hit
@@ -571,7 +571,7 @@ func (c *ComputeClient) GetOfferingDetails(ctx context.Context, rec common.Recom
 		upfrontCost = 0
 		recurringCost = totalCost / (float64(termYears) * 12)
 	default:
-		// Fail loud on an unrecognised payment option rather than silently
+		// Fail loud on an unrecognized payment option rather than silently
 		// billing it as all-upfront (owner policy: no silent fallbacks on
 		// money-affecting fields).
 		return nil, fmt.Errorf("unsupported payment option for Azure VM offering details: %q", rec.PaymentOption)
@@ -790,11 +790,11 @@ func extractVMPricing(items []AzureRetailPriceItem, termYears int) (onDemand, re
 // converters share the same type-assertion + nil-guard ladder.
 //
 // Details.VCPU and Details.MemoryGB are enriched from a lazily-cached
-// armcompute.ResourceSKUsClient catalogue (cachedSKULookup). The
-// catalogue is fetched ONCE per client lifetime; converter calls in
+// armcompute.ResourceSKUsClient catalog (cachedSKULookup). The
+// catalog is fetched ONCE per client lifetime; converter calls in
 // the same GetRecommendations run share the in-memory map (the N+1
 // invariant pinned by TestComputeClient_CachedSKULookup_FetchedOnce).
-// On catalogue-fetch failure or cache miss, both fields stay at 0
+// On catalog-fetch failure or cache miss, both fields stay at 0
 // (the omitempty JSON tags hide them from API payloads) and the
 // conversion still succeeds — matches the graceful-degradation
 // contract from cache/cosmosdb/database in PR #81.
@@ -837,11 +837,11 @@ func (c *ComputeClient) convertAzureVMRecommendation(ctx context.Context, azureR
 	}
 }
 
-// cachedSKULookup returns the SKU catalogue entry for skuName, fetching
-// the catalogue lazily on first call. The catalogue is fetched ONCE per
+// cachedSKULookup returns the SKU catalog entry for skuName, fetching
+// the catalog lazily on first call. The catalog is fetched ONCE per
 // client lifetime via armcompute.ResourceSKUsClient.NewListPager;
 // subsequent calls are O(1) map lookups. ok=false on cache miss OR
-// catalogue-fetch failure — the caller falls back to VCPU=0 / MemoryGB=0
+// catalog-fetch failure — the caller falls back to VCPU=0 / MemoryGB=0
 // rather than failing the whole conversion.
 func (c *ComputeClient) cachedSKULookup(ctx context.Context, skuName string) (vmSKUEntry, bool) {
 	c.skuCacheOnce.Do(func() {

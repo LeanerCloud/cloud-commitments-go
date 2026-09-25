@@ -22,7 +22,7 @@ type fakeItem struct {
 
 // fakeHTTPClient is a scripted HTTP client — Do returns a fixed response
 // or error per URL. Keeping the fake inside this file avoids depending on
-// testify/mock for a simple behaviour contract.
+// testify/mock for a simple behavior contract.
 type fakeHTTPClient struct {
 	responses map[string]*http.Response
 	errors    map[string]error
