@@ -15,7 +15,7 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/api/sqladmin/v1"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // maxRecsPages caps GCP Recommender API iteration.

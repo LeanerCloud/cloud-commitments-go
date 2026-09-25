@@ -5,7 +5,7 @@ package config
 import (
 	"time"
 
-	"github.com/LeanerCloud/CUDly/pkg/scorer"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/scorer"
 )
 
 // Config is the fully resolved CLI configuration (all layers merged).

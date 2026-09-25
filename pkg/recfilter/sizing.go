@@ -3,7 +3,7 @@ package recfilter
 import (
 	"math"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // ApplyCoverage applies coverage percentage to recommendations.

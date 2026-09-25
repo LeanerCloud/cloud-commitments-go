@@ -17,8 +17,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	pkgladder "github.com/LeanerCloud/CUDly/pkg/ladder"
-	"github.com/LeanerCloud/CUDly/providers/aws/recommendations"
+	pkgladder "github.com/LeanerCloud/cloud-commitments-go/pkg/ladder"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/recommendations"
 )
 
 // testRegion is the ladder region used across adapter tests.

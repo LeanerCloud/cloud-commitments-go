@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/pkg/scorer"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/scorer"
 	"github.com/spf13/pflag"
 	"gopkg.in/yaml.v3"
 )

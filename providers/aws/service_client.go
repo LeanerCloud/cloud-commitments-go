@@ -8,17 +8,17 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	sptypes "github.com/aws/aws-sdk-go-v2/service/savingsplans/types"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/provider"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
 
-	"github.com/LeanerCloud/CUDly/providers/aws/recommendations"
-	"github.com/LeanerCloud/CUDly/providers/aws/services/ec2"
-	"github.com/LeanerCloud/CUDly/providers/aws/services/elasticache"
-	"github.com/LeanerCloud/CUDly/providers/aws/services/memorydb"
-	"github.com/LeanerCloud/CUDly/providers/aws/services/opensearch"
-	"github.com/LeanerCloud/CUDly/providers/aws/services/rds"
-	"github.com/LeanerCloud/CUDly/providers/aws/services/redshift"
-	"github.com/LeanerCloud/CUDly/providers/aws/services/savingsplans"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/recommendations"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/ec2"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/elasticache"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/memorydb"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/opensearch"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/rds"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/redshift"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/savingsplans"
 )
 
 // NewEC2Client creates a new EC2 service client

@@ -8,7 +8,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // parseRDSDetails extracts RDS-specific details

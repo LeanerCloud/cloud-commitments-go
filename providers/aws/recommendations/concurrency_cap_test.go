@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/semaphore"
 
-	"github.com/LeanerCloud/CUDly/pkg/concurrency"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
 )
 
 // semCountingCE counts coverage/utilization SDK calls so the tests below can

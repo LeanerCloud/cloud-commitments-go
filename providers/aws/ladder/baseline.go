@@ -7,7 +7,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/pkg/ladder"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/ladder"
 )
 
 // minBaselineSeriesDays is the shortest daily series AWSLadder will accept for

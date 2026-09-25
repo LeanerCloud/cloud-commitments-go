@@ -13,7 +13,7 @@ import (
 	"google.golang.org/api/sqladmin/v1"
 	"google.golang.org/genproto/googleapis/type/money"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // MockSQLAdminService mocks the SQLAdminService interface

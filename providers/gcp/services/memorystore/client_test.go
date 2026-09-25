@@ -13,7 +13,7 @@ import (
 	"google.golang.org/api/cloudbilling/v1"
 	"google.golang.org/api/iterator"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // Mock implementations

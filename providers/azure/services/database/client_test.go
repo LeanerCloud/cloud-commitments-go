@@ -19,9 +19,9 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	azpricing "github.com/LeanerCloud/CUDly/providers/azure/internal/pricing"
-	"github.com/LeanerCloud/CUDly/providers/azure/mocks"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	azpricing "github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/pricing"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/mocks"
 )
 
 // MockRecommendationsPager mocks the RecommendationsPager interface

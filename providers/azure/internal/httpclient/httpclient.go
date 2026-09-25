@@ -10,7 +10,7 @@ package httpclient
 import (
 	"net/http"
 
-	"github.com/LeanerCloud/CUDly/pkg/httpclient"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/httpclient"
 )
 
 // New returns an *http.Client with a 30-second timeout and IMDS blocking.

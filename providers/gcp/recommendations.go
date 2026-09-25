@@ -14,13 +14,13 @@ import (
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/concurrency"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
-	"github.com/LeanerCloud/CUDly/providers/gcp/services/cloudsql"
-	"github.com/LeanerCloud/CUDly/providers/gcp/services/cloudstorage"
-	"github.com/LeanerCloud/CUDly/providers/gcp/services/computeengine"
-	"github.com/LeanerCloud/CUDly/providers/gcp/services/memorystore"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/services/cloudsql"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/services/cloudstorage"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/services/computeengine"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/services/memorystore"
 )
 
 // defaultGCPRegionConcurrency caps the parallel per-region goroutines inside

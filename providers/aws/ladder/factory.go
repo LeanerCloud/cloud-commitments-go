@@ -9,12 +9,12 @@ import (
 	sdksp "github.com/aws/aws-sdk-go-v2/service/savingsplans"
 	sptypes "github.com/aws/aws-sdk-go-v2/service/savingsplans/types"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/exchange"
-	pkgladder "github.com/LeanerCloud/CUDly/pkg/ladder"
-	"github.com/LeanerCloud/CUDly/providers/aws/recommendations"
-	ec2svc "github.com/LeanerCloud/CUDly/providers/aws/services/ec2"
-	savingsplansvc "github.com/LeanerCloud/CUDly/providers/aws/services/savingsplans"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/exchange"
+	pkgladder "github.com/LeanerCloud/cloud-commitments-go/pkg/ladder"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/recommendations"
+	ec2svc "github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/ec2"
+	savingsplansvc "github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/savingsplans"
 )
 
 // NewFromAWSConfig constructs a fully wired AWSLadder for the given region and

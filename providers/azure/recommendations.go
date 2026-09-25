@@ -11,15 +11,15 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/advisor/armadvisor"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/concurrency"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
-	azrecs "github.com/LeanerCloud/CUDly/providers/azure/internal/recommendations"
-	"github.com/LeanerCloud/CUDly/providers/azure/services/cache"
-	"github.com/LeanerCloud/CUDly/providers/azure/services/compute"
-	"github.com/LeanerCloud/CUDly/providers/azure/services/cosmosdb"
-	"github.com/LeanerCloud/CUDly/providers/azure/services/database"
-	"github.com/LeanerCloud/CUDly/providers/azure/services/savingsplans"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	azrecs "github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/recommendations"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/cache"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/compute"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/cosmosdb"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/database"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/savingsplans"
 )
 
 // serviceRecsGetter is the narrow interface satisfied by each per-service

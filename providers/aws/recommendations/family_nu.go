@@ -4,7 +4,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // rdsInstanceNU maps an RDS instance size suffix to the normalized-units

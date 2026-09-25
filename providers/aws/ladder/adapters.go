@@ -13,7 +13,7 @@ import (
 
 	cetypes "github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 
-	"github.com/LeanerCloud/CUDly/providers/aws/recommendations"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/recommendations"
 )
 
 // activeSPListAPI is the minimal interface for listing Savings Plans.

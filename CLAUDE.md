@@ -1,5 +1,8 @@
 # Claude Code Configuration - RuFlo V3
 
+Repository target: `LeanerCloud/cloud-commitments-go` (intended destination,
+not published yet).
+
 ## Behavioral Rules (Always Enforced)
 
 - Do what has been asked; nothing more, nothing less
@@ -18,16 +21,11 @@
 
 ## File Organization
 
-- NEVER save working files to the root folder; use the directories below
-- `cmd/`: CLI and server entry points (main packages)
-- `internal/`: backend application code (API, auth, purchase, scheduler, ...)
-- `pkg/`: shared library code (separate Go module, see Go Module Notes)
-- `providers/`: cloud provider integrations (AWS, Azure, GCP)
-- `frontend/`: TypeScript web frontend (webpack + jest)
-- `terraform/`, `cloudformation/`, `arm/`, `iac/`: infrastructure as code
-- `docs/`: documentation and markdown files
-- `scripts/`: utility scripts
-- `tests/`: end-to-end tests (Go unit tests live next to the code they test)
+- `pkg/`: shared domain, utility, and provider-interface module
+- `providers/aws/`, `providers/azure/`, `providers/gcp/`: provider modules
+- `ci_cd_sanity_tests/`: diagnostic and integration-check module
+- `scripts/`: repository hooks and utilities
+- There is no root Go module, application CLI, `frontend/`, or infrastructure tree in this repository.
 
 ## Project Architecture
 
@@ -48,31 +46,33 @@
 
 ## Go Module Notes
 
-- This project does NOT use a vendor directory. Do not use `go mod vendor`.
-- The `pkg/` directory is a separate Go module (`github.com/LeanerCloud/CUDly/pkg`) with a `replace` directive in the root `go.mod`.
-- Build and test normally with `go build ./...` and `go test ./...` from the root.
-- Run `go test ./pkg/...` from the `pkg/` directory when working on the submodule.
+- This repository has five modules: `pkg`, `providers/aws`, `providers/azure`, `providers/gcp`, and `ci_cd_sanity_tests`.
+- The committed `go.work` lists those five modules and is sufficient for development in one checkout.
+- The provider modules currently require the shared package at unpublished `v0.0.0`; standalone verification must use `GOWORK=off` only where the module's dependencies are published or otherwise available.
+- Do not use `go mod vendor`.
 
 ## Build & Test
 
-The root of the repo is a Go project; the npm scripts live in `frontend/`.
+Use the repository Makefile for the five modules:
 
 ```bash
-# Build (backend, from the repo root)
-go build ./...        # or: make build
-
-# Test (backend)
-go test ./...         # or: make test-unit
-
-# Lint (backend)
-make lint             # golangci-lint; also: make vet, make fmt
-
-# Frontend (run from frontend/)
-cd frontend && npm ci
-npm run build         # webpack production build
-npm test              # jest --coverage
-npm run lint          # eslint src/**/*.ts
+make build
+make test-unit
+make vet
+make lint
 ```
+
+For module-local race tests, run from each module directory, for example:
+
+```bash
+(cd pkg && GOWORK=off go test -race -short ./...)
+(cd providers/aws && GOWORK=off go test -race -short ./...)
+```
+
+Repeat the same form for `providers/azure`, `providers/gcp`, and
+`ci_cd_sanity_tests`. Unit tests do not require cloud credentials. The sanity
+module's diagnostic binaries are explicitly cloud-backed checks and must not be
+run unless credentials, network access, and the target account are intended.
 
 - ALWAYS run tests after making code changes
 - ALWAYS verify build succeeds before committing
@@ -103,7 +103,7 @@ Mechanics:
 1. After `git push`, list the runs the push triggered:
 
    ```bash
-   gh run list --repo LeanerCloud/CUDly --commit "$(git rev-parse HEAD)" \
+   gh run list --repo LeanerCloud/cloud-commitments-go --commit "$(git rev-parse HEAD)" \
      --limit 10 --json databaseId,workflowName,status
    ```
 
@@ -179,10 +179,10 @@ CodeRabbit:
 ```bash
 # Right after `gh pr create ...` returns the PR URL:
 # Derive PR_NUM from the current branch context (avoids brittle hand-copying).
-PR_NUM=$(gh pr view "$(git rev-parse --abbrev-ref HEAD)" --repo LeanerCloud/CUDly --json number --jq '.number')
+PR_NUM=$(gh pr view "$(git rev-parse --abbrev-ref HEAD)" --repo LeanerCloud/cloud-commitments-go --json number --jq '.number')
 ISSUE_NUM=<the issue this PR closes>
 
-LABELS=$(gh issue view "$ISSUE_NUM" --repo LeanerCloud/CUDly --json labels \
+LABELS=$(gh issue view "$ISSUE_NUM" --repo LeanerCloud/cloud-commitments-go --json labels \
   --jq '[.labels[].name | select(test("^(priority|severity|urgency|impact|effort|type)/")) ]
         + (if [.labels[].name] | any(. == "triaged") then ["triaged"] else [] end)
         | join(",")')
@@ -191,7 +191,7 @@ LABELS=$(gh issue view "$ISSUE_NUM" --repo LeanerCloud/CUDly --json labels \
 # silently break this MANDATORY flow. If the closing issue has no triage
 # labels in the selected classes, surface the gap deterministically instead.
 if [ -n "$LABELS" ]; then
-  gh pr edit "$PR_NUM" --repo LeanerCloud/CUDly --add-label "$LABELS"
+  gh pr edit "$PR_NUM" --repo LeanerCloud/cloud-commitments-go --add-label "$LABELS"
 else
   echo "WARN: issue #$ISSUE_NUM has no priority/severity/urgency/impact/effort/type labels"
   echo "      Triage the issue first, then re-run the label-mirror step."
@@ -199,7 +199,7 @@ else
 fi
 
 # Verify
-gh pr view "$PR_NUM" --repo LeanerCloud/CUDly --json labels \
+gh pr view "$PR_NUM" --repo LeanerCloud/cloud-commitments-go --json labels \
   --jq '[.labels[].name] | sort | join(",")'
 ```
 
