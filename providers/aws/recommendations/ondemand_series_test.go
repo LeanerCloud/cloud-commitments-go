@@ -340,7 +340,7 @@ func TestGetOnDemandSeries_CorrectFilterParams(t *testing.T) {
 	assert.Equal(t, []string{"eu-west-1"}, dimVals[types.DimensionRegion])
 }
 
-// TestGetOnDemandSeries_ContextCancelled verifies that a cancelled context is
+// TestGetOnDemandSeries_ContextCancelled verifies that a canceled context is
 // propagated before the first CE call (ctx-cancel-is-terminal rule).
 func TestGetOnDemandSeries_ContextCancelled(t *testing.T) {
 	mock := &mockOnDemandCE{pages: generate30DayPage(time.Now(), 24.0)}

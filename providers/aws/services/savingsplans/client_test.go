@@ -222,7 +222,7 @@ func TestClient_GetExistingCommitments(t *testing.T) {
 // constructed with an empty plan type (legacy umbrella mode, used by the
 // AWS provider's `case common.ServiceSavingsPlansAll` branch in GetServiceClient)
 // returns every commitment unfiltered — matching pre-issue-#22-split
-// behaviour for any persisted RecommendationRecord still tagged with the
+// behavior for any persisted RecommendationRecord still tagged with the
 // umbrella slug.
 func TestClient_GetExistingCommitments_UmbrellaMode(t *testing.T) {
 	mockClient := &MockSavingsPlansClient{}
@@ -269,7 +269,7 @@ func TestClient_GetExistingCommitments_Pagination(t *testing.T) {
 	mockClient := &MockSavingsPlansClient{}
 	t.Cleanup(func() { mockClient.AssertExpectations(t) })
 
-	// Page 1: returns one SP and a NextToken signalling more pages.
+	// Page 1: returns one SP and a NextToken signaling more pages.
 	mockClient.On("DescribeSavingsPlans", mock.Anything, mock.MatchedBy(func(input *savingsplans.DescribeSavingsPlansInput) bool {
 		return input.NextToken == nil
 	})).Return(&savingsplans.DescribeSavingsPlansOutput{
@@ -314,7 +314,7 @@ func TestClient_GetExistingCommitments_Pagination(t *testing.T) {
 	assert.Contains(t, ids, "sp-page2")
 }
 
-// TestClient_GetExistingCommitments_CtxCancellation verifies that a cancelled
+// TestClient_GetExistingCommitments_CtxCancellation verifies that a canceled
 // context is treated as a hard stop in the pagination loop (not accumulated as
 // lastErr while the loop continues). Per feedback_ctx_cancel_terminal: context
 // cancellation is terminal in API fan-out loops.
@@ -539,7 +539,7 @@ func TestClient_PurchaseCommitment_SetsClientTokenForIdempotency(t *testing.T) {
 
 // TestClient_PurchaseCommitment_NoClientTokenWhenUnset confirms the CLI path
 // (no owning execution, empty token) leaves ClientToken nil and keeps its prior
-// non-idempotent behaviour unchanged.
+// non-idempotent behavior unchanged.
 func TestClient_PurchaseCommitment_NoClientTokenWhenUnset(t *testing.T) {
 	mockSP := &MockSavingsPlansClient{}
 	client := &Client{client: mockSP, region: "us-east-1"}
@@ -1304,7 +1304,7 @@ func TestLookupOfferingID_DeterministicSortAcrossPages(t *testing.T) {
 }
 
 // TestLookupOfferingID_CtxCancelledBeforePage asserts that lookupOfferingID
-// returns context.Canceled immediately when the context is already cancelled
+// returns context.Canceled immediately when the context is already canceled
 // before the first pagination iteration, without calling the AWS API (issue #515).
 func TestLookupOfferingID_CtxCancelledBeforePage(t *testing.T) {
 	mockSP := &MockSavingsPlansClient{}
@@ -1445,7 +1445,7 @@ func TestEC2InstanceSP_ResolvesCorrectFamilyAndRegion(t *testing.T) {
 		"EC2Instance SP must resolve to the m5/us-east-1 offering, not a different family")
 }
 
-// TestEC2InstanceSP_MultiFamilyResponseFailsLoud pins the fail-loud behaviour
+// TestEC2InstanceSP_MultiFamilyResponseFailsLoud pins the fail-loud behavior
 // when DescribeSavingsPlansOfferings returns offerings spanning more than one
 // instance family. Pre-fix: lookupOfferingID silently picked "c6g-offering-..."
 // (lexicographically smallest), committing money to the wrong workload. Post-fix:

@@ -167,7 +167,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	// CAVEAT (documented residual window): the guard's correctness depends on
 	// the post-purchase CreateTags below actually persisting on a reserved-node
 	// ARN, which AWS has not confirmed it supports. If tagging is silently
-	// unsupported the guard cannot recognise the prior purchase and a re-drive
+	// unsupported the guard cannot recognize the prior purchase and a re-drive
 	// could double-buy — the same irreducible "purchase-then-tag-fails" window
 	// EC2 has, but potentially permanent here. This residual is backstopped by
 	// the recovery sweep's safe-fail + operator-confirm (issue #635), which is
@@ -329,7 +329,7 @@ func (c *Client) resolveAccountID(ctx context.Context) (string, error) {
 //
 // The idempotency token tag (issue #641) is load-bearing for the pre-purchase
 // findNodeByIdempotencyToken guard: if it is not written, a re-drive cannot
-// recognise this node as already-purchased.
+// recognize this node as already-purchased.
 func (c *Client) tagReservedNode(ctx context.Context, nodeID string, rec common.Recommendation, source, idempotencyToken string) error {
 	if source == "" && idempotencyToken == "" {
 		return nil
@@ -472,7 +472,7 @@ func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation, 
 // scanRedshiftOfferingPage finds a matching offering in a single page of results.
 // Returns ("", nil) when no match is found on the page so the caller can continue paginating.
 // Returns an error when an offering matches on node type and duration but carries an
-// unrecognised ReservedNodeOfferingType -- this surfaces unexpected enum values rather
+// unrecognized ReservedNodeOfferingType -- this surfaces unexpected enum values rather
 // than silently skipping them and potentially committing to the wrong offering.
 //
 // In addition to node type and duration, the requested payment option is matched

@@ -482,7 +482,7 @@ func (p *AWSProvider) GetServiceClient(ctx context.Context, service common.Servi
 		// the SP client: GetExistingCommitments returns every plan type
 		// unfiltered, and findOfferingID falls back to the
 		// recommendation's Details.PlanType (matching pre-split
-		// behaviour). New code paths use the four per-plan-type cases
+		// behavior). New code paths use the four per-plan-type cases
 		// above; this case exists so legacy data doesn't 503 the
 		// purchase pipeline.
 		return NewSavingsPlansClient(regionalCfg, ""), nil

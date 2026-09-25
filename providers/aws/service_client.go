@@ -150,7 +150,7 @@ func filterByAccounts(recs []common.Recommendation, accounts []string) []common.
 // exporting this predicate (#1582) made it reachable with a non-AWS rec whose
 // Details mean something else. Only AWS builds Savings Plans recommendations
 // today and parser_sp.go stamps ProviderAWS on every one, so the gate changes
-// no behaviour now; it keeps the AWS-only reading from outliving that invariant.
+// no behavior now; it keeps the AWS-only reading from outliving that invariant.
 func EffectiveRegion(rec common.Recommendation) string {
 	if rec.Region != "" || rec.Provider != common.ProviderAWS {
 		return rec.Region
@@ -218,7 +218,7 @@ func IsRegionAgnostic(rec common.Recommendation) bool {
 // which is the whole point of this function.
 //
 // Unknown values deliberately return false: spPlanTypeDisplayString passes
-// unrecognised SDK plan types through verbatim for forward compatibility, and
+// unrecognized SDK plan types through verbatim for forward compatibility, and
 // a plan type this build does not know about must not be granted a
 // region-filter exemption on the strength of a name nobody has checked.
 func isAccountLevelSPPlanType(planType string) bool {

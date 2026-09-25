@@ -400,7 +400,7 @@ func extractGroupAttributes(attrs map[string]string) (instanceType, deployment s
 // Rebalancing scales each rec's avg by (cov.avg / sum-of-rec-avgs-in-pool)
 // so the sized per-rec purchases sum to what the coverage CSV's gap math
 // implies. When AWS rec API already matches coverage, the scale factor is
-// ~1.0 and behaviour is unchanged. When multiple recs have zero avg
+// ~1.0 and behavior is unchanged. When multiple recs have zero avg
 // (no per-account signal at all), the coverage avg is split evenly across
 // them so the total still lines up.
 //

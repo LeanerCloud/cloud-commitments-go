@@ -122,7 +122,7 @@ func resolveEC2Scope(az *string) string {
 }
 
 // enrichFromCatalogue populates VCPU and MemoryGB on ec2Info from the
-// lazily-cached DescribeInstanceTypes catalogue. Non-fatal on cache miss.
+// lazily-cached DescribeInstanceTypes catalog. Non-fatal on cache miss.
 func (c *Client) enrichFromCatalogue(ctx context.Context, ec2Info *common.ComputeDetails) {
 	if ec2Info.InstanceType == "" {
 		return
@@ -140,8 +140,8 @@ func (c *Client) enrichFromCatalogue(ctx context.Context, ec2Info *common.Comput
 }
 
 // parseEC2Details extracts EC2-specific details and enriches the rec with
-// vCPU and memory from the lazily-cached DescribeInstanceTypes catalogue.
-// If the catalogue fetch failed or the instance type is not found, VCPU
+// vCPU and memory from the lazily-cached DescribeInstanceTypes catalog.
+// If the catalog fetch failed or the instance type is not found, VCPU
 // and MemoryGB remain 0 (the omitempty JSON tags hide them from payloads).
 func (c *Client) parseEC2Details(ctx context.Context, rec *common.Recommendation, details *types.ReservationPurchaseRecommendationDetail) error {
 	if details.InstanceDetails == nil || details.InstanceDetails.EC2InstanceDetails == nil {

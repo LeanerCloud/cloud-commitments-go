@@ -21,7 +21,7 @@ import (
 // accountID. All seven read-side data-source adapters are wired to real AWS
 // clients so that scheduled ladder runs produce meaningful plans.
 //
-// Pre-L2 behaviour: every source was a no-op stub; GetUsageBaseline always
+// Pre-L2 behavior: every source was a no-op stub; GetUsageBaseline always
 // errored; every run was recorded as Errored with no plan produced.
 //
 // Client wiring (7 sources):

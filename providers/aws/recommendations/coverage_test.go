@@ -113,7 +113,7 @@ func TestGetRICoverageMap_GroupsByInstanceType(t *testing.T) {
 }
 
 // TestGetRICoverageMap_LookbackDefault confirms that a non-positive lookback
-// substitutes the 30-day default (matches GetRIUtilization's behaviour).
+// substitutes the 30-day default (matches GetRIUtilization's behavior).
 func TestGetRICoverageMap_LookbackDefault(t *testing.T) {
 	mock := &mockCoverageCE{coverageOutput: &costexplorer.GetReservationCoverageOutput{}}
 	client := NewClientWithAPI(mock, "us-east-1")
@@ -417,7 +417,7 @@ func TestNormaliseRDSEngine(t *testing.T) {
 	}
 }
 
-// TestFetchCoveragePaged_CtxCancelReturnsError asserts that a cancelled context
+// TestFetchCoveragePaged_CtxCancelReturnsError asserts that a canceled context
 // is treated as a hard stop inside the pagination loop and surfaces an error
 // rather than returning a partial/empty result silently
 // (feedback_ctx_cancel_terminal).

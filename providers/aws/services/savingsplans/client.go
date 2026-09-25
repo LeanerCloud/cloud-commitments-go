@@ -56,7 +56,7 @@ func (c *Client) SetSavingsPlansAPI(api SavingsPlansAPI) {
 // GetServiceType returns the per-plan-type service slug (e.g.
 // ServiceSavingsPlansCompute for a client constructed with
 // SavingsPlanTypeCompute). Falls back to the legacy umbrella constant if the
-// plan type is unrecognised — that branch should be unreachable in practice.
+// plan type is unrecognized — that branch should be unreachable in practice.
 func (c *Client) GetServiceType() common.ServiceType {
 	return ServiceTypeForPlanType(c.planType)
 }
@@ -120,7 +120,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 	// An empty planType signals umbrella sentinel mode (the
 	// `case common.ServiceSavingsPlansAll` branch in provider.go's
 	// GetServiceClient): in that mode, return every commitment unfiltered
-	// to match pre-split behaviour. Per-plan-type clients still partition.
+	// to match pre-split behavior. Per-plan-type clients still partition.
 	commitments := make([]common.Commitment, 0)
 	service := c.GetServiceType()
 	page := 0
@@ -240,7 +240,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	// creating a second one, so re-driving a stranded execution can never
 	// double-purchase. The token is deterministic across re-drives (derived from
 	// execution_id + rec index). Left unset for the CLI path, which carries no
-	// owning execution and keeps its prior non-idempotent behaviour.
+	// owning execution and keeps its prior non-idempotent behavior.
 	if opts.IdempotencyToken != "" {
 		input.ClientToken = aws.String(opts.IdempotencyToken)
 	}

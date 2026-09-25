@@ -984,7 +984,7 @@ func TestNormalizeEngineName_EditionTokensPassThrough(t *testing.T) {
 }
 
 // TestFindOfferingID_CtxCancelledBeforePage asserts that findOfferingID returns
-// context.Canceled immediately when the context is already cancelled before the
+// context.Canceled immediately when the context is already canceled before the
 // first pagination iteration, without calling the AWS API (issue #515).
 func TestFindOfferingID_CtxCancelledBeforePage(t *testing.T) {
 	mockRDS := &MockRDSClient{}

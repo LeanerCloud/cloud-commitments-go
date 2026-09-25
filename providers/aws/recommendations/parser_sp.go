@@ -271,7 +271,7 @@ func extractEC2SPFields(planType types.SupportedSavingsPlansType, detail *types.
 
 // spPlanTypeDisplayString converts a SupportedSavingsPlansType to a
 // human-readable plan-type label used in SavingsPlanDetails.PlanType.
-// Returns the raw SDK string for unrecognised types (forward-compat).
+// Returns the raw SDK string for unrecognized types (forward-compat).
 func spPlanTypeDisplayString(pt types.SupportedSavingsPlansType) string {
 	switch pt {
 	case types.SupportedSavingsPlansTypeComputeSp:

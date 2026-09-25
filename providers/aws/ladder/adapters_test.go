@@ -370,7 +370,7 @@ func TestSPLister_EmptyResult(t *testing.T) {
 	assert.Empty(t, got)
 }
 
-// TestSPLister_ContextCancelled verifies that a cancelled context terminates
+// TestSPLister_ContextCancelled verifies that a canceled context terminates
 // the listing loop before the first (or any subsequent) API call.
 func TestSPLister_ContextCancelled(t *testing.T) {
 	pages := []*sdksp.DescribeSavingsPlansOutput{
@@ -584,7 +584,7 @@ func TestSPUtilizationAdapter_NilWhenNoData(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Regression test: real spListerAdapter wired into New() must produce
 // non-zero ExistingUSDPerHour for an active SP.
-// Pre-fix behaviour: noop stub always returned 0.0.
+// Pre-fix behavior: noop stub always returned 0.0.
 // ---------------------------------------------------------------------------
 
 // TestGetLayerStates_RealSPLister_NonZeroExisting wires a real spListerAdapter

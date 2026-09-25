@@ -325,7 +325,7 @@ func TestAWSProvider_GetServiceClient_AllServiceTypes(t *testing.T) {
 		{common.ServiceSavingsPlansDatabase, common.ServiceSavingsPlansDatabase},
 		// Umbrella sentinel: GetServiceClient returns an SP client with
 		// an empty plan-type filter (umbrella mode); GetServiceType
-		// reports the umbrella slug, matching pre-split behaviour.
+		// reports the umbrella slug, matching pre-split behavior.
 		{common.ServiceSavingsPlansAll, common.ServiceSavingsPlansAll},
 	}
 

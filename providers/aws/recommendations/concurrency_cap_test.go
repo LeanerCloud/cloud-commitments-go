@@ -31,7 +31,7 @@ func (m *semCountingCE) GetReservationUtilization(ctx context.Context, params *c
 	return &costexplorer.GetReservationUtilizationOutput{}, nil
 }
 
-// fullSemaphoreCtx returns a cancelled context carrying a capacity-1 shared
+// fullSemaphoreCtx returns a canceled context carrying a capacity-1 shared
 // semaphore whose only slot is already held, replicating the scheduler's
 // collection path when the CUDLY_MAX_PARALLELISM cap is saturated. A correct
 // leaf call must block on Acquire (and surface ctx cancellation) instead of

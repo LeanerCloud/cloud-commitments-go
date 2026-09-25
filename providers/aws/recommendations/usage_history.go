@@ -54,7 +54,7 @@ func (c *Client) GetDailyUsagePcts(ctx context.Context, serviceFilter, resourceT
 	return orderedDaySlice(start2, dayPct), nil
 }
 
-// newDayWindow initialises a zeroed day map for the lookback window starting at
+// newDayWindow initializes a zeroed day map for the lookback window starting at
 // start and returns both the map and start unchanged (to keep the call site
 // readable).
 func newDayWindow(start time.Time) (map[string]float64, time.Time) {
