@@ -31,7 +31,7 @@ func setupTestRegistry(t *testing.T) *Registry {
 	return r
 }
 
-// registerGlobalTestProvider registers a provider in the global registry for testing
+// registerGlobalTestProvider registers a provider in the global registry for testing.
 func registerGlobalTestProvider(t *testing.T, name string, configured bool, credentialsError error) {
 	t.Helper()
 	GetRegistry().Unregister(name) // Clean up first

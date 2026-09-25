@@ -17,7 +17,7 @@ import (
 // infrastructure. Callers can detect it with errors.Is(err, ErrCommitmentPurchaseNotSupported).
 var ErrCommitmentPurchaseNotSupported = errors.New("commitment purchase not supported for this service")
 
-// ProviderType identifies the cloud provider
+// ProviderType identifies the cloud provider.
 type ProviderType string
 
 const (
@@ -60,32 +60,32 @@ func (o ExchangeOrigin) String() string {
 	return string(o)
 }
 
-// String returns the string representation of the provider type
+// String returns the string representation of the provider type.
 func (p ProviderType) String() string {
 	return string(p)
 }
 
-// ServiceType identifies the service type across clouds
+// ServiceType identifies the service type across clouds.
 type ServiceType string
 
 const (
-	// Compute
+	// Compute.
 	ServiceCompute ServiceType = "compute" // EC2, VM, Compute Engine
 
-	// Database
+	// Database.
 	ServiceRelationalDB ServiceType = "relational-db" // RDS, Azure SQL, Cloud SQL
 	ServiceNoSQL        ServiceType = "nosql"         // DynamoDB, CosmosDB, Firestore
 
-	// Cache
+	// Cache.
 	ServiceCache ServiceType = "cache" // ElastiCache, Azure Cache, Memorystore
 
-	// Search
+	// Search.
 	ServiceSearch ServiceType = "search" // OpenSearch, Azure Search
 
-	// Data Warehouse
+	// Data Warehouse.
 	ServiceDataWarehouse ServiceType = "data-warehouse" // Redshift, Synapse, BigQuery
 
-	// Storage
+	// Storage.
 	ServiceStorage ServiceType = "storage" // S3, Blob Storage, Cloud Storage
 
 	// Savings/Commitments
@@ -118,10 +118,10 @@ const (
 	ServiceSavingsPlansDatabase    ServiceType = "savings-plans-database"    // DatabaseSp: RDS
 	ServiceCommitments             ServiceType = "commitments"               // Generic commitments
 
-	// Other
+	// Other.
 	ServiceOther ServiceType = "other" // Catch-all for unclassified services
 
-	// Legacy AWS service types (for backward compatibility)
+	// Legacy AWS service types (for backward compatibility).
 	ServiceEC2         ServiceType = "ec2"
 	ServiceRDS         ServiceType = "rds"
 	ServiceElastiCache ServiceType = "elasticache"
@@ -134,7 +134,7 @@ const (
 	ServiceMemoryDB      ServiceType = "memorydb"
 )
 
-// String returns the string representation of the service type
+// String returns the string representation of the service type.
 func (s ServiceType) String() string {
 	return string(s)
 }
@@ -171,7 +171,7 @@ func SavingsPlansPlanTypes() []ServiceType {
 	}
 }
 
-// CommitmentType represents different commitment types across clouds
+// CommitmentType represents different commitment types across clouds.
 type CommitmentType string
 
 const (
@@ -181,12 +181,12 @@ const (
 	CommitmentReservedCapacity CommitmentType = "reserved-capacity" // Azure/GCP storage
 )
 
-// String returns the string representation of the commitment type
+// String returns the string representation of the commitment type.
 func (c CommitmentType) String() string {
 	return string(c)
 }
 
-// Recommendation represents a commitment purchase recommendation across any cloud provider
+// Recommendation represents a commitment purchase recommendation across any cloud provider.
 type Recommendation struct {
 	// Provider identification
 	Provider    ProviderType `json:"provider" csv:"Provider"`
@@ -271,7 +271,7 @@ type Recommendation struct {
 	UsageHistory []float64 `json:"usage_history,omitempty" csv:"-"`
 }
 
-// ServiceDetails is an interface for service-specific details
+// ServiceDetails is an interface for service-specific details.
 type ServiceDetails interface {
 	GetServiceType() ServiceType
 	GetDetailDescription() string
@@ -330,7 +330,7 @@ func ScaleRecommendationCosts(rec Recommendation, ratio float64) Recommendation 
 	return rec
 }
 
-// PurchaseResult represents the outcome of a commitment purchase
+// PurchaseResult represents the outcome of a commitment purchase.
 type PurchaseResult struct {
 	Recommendation Recommendation `json:"recommendation"`
 	Success        bool           `json:"success"`
@@ -440,7 +440,7 @@ type Commitment struct {
 	Cost           float64        `json:"cost"`
 }
 
-// OfferingDetails represents cloud provider offering details
+// OfferingDetails represents cloud provider offering details.
 type OfferingDetails struct {
 	OfferingID          string  `json:"offering_id"`
 	ResourceType        string  `json:"resource_type"`
@@ -453,7 +453,7 @@ type OfferingDetails struct {
 	Currency            string  `json:"currency"`
 }
 
-// RecommendationParams represents parameters for fetching recommendations
+// RecommendationParams represents parameters for fetching recommendations.
 type RecommendationParams struct {
 	Service        ServiceType
 	Region         string
@@ -468,7 +468,7 @@ type RecommendationParams struct {
 	ExcludeSPTypes []string
 }
 
-// Account represents a cloud account/subscription/project
+// Account represents a cloud account/subscription/project.
 type Account struct {
 	Provider    ProviderType `json:"provider"`
 	ID          string       `json:"id"`
@@ -477,7 +477,7 @@ type Account struct {
 	IsDefault   bool         `json:"is_default"`
 }
 
-// Region represents a cloud region/location
+// Region represents a cloud region/location.
 type Region struct {
 	Provider    ProviderType `json:"provider"`
 	ID          string       `json:"id"`
@@ -521,7 +521,7 @@ func (d ComputeDetails) GetDetailDescription() string {
 	return base
 }
 
-// DatabaseDetails represents database-specific details (RDS, Azure SQL, Cloud SQL)
+// DatabaseDetails represents database-specific details (RDS, Azure SQL, Cloud SQL).
 type DatabaseDetails struct {
 	Engine        string `json:"engine"` // mysql, postgres, sqlserver, etc.
 	EngineVersion string `json:"engine_version,omitempty"`
@@ -538,7 +538,7 @@ func (d DatabaseDetails) GetDetailDescription() string {
 	return d.Engine + "/" + d.AZConfig
 }
 
-// CacheDetails represents cache-specific details (ElastiCache, Azure Cache, Memorystore)
+// CacheDetails represents cache-specific details (ElastiCache, Azure Cache, Memorystore).
 type CacheDetails struct {
 	Engine   string `json:"engine"` // redis, memcached
 	NodeType string `json:"node_type"`
@@ -553,7 +553,7 @@ func (d CacheDetails) GetDetailDescription() string {
 	return d.Engine + "/" + d.NodeType
 }
 
-// SearchDetails represents search-specific details (OpenSearch, Azure Search)
+// SearchDetails represents search-specific details (OpenSearch, Azure Search).
 type SearchDetails struct {
 	InstanceType    string `json:"instance_type"`
 	MasterNodeCount int    `json:"master_node_count,omitempty"`
@@ -568,7 +568,7 @@ func (d SearchDetails) GetDetailDescription() string {
 	return d.InstanceType
 }
 
-// DataWarehouseDetails represents data warehouse-specific details (Redshift, Synapse, BigQuery)
+// DataWarehouseDetails represents data warehouse-specific details (Redshift, Synapse, BigQuery).
 type DataWarehouseDetails struct {
 	NodeType      string `json:"node_type"`
 	NumberOfNodes int    `json:"number_of_nodes"`
@@ -608,7 +608,7 @@ func (d NoSQLDetails) GetDetailDescription() string {
 	return d.Engine + "/" + d.APIType
 }
 
-// SavingsPlanDetails represents AWS Savings Plans specific details
+// SavingsPlanDetails represents AWS Savings Plans specific details.
 type SavingsPlanDetails struct {
 	PlanType         string  `json:"plan_type"` // Compute, EC2Instance, SageMaker
 	HourlyCommitment float64 `json:"hourly_commitment"`

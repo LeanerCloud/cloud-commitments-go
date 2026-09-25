@@ -12,7 +12,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
-// MockProvider implements the Provider interface for testing
+// MockProvider implements the Provider interface for testing.
 type MockProvider struct {
 	name              string
 	displayName       string
