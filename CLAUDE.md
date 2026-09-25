@@ -1,7 +1,6 @@
 # Claude Code Configuration - RuFlo V3
 
-Repository target: `LeanerCloud/cloud-commitments-go` (intended destination,
-not published yet).
+Repository: `LeanerCloud/cloud-commitments-go`.
 
 ## Behavioral Rules (Always Enforced)
 
@@ -231,7 +230,11 @@ set for multi-close PRs).
 - Always sanitize file paths to prevent directory traversal
 - Run `npx @claude-flow/cli@latest security scan` after security-related changes
 
-## CI/CD IAM — bootstrap vs runtime split
+## Platform-only CI/CD IAM reference (out of scope here)
+
+The following guidance belongs to the separate platform component. Its Terraform
+paths do not exist in this shared-Go repository; do not add or run Terraform
+setup here.
 
 The per-cloud `terraform/environments/*/ci-cd-permissions/` modules provision
 the CI/CD deploy identities and are **applied once, manually, by a privileged
