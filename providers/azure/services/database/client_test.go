@@ -777,7 +777,7 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_PopulatesAllFields(t *test
 	require.True(t, ok, "Details must be a *common.DatabaseDetails pointer")
 	assert.Equal(t, "sqlserver", details.Engine)
 	assert.Equal(t, "GeneralPurpose_Gen5_2", details.InstanceClass)
-	assert.Empty(t, details.EngineVersion, "EngineVersion empty when no matching SKU in catalogue")
+	assert.Empty(t, details.EngineVersion, "EngineVersion empty when no matching SKU in catalog")
 	assert.Empty(t, details.AZConfig, "AZConfig is deferred to batched enrichment")
 }
 
@@ -823,7 +823,7 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_PopulatesEngineVersion(t *
 	require.True(t, ok)
 	assert.Equal(t, "sqlserver", details.Engine)
 	assert.Equal(t, skuName, details.InstanceClass)
-	assert.Equal(t, "12.0", details.EngineVersion, "EngineVersion must be enriched from the cached SKU catalogue")
+	assert.Equal(t, "12.0", details.EngineVersion, "EngineVersion must be enriched from the cached SKU catalog")
 }
 
 // TestDatabaseClient_ConvertAzureSQLRecommendation_CapabilitiesErrorFallsBack
@@ -879,7 +879,7 @@ func TestDatabaseClient_CachedSKULookup_FetchedOnce(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		_, _ = client.cachedSKULookup(context.Background(), skuName)
 	}
-	assert.Equal(t, 1, mockClient.CallCount, "capabilities catalogue must be fetched ONCE regardless of lookup count")
+	assert.Equal(t, 1, mockClient.CallCount, "capabilities catalog must be fetched ONCE regardless of lookup count")
 }
 
 // MockTokenCredential for testing PurchaseCommitment.

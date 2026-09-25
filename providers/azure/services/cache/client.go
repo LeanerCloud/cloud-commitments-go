@@ -160,7 +160,7 @@ func (c *CacheClient) GetRecommendations(ctx context.Context, _ *common.Recommen
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxRecsPages {
 			return nil, fmt.Errorf("cache: GetRecommendations pagination cap (%d pages) reached", maxRecsPages)
@@ -216,7 +216,7 @@ func (c *CacheClient) collectRedisReservations(ctx context.Context, pager Reserv
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxReservationsPages {
 			return nil, fmt.Errorf("cache: GetExistingCommitments pagination cap (%d pages) reached", maxReservationsPages)
@@ -458,7 +458,7 @@ func (c *CacheClient) collectSKUsFromCaches(ctx context.Context, pager RedisCach
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("cache: GetValidResourceTypes context cancelled after %d pages: %w", pageIdx, err)
+			return nil, fmt.Errorf("cache: GetValidResourceTypes context canceled after %d pages: %w", pageIdx, err)
 		}
 		if pageIdx >= maxCachesPages {
 			log.Printf("WARNING: cache: GetValidResourceTypes pagination cap (%d pages) reached", maxCachesPages)
@@ -690,14 +690,14 @@ func (c *CacheClient) cachedSKULookup(ctx context.Context, skuName string) (redi
 func (c *CacheClient) fetchSKUCatalogue(ctx context.Context) map[string]redisSKUEntry {
 	pager, err := c.createRedisCachesPager()
 	if err != nil {
-		logging.Warnf("azure cache: SKU catalogue pager create failed for region %s: %v — Details.Shards left at 0", c.region, err)
+		logging.Warnf("azure cache: SKU catalog pager create failed for region %s: %v — Details.Shards left at 0", c.region, err)
 		return nil
 	}
 	out := make(map[string]redisSKUEntry)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			logging.Warnf("azure cache: SKU catalogue page fetch failed for region %s: %v — partial cache (%d entries) discarded, Details.Shards left at 0", c.region, err, len(out))
+			logging.Warnf("azure cache: SKU catalog page fetch failed for region %s: %v — partial cache (%d entries) discarded, Details.Shards left at 0", c.region, err, len(out))
 			return nil
 		}
 		for _, cache := range page.Value {

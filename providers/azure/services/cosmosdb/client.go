@@ -162,7 +162,7 @@ func (c *CosmosDBClient) GetRecommendations(ctx context.Context, _ *common.Recom
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxRecsPages {
 			return nil, fmt.Errorf("cosmosdb: GetRecommendations pagination cap (%d pages) reached", maxRecsPages)
@@ -218,7 +218,7 @@ func (c *CosmosDBClient) collectCosmosReservations(ctx context.Context, pager Re
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxReservationsPages {
 			return nil, fmt.Errorf("cosmosdb: GetExistingCommitments pagination cap (%d pages) reached", maxReservationsPages)
@@ -458,7 +458,7 @@ func (c *CosmosDBClient) collectCapabilitiesFromAccounts(ctx context.Context, pa
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("cosmosdb: GetValidResourceTypes context cancelled after %d pages: %w", pageIdx, err)
+			return nil, fmt.Errorf("cosmosdb: GetValidResourceTypes context canceled after %d pages: %w", pageIdx, err)
 		}
 		if pageIdx >= maxAccountsPages {
 			log.Printf("WARNING: cosmosdb: GetValidResourceTypes pagination cap (%d pages) reached", maxAccountsPages)

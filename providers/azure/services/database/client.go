@@ -192,7 +192,7 @@ func (c *DatabaseClient) GetRecommendations(ctx context.Context, _ *common.Recom
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxRecsPages {
 			return nil, fmt.Errorf("database: GetRecommendations pagination cap (%d pages) reached", maxRecsPages)
@@ -248,7 +248,7 @@ func (c *DatabaseClient) collectSQLReservations(ctx context.Context, pager Reser
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxReservationsPages {
 			return nil, fmt.Errorf("database: GetExistingCommitments pagination cap (%d pages) reached", maxReservationsPages)
@@ -703,12 +703,12 @@ func (c *DatabaseClient) cachedSKULookup(ctx context.Context, skuName string) (s
 func (c *DatabaseClient) fetchSKUCatalogue(ctx context.Context) map[string]sqlSKUEntry {
 	capClient, err := c.getOrCreateCapabilitiesClient()
 	if err != nil {
-		logging.Warnf("azure database: SKU catalogue capabilities client create failed for region %s: %v — Details.EngineVersion left empty", c.region, err)
+		logging.Warnf("azure database: SKU catalog capabilities client create failed for region %s: %v — Details.EngineVersion left empty", c.region, err)
 		return nil
 	}
 	resp, err := capClient.ListByLocation(ctx, c.region, &armsql.CapabilitiesClientListByLocationOptions{Include: nil})
 	if err != nil {
-		logging.Warnf("azure database: SKU catalogue ListByLocation failed for region %s: %v — Details.EngineVersion left empty", c.region, err)
+		logging.Warnf("azure database: SKU catalog ListByLocation failed for region %s: %v — Details.EngineVersion left empty", c.region, err)
 		return nil
 	}
 	out := make(map[string]sqlSKUEntry)

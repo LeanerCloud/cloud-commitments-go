@@ -149,7 +149,7 @@ func (c *ManagedRedisClient) GetRecommendations(ctx context.Context, _ *common.R
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxRecsPages {
 			return nil, fmt.Errorf("managedredis: GetRecommendations pagination cap (%d pages) reached", maxRecsPages)

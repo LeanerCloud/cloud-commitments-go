@@ -348,7 +348,7 @@ func normaliseTerm(term *string) string {
 	case "P3Y":
 		return "3yr"
 	default:
-		logging.Warnf("azure recommendations: unrecognised Term value %q; passing through verbatim", *term)
+		logging.Warnf("azure recommendations: unrecognized Term value %q; passing through verbatim", *term)
 		return *term
 	}
 }

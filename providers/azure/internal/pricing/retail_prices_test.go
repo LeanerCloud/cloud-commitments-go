@@ -197,7 +197,7 @@ func TestFetchAll_PerPageTimeout(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "page 1")
 	assert.Contains(t, err.Error(), "timeout")
-	assert.NoError(t, outerCtx.Err(), "outer ctx must not be cancelled by a per-page timeout")
+	assert.NoError(t, outerCtx.Err(), "outer ctx must not be canceled by a per-page timeout")
 }
 
 // TestFetchAll_RejectsNonOKStatus covers the HTTP-error path: any non-200

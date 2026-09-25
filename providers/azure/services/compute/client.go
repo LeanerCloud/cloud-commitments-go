@@ -202,7 +202,7 @@ func (c *ComputeClient) GetRecommendations(ctx context.Context, _ *common.Recomm
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxRecsPages {
 			return nil, fmt.Errorf("compute: GetRecommendations pagination cap (%d pages) reached", maxRecsPages)
@@ -261,7 +261,7 @@ func (c *ComputeClient) collectVMReservations(ctx context.Context, pager Reserva
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxReservationsPages {
 			return nil, fmt.Errorf("compute: GetExistingCommitments pagination cap (%d pages) reached", maxReservationsPages)
@@ -630,7 +630,7 @@ func (c *ComputeClient) collectVMSizesFromSKUs(ctx context.Context, pager Resour
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxSKUPages {
 			return nil, fmt.Errorf("compute: GetValidResourceTypes pagination cap (%d pages) reached", maxSKUPages)
@@ -871,22 +871,22 @@ func (c *ComputeClient) cachedSKULookup(ctx context.Context, skuName string) (vm
 func (c *ComputeClient) fetchSKUCatalogue(ctx context.Context) map[string]vmSKUEntry {
 	pager, err := c.createResourceSKUsPager()
 	if err != nil {
-		logging.Warnf("azure compute: SKU catalogue pager create failed for region %s: %v — Details.VCPU/MemoryGB left at 0", c.region, err)
+		logging.Warnf("azure compute: SKU catalog pager create failed for region %s: %v — Details.VCPU/MemoryGB left at 0", c.region, err)
 		return nil
 	}
 	out := make(map[string]vmSKUEntry)
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			logging.Warnf("azure compute: SKU catalogue fetch cancelled for region %s after %d pages: %v; partial cache discarded", c.region, pageIdx, err)
+			logging.Warnf("azure compute: SKU catalog fetch canceled for region %s after %d pages: %v; partial cache discarded", c.region, pageIdx, err)
 			return nil
 		}
 		if pageIdx >= maxSKUPages {
-			logging.Warnf("azure compute: SKU catalogue pagination cap (%d pages) reached for region %s; partial cache (%d entries) used", maxSKUPages, c.region, len(out))
+			logging.Warnf("azure compute: SKU catalog pagination cap (%d pages) reached for region %s; partial cache (%d entries) used", maxSKUPages, c.region, len(out))
 			break
 		}
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			logging.Warnf("azure compute: SKU catalogue page fetch failed for region %s: %v; partial cache (%d entries) discarded, Details.VCPU/MemoryGB left at 0", c.region, err, len(out))
+			logging.Warnf("azure compute: SKU catalog page fetch failed for region %s: %v; partial cache (%d entries) discarded, Details.VCPU/MemoryGB left at 0", c.region, err, len(out))
 			return nil
 		}
 		c.populateVMSKUMapFromPage(out, page.Value)

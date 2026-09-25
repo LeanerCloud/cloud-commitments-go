@@ -1326,8 +1326,8 @@ func TestComputeClient_ConvertAzureVMRecommendation_PopulatesVCPUAndMemoryFromSK
 	details, ok := out.Details.(common.ComputeDetails)
 	require.True(t, ok)
 	assert.Equal(t, "Standard_D2s_v3", details.InstanceType)
-	assert.Equal(t, 2, details.VCPU, "VCPU must be enriched from the cached SKU catalogue")
-	assert.Equal(t, 8.0, details.MemoryGB, "MemoryGB must be enriched from the cached SKU catalogue")
+	assert.Equal(t, 2, details.VCPU, "VCPU must be enriched from the cached SKU catalog")
+	assert.Equal(t, 8.0, details.MemoryGB, "MemoryGB must be enriched from the cached SKU catalog")
 }
 
 // TestComputeClient_ConvertAzureVMRecommendation_PagerErrorFallsBack
@@ -1348,12 +1348,12 @@ func TestComputeClient_ConvertAzureVMRecommendation_PagerErrorFallsBack(t *testi
 		mocks.WithNormalizedSize("Standard_D2s_v3"),
 	)
 	out := client.convertAzureVMRecommendation(context.Background(), rec)
-	require.NotNil(t, out, "conversion must NOT fail on catalogue-fetch error")
+	require.NotNil(t, out, "conversion must NOT fail on catalog-fetch error")
 	details, ok := out.Details.(common.ComputeDetails)
 	require.True(t, ok)
 	assert.Equal(t, "Standard_D2s_v3", details.InstanceType)
-	assert.Equal(t, 0, details.VCPU, "VCPU left at 0 when catalogue fetch fails")
-	assert.Equal(t, 0.0, details.MemoryGB, "MemoryGB left at 0 when catalogue fetch fails")
+	assert.Equal(t, 0, details.VCPU, "VCPU left at 0 when catalog fetch fails")
+	assert.Equal(t, 0.0, details.MemoryGB, "MemoryGB left at 0 when catalog fetch fails")
 }
 
 // TestComputeClient_ConvertAzureVMRecommendation_NoMatchLeavesFieldsZero
@@ -1410,7 +1410,7 @@ func TestComputeClient_CachedSKULookup_FetchedOnce(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		_, _ = client.cachedSKULookup(context.Background(), "Standard_D2s_v3")
 	}
-	assert.Equal(t, 1, mockPager.pageHits, "catalogue must be fetched ONCE regardless of lookup count")
+	assert.Equal(t, 1, mockPager.pageHits, "catalog must be fetched ONCE regardless of lookup count")
 }
 
 // TestComputeClient_FetchSKUCatalogue_CancelledContextFallsBack asserts
@@ -1438,8 +1438,8 @@ func TestComputeClient_FetchSKUCatalogue_CancelledContextFallsBack(t *testing.T)
 	client.SetResourceSKUsPager(mockPager)
 
 	result := client.fetchSKUCatalogue(ctx)
-	assert.Nil(t, result, "cancelled context must return nil catalogue")
-	assert.Equal(t, 0, mockPager.pageHits, "NextPage must not be called after context is already cancelled")
+	assert.Nil(t, result, "canceled context must return nil catalog")
+	assert.Equal(t, 0, mockPager.pageHits, "NextPage must not be called after context is already canceled")
 }
 
 // TestComputeClient_PurchaseCommitment_DisplayNameConformsToAzureAllowlist guards

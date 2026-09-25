@@ -163,7 +163,7 @@ func (c *SearchClient) collectSearchReservations(ctx context.Context, pager Rese
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxReservationsPages {
 			return nil, fmt.Errorf("search: GetExistingCommitments pagination cap (%d pages) reached", maxReservationsPages)
@@ -402,7 +402,7 @@ func (c *SearchClient) collectSKUsFromPager(ctx context.Context, pager SearchSer
 	skuSet := make(map[string]bool)
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("search: GetValidResourceTypes context cancelled after %d pages: %w", pageIdx, err)
+			return nil, fmt.Errorf("search: GetValidResourceTypes context canceled after %d pages: %w", pageIdx, err)
 		}
 		if pageIdx >= maxServicesPages {
 			log.Printf("WARNING: search: GetValidResourceTypes pagination cap (%d pages) reached", maxServicesPages)

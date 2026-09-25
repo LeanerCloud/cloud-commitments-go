@@ -162,7 +162,7 @@ func TestExtractRegionFromResourceID(t *testing.T) {
 			expected:   "westus2",
 		},
 		{
-			name:       "Singular location segment also recognised",
+			name:       "Singular location segment also recognized",
 			resourceID: "/subscriptions/123/providers/Microsoft.Resources/location/northeurope/foo/bar",
 			expected:   "northeurope",
 		},

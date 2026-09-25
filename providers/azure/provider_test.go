@@ -1753,7 +1753,7 @@ func TestAzureProvider_GetRecommendationsClient_MultiSubscriptionFanOut(t *testi
 
 	// The happy path for the same branch: a target the principal CAN see is
 	// honored, and scopes the client to exactly that subscription.
-	t.Run("AZURE_SUBSCRIPTION_ID matching a visible subscription is honoured", func(t *testing.T) {
+	t.Run("AZURE_SUBSCRIPTION_ID matching a visible subscription is honored", func(t *testing.T) {
 		t.Setenv("AZURE_SUBSCRIPTION_ID", "sub-1")
 		p := &AzureProvider{cred: &mockTokenCredential{}}
 		p.SetSubscriptionsClient(twoSubscriptionPages())
@@ -1898,7 +1898,7 @@ func TestAzureProvider_ResolveSubscription_InvisibleConfiguredTargetErrors(t *te
 
 	// The guard must reject only targets that are genuinely invisible; a
 	// visible one still resolves, and resolves to itself.
-	t.Run("a visible configured target is still honoured", func(t *testing.T) {
+	t.Run("a visible configured target is still honored", func(t *testing.T) {
 		t.Setenv("AZURE_SUBSCRIPTION_ID", soloID)
 		var gotSubscriptionID string
 		client := soloClient()

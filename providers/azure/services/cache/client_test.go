@@ -915,7 +915,7 @@ func TestCacheClient_ConvertAzureRedisRecommendation_PopulatesShardsFromSKUCache
 	require.True(t, ok)
 	assert.Equal(t, "redis", details.Engine)
 	assert.Equal(t, "Premium_P3", details.NodeType)
-	assert.Equal(t, 5, details.Shards, "Shards must be enriched from the cached SKU catalogue")
+	assert.Equal(t, 5, details.Shards, "Shards must be enriched from the cached SKU catalog")
 }
 
 // TestCacheClient_ConvertAzureRedisRecommendation_PagerErrorFallsBack
@@ -936,12 +936,12 @@ func TestCacheClient_ConvertAzureRedisRecommendation_PagerErrorFallsBack(t *test
 		mocks.WithNormalizedSize("Premium_P3"),
 	)
 	out := client.convertAzureRedisRecommendation(context.Background(), rec)
-	require.NotNil(t, out, "conversion must NOT fail on catalogue-fetch error")
+	require.NotNil(t, out, "conversion must NOT fail on catalog-fetch error")
 	details, ok := out.Details.(*common.CacheDetails)
 	require.True(t, ok)
 	assert.Equal(t, "redis", details.Engine)
 	assert.Equal(t, "Premium_P3", details.NodeType)
-	assert.Equal(t, 0, details.Shards, "Shards left at 0 when catalogue fetch fails")
+	assert.Equal(t, 0, details.Shards, "Shards left at 0 when catalog fetch fails")
 }
 
 // TestCacheClient_CachedSKULookup_FetchedOnce pins the perf invariant:
@@ -981,7 +981,7 @@ func TestCacheClient_CachedSKULookup_FetchedOnce(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		_, _ = client.cachedSKULookup(context.Background(), "Premium_P1")
 	}
-	assert.Equal(t, 1, mockPager.index, "catalogue must be fetched ONCE regardless of lookup count")
+	assert.Equal(t, 1, mockPager.index, "catalog must be fetched ONCE regardless of lookup count")
 }
 
 // Test the to package is properly imported (used in tests).
@@ -1416,7 +1416,7 @@ func TestCacheClient_GetValidResourceTypes_CtxCancelReturnsError(t *testing.T) {
 	client.SetRedisCachesPager(&infiniteRedisCachesPager{})
 
 	_, err := client.GetValidResourceTypes(ctx)
-	require.Error(t, err, "cancelled context must produce an error, not a silent partial result")
+	require.ErrorIs(t, err, context.Canceled, "canceled context must produce an error, not a silent partial result")
 }
 
 // TestCacheClient_GetValidResourceTypes_PageCapReturnsError asserts that the
