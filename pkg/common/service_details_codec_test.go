@@ -135,7 +135,7 @@ func TestDecodeServiceDetailsFor_RoundTrip(t *testing.T) {
 }
 
 // TestDecodeServiceDetailsFor_LegacyEmpty pins the documented fallback
-// behaviour: an empty payload on a service that needs typed Details
+// behavior: an empty payload on a service that needs typed Details
 // yields a zero-valued typed pointer (so the cloud client's type-
 // assertion succeeds and buildOfferingFilters can substitute defaults).
 func TestDecodeServiceDetailsFor_LegacyEmpty(t *testing.T) {

@@ -121,7 +121,7 @@ func TestDo_PerAttemptTimeoutFires(t *testing.T) {
 	err := Do(context.Background(), cfg, func(perAttemptCtx context.Context, _ int) error {
 		atomic.AddInt32(&calls, 1)
 		// Simulate a hung op that ignores the per-attempt context
-		// being cancelled — it returns the ctx.Err() once the deadline
+		// being canceled — it returns the ctx.Err() once the deadline
 		// fires.
 		select {
 		case <-perAttemptCtx.Done():

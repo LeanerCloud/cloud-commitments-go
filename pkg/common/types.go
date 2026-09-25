@@ -101,7 +101,7 @@ const (
 	//   ServiceSavingsPlansSageMaker, ServiceSavingsPlansDatabase.
 	// Use SavingsPlansPlanTypes() to iterate over them in canonical order.
 	//
-	// Code that needs to recognise pre-#85 persisted "savings-plans" rows
+	// Code that needs to recognize pre-#85 persisted "savings-plans" rows
 	// (e.g. purchase_executions JSONB blobs) goes through the mapper in
 	// internal/purchase/execution.go.
 	ServiceSavingsPlansAll ServiceType = "savingsplans" // umbrella sentinel for "any SP"
@@ -111,7 +111,7 @@ const (
 	// defaults independently per plan type. These were introduced after the
 	// umbrella was normalised; the dash-form slugs intentionally differ from
 	// the umbrella's "savingsplans" so a generic-vs-specific comparison is
-	// unambiguous (use IsSavingsPlan to recognise the family).
+	// unambiguous (use IsSavingsPlan to recognize the family).
 	ServiceSavingsPlansCompute     ServiceType = "savings-plans-compute"     // ComputeSp: EC2, Fargate, Lambda
 	ServiceSavingsPlansEC2Instance ServiceType = "savings-plans-ec2instance" // Ec2InstanceSp: specific EC2 families
 	ServiceSavingsPlansSageMaker   ServiceType = "savings-plans-sagemaker"   // SagemakerSp
@@ -143,7 +143,7 @@ func (s ServiceType) String() string {
 // the umbrella sentinel (ServiceSavingsPlansAll), any of the four per-plan-type
 // constants, or the dash-free frontend spelling "savingsplans" that the API
 // handler stores verbatim without normalisation. Use it when code needs to
-// recognise the Savings Plans family irrespective of plan type (e.g., stats
+// recognize the Savings Plans family irrespective of plan type (e.g., stats
 // aggregation, region-ignoring filters, display-name branching).
 func IsSavingsPlan(s ServiceType) bool {
 	switch s {
@@ -262,7 +262,7 @@ type Recommendation struct {
 	// omitempty ensures nil is absent from JSON (not written as null).
 	RawRecommendation json.RawMessage `json:"raw_recommendation,omitempty" csv:"-"`
 
-	// UsageHistory is an ordered slice of daily coverage/utilisation
+	// UsageHistory is an ordered slice of daily coverage/utilization
 	// percentages (0-100) for the last N days of the lookback window
 	// (oldest-to-newest). Populated by cloud collectors that can source the
 	// signal from the provider API; nil when not yet wired or when the
@@ -381,7 +381,7 @@ type PurchaseOptions struct {
 	// token) check for an existing RI tagged with it before purchasing and tag
 	// the new RI with it afterwards. Empty means no idempotency guard (the CLI
 	// purchase path, which has no owning execution, leaves it empty and keeps
-	// its prior non-idempotent behaviour).
+	// its prior non-idempotent behavior).
 	IdempotencyToken string
 	// ExecutionID, when non-empty, is the purchase_executions row UUID that
 	// owns this purchase attempt. Carried so the purchase-execution flow can
@@ -392,7 +392,7 @@ type PurchaseOptions struct {
 	// OfferingClass is the EC2 Reserved Instance offering class for this
 	// purchase: "convertible" (exchangeable) or "standard" (locked, ~5%
 	// cheaper). Empty means the caller has not set one; the EC2 client
-	// defaults to "convertible" to preserve pre-694 behaviour.
+	// defaults to "convertible" to preserve pre-694 behavior.
 	// Only meaningful for EC2 RI purchases; ignored by other providers.
 	OfferingClass string
 }
@@ -487,10 +487,10 @@ type Region struct {
 
 // ComputeDetails represents compute-specific details (EC2, VM, Compute Engine).
 //
-// VCPU + MemoryGB are populated by per-provider catalogue lookups when
+// VCPU + MemoryGB are populated by per-provider catalog lookups when
 // available (Azure: armcompute.ResourceSKU.Capabilities; AWS:
-// ec2:DescribeInstanceTypes; GCP: machine-type catalogue). They are
-// optional — converters that don't yet wire a catalogue leave them at the
+// ec2:DescribeInstanceTypes; GCP: machine-type catalog). They are
+// optional — converters that don't yet wire a catalog leave them at the
 // zero value, and the JSON tag uses omitempty so unknown values don't
 // pollute the API payload.
 type ComputeDetails struct {

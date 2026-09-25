@@ -105,7 +105,7 @@ func TestSavingsPlansPlanTypes(t *testing.T) {
 		ServiceSavingsPlansDatabase,
 	}, got)
 
-	// Every returned slug must be recognised as a Savings Plan.
+	// Every returned slug must be recognized as a Savings Plan.
 	for _, st := range got {
 		assert.Truef(t, IsSavingsPlan(st), "IsSavingsPlan(%q) should be true", st)
 	}

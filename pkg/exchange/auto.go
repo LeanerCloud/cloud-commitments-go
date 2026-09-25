@@ -162,7 +162,7 @@ func RunAutoExchange(ctx context.Context, params RunAutoExchangeParams) (*AutoEx
 	// the standalone task does not wipe out ladder-linked pendings and vice versa.
 	// Race condition note: if a user clicks approve at 5h59m while this new run
 	// fires and cancels pending records, the TransitionRIExchangeStatus atomic
-	// WHERE clause prevents the exchange from executing (record already cancelled
+	// WHERE clause prevents the exchange from executing (record already canceled
 	// → returns nil → handler returns 409).
 	if !params.DryRun {
 		origin := common.ExchangeOriginStandalone
@@ -200,7 +200,7 @@ func RunAutoExchange(ctx context.Context, params RunAutoExchangeParams) (*AutoEx
 
 	for _, rec := range recs {
 		if processRecommendation(ctx, params, rec, perExchangeCap, result) {
-			// H4: processAutoExchange signalled halt because a ledger write failed
+			// H4: processAutoExchange signaled halt because a ledger write failed
 			// after money moved. Stop processing further recommendations so
 			// subsequent exchanges don't bypass the daily cap.
 			break

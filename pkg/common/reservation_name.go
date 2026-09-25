@@ -86,7 +86,7 @@ func (f ReservationNameFields) WithRandSource(b []byte) ReservationNameFields {
 //
 // fallbackPrefix is the prefix passed to SanitizeReservationID for the
 // unreachable empty-output fallback (e.g. "rds-reserved-"); it preserves
-// the prior call-site behaviour at every service when the builder ever
+// the prior call-site behavior at every service when the builder ever
 // emits an unsanitisable input.
 func BuildReservationName(f ReservationNameFields, fallbackPrefix string) string {
 	svc := normalizeReservationSegment(f.Service)

@@ -16,12 +16,12 @@ type RIInfo struct {
 	InstanceCount       int32
 	OfferingClass       string  // must be "convertible" — standard RIs cannot be exchanged
 	NormalizationFactor float64 // AWS normalization factor for the instance size
-	// MonthlyCost is the effective per-instance per-month price (amortised
+	// MonthlyCost is the effective per-instance per-month price (amortized
 	// upfront + recurring charges, AWS-canonical 730 hours per month).
 	// Used by the local passesDollarUnitsCheck pre-filter that gates
 	// cross-family alternatives. Zero when the caller didn't compute it
 	// (e.g. older callers that only need primary-target analysis); the
-	// pre-filter treats zero as "skip the check" so existing behaviour
+	// pre-filter treats zero as "skip the check" so existing behavior
 	// is preserved.
 	MonthlyCost float64
 	// CurrencyCode is the ISO-4217 currency the prices are denominated
@@ -37,7 +37,7 @@ type RIInfo struct {
 	// alternative to a 1y commitment is wrong because the customer's
 	// existing exchange anchor is the 1y term). Zero means "unknown" —
 	// the term filter is skipped for that rec to preserve today's
-	// behaviour for older callers that don't populate it.
+	// behavior for older callers that don't populate it.
 	TermSeconds int64
 }
 
@@ -49,7 +49,7 @@ type UtilizationInfo struct {
 
 // OfferingOption is a single Convertible RI offering exposed to the
 // reshape layer: the AWS offering ID, the instance type it provisions,
-// and the effective monthly cost (amortised fixed price + recurring
+// and the effective monthly cost (amortized fixed price + recurring
 // hourly charges × 730 hours). Used both as the return shape of
 // PurchaseRecLookup (what the recommendations-store closure returns) and
 // as the element type of ReshapeRecommendation.AlternativeTargets (what
@@ -103,7 +103,7 @@ type OfferingOption struct {
 // calls — the recommendations table is already populated by the
 // scheduler tick. Implementations read from store.ListStoredRecommendations
 // and map each RecommendationRecord to an OfferingOption (effective
-// monthly cost amortised from the upfront and monthly fields).
+// monthly cost amortized from the upfront and monthly fields).
 //
 // region is the AWS region the reshape page is viewing; currencyCode is
 // the source RIs' currency, propagated onto each returned
@@ -118,7 +118,7 @@ type PurchaseRecLookup func(ctx context.Context, region, currencyCode string) ([
 // recommendations (see AnalyzeReshapingWithRecs). This is advisory data
 // for the UI to surface alongside the primary target; the auto-exchange
 // pipeline still acts on TargetInstanceType only so existing automated
-// behaviour is unchanged. Empty when the base AnalyzeReshaping is used
+// behavior is unchanged. Empty when the base AnalyzeReshaping is used
 // directly (auto.go) or when no cached recommendations exist for the
 // region.
 type ReshapeRecommendation struct {
@@ -139,7 +139,7 @@ type ReshapeRecommendation struct {
 // (srcNF × srcMonthlyCost). AWS's actual rule is two parallel
 // ≥-checks (new upfront ≥ original AND new recurring ≥ original);
 // the single product approximates both because EffectiveMonthlyCost
-// folds upfront amortisation + recurring + usage into one number.
+// folds upfront amortization + recurring + usage into one number.
 //
 // Currency must match between source and target. Empty CurrencyCode
 // on either side is treated as "skip the currency guard" so today's
@@ -185,7 +185,7 @@ const (
 //  1. Cost (dominant, 60%): inverted effective monthly cost relative to the
 //     source RI so that cheaper offerings score higher. When source pricing
 //     is absent the component is replaced with a neutral 0.5 mid-point rather
-//     than 0 (which would unfairly penalise offerings for a data gap in src).
+//     than 0 (which would unfairly penalize offerings for a data gap in src).
 //
 //  2. Family-generation fit (15%): a same-prefix generation-jump (m5->m6i)
 //     scores full marks; a cross-prefix alternative (m5->r5) scores zero.
@@ -198,7 +198,7 @@ const (
 //  4. CE confidence (10%): derived from SavingsAbs + RecommendationCount
 //     using the same heuristic as confidenceBucketFor in the API layer.
 //     High->1.0, medium->0.5, low->0.0. Zero-value signals are treated
-//     as absent (neutral 0.5) rather than "low" to avoid penalising
+//     as absent (neutral 0.5) rather than "low" to avoid penalizing
 //     offerings that predate the field.
 //
 //  5. NF proximity (5%): how close the alternative's normalization capacity
@@ -215,7 +215,7 @@ func compositeScore(off OfferingOption, src RIInfo) float64 {
 
 // costComponent returns a [0,1] cost score for the offering.
 // When src pricing is absent (MonthlyCost == 0) returns 0.5 (neutral) so
-// that a missing field does not falsely penalise or reward the offering.
+// that a missing field does not falsely penalize or reward the offering.
 func costComponent(off OfferingOption, src RIInfo) float64 {
 	if src.MonthlyCost <= 0 || off.EffectiveMonthlyCost <= 0 {
 		return 0.5
@@ -525,7 +525,7 @@ func analyzeRI(ri RIInfo, utilMap map[string]float64, threshold float64) *Reshap
 //     source RI's NF / MonthlyCost / CurrencyCode so the UI doesn't
 //     show options that would be rejected at AWS exchange time. When
 //     the source RI lacks pricing (MonthlyCost == 0) the gate is
-//     skipped for that rec to preserve today's behaviour for callers
+//     skipped for that rec to preserve today's behavior for callers
 //     that don't supply pricing.
 //
 // Missing cache, lookup error, or empty-region response: rec ships with
@@ -653,7 +653,7 @@ func isCrossFamilyAlternative(off OfferingOption, srcFamily, primaryTarget strin
 // termMatchesIfKnown enforces the term-match guard when both sides
 // report TermSeconds. Either side at zero (or no source RI at all)
 // returns true so legacy fixtures and older callers keep today's
-// behaviour.
+// behavior.
 func termMatchesIfKnown(src RIInfo, off OfferingOption, hasSrc bool) bool {
 	if !hasSrc || src.TermSeconds <= 0 || off.TermSeconds <= 0 {
 		return true
@@ -673,7 +673,7 @@ func termMatchesIfKnown(src RIInfo, off OfferingOption, hasSrc bool) bool {
 // it's missing. If the size is not in the AWS canonical table,
 // NormalizationFactorForSize returns 0 (map miss), which causes
 // passesDollarUnitsCheck to reject the alternative (srcNF <= 0 path).
-// This is fail-closed: an unrecognised size excludes the offering rather
+// This is fail-closed: an unrecognized size excludes the offering rather
 // than silently bypassing the dollar-units check.
 func pricingGatePasses(src RIInfo, off OfferingOption, hasSrc bool) bool {
 	if !hasSrc || src.MonthlyCost <= 0 {

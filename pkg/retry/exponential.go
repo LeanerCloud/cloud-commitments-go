@@ -56,7 +56,7 @@ type Config struct {
 // about-to-wait ("retrying after Nms") or right after a failure.
 // The shared callback fires before each attempt and gets prevErr,
 // so call-sites guard on `prevErr != nil` to log only on retries
-// (matching today's behaviour: no log on the first/only attempt).
+// (matching today's behavior: no log on the first/only attempt).
 // The first-attempt invocation with prevErr=nil is a no-op for
 // most call-sites.
 type OnAttemptFn func(attempt int, prevErr error)
@@ -99,7 +99,7 @@ func (c Config) Validate() error {
 // short-circuit retries.
 //
 // Returned error: nil on success, ctx.Err() if the outer context is
-// cancelled mid-backoff, the unwrapped op error if it short-circuits
+// canceled mid-backoff, the unwrapped op error if it short-circuits
 // via ErrPermanent, or a wrapped "after N attempts: …" of the last
 // op error if the budget exhausts.
 func Do(ctx context.Context, cfg Config, op func(ctx context.Context, attempt int) error) error {
