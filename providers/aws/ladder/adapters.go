@@ -82,7 +82,7 @@ func (a *spListerAdapter) ListActiveSPs(ctx context.Context) ([]ActiveSP, error)
 
 	for {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("ListActiveSPs: context cancelled: %w", err)
+			return nil, fmt.Errorf("ListActiveSPs: context canceled: %w", err)
 		}
 		page++
 

@@ -1115,7 +1115,7 @@ func TestClient_CancelMarketplaceListing(t *testing.T) {
 	res, err := client.CancelMarketplaceListing(context.Background(), "ril-cancel")
 	assert.NoError(t, err)
 	assert.Equal(t, "ril-cancel", res.ListingID)
-	assert.Equal(t, "cancelled", res.State)
+	assert.Equal(t, string(types.ListingStatusCancelled), res.State)
 	mockEC2.AssertExpectations(t)
 }
 

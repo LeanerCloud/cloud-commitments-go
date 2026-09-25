@@ -384,7 +384,7 @@ func TestSPLister_ContextCancelled(t *testing.T) {
 	cancel()
 
 	_, err := lister.ListActiveSPs(ctx)
-	require.Error(t, err, "cancelled context must produce an error")
+	require.ErrorIs(t, err, context.Canceled, "canceled context must produce an error")
 }
 
 // TestSPLister_NilIDFails verifies fail-loud on a SP entry with a nil

@@ -104,7 +104,7 @@ func resolveEC2Tenancy(tenancy *string) (string, error) {
 		return string(ec2types.TenancyDedicated), nil
 	default:
 		return "", fmt.Errorf(
-			"unrecognised EC2 tenancy %q from Cost Explorer: "+
+			"unrecognized EC2 tenancy %q from Cost Explorer: "+
 				"must be shared (default) or dedicated; "+
 				"host tenancy has no corresponding RI product",
 			*tenancy,

@@ -59,7 +59,7 @@ func TestFetchCoveragePage_RespectsSharedSemaphore(t *testing.T) {
 
 	_, err := client.fetchCoveragePage(fullSemaphoreCtx(t), &costexplorer.GetReservationCoverageInput{})
 
-	require.Error(t, err, "fetch must fail when the cap is saturated and ctx is cancelled")
+	require.Error(t, err, "fetch must fail when the cap is saturated and ctx is canceled")
 	assert.ErrorIs(t, err, context.Canceled)
 	assert.Equal(t, int32(0), mock.coverageCalls.Load(),
 		"GetReservationCoverage escaped the shared concurrency semaphore")
@@ -73,7 +73,7 @@ func TestFetchUtilizationPage_RespectsSharedSemaphore(t *testing.T) {
 
 	_, err := client.fetchUtilizationPage(fullSemaphoreCtx(t), &costexplorer.GetReservationUtilizationInput{})
 
-	require.Error(t, err, "fetch must fail when the cap is saturated and ctx is cancelled")
+	require.Error(t, err, "fetch must fail when the cap is saturated and ctx is canceled")
 	assert.ErrorIs(t, err, context.Canceled)
 	assert.Equal(t, int32(0), mock.utilizationCalls.Load(),
 		"GetReservationUtilization escaped the shared concurrency semaphore")

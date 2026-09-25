@@ -351,7 +351,7 @@ func TestGetOnDemandSeries_ContextCancelled(t *testing.T) {
 
 	_, err := client.GetOnDemandSeries(ctx, "us-east-1", 30)
 
-	require.Error(t, err)
+	require.ErrorIs(t, err, context.Canceled)
 }
 
 // TestGetOnDemandSeries_MissingMetricKeyFails verifies that a result row

@@ -68,7 +68,7 @@ func (c *Client) GetRIUtilization(ctx context.Context, lookbackDays int, region 
 	var nextPageToken *string
 	for {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("utilization: pagination cancelled: %w", err)
+			return nil, fmt.Errorf("utilization: pagination canceled: %w", err)
 		}
 		input.NextPageToken = nextPageToken
 

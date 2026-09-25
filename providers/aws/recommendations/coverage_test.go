@@ -441,7 +441,7 @@ func TestFetchCoveragePaged_CtxCancelReturnsError(t *testing.T) {
 		func(_, _ string, _ PoolCoverage) {},
 		720,
 	)
-	require.Error(t, err, "cancelled context must surface an error from fetchCoveragePaged")
+	require.ErrorIs(t, err, context.Canceled, "canceled context must surface an error from fetchCoveragePaged")
 }
 
 // TestNormaliseDeployment locks deployment-option canonicalisation. CE
