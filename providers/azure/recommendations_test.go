@@ -16,7 +16,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
-// mockAzureTokenCredential implements azcore.TokenCredential for testing
+// mockAzureTokenCredential implements azcore.TokenCredential for testing.
 type mockAzureTokenCredential struct{}
 
 func (m *mockAzureTokenCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {

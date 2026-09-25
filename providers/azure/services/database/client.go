@@ -48,24 +48,24 @@ type sqlSKUEntry struct {
 	engineVersion string
 }
 
-// HTTPClient interface for HTTP operations (enables mocking)
+// HTTPClient interface for HTTP operations (enables mocking).
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-// RecommendationsPager interface for recommendations pager (enables mocking)
+// RecommendationsPager interface for recommendations pager (enables mocking).
 type RecommendationsPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armconsumption.ReservationRecommendationsClientListResponse, error)
 }
 
-// ReservationsDetailsPager interface for reservations details pager (enables mocking)
+// ReservationsDetailsPager interface for reservations details pager (enables mocking).
 type ReservationsDetailsPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armconsumption.ReservationsDetailsClientListResponse, error)
 }
 
-// CapabilitiesClient interface for SQL capabilities (enables mocking)
+// CapabilitiesClient interface for SQL capabilities (enables mocking).
 type CapabilitiesClient interface {
 	ListByLocation(ctx context.Context, locationName string, options *armsql.CapabilitiesClientListByLocationOptions) (armsql.CapabilitiesClientListByLocationResponse, error)
 }
@@ -82,7 +82,7 @@ type SQLManagedInstancesPager interface {
 	NextPage(ctx context.Context) (armsql.ManagedInstancesClientListResponse, error)
 }
 
-// DatabaseClient handles Azure SQL Database Reserved Capacity
+// DatabaseClient handles Azure SQL Database Reserved Capacity.
 type DatabaseClient struct {
 	cred                  azcore.TokenCredential
 	subscriptionID        string
@@ -111,7 +111,7 @@ type DatabaseClient struct {
 	deployment     string
 }
 
-// NewClient creates a new Azure Database client
+// NewClient creates a new Azure Database client.
 func NewClient(cred azcore.TokenCredential, subscriptionID, region string) *DatabaseClient {
 	return &DatabaseClient{
 		cred:           cred,
@@ -121,7 +121,7 @@ func NewClient(cred azcore.TokenCredential, subscriptionID, region string) *Data
 	}
 }
 
-// NewClientWithHTTP creates a new Azure Database client with a custom HTTP client (for testing)
+// NewClientWithHTTP creates a new Azure Database client with a custom HTTP client (for testing).
 func NewClientWithHTTP(cred azcore.TokenCredential, subscriptionID, region string, httpClient HTTPClient) *DatabaseClient {
 	return &DatabaseClient{
 		cred:           cred,
@@ -131,17 +131,17 @@ func NewClientWithHTTP(cred azcore.TokenCredential, subscriptionID, region strin
 	}
 }
 
-// SetRecommendationsPager sets the recommendations pager (for testing)
+// SetRecommendationsPager sets the recommendations pager (for testing).
 func (c *DatabaseClient) SetRecommendationsPager(pager RecommendationsPager) {
 	c.recommendationsPager = pager
 }
 
-// SetReservationsPager sets the reservations pager (for testing)
+// SetReservationsPager sets the reservations pager (for testing).
 func (c *DatabaseClient) SetReservationsPager(pager ReservationsDetailsPager) {
 	c.reservationsPager = pager
 }
 
-// SetCapabilitiesClient sets the capabilities client (for testing)
+// SetCapabilitiesClient sets the capabilities client (for testing).
 func (c *DatabaseClient) SetCapabilitiesClient(client CapabilitiesClient) {
 	c.capabilitiesClient = client
 }
@@ -156,12 +156,12 @@ func (c *DatabaseClient) SetManagedInstancesPager(pager SQLManagedInstancesPager
 	c.managedInstancesPager = pager
 }
 
-// GetServiceType returns the service type
+// GetServiceType returns the service type.
 func (c *DatabaseClient) GetServiceType() common.ServiceType {
 	return common.ServiceRelationalDB
 }
 
-// GetRegion returns the region
+// GetRegion returns the region.
 func (c *DatabaseClient) GetRegion() string {
 	return c.region
 }
@@ -169,7 +169,7 @@ func (c *DatabaseClient) GetRegion() string {
 // AzureRetailPrice is the response envelope for the Azure Retail Prices API.
 type AzureRetailPrice = pricing.Page[pricing.RetailPriceItem]
 
-// GetRecommendations gets SQL Database reservation recommendations from Azure Consumption API
+// GetRecommendations gets SQL Database reservation recommendations from Azure Consumption API.
 func (c *DatabaseClient) GetRecommendations(ctx context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	recommendations := make([]common.Recommendation, 0)
 
@@ -213,7 +213,7 @@ func (c *DatabaseClient) GetRecommendations(ctx context.Context, _ *common.Recom
 	return recommendations, nil
 }
 
-// GetExistingCommitments retrieves existing SQL Database reserved capacity using Azure Resource Graph
+// GetExistingCommitments retrieves existing SQL Database reserved capacity using Azure Resource Graph.
 func (c *DatabaseClient) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	pager, err := c.createReservationsPager()
 	if err != nil {
@@ -224,7 +224,7 @@ func (c *DatabaseClient) GetExistingCommitments(ctx context.Context) ([]common.C
 	return c.collectSQLReservations(ctx, pager)
 }
 
-// createReservationsPager creates a pager for listing reservations
+// createReservationsPager creates a pager for listing reservations.
 func (c *DatabaseClient) createReservationsPager() (ReservationsDetailsPager, error) {
 	// Use injected pager if available (for testing)
 	if c.reservationsPager != nil {
@@ -268,7 +268,7 @@ func (c *DatabaseClient) collectSQLReservations(ctx context.Context, pager Reser
 	return commitments, nil
 }
 
-// convertSQLReservation converts a reservation detail to a commitment if it's a SQL reservation
+// convertSQLReservation converts a reservation detail to a commitment if it's a SQL reservation.
 func (c *DatabaseClient) convertSQLReservation(detail *armconsumption.ReservationDetail) *common.Commitment {
 	if detail.Properties == nil {
 		return nil
@@ -385,7 +385,7 @@ func (c *DatabaseClient) PurchaseCommitment(ctx context.Context, rec common.Reco
 	return result, nil
 }
 
-// ValidateOffering validates that a SQL Database SKU exists
+// ValidateOffering validates that a SQL Database SKU exists.
 func (c *DatabaseClient) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
 	validSKUs, err := c.GetValidResourceTypes(ctx)
 	if err != nil {
@@ -402,7 +402,7 @@ func (c *DatabaseClient) ValidateOffering(ctx context.Context, rec common.Recomm
 	return fmt.Errorf("invalid Azure SQL Database SKU: %s", rec.ResourceType)
 }
 
-// GetOfferingDetails retrieves SQL Database reservation offering details from Azure Retail Prices API
+// GetOfferingDetails retrieves SQL Database reservation offering details from Azure Retail Prices API.
 func (c *DatabaseClient) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	termYears, err := reservations.ParseTermYears(rec.Term)
 	if err != nil {
@@ -444,7 +444,7 @@ func (c *DatabaseClient) GetOfferingDetails(ctx context.Context, rec common.Reco
 	}, nil
 }
 
-// GetValidResourceTypes returns valid SQL Database SKUs from Azure API
+// GetValidResourceTypes returns valid SQL Database SKUs from Azure API.
 func (c *DatabaseClient) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	capClient, err := c.getOrCreateCapabilitiesClient()
 	if err != nil {
@@ -478,7 +478,7 @@ func (c *DatabaseClient) GetValidResourceTypes(ctx context.Context) ([]string, e
 	return skus, nil
 }
 
-// getOrCreateCapabilitiesClient returns the injected client or creates a new one
+// getOrCreateCapabilitiesClient returns the injected client or creates a new one.
 func (c *DatabaseClient) getOrCreateCapabilitiesClient() (CapabilitiesClient, error) {
 	if c.capabilitiesClient != nil {
 		return c.capabilitiesClient, nil
@@ -492,7 +492,7 @@ func (c *DatabaseClient) getOrCreateCapabilitiesClient() (CapabilitiesClient, er
 	return client, nil
 }
 
-// extractServerSKUs extracts SKUs from server version capabilities
+// extractServerSKUs extracts SKUs from server version capabilities.
 func (c *DatabaseClient) extractServerSKUs(capabilities armsql.LocationCapabilities, skuSet map[string]bool) {
 	if capabilities.SupportedServerVersions == nil {
 		return
@@ -517,7 +517,7 @@ func (c *DatabaseClient) extractServerSKUs(capabilities armsql.LocationCapabilit
 	}
 }
 
-// extractManagedInstanceSKUs extracts SKUs from managed instance capabilities
+// extractManagedInstanceSKUs extracts SKUs from managed instance capabilities.
 func (c *DatabaseClient) extractManagedInstanceSKUs(capabilities armsql.LocationCapabilities, skuSet map[string]bool) {
 	if capabilities.SupportedManagedInstanceVersions == nil {
 		return
@@ -536,7 +536,7 @@ func (c *DatabaseClient) extractManagedInstanceSKUs(capabilities armsql.Location
 	}
 }
 
-// SQLPricing contains pricing information for SQL Database
+// SQLPricing contains pricing information for SQL Database.
 type SQLPricing struct {
 	HourlyRate        float64
 	ReservationPrice  float64
@@ -545,7 +545,7 @@ type SQLPricing struct {
 	SavingsPercentage float64
 }
 
-// getSQLPricing gets real pricing from Azure Retail Prices API
+// getSQLPricing gets real pricing from Azure Retail Prices API.
 func (c *DatabaseClient) getSQLPricing(ctx context.Context, sku, region string, termYears int) (*SQLPricing, error) {
 	filter := fmt.Sprintf("serviceName eq 'SQL Database' and armRegionName eq '%s' and armSkuName eq '%s'",
 		region, sku)
@@ -613,7 +613,7 @@ func azureTermString(termYears int) string {
 	return fmt.Sprintf("%d Years", termYears)
 }
 
-// extractSQLPricing extracts on-demand and reservation pricing from price items
+// extractSQLPricing extracts on-demand and reservation pricing from price items.
 func extractSQLPricing(items []pricing.RetailPriceItem, termYears int) (onDemand, reservation float64, currency string) {
 	currency = "USD"
 	termStr := azureTermString(termYears)

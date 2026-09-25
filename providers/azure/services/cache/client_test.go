@@ -24,7 +24,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/mocks"
 )
 
-// MockRecommendationsPager mocks the RecommendationsPager interface
+// MockRecommendationsPager mocks the RecommendationsPager interface.
 type MockRecommendationsPager struct {
 	mock.Mock
 	pages []armconsumption.ReservationRecommendationsClientListResponse
@@ -44,7 +44,7 @@ func (m *MockRecommendationsPager) NextPage(ctx context.Context) (armconsumption
 	return page, nil
 }
 
-// MockReservationsDetailsPager mocks the ReservationsDetailsPager interface
+// MockReservationsDetailsPager mocks the ReservationsDetailsPager interface.
 type MockReservationsDetailsPager struct {
 	pages []armconsumption.ReservationsDetailsClientListResponse
 	index int
@@ -67,7 +67,7 @@ func (m *MockReservationsDetailsPager) NextPage(ctx context.Context) (armconsump
 	return page, nil
 }
 
-// MockRedisCachesPager mocks the RedisCachesPager interface
+// MockRedisCachesPager mocks the RedisCachesPager interface.
 type MockRedisCachesPager struct {
 	pages []armredis.ClientListBySubscriptionResponse
 	index int
@@ -90,7 +90,7 @@ func (m *MockRedisCachesPager) NextPage(ctx context.Context) (armredis.ClientLis
 	return page, nil
 }
 
-// MockHTTPClient mocks HTTP client for testing
+// MockHTTPClient mocks HTTP client for testing.
 type MockHTTPClient struct {
 	mock.Mock
 }
@@ -984,10 +984,10 @@ func TestCacheClient_CachedSKULookup_FetchedOnce(t *testing.T) {
 	assert.Equal(t, 1, mockPager.index, "catalogue must be fetched ONCE regardless of lookup count")
 }
 
-// Test the to package is properly imported (used in tests)
+// Test the to package is properly imported (used in tests).
 var _ = to.Ptr("test")
 
-// MockTokenCredential for testing PurchaseCommitment
+// MockTokenCredential for testing PurchaseCommitment.
 type MockTokenCredential struct {
 	token string
 	err   error

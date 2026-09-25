@@ -45,30 +45,30 @@ type redisSKUEntry struct {
 	shardCount int
 }
 
-// HTTPClient interface for HTTP operations (enables mocking)
+// HTTPClient interface for HTTP operations (enables mocking).
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-// RecommendationsPager interface for recommendations pager (enables mocking)
+// RecommendationsPager interface for recommendations pager (enables mocking).
 type RecommendationsPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armconsumption.ReservationRecommendationsClientListResponse, error)
 }
 
-// ReservationsDetailsPager interface for reservations details pager (enables mocking)
+// ReservationsDetailsPager interface for reservations details pager (enables mocking).
 type ReservationsDetailsPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armconsumption.ReservationsDetailsClientListResponse, error)
 }
 
-// RedisCachesPager interface for Redis caches pager (enables mocking)
+// RedisCachesPager interface for Redis caches pager (enables mocking).
 type RedisCachesPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armredis.ClientListBySubscriptionResponse, error)
 }
 
-// CacheClient handles Azure Cache for Redis Reserved Capacity
+// CacheClient handles Azure Cache for Redis Reserved Capacity.
 type CacheClient struct {
 	cred                 azcore.TokenCredential
 	subscriptionID       string
@@ -89,7 +89,7 @@ type CacheClient struct {
 	skuCacheMap  map[string]redisSKUEntry
 }
 
-// NewClient creates a new Azure Cache client
+// NewClient creates a new Azure Cache client.
 func NewClient(cred azcore.TokenCredential, subscriptionID, region string) *CacheClient {
 	return &CacheClient{
 		cred:           cred,
@@ -99,7 +99,7 @@ func NewClient(cred azcore.TokenCredential, subscriptionID, region string) *Cach
 	}
 }
 
-// NewClientWithHTTP creates a new Azure Cache client with a custom HTTP client (for testing)
+// NewClientWithHTTP creates a new Azure Cache client with a custom HTTP client (for testing).
 func NewClientWithHTTP(cred azcore.TokenCredential, subscriptionID, region string, httpClient HTTPClient) *CacheClient {
 	return &CacheClient{
 		cred:           cred,
@@ -109,27 +109,27 @@ func NewClientWithHTTP(cred azcore.TokenCredential, subscriptionID, region strin
 	}
 }
 
-// SetRecommendationsPager sets the recommendations pager (for testing)
+// SetRecommendationsPager sets the recommendations pager (for testing).
 func (c *CacheClient) SetRecommendationsPager(pager RecommendationsPager) {
 	c.recommendationsPager = pager
 }
 
-// SetReservationsPager sets the reservations pager (for testing)
+// SetReservationsPager sets the reservations pager (for testing).
 func (c *CacheClient) SetReservationsPager(pager ReservationsDetailsPager) {
 	c.reservationsPager = pager
 }
 
-// SetRedisCachesPager sets the Redis caches pager (for testing)
+// SetRedisCachesPager sets the Redis caches pager (for testing).
 func (c *CacheClient) SetRedisCachesPager(pager RedisCachesPager) {
 	c.redisCachesPager = pager
 }
 
-// GetServiceType returns the service type
+// GetServiceType returns the service type.
 func (c *CacheClient) GetServiceType() common.ServiceType {
 	return common.ServiceCache
 }
 
-// GetRegion returns the region
+// GetRegion returns the region.
 func (c *CacheClient) GetRegion() string {
 	return c.region
 }
@@ -137,7 +137,7 @@ func (c *CacheClient) GetRegion() string {
 // AzureRetailPrice is the response envelope for the Azure Retail Prices API.
 type AzureRetailPrice = pricing.Page[pricing.RetailPriceItem]
 
-// GetRecommendations gets Redis Cache reservation recommendations from Azure Consumption API
+// GetRecommendations gets Redis Cache reservation recommendations from Azure Consumption API.
 func (c *CacheClient) GetRecommendations(ctx context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	recommendations := make([]common.Recommendation, 0)
 
@@ -181,7 +181,7 @@ func (c *CacheClient) GetRecommendations(ctx context.Context, _ *common.Recommen
 	return recommendations, nil
 }
 
-// GetExistingCommitments retrieves existing Redis Cache reserved capacity
+// GetExistingCommitments retrieves existing Redis Cache reserved capacity.
 func (c *CacheClient) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	pager, err := c.createReservationsPager()
 	if err != nil {
@@ -192,7 +192,7 @@ func (c *CacheClient) GetExistingCommitments(ctx context.Context) ([]common.Comm
 	return c.collectRedisReservations(ctx, pager)
 }
 
-// createReservationsPager creates a pager for listing reservations
+// createReservationsPager creates a pager for listing reservations.
 func (c *CacheClient) createReservationsPager() (ReservationsDetailsPager, error) {
 	// Use injected pager if available (for testing)
 	if c.reservationsPager != nil {
@@ -236,7 +236,7 @@ func (c *CacheClient) collectRedisReservations(ctx context.Context, pager Reserv
 	return commitments, nil
 }
 
-// convertRedisReservation converts a reservation detail to a commitment if it's a Redis reservation
+// convertRedisReservation converts a reservation detail to a commitment if it's a Redis reservation.
 func (c *CacheClient) convertRedisReservation(detail *armconsumption.ReservationDetail) *common.Commitment {
 	if detail.Properties == nil {
 		return nil
@@ -354,7 +354,7 @@ func (c *CacheClient) PurchaseCommitment(ctx context.Context, rec common.Recomme
 	return result, nil
 }
 
-// ValidateOffering validates that a Redis Cache SKU exists
+// ValidateOffering validates that a Redis Cache SKU exists.
 func (c *CacheClient) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
 	validSKUs, err := c.GetValidResourceTypes(ctx)
 	if err != nil {
@@ -371,7 +371,7 @@ func (c *CacheClient) ValidateOffering(ctx context.Context, rec common.Recommend
 	return fmt.Errorf("invalid Azure Redis Cache SKU: %s", rec.ResourceType)
 }
 
-// GetOfferingDetails retrieves Redis Cache reservation offering details from Azure Retail Prices API
+// GetOfferingDetails retrieves Redis Cache reservation offering details from Azure Retail Prices API.
 func (c *CacheClient) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	termYears, err := reservations.ParseTermYears(rec.Term)
 	if err != nil {
@@ -413,7 +413,7 @@ func (c *CacheClient) GetOfferingDetails(ctx context.Context, rec common.Recomme
 	}, nil
 }
 
-// GetValidResourceTypes returns valid Redis Cache SKUs from Azure API
+// GetValidResourceTypes returns valid Redis Cache SKUs from Azure API.
 func (c *CacheClient) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	pager, err := c.createRedisCachesPager()
 	if err != nil {
@@ -435,7 +435,7 @@ func (c *CacheClient) GetValidResourceTypes(ctx context.Context) ([]string, erro
 	return c.getCommonSKUs(), nil
 }
 
-// createRedisCachesPager creates a pager for listing Redis caches
+// createRedisCachesPager creates a pager for listing Redis caches.
 func (c *CacheClient) createRedisCachesPager() (RedisCachesPager, error) {
 	// Use injected pager if available (for testing)
 	if c.redisCachesPager != nil {
@@ -480,7 +480,7 @@ func (c *CacheClient) collectSKUsFromCaches(ctx context.Context, pager RedisCach
 	return skuSet, nil
 }
 
-// extractSKUFromCache extracts the full SKU name from a cache resource
+// extractSKUFromCache extracts the full SKU name from a cache resource.
 func extractSKUFromCache(cache *armredis.ResourceInfo) string {
 	if cache.Properties == nil || cache.Properties.SKU == nil {
 		return ""
@@ -499,7 +499,7 @@ func extractSKUFromCache(cache *armredis.ResourceInfo) string {
 	return fmt.Sprintf("%s_%s%d", skuName, family, capacity)
 }
 
-// convertSKUSetToSlice converts a map of SKUs to a sorted slice
+// convertSKUSetToSlice converts a map of SKUs to a sorted slice.
 func convertSKUSetToSlice(skuSet map[string]bool) []string {
 	skus := make([]string, 0, len(skuSet))
 	for sku := range skuSet {
@@ -508,7 +508,7 @@ func convertSKUSetToSlice(skuSet map[string]bool) []string {
 	return skus
 }
 
-// getCommonSKUs returns common Redis Cache SKUs
+// getCommonSKUs returns common Redis Cache SKUs.
 func (c *CacheClient) getCommonSKUs() []string {
 	return []string{
 		// Basic tier
@@ -520,7 +520,7 @@ func (c *CacheClient) getCommonSKUs() []string {
 	}
 }
 
-// RedisPricing contains pricing information for Redis Cache
+// RedisPricing contains pricing information for Redis Cache.
 type RedisPricing struct {
 	HourlyRate        float64
 	ReservationPrice  float64
@@ -529,7 +529,7 @@ type RedisPricing struct {
 	SavingsPercentage float64
 }
 
-// getRedisPricing gets real pricing from Azure Retail Prices API
+// getRedisPricing gets real pricing from Azure Retail Prices API.
 func (c *CacheClient) getRedisPricing(ctx context.Context, sku, region string, termYears int) (*RedisPricing, error) {
 	priceData, err := c.fetchAzurePricing(ctx, "Azure Cache for Redis", sku, region)
 	if err != nil {
@@ -595,7 +595,7 @@ func azureTermString(termYears int) string {
 	return fmt.Sprintf("%d Years", termYears)
 }
 
-// extractRedisPricing extracts on-demand and reservation pricing from price items
+// extractRedisPricing extracts on-demand and reservation pricing from price items.
 func extractRedisPricing(items []pricing.RetailPriceItem, termYears int) (onDemand, reservation float64, currency string) {
 	currency = "USD"
 	termStr := azureTermString(termYears)

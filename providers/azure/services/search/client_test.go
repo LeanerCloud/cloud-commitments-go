@@ -23,7 +23,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/mocks"
 )
 
-// MockRecommendationsPager mocks the RecommendationsPager interface
+// MockRecommendationsPager mocks the RecommendationsPager interface.
 type MockRecommendationsPager struct {
 	pages []armconsumption.ReservationRecommendationsClientListResponse
 	index int
@@ -42,7 +42,7 @@ func (m *MockRecommendationsPager) NextPage(ctx context.Context) (armconsumption
 	return page, nil
 }
 
-// MockReservationsDetailsPager mocks the ReservationsDetailsPager interface
+// MockReservationsDetailsPager mocks the ReservationsDetailsPager interface.
 type MockReservationsDetailsPager struct {
 	pages []armconsumption.ReservationsDetailsClientListResponse
 	index int
@@ -65,7 +65,7 @@ func (m *MockReservationsDetailsPager) NextPage(ctx context.Context) (armconsump
 	return page, nil
 }
 
-// MockSearchServicesPager mocks the SearchServicesPager interface
+// MockSearchServicesPager mocks the SearchServicesPager interface.
 type MockSearchServicesPager struct {
 	pages []armsearch.ServicesClientListBySubscriptionResponse
 	index int
@@ -88,7 +88,7 @@ func (m *MockSearchServicesPager) NextPage(ctx context.Context) (armsearch.Servi
 	return page, nil
 }
 
-// MockHTTPClient mocks HTTP client for testing
+// MockHTTPClient mocks HTTP client for testing.
 type MockHTTPClient struct {
 	mock.Mock
 }
@@ -723,7 +723,7 @@ func TestSearchClient_ConvertAzureSearchRecommendation_PopulatesAllFields(t *tes
 	assert.Equal(t, "upfront", rec.PaymentOption)
 }
 
-// MockTokenCredential for testing PurchaseCommitment
+// MockTokenCredential for testing PurchaseCommitment.
 type MockTokenCredential struct {
 	token string
 	err   error

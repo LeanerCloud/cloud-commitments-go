@@ -312,7 +312,7 @@ func mergeServiceResults(results ...serviceResult) ([]common.Recommendation, err
 	return out, nil
 }
 
-// GetRecommendationsForService retrieves Azure reservation recommendations for a specific service
+// GetRecommendationsForService retrieves Azure reservation recommendations for a specific service.
 func (r *RecommendationsClientAdapter) GetRecommendationsForService(ctx context.Context, service common.ServiceType) ([]common.Recommendation, error) {
 	params := common.RecommendationParams{
 		Service: service,
@@ -320,13 +320,13 @@ func (r *RecommendationsClientAdapter) GetRecommendationsForService(ctx context.
 	return r.GetRecommendations(ctx, &params)
 }
 
-// GetAllRecommendations retrieves all Azure reservation recommendations across all services
+// GetAllRecommendations retrieves all Azure reservation recommendations across all services.
 func (r *RecommendationsClientAdapter) GetAllRecommendations(ctx context.Context) ([]common.Recommendation, error) {
 	params := common.RecommendationParams{}
 	return r.GetRecommendations(ctx, &params)
 }
 
-// getAdvisorRecommendations retrieves cost optimization recommendations from Azure Advisor
+// getAdvisorRecommendations retrieves cost optimization recommendations from Azure Advisor.
 func (r *RecommendationsClientAdapter) getAdvisorRecommendations(ctx context.Context, params common.RecommendationParams) ([]common.Recommendation, error) {
 	client, err := armadvisor.NewRecommendationsClient(r.subscriptionID, r.cred, nil)
 	if err != nil {
@@ -407,7 +407,7 @@ func resolveAdvisorRegion(advisorRec *armadvisor.ResourceRecommendationBase) str
 	return ""
 }
 
-// convertAdvisorRecommendation converts an Azure Advisor recommendation to common format
+// convertAdvisorRecommendation converts an Azure Advisor recommendation to common format.
 func (r *RecommendationsClientAdapter) convertAdvisorRecommendation(advisorRec *armadvisor.ResourceRecommendationBase) *common.Recommendation {
 	if advisorRec.Properties == nil {
 		return nil
@@ -560,7 +560,7 @@ func extractRegionFromResourceID(resourceID string) string {
 	return ""
 }
 
-// shouldIncludeService checks if a service should be included based on params
+// shouldIncludeService checks if a service should be included based on params.
 func shouldIncludeService(params common.RecommendationParams, service common.ServiceType) bool {
 	// If no service specified in params, include all
 	if params.Service == "" {

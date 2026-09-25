@@ -591,7 +591,7 @@ func TestComputeClient_GetOfferingDetails_NoReservationPricing(t *testing.T) {
 	assert.Contains(t, err.Error(), "no reservation pricing found")
 }
 
-// MockTokenCredential for testing PurchaseCommitment
+// MockTokenCredential for testing PurchaseCommitment.
 type MockTokenCredential struct {
 	token string
 	err   error

@@ -42,24 +42,24 @@ func (c *ManagedRedisClient) recommendationsListArgs() (string, *armconsumption.
 	return scope, &armconsumption.ReservationRecommendationsClientListOptions{Filter: &filter}
 }
 
-// HTTPClient interface for HTTP operations (enables mocking)
+// HTTPClient interface for HTTP operations (enables mocking).
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-// RecommendationsPager interface for recommendations pager (enables mocking)
+// RecommendationsPager interface for recommendations pager (enables mocking).
 type RecommendationsPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armconsumption.ReservationRecommendationsClientListResponse, error)
 }
 
-// ReservationsDetailsPager interface for reservations details pager (enables mocking)
+// ReservationsDetailsPager interface for reservations details pager (enables mocking).
 type ReservationsDetailsPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armconsumption.ReservationsDetailsClientListResponse, error)
 }
 
-// RedisCachesPager interface for Redis caches pager (enables mocking)
+// RedisCachesPager interface for Redis caches pager (enables mocking).
 type RedisCachesPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armredis.ClientListBySubscriptionResponse, error)

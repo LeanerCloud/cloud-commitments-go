@@ -19,30 +19,30 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
 )
 
-// SubscriptionsClient interface for subscription operations (enables mocking)
+// SubscriptionsClient interface for subscription operations (enables mocking).
 type SubscriptionsClient interface {
 	NewListPager(options *armsubscriptions.ClientListOptions) SubscriptionsPager
 	NewListLocationsPager(subscriptionID string, options *armsubscriptions.ClientListLocationsOptions) LocationsPager
 }
 
-// SubscriptionsPager interface for subscription pagination (enables mocking)
+// SubscriptionsPager interface for subscription pagination (enables mocking).
 type SubscriptionsPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armsubscriptions.ClientListResponse, error)
 }
 
-// LocationsPager interface for locations pagination (enables mocking)
+// LocationsPager interface for locations pagination (enables mocking).
 type LocationsPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armsubscriptions.ClientListLocationsResponse, error)
 }
 
-// CredentialProvider interface for credential creation (enables mocking)
+// CredentialProvider interface for credential creation (enables mocking).
 type CredentialProvider interface {
 	NewDefaultAzureCredential() (azcore.TokenCredential, error)
 }
 
-// realSubscriptionsClient wraps the real armsubscriptions.Client
+// realSubscriptionsClient wraps the real armsubscriptions.Client.
 type realSubscriptionsClient struct {
 	client *armsubscriptions.Client
 }
@@ -55,7 +55,7 @@ func (r *realSubscriptionsClient) NewListLocationsPager(subscriptionID string, o
 	return &realLocationsPager{pager: r.client.NewListLocationsPager(subscriptionID, options)}
 }
 
-// realSubscriptionsPager wraps the real subscription pager
+// realSubscriptionsPager wraps the real subscription pager.
 type realSubscriptionsPager struct {
 	pager *runtime.Pager[armsubscriptions.ClientListResponse]
 }
@@ -68,7 +68,7 @@ func (r *realSubscriptionsPager) NextPage(ctx context.Context) (armsubscriptions
 	return r.pager.NextPage(ctx)
 }
 
-// realLocationsPager wraps the real locations pager
+// realLocationsPager wraps the real locations pager.
 type realLocationsPager struct {
 	pager *runtime.Pager[armsubscriptions.ClientListLocationsResponse]
 }
@@ -81,14 +81,14 @@ func (r *realLocationsPager) NextPage(ctx context.Context) (armsubscriptions.Cli
 	return r.pager.NextPage(ctx)
 }
 
-// realCredentialProvider provides real Azure credentials
+// realCredentialProvider provides real Azure credentials.
 type realCredentialProvider struct{}
 
 func (r *realCredentialProvider) NewDefaultAzureCredential() (azcore.TokenCredential, error) {
 	return azidentity.NewDefaultAzureCredential(nil)
 }
 
-// AzureProvider implements the Provider interface for Azure
+// AzureProvider implements the Provider interface for Azure.
 type AzureProvider struct {
 	cred                azcore.TokenCredential
 	credOnce            sync.Once
@@ -274,12 +274,12 @@ func (p *AzureProvider) publishCredential(cred azcore.TokenCredential) {
 	p.cred = cred
 }
 
-// Name returns the provider name
+// Name returns the provider name.
 func (p *AzureProvider) Name() string {
 	return "azure"
 }
 
-// DisplayName returns the human-readable provider name
+// DisplayName returns the human-readable provider name.
 func (p *AzureProvider) DisplayName() string {
 	return "Microsoft Azure"
 }
@@ -315,7 +315,7 @@ func (p *AzureProvider) IsConfigured() bool {
 	return p.credErr == nil
 }
 
-// GetCredentials returns Azure credentials
+// GetCredentials returns Azure credentials.
 func (p *AzureProvider) GetCredentials() (provider.Credentials, error) {
 	if !p.IsConfigured() {
 		return nil, fmt.Errorf("azure provider is not configured")
@@ -330,7 +330,7 @@ func (p *AzureProvider) GetCredentials() (provider.Credentials, error) {
 	}, nil
 }
 
-// ValidateCredentials validates that Azure credentials are working
+// ValidateCredentials validates that Azure credentials are working.
 func (p *AzureProvider) ValidateCredentials(ctx context.Context) error {
 	if !p.IsConfigured() {
 		return fmt.Errorf("azure provider is not configured")
@@ -450,7 +450,7 @@ func (p *AzureProvider) resolveSubscriptionIDFromCtx(ctx context.Context) (strin
 	return id, nil
 }
 
-// GetRegions returns all available Azure regions using the Subscriptions API
+// GetRegions returns all available Azure regions using the Subscriptions API.
 func (p *AzureProvider) GetRegions(ctx context.Context) ([]common.Region, error) {
 	// Resolve the subscription to query available locations. The wrapper stays
 	// neutral about WHY resolution failed: resolveSubscriptionIDFromCtx now
@@ -503,7 +503,7 @@ func (p *AzureProvider) GetRegions(ctx context.Context) ([]common.Region, error)
 	return regions, nil
 }
 
-// GetDefaultRegion returns the default Azure region
+// GetDefaultRegion returns the default Azure region.
 func (p *AzureProvider) GetDefaultRegion() string {
 	if p.region != "" {
 		return p.region
@@ -512,7 +512,7 @@ func (p *AzureProvider) GetDefaultRegion() string {
 	return "eastus"
 }
 
-// GetSupportedServices returns the list of services supported by Azure provider
+// GetSupportedServices returns the list of services supported by Azure provider.
 func (p *AzureProvider) GetSupportedServices() []common.ServiceType {
 	return []common.ServiceType{
 		common.ServiceCompute,
@@ -698,7 +698,7 @@ func (p *AzureProvider) GetRecommendationsClientForAccount(ctx context.Context, 
 	return NewRecommendationsClient(p.credential(), subscriptionID)
 }
 
-// Register the Azure provider with the global registry
+// Register the Azure provider with the global registry.
 func init() {
 	if err := provider.RegisterProvider("azure", func(config *provider.ProviderConfig) (provider.Provider, error) {
 		return NewAzureProvider(config)

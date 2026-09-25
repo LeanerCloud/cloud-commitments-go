@@ -24,7 +24,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/mocks"
 )
 
-// MockRecommendationsPager mocks the RecommendationsPager interface
+// MockRecommendationsPager mocks the RecommendationsPager interface.
 type MockRecommendationsPager struct {
 	pages []armconsumption.ReservationRecommendationsClientListResponse
 	index int
@@ -43,7 +43,7 @@ func (m *MockRecommendationsPager) NextPage(ctx context.Context) (armconsumption
 	return page, nil
 }
 
-// MockReservationsDetailsPager mocks the ReservationsDetailsPager interface
+// MockReservationsDetailsPager mocks the ReservationsDetailsPager interface.
 type MockReservationsDetailsPager struct {
 	pages []armconsumption.ReservationsDetailsClientListResponse
 	index int
@@ -83,7 +83,7 @@ func (m *MockCapabilitiesClient) ListByLocation(ctx context.Context, locationNam
 	return m.response, nil
 }
 
-// MockHTTPClient mocks HTTP client for testing
+// MockHTTPClient mocks HTTP client for testing.
 type MockHTTPClient struct {
 	mock.Mock
 }
@@ -882,7 +882,7 @@ func TestDatabaseClient_CachedSKULookup_FetchedOnce(t *testing.T) {
 	assert.Equal(t, 1, mockClient.CallCount, "capabilities catalogue must be fetched ONCE regardless of lookup count")
 }
 
-// MockTokenCredential for testing PurchaseCommitment
+// MockTokenCredential for testing PurchaseCommitment.
 type MockTokenCredential struct {
 	token string
 	err   error

@@ -32,7 +32,7 @@ func (m *mockReservationsSummariesAPI) newListPager(resourceScope string, grain 
 }
 
 // helpers (local to this test file — recommendations_test.go declares strPtr,
-// so we use distinct names here to avoid a redeclaration compile error)
+// so we use distinct names here to avoid a redeclaration compile error).
 func riStrPtr(s string) *string       { return &s }
 func riFloat64Ptr(f float64) *float64 { return &f }
 

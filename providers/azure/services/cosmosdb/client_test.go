@@ -22,7 +22,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/mocks"
 )
 
-// MockRecommendationsPager mocks the RecommendationsPager interface
+// MockRecommendationsPager mocks the RecommendationsPager interface.
 type MockRecommendationsPager struct {
 	pages []armconsumption.ReservationRecommendationsClientListResponse
 	index int
@@ -48,7 +48,7 @@ func (m *MockRecommendationsPager) NextPage(ctx context.Context) (armconsumption
 	return page, nil
 }
 
-// MockReservationsDetailsPager mocks the ReservationsDetailsPager interface
+// MockReservationsDetailsPager mocks the ReservationsDetailsPager interface.
 type MockReservationsDetailsPager struct {
 	pages []armconsumption.ReservationsDetailsClientListResponse
 	index int
@@ -74,7 +74,7 @@ func (m *MockReservationsDetailsPager) NextPage(ctx context.Context) (armconsump
 	return page, nil
 }
 
-// MockCosmosAccountsPager mocks the CosmosAccountsPager interface
+// MockCosmosAccountsPager mocks the CosmosAccountsPager interface.
 type MockCosmosAccountsPager struct {
 	pages []armcosmos.DatabaseAccountsClientListResponse
 	index int
@@ -100,7 +100,7 @@ func (m *MockCosmosAccountsPager) NextPage(ctx context.Context) (armcosmos.Datab
 	return page, nil
 }
 
-// MockHTTPClient mocks HTTP client for testing
+// MockHTTPClient mocks HTTP client for testing.
 type MockHTTPClient struct {
 	mock.Mock
 }
@@ -808,7 +808,7 @@ func TestCosmosDBClient_SetterMethods(t *testing.T) {
 	assert.Equal(t, mockAccountsPager, client.cosmosAccountsPager)
 }
 
-// MockTokenCredential for testing PurchaseCommitment
+// MockTokenCredential for testing PurchaseCommitment.
 type MockTokenCredential struct {
 	token string
 	err   error

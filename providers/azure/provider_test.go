@@ -19,7 +19,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
 )
 
-// mockSubscriptionsClient implements SubscriptionsClient for testing
+// mockSubscriptionsClient implements SubscriptionsClient for testing.
 type mockSubscriptionsClient struct {
 	listPagerFunc          func(options *armsubscriptions.ClientListOptions) SubscriptionsPager
 	listLocationsPagerFunc func(subscriptionID string, options *armsubscriptions.ClientListLocationsOptions) LocationsPager
@@ -39,7 +39,7 @@ func (m *mockSubscriptionsClient) NewListLocationsPager(subscriptionID string, o
 	return nil
 }
 
-// mockSubscriptionsPager implements SubscriptionsPager for testing
+// mockSubscriptionsPager implements SubscriptionsPager for testing.
 type mockSubscriptionsPager struct {
 	pages       []armsubscriptions.ClientListResponse
 	pageIdx     int
@@ -68,7 +68,7 @@ func (m *mockSubscriptionsPager) NextPage(ctx context.Context) (armsubscriptions
 	return page, nil
 }
 
-// mockLocationsPager implements LocationsPager for testing
+// mockLocationsPager implements LocationsPager for testing.
 type mockLocationsPager struct {
 	pages       []armsubscriptions.ClientListLocationsResponse
 	pageIdx     int
@@ -97,7 +97,7 @@ func (m *mockLocationsPager) NextPage(ctx context.Context) (armsubscriptions.Cli
 	return page, nil
 }
 
-// mockCredentialProvider implements CredentialProvider for testing
+// mockCredentialProvider implements CredentialProvider for testing.
 type mockCredentialProvider struct {
 	cred azcore.TokenCredential
 	err  error
@@ -107,7 +107,7 @@ func (m *mockCredentialProvider) NewDefaultAzureCredential() (azcore.TokenCreden
 	return m.cred, m.err
 }
 
-// Helper function to create a string pointer
+// Helper function to create a string pointer.
 func stringPtr(s string) *string {
 	return &s
 }
@@ -474,7 +474,7 @@ func TestAzureProvider_GetRecommendationsClient(t *testing.T) {
 	require.NotNil(t, client)
 }
 
-// mockTokenCredential implements azcore.TokenCredential for testing
+// mockTokenCredential implements azcore.TokenCredential for testing.
 type mockTokenCredential struct{}
 
 func (m *mockTokenCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {

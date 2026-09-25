@@ -28,25 +28,25 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
 )
 
-// RecommendationsPager defines the interface for paging through recommendations
+// RecommendationsPager defines the interface for paging through recommendations.
 type RecommendationsPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armconsumption.ReservationRecommendationsClientListResponse, error)
 }
 
-// ReservationsDetailsPager defines the interface for paging through reservation details
+// ReservationsDetailsPager defines the interface for paging through reservation details.
 type ReservationsDetailsPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armconsumption.ReservationsDetailsClientListResponse, error)
 }
 
-// ResourceSKUsPager defines the interface for paging through resource SKUs
+// ResourceSKUsPager defines the interface for paging through resource SKUs.
 type ResourceSKUsPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armcompute.ResourceSKUsClientListResponse, error)
 }
 
-// HTTPClient defines the interface for making HTTP requests
+// HTTPClient defines the interface for making HTTP requests.
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
@@ -78,7 +78,7 @@ type vmSKUEntry struct {
 	memoryGB float64
 }
 
-// ComputeClient handles Azure VM Reserved Instances
+// ComputeClient handles Azure VM Reserved Instances.
 type ComputeClient struct {
 	cred           azcore.TokenCredential
 	subscriptionID string
@@ -120,7 +120,7 @@ type ComputeClient struct {
 	doExchangeCaller        DoExchangeCallerFunc
 }
 
-// NewClient creates a new Azure Compute client
+// NewClient creates a new Azure Compute client.
 func NewClient(cred azcore.TokenCredential, subscriptionID, region string) *ComputeClient {
 	return &ComputeClient{
 		cred:           cred,
@@ -130,7 +130,7 @@ func NewClient(cred azcore.TokenCredential, subscriptionID, region string) *Comp
 	}
 }
 
-// NewClientWithHTTP creates a new Azure Compute client with a custom HTTP client (for testing)
+// NewClientWithHTTP creates a new Azure Compute client with a custom HTTP client (for testing).
 func NewClientWithHTTP(cred azcore.TokenCredential, subscriptionID, region string, httpClient HTTPClient) *ComputeClient {
 	return &ComputeClient{
 		cred:           cred,
@@ -140,27 +140,27 @@ func NewClientWithHTTP(cred azcore.TokenCredential, subscriptionID, region strin
 	}
 }
 
-// SetRecommendationsPager sets a mock pager for recommendations (for testing)
+// SetRecommendationsPager sets a mock pager for recommendations (for testing).
 func (c *ComputeClient) SetRecommendationsPager(pager RecommendationsPager) {
 	c.recommendationsPager = pager
 }
 
-// SetReservationsPager sets a mock pager for reservations details (for testing)
+// SetReservationsPager sets a mock pager for reservations details (for testing).
 func (c *ComputeClient) SetReservationsPager(pager ReservationsDetailsPager) {
 	c.reservationsPager = pager
 }
 
-// SetResourceSKUsPager sets a mock pager for resource SKUs (for testing)
+// SetResourceSKUsPager sets a mock pager for resource SKUs (for testing).
 func (c *ComputeClient) SetResourceSKUsPager(pager ResourceSKUsPager) {
 	c.resourceSKUsPager = pager
 }
 
-// GetServiceType returns the service type
+// GetServiceType returns the service type.
 func (c *ComputeClient) GetServiceType() common.ServiceType {
 	return common.ServiceCompute
 }
 
-// GetRegion returns the region
+// GetRegion returns the region.
 func (c *ComputeClient) GetRegion() string {
 	return c.region
 }
@@ -175,7 +175,7 @@ type AzureRetailPriceItem = pricing.RetailPriceItem
 // so existing call sites do not need to be updated.
 type AzureRetailPrice = pricing.Page[pricing.RetailPriceItem]
 
-// GetRecommendations gets VM RI recommendations from Azure Consumption API
+// GetRecommendations gets VM RI recommendations from Azure Consumption API.
 func (c *ComputeClient) GetRecommendations(ctx context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	recommendations := make([]common.Recommendation, 0)
 
@@ -223,7 +223,7 @@ func (c *ComputeClient) GetRecommendations(ctx context.Context, _ *common.Recomm
 	return recommendations, nil
 }
 
-// GetExistingCommitments retrieves existing VM Reserved Instances
+// GetExistingCommitments retrieves existing VM Reserved Instances.
 func (c *ComputeClient) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	pager, err := c.createReservationsPager()
 	if err != nil {
@@ -234,7 +234,7 @@ func (c *ComputeClient) GetExistingCommitments(ctx context.Context) ([]common.Co
 	return c.collectVMReservations(ctx, pager)
 }
 
-// createReservationsPager creates a pager for listing reservations
+// createReservationsPager creates a pager for listing reservations.
 func (c *ComputeClient) createReservationsPager() (ReservationsDetailsPager, error) {
 	// Use injected pager if available (for testing)
 	if c.reservationsPager != nil {
@@ -281,7 +281,7 @@ func (c *ComputeClient) collectVMReservations(ctx context.Context, pager Reserva
 	return commitments, nil
 }
 
-// convertVMReservation converts a reservation detail to a commitment if it's a VM reservation
+// convertVMReservation converts a reservation detail to a commitment if it's a VM reservation.
 func (c *ComputeClient) convertVMReservation(detail *armconsumption.ReservationDetail) *common.Commitment {
 	if detail.Properties == nil {
 		return nil
@@ -531,7 +531,7 @@ func (c *ComputeClient) PurchaseCommitment(ctx context.Context, rec common.Recom
 	return result, nil
 }
 
-// ValidateOffering validates that a VM SKU exists
+// ValidateOffering validates that a VM SKU exists.
 func (c *ComputeClient) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
 	validSKUs, err := c.GetValidResourceTypes(ctx)
 	if err != nil {
@@ -548,7 +548,7 @@ func (c *ComputeClient) ValidateOffering(ctx context.Context, rec common.Recomme
 	return fmt.Errorf("invalid Azure VM SKU: %s", rec.ResourceType)
 }
 
-// GetOfferingDetails retrieves VM RI offering details from Azure Retail Prices API
+// GetOfferingDetails retrieves VM RI offering details from Azure Retail Prices API.
 func (c *ComputeClient) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	termYears, err := reservations.ParseTermYears(rec.Term)
 	if err != nil {
@@ -590,7 +590,7 @@ func (c *ComputeClient) GetOfferingDetails(ctx context.Context, rec common.Recom
 	}, nil
 }
 
-// GetValidResourceTypes returns valid VM sizes from Azure Compute API
+// GetValidResourceTypes returns valid VM sizes from Azure Compute API.
 func (c *ComputeClient) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	pager, err := c.createResourceSKUsPager()
 	if err != nil {
@@ -609,7 +609,7 @@ func (c *ComputeClient) GetValidResourceTypes(ctx context.Context) ([]string, er
 	return vmSizes, nil
 }
 
-// createResourceSKUsPager creates a pager for listing resource SKUs
+// createResourceSKUsPager creates a pager for listing resource SKUs.
 func (c *ComputeClient) createResourceSKUsPager() (ResourceSKUsPager, error) {
 	// Use injected pager if available (for testing)
 	if c.resourceSKUsPager != nil {
@@ -624,7 +624,7 @@ func (c *ComputeClient) createResourceSKUsPager() (ResourceSKUsPager, error) {
 	return client.NewListPager(&armcompute.ResourceSKUsClientListOptions{Filter: nil}), nil
 }
 
-// collectVMSizesFromSKUs collects VM sizes from the resource SKUs pager
+// collectVMSizesFromSKUs collects VM sizes from the resource SKUs pager.
 func (c *ComputeClient) collectVMSizesFromSKUs(ctx context.Context, pager ResourceSKUsPager) ([]string, error) {
 	vmSizes := make([]string, 0)
 
@@ -650,7 +650,7 @@ func (c *ComputeClient) collectVMSizesFromSKUs(ctx context.Context, pager Resour
 	return vmSizes, nil
 }
 
-// extractVMSizeIfValid extracts the VM size name if it's a valid VM in the region
+// extractVMSizeIfValid extracts the VM size name if it's a valid VM in the region.
 func (c *ComputeClient) extractVMSizeIfValid(sku *armcompute.ResourceSKU) string {
 	if sku.Name == nil || sku.ResourceType == nil || *sku.ResourceType != "virtualMachines" {
 		return ""
@@ -663,7 +663,7 @@ func (c *ComputeClient) extractVMSizeIfValid(sku *armcompute.ResourceSKU) string
 	return *sku.Name
 }
 
-// isAvailableInRegion checks if a SKU is available in the specified region
+// isAvailableInRegion checks if a SKU is available in the specified region.
 func (c *ComputeClient) isAvailableInRegion(sku *armcompute.ResourceSKU, region string) bool {
 	if sku.Locations == nil {
 		return false
@@ -678,7 +678,7 @@ func (c *ComputeClient) isAvailableInRegion(sku *armcompute.ResourceSKU, region 
 	return false
 }
 
-// VMPricing contains VM pricing information
+// VMPricing contains VM pricing information.
 type VMPricing struct {
 	HourlyRate        float64
 	ReservationPrice  float64
@@ -687,7 +687,7 @@ type VMPricing struct {
 	SavingsPercentage float64
 }
 
-// getVMPricing gets real VM pricing from Azure Retail Prices API
+// getVMPricing gets real VM pricing from Azure Retail Prices API.
 func (c *ComputeClient) getVMPricing(ctx context.Context, vmSize, region string, termYears int) (*VMPricing, error) {
 	filter := fmt.Sprintf("serviceName eq 'Virtual Machines' and armRegionName eq '%s' and armSkuName eq '%s'",
 		region, vmSize)
@@ -761,7 +761,7 @@ func azureTermString(termYears int) string {
 	return fmt.Sprintf("%d Years", termYears)
 }
 
-// extractVMPricing extracts on-demand and reservation pricing from price items
+// extractVMPricing extracts on-demand and reservation pricing from price items.
 func extractVMPricing(items []AzureRetailPriceItem, termYears int) (onDemand, reservation float64, currency string) {
 	currency = "USD"
 	termStr := azureTermString(termYears)
