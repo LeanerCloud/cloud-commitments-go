@@ -169,11 +169,11 @@ func RunAutoExchange(ctx context.Context, params RunAutoExchangeParams) (*AutoEx
 		if params.LadderRunID != nil {
 			origin = common.ExchangeOriginLadder
 		}
-		cancelled, err := params.Store.CancelPendingExchangesByOrigin(ctx, origin)
+		canceled, err := params.Store.CancelPendingExchangesByOrigin(ctx, origin)
 		if err != nil {
 			logging.Warnf("failed to cancel pending exchanges: %v", err)
-		} else if cancelled > 0 {
-			logging.Infof("cancelled %d stale pending exchange records (origin=%s)", cancelled, origin)
+		} else if canceled > 0 {
+			logging.Infof("canceled %d stale pending exchange records (origin=%s)", canceled, origin)
 		}
 	}
 

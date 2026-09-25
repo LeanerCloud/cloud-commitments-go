@@ -113,7 +113,7 @@ func Do(ctx context.Context, cfg Config, op func(ctx context.Context, attempt in
 			delay := backoffFor(attempt, cfg)
 			select {
 			case <-ctx.Done():
-				return fmt.Errorf("retry: cancelled mid-backoff after %d attempts: %w", attempt-1, ctx.Err())
+				return fmt.Errorf("retry: canceled mid-backoff after %d attempts: %w", attempt-1, ctx.Err())
 			case <-time.After(delay):
 			}
 		}

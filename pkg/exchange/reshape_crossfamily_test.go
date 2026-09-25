@@ -357,7 +357,7 @@ func TestAnalyzeReshapingWithRecs_TermZeroSkipsTermGuard(t *testing.T) {
 	)
 	require.Len(t, recs, 1)
 	require.Len(t, recs[0].AlternativeTargets, 1,
-		"source TermSeconds==0 must skip the term gate so today's behaviour is preserved")
+		"source TermSeconds==0 must skip the term gate so today's behavior is preserved")
 	assert.Equal(t, "r5.large", recs[0].AlternativeTargets[0].InstanceType)
 }
 
