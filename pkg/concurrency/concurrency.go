@@ -58,7 +58,10 @@ func WithSharedSemaphore(ctx context.Context, sem *semaphore.Weighted) context.C
 
 // SharedSemaphore returns the semaphore stashed in ctx, or nil if none.
 func SharedSemaphore(ctx context.Context) *semaphore.Weighted {
-	sem, _ := ctx.Value(ctxKey{}).(*semaphore.Weighted)
+	sem, ok := ctx.Value(ctxKey{}).(*semaphore.Weighted)
+	if !ok {
+		return nil
+	}
 	return sem
 }
 

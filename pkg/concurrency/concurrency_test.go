@@ -68,6 +68,7 @@ func TestSharedSemaphore_BoundsConcurrency(t *testing.T) {
 	const goroutines = 20
 	sem := semaphore.NewWeighted(cap)
 	ctx := WithSharedSemaphore(context.Background(), sem)
+	assert.Same(t, sem, SharedSemaphore(ctx))
 
 	var inflight, peak atomic.Int32
 	updatePeak := func(cur int32) {
