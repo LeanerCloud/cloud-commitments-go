@@ -22,40 +22,40 @@ import (
 // stalled or unexpectedly large result set.
 const maxRecsPages = 20
 
-// StorageService interface for storage operations (enables mocking)
+// StorageService interface for storage operations (enables mocking).
 type StorageService interface {
 	Buckets(ctx context.Context, projectID string) BucketIterator
 	Bucket(name string) BucketHandle
 	Close() error
 }
 
-// BucketIterator interface for bucket iteration (enables mocking)
+// BucketIterator interface for bucket iteration (enables mocking).
 type BucketIterator interface {
 	Next() (*storage.BucketAttrs, error)
 }
 
-// BucketHandle interface for bucket operations (enables mocking)
+// BucketHandle interface for bucket operations (enables mocking).
 type BucketHandle interface {
 	Create(ctx context.Context, projectID string, attrs *storage.BucketAttrs) error
 }
 
-// RecommenderClient interface for recommender operations (enables mocking)
+// RecommenderClient interface for recommender operations (enables mocking).
 type RecommenderClient interface {
 	ListRecommendations(ctx context.Context, req *recommenderpb.ListRecommendationsRequest) RecommenderIterator
 	Close() error
 }
 
-// RecommenderIterator interface for recommender iteration (enables mocking)
+// RecommenderIterator interface for recommender iteration (enables mocking).
 type RecommenderIterator interface {
 	Next() (*recommenderpb.Recommendation, error)
 }
 
-// BillingService interface for billing operations (enables mocking)
+// BillingService interface for billing operations (enables mocking).
 type BillingService interface {
 	ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error)
 }
 
-// CloudStorageClient handles GCP Cloud Storage commitments
+// CloudStorageClient handles GCP Cloud Storage commitments.
 type CloudStorageClient struct {
 	ctx               context.Context
 	projectID         string
@@ -66,7 +66,7 @@ type CloudStorageClient struct {
 	billingService    BillingService
 }
 
-// NewClient creates a new GCP Cloud Storage client
+// NewClient creates a new GCP Cloud Storage client.
 func NewClient(ctx context.Context, projectID, region string, opts ...option.ClientOption) (*CloudStorageClient, error) {
 	return &CloudStorageClient{
 		ctx:        ctx,
@@ -76,22 +76,22 @@ func NewClient(ctx context.Context, projectID, region string, opts ...option.Cli
 	}, nil
 }
 
-// SetStorageService sets the storage service (for testing)
+// SetStorageService sets the storage service (for testing).
 func (c *CloudStorageClient) SetStorageService(svc StorageService) {
 	c.storageService = svc
 }
 
-// SetRecommenderClient sets the recommender client (for testing)
+// SetRecommenderClient sets the recommender client (for testing).
 func (c *CloudStorageClient) SetRecommenderClient(client RecommenderClient) {
 	c.recommenderClient = client
 }
 
-// SetBillingService sets the billing service (for testing)
+// SetBillingService sets the billing service (for testing).
 func (c *CloudStorageClient) SetBillingService(svc BillingService) {
 	c.billingService = svc
 }
 
-// realStorageService wraps the real storage.Client
+// realStorageService wraps the real storage.Client.
 type realStorageService struct {
 	client *storage.Client
 }
@@ -108,7 +108,7 @@ func (r *realStorageService) Close() error {
 	return r.client.Close()
 }
 
-// realBucketHandle wraps the real storage.BucketHandle
+// realBucketHandle wraps the real storage.BucketHandle.
 type realBucketHandle struct {
 	bucket *storage.BucketHandle
 }
@@ -117,7 +117,7 @@ func (r *realBucketHandle) Create(ctx context.Context, projectID string, attrs *
 	return r.bucket.Create(ctx, projectID, attrs)
 }
 
-// realRecommenderIterator wraps the real recommender iterator
+// realRecommenderIterator wraps the real recommender iterator.
 type realRecommenderIterator struct {
 	it *recommender.RecommendationIterator
 }
@@ -126,7 +126,7 @@ func (r *realRecommenderIterator) Next() (*recommenderpb.Recommendation, error) 
 	return r.it.Next()
 }
 
-// realRecommenderClient wraps the real recommender client
+// realRecommenderClient wraps the real recommender client.
 type realRecommenderClient struct {
 	client *recommender.Client
 }
@@ -139,7 +139,7 @@ func (r *realRecommenderClient) Close() error {
 	return r.client.Close()
 }
 
-// realBillingService wraps the real cloudbilling.APIService
+// realBillingService wraps the real cloudbilling.APIService.
 type realBillingService struct {
 	service *cloudbilling.APIService
 }
@@ -148,12 +148,12 @@ func (r *realBillingService) ListSKUs(serviceID string) (*cloudbilling.ListSkusR
 	return r.service.Services.Skus.List(serviceID).Do()
 }
 
-// GetServiceType returns the service type
+// GetServiceType returns the service type.
 func (c *CloudStorageClient) GetServiceType() common.ServiceType {
 	return common.ServiceStorage
 }
 
-// GetRegion returns the region
+// GetRegion returns the region.
 func (c *CloudStorageClient) GetRegion() string {
 	return c.region
 }
@@ -171,7 +171,7 @@ func (c *CloudStorageClient) resolveRecommenderClient(ctx context.Context) (Reco
 	return &realRecommenderClient{client: client}, nil
 }
 
-// GetRecommendations gets Cloud Storage recommendations from GCP Recommender API
+// GetRecommendations gets Cloud Storage recommendations from GCP Recommender API.
 func (c *CloudStorageClient) GetRecommendations(ctx context.Context, p *common.RecommendationParams) ([]common.Recommendation, error) {
 	if p == nil {
 		return nil, fmt.Errorf("params cannot be nil")
@@ -254,7 +254,7 @@ func (c *CloudStorageClient) PurchaseCommitment(ctx context.Context, rec common.
 	}, fmt.Errorf("%w: Cloud Storage", common.ErrCommitmentPurchaseNotSupported)
 }
 
-// ValidateOffering validates that a storage class exists
+// ValidateOffering validates that a storage class exists.
 func (c *CloudStorageClient) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
 	validClasses, err := c.GetValidResourceTypes(ctx)
 	if err != nil {
@@ -270,7 +270,7 @@ func (c *CloudStorageClient) ValidateOffering(ctx context.Context, rec common.Re
 	return fmt.Errorf("invalid Cloud Storage class: %s", rec.ResourceType)
 }
 
-// GetOfferingDetails retrieves Cloud Storage offering details from GCP Billing API
+// GetOfferingDetails retrieves Cloud Storage offering details from GCP Billing API.
 func (c *CloudStorageClient) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	termYears := 1
 	if rec.Term == "3yr" || rec.Term == "3" {
@@ -309,7 +309,7 @@ func (c *CloudStorageClient) GetOfferingDetails(ctx context.Context, rec common.
 	}, nil
 }
 
-// GetValidResourceTypes returns valid Cloud Storage classes
+// GetValidResourceTypes returns valid Cloud Storage classes.
 func (c *CloudStorageClient) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	// Cloud Storage has predefined storage classes
 	validClasses := []string{
@@ -322,7 +322,7 @@ func (c *CloudStorageClient) GetValidResourceTypes(ctx context.Context) ([]strin
 	return validClasses, nil
 }
 
-// StoragePricing contains pricing information for Cloud Storage
+// StoragePricing contains pricing information for Cloud Storage.
 type StoragePricing struct {
 	HourlyRate        float64
 	CommitmentPrice   float64
@@ -369,7 +369,7 @@ func (c *CloudStorageClient) getStoragePricing(ctx context.Context, storageClass
 	}, nil
 }
 
-// getOrCreateBillingService returns the billing service, creating it if needed
+// getOrCreateBillingService returns the billing service, creating it if needed.
 func (c *CloudStorageClient) getOrCreateBillingService(ctx context.Context) (BillingService, error) {
 	if c.billingService != nil {
 		return c.billingService, nil
@@ -383,7 +383,7 @@ func (c *CloudStorageClient) getOrCreateBillingService(ctx context.Context) (Bil
 	return &realBillingService{service: service}, nil
 }
 
-// extractStoragePricingFromSKUs extracts on-demand and commitment pricing from SKU list
+// extractStoragePricingFromSKUs extracts on-demand and commitment pricing from SKU list.
 func extractStoragePricingFromSKUs(skus []*cloudbilling.Sku, storageClass, region string) (onDemand, commitment float64, currency string) {
 	currency = "USD"
 
@@ -411,7 +411,7 @@ func extractStoragePricingFromSKUs(skus []*cloudbilling.Sku, storageClass, regio
 	return onDemand, commitment, currency
 }
 
-// extractStoragePriceFromSKU extracts the unit price from a SKU
+// extractStoragePriceFromSKU extracts the unit price from a SKU.
 func extractStoragePriceFromSKU(sku *cloudbilling.Sku) (float64, string) {
 	if len(sku.PricingInfo) == 0 {
 		return 0, ""
@@ -431,13 +431,13 @@ func extractStoragePriceFromSKU(sku *cloudbilling.Sku) (float64, string) {
 	return price, rate.UnitPrice.CurrencyCode
 }
 
-// calculateStorageSavingsPercentage calculates the savings percentage
+// calculateStorageSavingsPercentage calculates the savings percentage.
 func calculateStorageSavingsPercentage(onDemandPrice, hoursInTerm, commitmentPrice float64) float64 {
 	onDemandTotal := onDemandPrice * hoursInTerm
 	return ((onDemandTotal - commitmentPrice) / onDemandTotal) * 100
 }
 
-// skuMatchesStorageClass checks if a SKU matches the storage class and region
+// skuMatchesStorageClass checks if a SKU matches the storage class and region.
 func skuMatchesStorageClass(sku *cloudbilling.Sku, storageClass, region string) bool {
 	// Check if the SKU description contains the storage class
 	if !strings.Contains(strings.ToLower(sku.Description), strings.ToLower(storageClass)) {

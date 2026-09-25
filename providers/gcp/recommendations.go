@@ -68,7 +68,7 @@ type regionResult struct {
 	lastErr   error
 }
 
-// RecommendationsClientAdapter aggregates GCP CUD and commitment recommendations across all services
+// RecommendationsClientAdapter aggregates GCP CUD and commitment recommendations across all services.
 type RecommendationsClientAdapter struct {
 	ctx        context.Context
 	projectID  string
@@ -350,7 +350,7 @@ func (r *RecommendationsClientAdapter) collectRegion(ctx context.Context, params
 	}
 }
 
-// GetRecommendationsForService retrieves GCP commitment recommendations for a specific service
+// GetRecommendationsForService retrieves GCP commitment recommendations for a specific service.
 func (r *RecommendationsClientAdapter) GetRecommendationsForService(ctx context.Context, service common.ServiceType) ([]common.Recommendation, error) {
 	params := common.RecommendationParams{
 		Service: service,
@@ -358,13 +358,13 @@ func (r *RecommendationsClientAdapter) GetRecommendationsForService(ctx context.
 	return r.GetRecommendations(ctx, &params)
 }
 
-// GetAllRecommendations retrieves all GCP commitment recommendations across all services
+// GetAllRecommendations retrieves all GCP commitment recommendations across all services.
 func (r *RecommendationsClientAdapter) GetAllRecommendations(ctx context.Context) ([]common.Recommendation, error) {
 	params := common.RecommendationParams{}
 	return r.GetRecommendations(ctx, &params)
 }
 
-// getRegions retrieves available GCP regions for the project
+// getRegions retrieves available GCP regions for the project.
 func (r *RecommendationsClientAdapter) getRegions(ctx context.Context) ([]string, error) {
 	// Create a temporary provider to get regions. The local variable is named
 	// p (not provider) to avoid shadowing the imported provider package (10-N3).
@@ -383,7 +383,7 @@ func (r *RecommendationsClientAdapter) getRegions(ctx context.Context) ([]string
 	return regionNames, nil
 }
 
-// shouldIncludeService checks if a service should be included based on params
+// shouldIncludeService checks if a service should be included based on params.
 func shouldIncludeService(params common.RecommendationParams, service common.ServiceType) bool {
 	// If no service specified in params, include all
 	if params.Service == "" {

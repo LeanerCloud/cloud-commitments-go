@@ -19,7 +19,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
 )
 
-// MockProjectsClient mocks the ProjectsClient interface
+// MockProjectsClient mocks the ProjectsClient interface.
 type MockProjectsClient struct {
 	project *resourcemanagerpb.Project
 	err     error
@@ -38,7 +38,7 @@ func (m *MockProjectsClient) Close() error {
 	return nil
 }
 
-// MockRegionsClient mocks the RegionsClient interface
+// MockRegionsClient mocks the RegionsClient interface.
 type MockRegionsClient struct {
 	regions []*computepb.Region
 	err     error
@@ -54,7 +54,7 @@ func (m *MockRegionsClient) Close() error {
 	return nil
 }
 
-// MockRegionsIterator mocks the RegionsIterator interface
+// MockRegionsIterator mocks the RegionsIterator interface.
 type MockRegionsIterator struct {
 	regions []*computepb.Region
 	index   int
@@ -73,7 +73,7 @@ func (m *MockRegionsIterator) Next() (*computepb.Region, error) {
 	return r, nil
 }
 
-// MockResourceManagerService mocks the ResourceManagerService interface
+// MockResourceManagerService mocks the ResourceManagerService interface.
 type MockResourceManagerService struct {
 	projects []*cloudresourcemanager.Project
 	err      error

@@ -23,40 +23,40 @@ import (
 // maxRecsPages caps GCP Recommender API iteration.
 const maxRecsPages = 20
 
-// RedisService interface for Redis operations
+// RedisService interface for Redis operations.
 type RedisService interface {
 	ListInstances(ctx context.Context, req *redispb.ListInstancesRequest) RedisIterator
 	CreateInstance(ctx context.Context, req *redispb.CreateInstanceRequest) (CreateInstanceOperation, error)
 	Close() error
 }
 
-// RedisIterator interface for iterating Redis instances
+// RedisIterator interface for iterating Redis instances.
 type RedisIterator interface {
 	Next() (*redispb.Instance, error)
 }
 
-// CreateInstanceOperation interface for create instance operation
+// CreateInstanceOperation interface for create instance operation.
 type CreateInstanceOperation interface {
 	Wait(ctx context.Context, opts ...gax.CallOption) (*redispb.Instance, error)
 }
 
-// BillingService interface for Cloud Billing operations
+// BillingService interface for Cloud Billing operations.
 type BillingService interface {
 	ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error)
 }
 
-// RecommenderIterator interface for iterating recommendations
+// RecommenderIterator interface for iterating recommendations.
 type RecommenderIterator interface {
 	Next() (*recommenderpb.Recommendation, error)
 }
 
-// RecommenderClient interface for recommender operations
+// RecommenderClient interface for recommender operations.
 type RecommenderClient interface {
 	ListRecommendations(ctx context.Context, req *recommenderpb.ListRecommendationsRequest) RecommenderIterator
 	Close() error
 }
 
-// MemorystoreClient handles GCP Memorystore (Redis) commitments
+// MemorystoreClient handles GCP Memorystore (Redis) commitments.
 type MemorystoreClient struct {
 	ctx               context.Context
 	projectID         string
@@ -67,7 +67,7 @@ type MemorystoreClient struct {
 	recommenderClient RecommenderClient
 }
 
-// NewClient creates a new GCP Memorystore client
+// NewClient creates a new GCP Memorystore client.
 func NewClient(ctx context.Context, projectID, region string, opts ...option.ClientOption) (*MemorystoreClient, error) {
 	return &MemorystoreClient{
 		ctx:        ctx,
@@ -77,22 +77,22 @@ func NewClient(ctx context.Context, projectID, region string, opts ...option.Cli
 	}, nil
 }
 
-// SetRedisService sets the Redis service (for testing)
+// SetRedisService sets the Redis service (for testing).
 func (c *MemorystoreClient) SetRedisService(svc RedisService) {
 	c.redisService = svc
 }
 
-// SetBillingService sets the billing service (for testing)
+// SetBillingService sets the billing service (for testing).
 func (c *MemorystoreClient) SetBillingService(svc BillingService) {
 	c.billingService = svc
 }
 
-// SetRecommenderClient sets the recommender client (for testing)
+// SetRecommenderClient sets the recommender client (for testing).
 func (c *MemorystoreClient) SetRecommenderClient(client RecommenderClient) {
 	c.recommenderClient = client
 }
 
-// realRedisService wraps the actual Redis client
+// realRedisService wraps the actual Redis client.
 type realRedisService struct {
 	client *redis.CloudRedisClient
 }
@@ -109,7 +109,7 @@ func (r *realRedisService) Close() error {
 	return r.client.Close()
 }
 
-// realBillingService wraps the actual Cloud Billing service
+// realBillingService wraps the actual Cloud Billing service.
 type realBillingService struct {
 	service *cloudbilling.APIService
 }
@@ -128,7 +128,7 @@ func (r *realRecommenderIterator) Next() (*recommenderpb.Recommendation, error) 
 	return r.it.Next()
 }
 
-// realRecommenderClient wraps the actual recommender client
+// realRecommenderClient wraps the actual recommender client.
 type realRecommenderClient struct {
 	client *recommender.Client
 }
@@ -141,12 +141,12 @@ func (r *realRecommenderClient) Close() error {
 	return r.client.Close()
 }
 
-// GetServiceType returns the service type
+// GetServiceType returns the service type.
 func (c *MemorystoreClient) GetServiceType() common.ServiceType {
 	return common.ServiceCache
 }
 
-// GetRegion returns the region
+// GetRegion returns the region.
 func (c *MemorystoreClient) GetRegion() string {
 	return c.region
 }
@@ -164,7 +164,7 @@ func (c *MemorystoreClient) resolveRecommenderClient(ctx context.Context) (Recom
 	return &realRecommenderClient{client: client}, nil
 }
 
-// GetRecommendations gets Memorystore Redis recommendations from GCP Recommender API
+// GetRecommendations gets Memorystore Redis recommendations from GCP Recommender API.
 func (c *MemorystoreClient) GetRecommendations(ctx context.Context, p *common.RecommendationParams) ([]common.Recommendation, error) {
 	if p == nil {
 		return nil, fmt.Errorf("params cannot be nil")
@@ -220,7 +220,7 @@ func (c *MemorystoreClient) GetRecommendations(ctx context.Context, p *common.Re
 	return recommendations, nil
 }
 
-// GetExistingCommitments retrieves existing Memorystore Redis commitments
+// GetExistingCommitments retrieves existing Memorystore Redis commitments.
 func (c *MemorystoreClient) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	// GCP Memorystore Redis does not expose commitment status via the Redis API.
 	// ReservedIpRange (previously used here) is the VPC peering CIDR, not a
@@ -250,7 +250,7 @@ func (c *MemorystoreClient) PurchaseCommitment(ctx context.Context, rec common.R
 	}, fmt.Errorf("%w: Memorystore", common.ErrCommitmentPurchaseNotSupported)
 }
 
-// ValidateOffering validates that a Redis tier exists
+// ValidateOffering validates that a Redis tier exists.
 func (c *MemorystoreClient) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
 	validTiers, err := c.GetValidResourceTypes(ctx)
 	if err != nil {
@@ -266,7 +266,7 @@ func (c *MemorystoreClient) ValidateOffering(ctx context.Context, rec common.Rec
 	return fmt.Errorf("invalid Memorystore tier: %s", rec.ResourceType)
 }
 
-// GetOfferingDetails retrieves Memorystore offering details from GCP Billing API
+// GetOfferingDetails retrieves Memorystore offering details from GCP Billing API.
 func (c *MemorystoreClient) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	termYears := 1
 	if rec.Term == "3yr" || rec.Term == "3" {
@@ -305,7 +305,7 @@ func (c *MemorystoreClient) GetOfferingDetails(ctx context.Context, rec common.R
 	}, nil
 }
 
-// GetValidResourceTypes returns valid Memorystore tiers
+// GetValidResourceTypes returns valid Memorystore tiers.
 func (c *MemorystoreClient) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	// Memorystore Redis has predefined tiers
 	validTiers := []string{
@@ -316,7 +316,7 @@ func (c *MemorystoreClient) GetValidResourceTypes(ctx context.Context) ([]string
 	return validTiers, nil
 }
 
-// RedisPricing contains pricing information for Memorystore Redis
+// RedisPricing contains pricing information for Memorystore Redis.
 type RedisPricing struct {
 	HourlyRate        float64
 	CommitmentPrice   float64
@@ -363,7 +363,7 @@ func (c *MemorystoreClient) getRedisPricing(ctx context.Context, tier, region st
 	}, nil
 }
 
-// getOrCreateBillingService returns the billing service, creating it if needed
+// getOrCreateBillingService returns the billing service, creating it if needed.
 func (c *MemorystoreClient) getOrCreateBillingService(ctx context.Context) (BillingService, error) {
 	if c.billingService != nil {
 		return c.billingService, nil
@@ -377,7 +377,7 @@ func (c *MemorystoreClient) getOrCreateBillingService(ctx context.Context) (Bill
 	return &realBillingService{service: service}, nil
 }
 
-// extractPricingFromSKUs extracts on-demand and commitment pricing from SKU list
+// extractPricingFromSKUs extracts on-demand and commitment pricing from SKU list.
 func extractPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string) (onDemand, commitment float64, currency string) {
 	currency = "USD"
 
@@ -405,7 +405,7 @@ func extractPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string) (onDe
 	return onDemand, commitment, currency
 }
 
-// extractPriceFromSKU extracts the unit price from a SKU
+// extractPriceFromSKU extracts the unit price from a SKU.
 func extractPriceFromSKU(sku *cloudbilling.Sku) (float64, string) {
 	if len(sku.PricingInfo) == 0 {
 		return 0, ""
@@ -425,13 +425,13 @@ func extractPriceFromSKU(sku *cloudbilling.Sku) (float64, string) {
 	return price, rate.UnitPrice.CurrencyCode
 }
 
-// calculateSavingsPercentage calculates the savings percentage
+// calculateSavingsPercentage calculates the savings percentage.
 func calculateSavingsPercentage(onDemandPrice, hoursInTerm, commitmentPrice float64) float64 {
 	onDemandTotal := onDemandPrice * hoursInTerm
 	return ((onDemandTotal - commitmentPrice) / onDemandTotal) * 100
 }
 
-// skuMatchesTier checks if a SKU matches the tier and region
+// skuMatchesTier checks if a SKU matches the tier and region.
 func skuMatchesTier(sku *cloudbilling.Sku, tier, region string) bool {
 	// Check if the SKU description contains the tier
 	if !strings.Contains(strings.ToLower(sku.Description), strings.ToLower(tier)) {

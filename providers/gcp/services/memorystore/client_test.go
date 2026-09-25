@@ -18,7 +18,7 @@ import (
 
 // Mock implementations
 
-// MockRedisService implements RedisService for testing
+// MockRedisService implements RedisService for testing.
 type MockRedisService struct {
 	instances    []*redispb.Instance
 	instancesErr error
@@ -45,7 +45,7 @@ func (m *MockRedisService) Close() error {
 	return nil
 }
 
-// MockRedisIterator implements RedisIterator for testing
+// MockRedisIterator implements RedisIterator for testing.
 type MockRedisIterator struct {
 	instances []*redispb.Instance
 	index     int
@@ -64,7 +64,7 @@ func (m *MockRedisIterator) Next() (*redispb.Instance, error) {
 	return instance, nil
 }
 
-// MockCreateInstanceOperation implements CreateInstanceOperation for testing
+// MockCreateInstanceOperation implements CreateInstanceOperation for testing.
 type MockCreateInstanceOperation struct {
 	instance *redispb.Instance
 	err      error
@@ -74,7 +74,7 @@ func (m *MockCreateInstanceOperation) Wait(ctx context.Context, opts ...gax.Call
 	return m.instance, m.err
 }
 
-// MockBillingService implements BillingService for testing
+// MockBillingService implements BillingService for testing.
 type MockBillingService struct {
 	skus *cloudbilling.ListSkusResponse
 	err  error
@@ -87,7 +87,7 @@ func (m *MockBillingService) ListSKUs(serviceID string) (*cloudbilling.ListSkusR
 	return m.skus, nil
 }
 
-// MockRecommenderClient implements RecommenderClient for testing
+// MockRecommenderClient implements RecommenderClient for testing.
 type MockRecommenderClient struct {
 	recommendations []*recommenderpb.Recommendation
 	err             error
@@ -103,7 +103,7 @@ func (m *MockRecommenderClient) Close() error {
 	return nil
 }
 
-// MockRecommenderIterator implements RecommenderIterator for testing
+// MockRecommenderIterator implements RecommenderIterator for testing.
 type MockRecommenderIterator struct {
 	recommendations []*recommenderpb.Recommendation
 	index           int
