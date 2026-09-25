@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// MockMemoryDBClient implements MemoryDBAPI for testing
+// MockMemoryDBClient implements MemoryDBAPI for testing.
 type MockMemoryDBClient struct {
 	mock.Mock
 }

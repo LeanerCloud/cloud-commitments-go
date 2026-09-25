@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockRDSClient implements RDSAPI for testing
+// MockRDSClient implements RDSAPI for testing.
 type MockRDSClient struct {
 	mock.Mock
 }

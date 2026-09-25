@@ -20,7 +20,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
 )
 
-// mockConfigLoader implements ConfigLoader for testing
+// mockConfigLoader implements ConfigLoader for testing.
 type mockConfigLoader struct {
 	cfg aws.Config
 	err error
@@ -30,7 +30,7 @@ func (m *mockConfigLoader) LoadDefaultConfig(ctx context.Context, optFns ...func
 	return m.cfg, m.err
 }
 
-// mockSTSClient implements STSClient for testing
+// mockSTSClient implements STSClient for testing.
 type mockSTSClient struct {
 	getCallerIdentityFunc func(ctx context.Context, params *sts.GetCallerIdentityInput, optFns ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error)
 }
@@ -42,7 +42,7 @@ func (m *mockSTSClient) GetCallerIdentity(ctx context.Context, params *sts.GetCa
 	return nil, errors.New("not implemented")
 }
 
-// mockEC2Client implements EC2Client for testing
+// mockEC2Client implements EC2Client for testing.
 type mockEC2Client struct {
 	describeRegionsFunc func(ctx context.Context, params *ec2.DescribeRegionsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeRegionsOutput, error)
 }
@@ -54,7 +54,7 @@ func (m *mockEC2Client) DescribeRegions(ctx context.Context, params *ec2.Describ
 	return nil, errors.New("not implemented")
 }
 
-// mockOrganizationsPaginator implements OrganizationsPaginator for testing
+// mockOrganizationsPaginator implements OrganizationsPaginator for testing.
 type mockOrganizationsPaginator struct {
 	pages     []*organizations.ListAccountsOutput
 	pageIdx   int
@@ -680,7 +680,7 @@ func TestAWSProvider_SetterMethods(t *testing.T) {
 	})
 }
 
-// mockCredentialsProvider implements aws.CredentialsProvider for testing
+// mockCredentialsProvider implements aws.CredentialsProvider for testing.
 type mockCredentialsProvider struct {
 	creds aws.Credentials
 	err   error
@@ -884,7 +884,7 @@ func TestRealOrganizationsPaginator_NextPage(t *testing.T) {
 	})
 }
 
-// mockOrganizationsClient for testing realOrganizationsPaginator
+// mockOrganizationsClient for testing realOrganizationsPaginator.
 type mockOrganizationsClient struct {
 	listAccountsFunc func(ctx context.Context, params *organizations.ListAccountsInput, optFns ...func(*organizations.Options)) (*organizations.ListAccountsOutput, error)
 }

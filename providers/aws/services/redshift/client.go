@@ -19,7 +19,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
 )
 
-// RedshiftAPI defines the interface for Redshift operations (enables mocking)
+// RedshiftAPI defines the interface for Redshift operations (enables mocking).
 type RedshiftAPI interface {
 	PurchaseReservedNodeOffering(ctx context.Context, params *redshift.PurchaseReservedNodeOfferingInput, optFns ...func(*redshift.Options)) (*redshift.PurchaseReservedNodeOfferingOutput, error)
 	DescribeReservedNodeOfferings(ctx context.Context, params *redshift.DescribeReservedNodeOfferingsInput, optFns ...func(*redshift.Options)) (*redshift.DescribeReservedNodeOfferingsOutput, error)
@@ -35,7 +35,7 @@ type STSAPI interface {
 	GetCallerIdentity(ctx context.Context, params *sts.GetCallerIdentityInput, optFns ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error)
 }
 
-// Client handles AWS Redshift Reserved Nodes
+// Client handles AWS Redshift Reserved Nodes.
 type Client struct {
 	client    RedshiftAPI
 	stsClient STSAPI
@@ -59,32 +59,32 @@ func NewClient(cfg aws.Config) *Client {
 	}
 }
 
-// SetRedshiftAPI sets a custom Redshift API client (for testing)
+// SetRedshiftAPI sets a custom Redshift API client (for testing).
 func (c *Client) SetRedshiftAPI(api RedshiftAPI) {
 	c.client = api
 }
 
-// SetSTSAPI sets a custom STS client (for testing)
+// SetSTSAPI sets a custom STS client (for testing).
 func (c *Client) SetSTSAPI(api STSAPI) {
 	c.stsClient = api
 }
 
-// GetServiceType returns the service type
+// GetServiceType returns the service type.
 func (c *Client) GetServiceType() common.ServiceType {
 	return common.ServiceDataWarehouse
 }
 
-// GetRegion returns the region
+// GetRegion returns the region.
 func (c *Client) GetRegion() string {
 	return c.region
 }
 
-// GetRecommendations returns empty as Redshift uses centralized Cost Explorer recommendations
+// GetRecommendations returns empty as Redshift uses centralized Cost Explorer recommendations.
 func (c *Client) GetRecommendations(_ context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	return []common.Recommendation{}, nil
 }
 
-// GetExistingCommitments retrieves existing Redshift Reserved Nodes
+// GetExistingCommitments retrieves existing Redshift Reserved Nodes.
 func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	commitments := make([]common.Commitment, 0)
 	var marker *string
@@ -580,13 +580,13 @@ func (c *Client) matchesOfferingType(offeringType string) bool {
 	return offeringType == "Regular" || offeringType == "Upgradable"
 }
 
-// ValidateOffering checks if an offering exists without purchasing
+// ValidateOffering checks if an offering exists without purchasing.
 func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
 	_, err := c.findOfferingID(ctx, rec, "")
 	return err
 }
 
-// GetOfferingDetails retrieves offering details
+// GetOfferingDetails retrieves offering details.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	offeringID, err := c.findOfferingID(ctx, rec, "")
 	if err != nil {
@@ -644,7 +644,7 @@ func derivePaymentOption(offering redshifttypes.ReservedNodeOffering) string {
 	}
 }
 
-// GetValidResourceTypes returns valid Redshift node types by querying the API
+// GetValidResourceTypes returns valid Redshift node types by querying the API.
 func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	nodeTypes := make(map[string]bool)
 	var marker *string
@@ -680,7 +680,7 @@ func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	return types, nil
 }
 
-// getTermMonthsFromDuration converts duration in seconds to months
+// getTermMonthsFromDuration converts duration in seconds to months.
 func getTermMonthsFromDuration(duration int32) int {
 	offeringMonths := duration / 2592000
 	if offeringMonths >= 30 {

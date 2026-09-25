@@ -218,7 +218,7 @@ func TestParseSavingsPlansRecommendations_Empty(t *testing.T) {
 	assert.Empty(t, recs)
 }
 
-// Mock CostExplorerAPI for testing getSavingsPlansRecommendations
+// Mock CostExplorerAPI for testing getSavingsPlansRecommendations.
 type mockCostExplorerForSP struct {
 	responses map[types.SupportedSavingsPlansType]*costexplorer.GetSavingsPlansPurchaseRecommendationOutput
 	errors    map[types.SupportedSavingsPlansType]error

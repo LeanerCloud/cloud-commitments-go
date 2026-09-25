@@ -20,14 +20,14 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/tagging"
 )
 
-// RDSAPI defines the interface for RDS operations (enables mocking)
+// RDSAPI defines the interface for RDS operations (enables mocking).
 type RDSAPI interface {
 	DescribeReservedDBInstancesOfferings(ctx context.Context, params *rds.DescribeReservedDBInstancesOfferingsInput, optFns ...func(*rds.Options)) (*rds.DescribeReservedDBInstancesOfferingsOutput, error)
 	PurchaseReservedDBInstancesOffering(ctx context.Context, params *rds.PurchaseReservedDBInstancesOfferingInput, optFns ...func(*rds.Options)) (*rds.PurchaseReservedDBInstancesOfferingOutput, error)
 	DescribeReservedDBInstances(ctx context.Context, params *rds.DescribeReservedDBInstancesInput, optFns ...func(*rds.Options)) (*rds.DescribeReservedDBInstancesOutput, error)
 }
 
-// Client handles AWS RDS Reserved Instances
+// Client handles AWS RDS Reserved Instances.
 type Client struct {
 	client RDSAPI
 	region string
@@ -43,27 +43,27 @@ func NewClient(cfg aws.Config) *Client {
 	}
 }
 
-// SetRDSAPI sets a custom RDS API client (for testing)
+// SetRDSAPI sets a custom RDS API client (for testing).
 func (c *Client) SetRDSAPI(api RDSAPI) {
 	c.client = api
 }
 
-// GetServiceType returns the service type
+// GetServiceType returns the service type.
 func (c *Client) GetServiceType() common.ServiceType {
 	return common.ServiceRelationalDB
 }
 
-// GetRegion returns the region
+// GetRegion returns the region.
 func (c *Client) GetRegion() string {
 	return c.region
 }
 
-// GetRecommendations returns empty as RDS uses centralized Cost Explorer recommendations
+// GetRecommendations returns empty as RDS uses centralized Cost Explorer recommendations.
 func (c *Client) GetRecommendations(_ context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	return []common.Recommendation{}, nil
 }
 
-// GetExistingCommitments retrieves existing RDS Reserved Instances
+// GetExistingCommitments retrieves existing RDS Reserved Instances.
 func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	commitments := make([]common.Commitment, 0)
 	var marker *string
@@ -127,7 +127,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 	return commitments, nil
 }
 
-// PurchaseCommitment purchases an RDS Reserved Instance
+// PurchaseCommitment purchases an RDS Reserved Instance.
 func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
 	result := common.PurchaseResult{
 		Recommendation: rec,
@@ -437,13 +437,13 @@ func scanRDSOfferingPage(offerings []types.ReservedDBInstancesOffering, rec comm
 	return "", nil
 }
 
-// ValidateOffering checks if an offering exists without purchasing
+// ValidateOffering checks if an offering exists without purchasing.
 func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
 	_, err := c.findOfferingID(ctx, rec, "")
 	return err
 }
 
-// GetOfferingDetails retrieves offering details
+// GetOfferingDetails retrieves offering details.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	offeringID, err := c.findOfferingID(ctx, rec, "")
 	if err != nil {
@@ -488,7 +488,7 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	return details, nil
 }
 
-// GetValidResourceTypes returns valid RDS instance types
+// GetValidResourceTypes returns valid RDS instance types.
 func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	instanceTypesMap := make(map[string]bool)
 	var marker *string
@@ -525,7 +525,7 @@ func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	return instanceTypes, nil
 }
 
-// Duration constants for RI term calculations
+// Duration constants for RI term calculations.
 const (
 	OneYearSeconds   = 31536000 // 365 days in seconds
 	ThreeYearSeconds = 94608000 // 3 * 365 days in seconds
@@ -546,7 +546,7 @@ func (c *Client) getDurationString(term string) (string, error) {
 	}
 }
 
-// convertPaymentOption converts payment option to AWS string
+// convertPaymentOption converts payment option to AWS string.
 func (c *Client) convertPaymentOption(option string) (string, error) {
 	switch option {
 	case "all-upfront":

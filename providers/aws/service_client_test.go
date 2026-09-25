@@ -14,7 +14,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/recommendations"
 )
 
-// mockCostExplorerClient implements recommendations.CostExplorerAPI for testing
+// mockCostExplorerClient implements recommendations.CostExplorerAPI for testing.
 type mockCostExplorerClient struct {
 	getRecommendationsFunc func() []common.Recommendation
 }
@@ -48,7 +48,7 @@ func (m *mockCostExplorerClient) GetCostAndUsage(_ context.Context, _ *costexplo
 	return &costexplorer.GetCostAndUsageOutput{}, nil
 }
 
-// newTestRecommendationsClient creates a recommendations client with a mock CE client
+// newTestRecommendationsClient creates a recommendations client with a mock CE client.
 func newTestRecommendationsClient(ce *mockCostExplorerClient) *recommendations.Client {
 	return recommendations.NewClientWithAPI(ce, "us-east-1")
 }
@@ -153,7 +153,7 @@ func TestRecommendationsClientAdapter_GetRecommendationsForService(t *testing.T)
 }
 
 // testRecommendationsClientAdapter is a test-only version of RecommendationsClientAdapter
-// that uses an interface for easier mocking
+// that uses an interface for easier mocking.
 type testRecommendationsClientAdapter struct {
 	getRecommendationsFunc           func(ctx context.Context, params *common.RecommendationParams) ([]common.Recommendation, error)
 	getRecommendationsForServiceFunc func(ctx context.Context, service common.ServiceType) ([]common.Recommendation, error)

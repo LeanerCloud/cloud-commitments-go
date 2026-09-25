@@ -19,7 +19,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
 )
 
-// EC2API defines the interface for EC2 operations (enables mocking)
+// EC2API defines the interface for EC2 operations (enables mocking).
 type EC2API interface {
 	PurchaseReservedInstancesOffering(ctx context.Context, params *ec2.PurchaseReservedInstancesOfferingInput, optFns ...func(*ec2.Options)) (*ec2.PurchaseReservedInstancesOfferingOutput, error)
 	DescribeReservedInstancesOfferings(ctx context.Context, params *ec2.DescribeReservedInstancesOfferingsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeReservedInstancesOfferingsOutput, error)
@@ -33,7 +33,7 @@ type EC2API interface {
 	CancelReservedInstancesListing(ctx context.Context, params *ec2.CancelReservedInstancesListingInput, optFns ...func(*ec2.Options)) (*ec2.CancelReservedInstancesListingOutput, error)
 }
 
-// Client handles AWS EC2 Reserved Instances
+// Client handles AWS EC2 Reserved Instances.
 type Client struct {
 	client EC2API
 	region string
@@ -50,28 +50,28 @@ func NewClient(cfg aws.Config) *Client {
 	}
 }
 
-// SetEC2API sets a custom EC2 API client (for testing)
+// SetEC2API sets a custom EC2 API client (for testing).
 func (c *Client) SetEC2API(api EC2API) {
 	c.client = api
 }
 
-// GetServiceType returns the service type
+// GetServiceType returns the service type.
 func (c *Client) GetServiceType() common.ServiceType {
 	return common.ServiceCompute
 }
 
-// GetRegion returns the region
+// GetRegion returns the region.
 func (c *Client) GetRegion() string {
 	return c.region
 }
 
-// GetRecommendations returns empty as EC2 uses centralized Cost Explorer recommendations
+// GetRecommendations returns empty as EC2 uses centralized Cost Explorer recommendations.
 func (c *Client) GetRecommendations(_ context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	// EC2 recommendations come from Cost Explorer API via RecommendationsClient
 	return []common.Recommendation{}, nil
 }
 
-// GetExistingCommitments retrieves existing EC2 Reserved Instances
+// GetExistingCommitments retrieves existing EC2 Reserved Instances.
 func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	commitments := make([]common.Commitment, 0)
 
@@ -110,7 +110,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 	return commitments, nil
 }
 
-// PurchaseCommitment purchases an EC2 Reserved Instance
+// PurchaseCommitment purchases an EC2 Reserved Instance.
 func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
 	result := common.PurchaseResult{
 		Recommendation: rec,
@@ -623,7 +623,7 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	return details, nil
 }
 
-// GetValidResourceTypes returns valid EC2 instance types
+// GetValidResourceTypes returns valid EC2 instance types.
 func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	instanceTypesMap := make(map[string]bool)
 	var nextToken *string
@@ -659,7 +659,7 @@ func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	return instanceTypes, nil
 }
 
-// Duration constants for RI term calculations
+// Duration constants for RI term calculations.
 const (
 	OneYearSeconds   = 31536000 // 365 days in seconds
 	ThreeYearSeconds = 94608000 // 3 * 365 days in seconds

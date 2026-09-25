@@ -9,7 +9,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
-// getServiceStringForCostExplorer converts service type to Cost Explorer service string
+// getServiceStringForCostExplorer converts service type to Cost Explorer service string.
 func getServiceStringForCostExplorer(service common.ServiceType) string {
 	switch service {
 	case common.ServiceRDS, common.ServiceRelationalDB:
@@ -130,7 +130,7 @@ func convertSavingsPlansLookbackPeriod(period string) (types.LookbackPeriodInDay
 	return convertLookbackPeriodE(period)
 }
 
-// normalizeRegionName converts AWS region display names to region codes
+// normalizeRegionName converts AWS region display names to region codes.
 func normalizeRegionName(region string) string {
 	// AWS Cost Explorer sometimes returns region names like "US East (N. Virginia)"
 	// Convert these to standard region codes

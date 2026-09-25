@@ -21,32 +21,32 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/savingsplans"
 )
 
-// NewEC2Client creates a new EC2 service client
+// NewEC2Client creates a new EC2 service client.
 func NewEC2Client(cfg aws.Config) provider.ServiceClient {
 	return ec2.NewClient(cfg)
 }
 
-// NewRDSClient creates a new RDS service client
+// NewRDSClient creates a new RDS service client.
 func NewRDSClient(cfg aws.Config) provider.ServiceClient {
 	return rds.NewClient(cfg)
 }
 
-// NewElastiCacheClient creates a new ElastiCache service client
+// NewElastiCacheClient creates a new ElastiCache service client.
 func NewElastiCacheClient(cfg aws.Config) provider.ServiceClient {
 	return elasticache.NewClient(cfg)
 }
 
-// NewOpenSearchClient creates a new OpenSearch service client
+// NewOpenSearchClient creates a new OpenSearch service client.
 func NewOpenSearchClient(cfg aws.Config) provider.ServiceClient {
 	return opensearch.NewClient(cfg)
 }
 
-// NewRedshiftClient creates a new Redshift service client
+// NewRedshiftClient creates a new Redshift service client.
 func NewRedshiftClient(cfg aws.Config) provider.ServiceClient {
 	return redshift.NewClient(cfg)
 }
 
-// NewMemoryDBClient creates a new MemoryDB service client
+// NewMemoryDBClient creates a new MemoryDB service client.
 func NewMemoryDBClient(cfg aws.Config) provider.ServiceClient {
 	return memorydb.NewClient(cfg)
 }
@@ -59,19 +59,19 @@ func NewSavingsPlansClient(cfg aws.Config, planType sptypes.SavingsPlanType) pro
 	return savingsplans.NewClient(cfg, planType)
 }
 
-// RecommendationsClientAdapter adapts the recommendations client to the provider interface
+// RecommendationsClientAdapter adapts the recommendations client to the provider interface.
 type RecommendationsClientAdapter struct {
 	client *recommendations.Client
 }
 
-// NewRecommendationsClient creates a new recommendations client
+// NewRecommendationsClient creates a new recommendations client.
 func NewRecommendationsClient(cfg aws.Config) provider.RecommendationsClient {
 	return &RecommendationsClientAdapter{
 		client: recommendations.NewClient(&cfg),
 	}
 }
 
-// GetRecommendations gets recommendations with filtering
+// GetRecommendations gets recommendations with filtering.
 func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, params *common.RecommendationParams) ([]common.Recommendation, error) {
 	if params == nil {
 		return nil, fmt.Errorf("params cannot be nil")
@@ -115,7 +115,7 @@ func applyRecommendationFilters(recs []common.Recommendation, params common.Reco
 	return recs
 }
 
-// filterByAccounts filters recommendations by account IDs
+// filterByAccounts filters recommendations by account IDs.
 func filterByAccounts(recs []common.Recommendation, accounts []string) []common.Recommendation {
 	accountMap := make(map[string]bool)
 	for _, acc := range accounts {
@@ -280,12 +280,12 @@ func filterByExcludedRegions(recs []common.Recommendation, regions []string) []c
 	return filtered
 }
 
-// GetRecommendationsForService gets recommendations for a specific service
+// GetRecommendationsForService gets recommendations for a specific service.
 func (r *RecommendationsClientAdapter) GetRecommendationsForService(ctx context.Context, service common.ServiceType) ([]common.Recommendation, error) {
 	return r.client.GetRecommendationsForService(ctx, service)
 }
 
-// GetAllRecommendations gets recommendations for all supported services
+// GetAllRecommendations gets recommendations for all supported services.
 func (r *RecommendationsClientAdapter) GetAllRecommendations(ctx context.Context) ([]common.Recommendation, error) {
 	return r.client.GetAllRecommendations(ctx)
 }

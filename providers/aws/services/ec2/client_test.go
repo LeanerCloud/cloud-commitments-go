@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockEC2Client implements EC2API for testing
+// MockEC2Client implements EC2API for testing.
 type MockEC2Client struct {
 	mock.Mock
 }

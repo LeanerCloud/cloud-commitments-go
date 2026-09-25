@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockSavingsPlansClient implements SavingsPlansAPI for testing
+// MockSavingsPlansClient implements SavingsPlansAPI for testing.
 type MockSavingsPlansClient struct {
 	mock.Mock
 }

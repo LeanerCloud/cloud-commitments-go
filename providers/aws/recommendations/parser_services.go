@@ -11,7 +11,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
-// parseRDSDetails extracts RDS-specific details
+// parseRDSDetails extracts RDS-specific details.
 func (c *Client) parseRDSDetails(_ context.Context, rec *common.Recommendation, details *types.ReservationPurchaseRecommendationDetail) error {
 	if details.InstanceDetails == nil || details.InstanceDetails.RDSInstanceDetails == nil {
 		return fmt.Errorf("RDS instance details not found")
@@ -53,7 +53,7 @@ func (c *Client) parseRDSDetails(_ context.Context, rec *common.Recommendation, 
 	return nil
 }
 
-// parseElastiCacheDetails extracts ElastiCache-specific details
+// parseElastiCacheDetails extracts ElastiCache-specific details.
 func (c *Client) parseElastiCacheDetails(_ context.Context, rec *common.Recommendation, details *types.ReservationPurchaseRecommendationDetail) error {
 	if details.InstanceDetails == nil || details.InstanceDetails.ElastiCacheInstanceDetails == nil {
 		return fmt.Errorf("ElastiCache instance details not found")
@@ -173,7 +173,7 @@ func (c *Client) parseEC2Details(ctx context.Context, rec *common.Recommendation
 	return nil
 }
 
-// parseOpenSearchDetails extracts OpenSearch-specific details
+// parseOpenSearchDetails extracts OpenSearch-specific details.
 func (c *Client) parseOpenSearchDetails(_ context.Context, rec *common.Recommendation, details *types.ReservationPurchaseRecommendationDetail) error {
 	if details.InstanceDetails == nil || details.InstanceDetails.ESInstanceDetails == nil {
 		return fmt.Errorf("OpenSearch/Elasticsearch instance details not found")
@@ -200,7 +200,7 @@ func (c *Client) parseOpenSearchDetails(_ context.Context, rec *common.Recommend
 	return nil
 }
 
-// parseRedshiftDetails extracts Redshift-specific details
+// parseRedshiftDetails extracts Redshift-specific details.
 func (c *Client) parseRedshiftDetails(_ context.Context, rec *common.Recommendation, details *types.ReservationPurchaseRecommendationDetail) error {
 	if details.InstanceDetails == nil || details.InstanceDetails.RedshiftInstanceDetails == nil {
 		return fmt.Errorf("Redshift instance details not found")
