@@ -479,7 +479,7 @@ func TestFindReservationOrderByIdempotencyToken_NoMatch(t *testing.T) {
 // tag MUST NOT short-circuit a legitimate fresh purchase. Mirrors the AWS EC2
 // findRIByIdempotencyToken filter (state in active|payment-pending).
 func TestFindReservationOrderByIdempotencyToken_SkipsTerminalFailed(t *testing.T) {
-	for _, state := range []string{"Cancelled", "Failed", "Expired"} {
+	for _, state := range []string{string(armreservations.ProvisioningStateCancelled), "Failed", "Expired"} {
 		t.Run(state, func(t *testing.T) {
 			m := &mockHTTPClient{}
 			ctx := context.Background()

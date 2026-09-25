@@ -447,9 +447,9 @@ type reservationOrdersListResponse struct {
 // either rolled back or aged out; the recommendation is still owed and the
 // re-drive must be allowed through.
 var reservationOrderTerminalFailedStates = map[string]struct{}{
-	"Cancelled": {},
-	"Failed":    {},
-	"Expired":   {},
+	string(armreservations.ProvisioningStateCancelled): {},
+	"Failed":  {},
+	"Expired": {},
 }
 
 // FindReservationOrderByIdempotencyToken lists reservation orders visible to
