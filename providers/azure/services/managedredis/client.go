@@ -18,11 +18,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/redis/armredis/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/providers/azure/internal/httpclient"
-	"github.com/LeanerCloud/CUDly/providers/azure/internal/pricing"
-	"github.com/LeanerCloud/CUDly/providers/azure/internal/recommendations"
-	"github.com/LeanerCloud/CUDly/providers/azure/services/internal/reservations"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/httpclient"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/pricing"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/recommendations"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
 )
 
 // maxRecsPages caps Consumption API recommendation pagination (matches the
@@ -42,24 +42,24 @@ func (c *ManagedRedisClient) recommendationsListArgs() (string, *armconsumption.
 	return scope, &armconsumption.ReservationRecommendationsClientListOptions{Filter: &filter}
 }
 
-// HTTPClient interface for HTTP operations (enables mocking)
+// HTTPClient interface for HTTP operations (enables mocking).
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-// RecommendationsPager interface for recommendations pager (enables mocking)
+// RecommendationsPager interface for recommendations pager (enables mocking).
 type RecommendationsPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armconsumption.ReservationRecommendationsClientListResponse, error)
 }
 
-// ReservationsDetailsPager interface for reservations details pager (enables mocking)
+// ReservationsDetailsPager interface for reservations details pager (enables mocking).
 type ReservationsDetailsPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armconsumption.ReservationsDetailsClientListResponse, error)
 }
 
-// RedisCachesPager interface for Redis caches pager (enables mocking)
+// RedisCachesPager interface for Redis caches pager (enables mocking).
 type RedisCachesPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armredis.ClientListBySubscriptionResponse, error)
@@ -149,7 +149,7 @@ func (c *ManagedRedisClient) GetRecommendations(ctx context.Context, _ *common.R
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxRecsPages {
 			return nil, fmt.Errorf("managedredis: GetRecommendations pagination cap (%d pages) reached", maxRecsPages)

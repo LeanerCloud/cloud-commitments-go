@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 func TestShouldIncludeService(t *testing.T) {
@@ -126,7 +126,7 @@ func TestRecommendationsClientAdapter_Fields(t *testing.T) {
 
 // TestRecommendationsClientAdapter_GetRecommendations_PropagatesContextCancellation
 // pins the contract that GetRecommendations propagates ctx.Err() to its caller
-// after the errgroup Wait() — the parent context being cancelled or its
+// after the errgroup Wait() — the parent context being canceled or its
 // deadline exceeding must surface as an error rather than being swallowed by
 // the per-region error-isolation goroutines (which all return nil to the
 // errgroup so a single per-region failure does not cancel siblings).
@@ -147,7 +147,7 @@ func TestRecommendationsClientAdapter_GetRecommendations_PropagatesContextCancel
 	}
 
 	// Cancel the context BEFORE the call so we don't depend on race-y timing
-	// inside the SDK clients. getRegions itself observes the cancelled ctx
+	// inside the SDK clients. getRegions itself observes the canceled ctx
 	// and returns the cancellation error wrapped via fmt.Errorf("failed to
 	// get regions: %w", err) — errors.Is unwraps that. (If a future refactor
 	// makes getRegions skip the ctx check, the post-Wait ctx.Err() block is

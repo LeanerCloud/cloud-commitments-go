@@ -12,9 +12,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/billingbenefits/armbillingbenefits"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/providers/azure/internal/httpclient"
-	"github.com/LeanerCloud/CUDly/providers/azure/internal/pricing"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/httpclient"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/pricing"
 )
 
 // SavingsPlanOrderAliasAPI defines operations on SavingsPlanOrderAlias (enables mocking).

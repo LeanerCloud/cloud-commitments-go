@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // Config controls which recommendations are allowed through the scorer.

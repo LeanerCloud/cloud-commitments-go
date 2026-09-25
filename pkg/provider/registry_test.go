@@ -9,10 +9,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
-// MockProvider implements the Provider interface for testing
+// MockProvider implements the Provider interface for testing.
 type MockProvider struct {
 	name              string
 	displayName       string

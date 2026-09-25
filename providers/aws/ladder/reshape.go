@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/LeanerCloud/CUDly/pkg/exchange"
-	"github.com/LeanerCloud/CUDly/pkg/ladder"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/exchange"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/ladder"
 )
 
 // unlimitedCapUSD is the explicit "no cap" value passed to

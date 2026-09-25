@@ -13,7 +13,7 @@ import (
 
 	cetypes "github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 
-	"github.com/LeanerCloud/CUDly/providers/aws/recommendations"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/recommendations"
 )
 
 // activeSPListAPI is the minimal interface for listing Savings Plans.
@@ -82,7 +82,7 @@ func (a *spListerAdapter) ListActiveSPs(ctx context.Context) ([]ActiveSP, error)
 
 	for {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("ListActiveSPs: context cancelled: %w", err)
+			return nil, fmt.Errorf("ListActiveSPs: context canceled: %w", err)
 		}
 		page++
 
@@ -235,7 +235,7 @@ func (a *onDemandSeriesAdapter) GetOnDemandSeries(ctx context.Context, region st
 // and mapping its richer SPCoverageSummary to the local SPCoverageSummary type.
 // The mapping preserves the nil-when-Days==0 contract: if CE returned no
 // coverage data the recommendations summary has Days==0 and CoveragePct==nil;
-// the adapter returns an empty local summary (CoveragePct stays nil, signalling
+// the adapter returns an empty local summary (CoveragePct stays nil, signaling
 // "not measured" to the engine rather than "0% coverage").
 type spCoverageAdapter struct {
 	client *recommendations.Client

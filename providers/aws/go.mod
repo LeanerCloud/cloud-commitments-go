@@ -1,9 +1,9 @@
-module github.com/LeanerCloud/CUDly/providers/aws
+module github.com/LeanerCloud/cloud-commitments-go/providers/aws
 
 go 1.26.6
 
 require (
-	github.com/LeanerCloud/CUDly/pkg v0.0.0
+	github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0
 	github.com/aws/aws-sdk-go-v2 v1.41.5
 	github.com/aws/aws-sdk-go-v2/config v1.29.12
 	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.61.0
@@ -38,4 +38,4 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
-replace github.com/LeanerCloud/CUDly/pkg => ../../pkg
+replace github.com/LeanerCloud/cloud-commitments-go/pkg => ../../pkg

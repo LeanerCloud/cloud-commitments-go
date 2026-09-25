@@ -15,11 +15,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/provider"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
 )
 
-// mockSubscriptionsClient implements SubscriptionsClient for testing
+// mockSubscriptionsClient implements SubscriptionsClient for testing.
 type mockSubscriptionsClient struct {
 	listPagerFunc          func(options *armsubscriptions.ClientListOptions) SubscriptionsPager
 	listLocationsPagerFunc func(subscriptionID string, options *armsubscriptions.ClientListLocationsOptions) LocationsPager
@@ -39,7 +39,7 @@ func (m *mockSubscriptionsClient) NewListLocationsPager(subscriptionID string, o
 	return nil
 }
 
-// mockSubscriptionsPager implements SubscriptionsPager for testing
+// mockSubscriptionsPager implements SubscriptionsPager for testing.
 type mockSubscriptionsPager struct {
 	pages       []armsubscriptions.ClientListResponse
 	pageIdx     int
@@ -68,7 +68,7 @@ func (m *mockSubscriptionsPager) NextPage(ctx context.Context) (armsubscriptions
 	return page, nil
 }
 
-// mockLocationsPager implements LocationsPager for testing
+// mockLocationsPager implements LocationsPager for testing.
 type mockLocationsPager struct {
 	pages       []armsubscriptions.ClientListLocationsResponse
 	pageIdx     int
@@ -97,7 +97,7 @@ func (m *mockLocationsPager) NextPage(ctx context.Context) (armsubscriptions.Cli
 	return page, nil
 }
 
-// mockCredentialProvider implements CredentialProvider for testing
+// mockCredentialProvider implements CredentialProvider for testing.
 type mockCredentialProvider struct {
 	cred azcore.TokenCredential
 	err  error
@@ -107,7 +107,7 @@ func (m *mockCredentialProvider) NewDefaultAzureCredential() (azcore.TokenCreden
 	return m.cred, m.err
 }
 
-// Helper function to create a string pointer
+// Helper function to create a string pointer.
 func stringPtr(s string) *string {
 	return &s
 }
@@ -208,7 +208,7 @@ func TestNewAzureProvider_TokenCredentialInjection(t *testing.T) {
 		// The wrong-typed slot is now logged via logging.Warnf so mis-wirings
 		// surface in production logs rather than producing a confusing
 		// "ADC unavailable" error. We don't capture the log output here
-		// (the project has no log-capture harness); the behavioural assertion
+		// (the project has no log-capture harness); the behavioral assertion
 		// is unchanged: p.cred stays nil and NewAzureProvider doesn't error.
 		p, err := NewAzureProvider(&provider.ProviderConfig{
 			AzureSubscriptionID:  "sub-1",
@@ -474,7 +474,7 @@ func TestAzureProvider_GetRecommendationsClient(t *testing.T) {
 	require.NotNil(t, client)
 }
 
-// mockTokenCredential implements azcore.TokenCredential for testing
+// mockTokenCredential implements azcore.TokenCredential for testing.
 type mockTokenCredential struct{}
 
 func (m *mockTokenCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
@@ -1752,8 +1752,8 @@ func TestAzureProvider_GetRecommendationsClient_MultiSubscriptionFanOut(t *testi
 	})
 
 	// The happy path for the same branch: a target the principal CAN see is
-	// honoured, and scopes the client to exactly that subscription.
-	t.Run("AZURE_SUBSCRIPTION_ID matching a visible subscription is honoured", func(t *testing.T) {
+	// honored, and scopes the client to exactly that subscription.
+	t.Run("AZURE_SUBSCRIPTION_ID matching a visible subscription is honored", func(t *testing.T) {
 		t.Setenv("AZURE_SUBSCRIPTION_ID", "sub-1")
 		p := &AzureProvider{cred: &mockTokenCredential{}}
 		p.SetSubscriptionsClient(twoSubscriptionPages())
@@ -1898,7 +1898,7 @@ func TestAzureProvider_ResolveSubscription_InvisibleConfiguredTargetErrors(t *te
 
 	// The guard must reject only targets that are genuinely invisible; a
 	// visible one still resolves, and resolves to itself.
-	t.Run("a visible configured target is still honoured", func(t *testing.T) {
+	t.Run("a visible configured target is still honored", func(t *testing.T) {
 		t.Setenv("AZURE_SUBSCRIPTION_ID", soloID)
 		var gotSubscriptionID string
 		client := soloClient()

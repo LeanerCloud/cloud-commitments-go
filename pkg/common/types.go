@@ -17,7 +17,7 @@ import (
 // infrastructure. Callers can detect it with errors.Is(err, ErrCommitmentPurchaseNotSupported).
 var ErrCommitmentPurchaseNotSupported = errors.New("commitment purchase not supported for this service")
 
-// ProviderType identifies the cloud provider
+// ProviderType identifies the cloud provider.
 type ProviderType string
 
 const (
@@ -60,32 +60,32 @@ func (o ExchangeOrigin) String() string {
 	return string(o)
 }
 
-// String returns the string representation of the provider type
+// String returns the string representation of the provider type.
 func (p ProviderType) String() string {
 	return string(p)
 }
 
-// ServiceType identifies the service type across clouds
+// ServiceType identifies the service type across clouds.
 type ServiceType string
 
 const (
-	// Compute
+	// Compute.
 	ServiceCompute ServiceType = "compute" // EC2, VM, Compute Engine
 
-	// Database
+	// Database.
 	ServiceRelationalDB ServiceType = "relational-db" // RDS, Azure SQL, Cloud SQL
 	ServiceNoSQL        ServiceType = "nosql"         // DynamoDB, CosmosDB, Firestore
 
-	// Cache
+	// Cache.
 	ServiceCache ServiceType = "cache" // ElastiCache, Azure Cache, Memorystore
 
-	// Search
+	// Search.
 	ServiceSearch ServiceType = "search" // OpenSearch, Azure Search
 
-	// Data Warehouse
+	// Data Warehouse.
 	ServiceDataWarehouse ServiceType = "data-warehouse" // Redshift, Synapse, BigQuery
 
-	// Storage
+	// Storage.
 	ServiceStorage ServiceType = "storage" // S3, Blob Storage, Cloud Storage
 
 	// Savings/Commitments
@@ -101,7 +101,7 @@ const (
 	//   ServiceSavingsPlansSageMaker, ServiceSavingsPlansDatabase.
 	// Use SavingsPlansPlanTypes() to iterate over them in canonical order.
 	//
-	// Code that needs to recognise pre-#85 persisted "savings-plans" rows
+	// Code that needs to recognize pre-#85 persisted "savings-plans" rows
 	// (e.g. purchase_executions JSONB blobs) goes through the mapper in
 	// internal/purchase/execution.go.
 	ServiceSavingsPlansAll ServiceType = "savingsplans" // umbrella sentinel for "any SP"
@@ -111,17 +111,17 @@ const (
 	// defaults independently per plan type. These were introduced after the
 	// umbrella was normalised; the dash-form slugs intentionally differ from
 	// the umbrella's "savingsplans" so a generic-vs-specific comparison is
-	// unambiguous (use IsSavingsPlan to recognise the family).
+	// unambiguous (use IsSavingsPlan to recognize the family).
 	ServiceSavingsPlansCompute     ServiceType = "savings-plans-compute"     // ComputeSp: EC2, Fargate, Lambda
 	ServiceSavingsPlansEC2Instance ServiceType = "savings-plans-ec2instance" // Ec2InstanceSp: specific EC2 families
 	ServiceSavingsPlansSageMaker   ServiceType = "savings-plans-sagemaker"   // SagemakerSp
 	ServiceSavingsPlansDatabase    ServiceType = "savings-plans-database"    // DatabaseSp: RDS
 	ServiceCommitments             ServiceType = "commitments"               // Generic commitments
 
-	// Other
+	// Other.
 	ServiceOther ServiceType = "other" // Catch-all for unclassified services
 
-	// Legacy AWS service types (for backward compatibility)
+	// Legacy AWS service types (for backward compatibility).
 	ServiceEC2         ServiceType = "ec2"
 	ServiceRDS         ServiceType = "rds"
 	ServiceElastiCache ServiceType = "elasticache"
@@ -134,7 +134,7 @@ const (
 	ServiceMemoryDB      ServiceType = "memorydb"
 )
 
-// String returns the string representation of the service type
+// String returns the string representation of the service type.
 func (s ServiceType) String() string {
 	return string(s)
 }
@@ -143,7 +143,7 @@ func (s ServiceType) String() string {
 // the umbrella sentinel (ServiceSavingsPlansAll), any of the four per-plan-type
 // constants, or the dash-free frontend spelling "savingsplans" that the API
 // handler stores verbatim without normalisation. Use it when code needs to
-// recognise the Savings Plans family irrespective of plan type (e.g., stats
+// recognize the Savings Plans family irrespective of plan type (e.g., stats
 // aggregation, region-ignoring filters, display-name branching).
 func IsSavingsPlan(s ServiceType) bool {
 	switch s {
@@ -171,7 +171,7 @@ func SavingsPlansPlanTypes() []ServiceType {
 	}
 }
 
-// CommitmentType represents different commitment types across clouds
+// CommitmentType represents different commitment types across clouds.
 type CommitmentType string
 
 const (
@@ -181,12 +181,12 @@ const (
 	CommitmentReservedCapacity CommitmentType = "reserved-capacity" // Azure/GCP storage
 )
 
-// String returns the string representation of the commitment type
+// String returns the string representation of the commitment type.
 func (c CommitmentType) String() string {
 	return string(c)
 }
 
-// Recommendation represents a commitment purchase recommendation across any cloud provider
+// Recommendation represents a commitment purchase recommendation across any cloud provider.
 type Recommendation struct {
 	// Provider identification
 	Provider    ProviderType `json:"provider" csv:"Provider"`
@@ -262,7 +262,7 @@ type Recommendation struct {
 	// omitempty ensures nil is absent from JSON (not written as null).
 	RawRecommendation json.RawMessage `json:"raw_recommendation,omitempty" csv:"-"`
 
-	// UsageHistory is an ordered slice of daily coverage/utilisation
+	// UsageHistory is an ordered slice of daily coverage/utilization
 	// percentages (0-100) for the last N days of the lookback window
 	// (oldest-to-newest). Populated by cloud collectors that can source the
 	// signal from the provider API; nil when not yet wired or when the
@@ -271,7 +271,7 @@ type Recommendation struct {
 	UsageHistory []float64 `json:"usage_history,omitempty" csv:"-"`
 }
 
-// ServiceDetails is an interface for service-specific details
+// ServiceDetails is an interface for service-specific details.
 type ServiceDetails interface {
 	GetServiceType() ServiceType
 	GetDetailDescription() string
@@ -330,7 +330,7 @@ func ScaleRecommendationCosts(rec Recommendation, ratio float64) Recommendation 
 	return rec
 }
 
-// PurchaseResult represents the outcome of a commitment purchase
+// PurchaseResult represents the outcome of a commitment purchase.
 type PurchaseResult struct {
 	Recommendation Recommendation `json:"recommendation"`
 	Success        bool           `json:"success"`
@@ -381,7 +381,7 @@ type PurchaseOptions struct {
 	// token) check for an existing RI tagged with it before purchasing and tag
 	// the new RI with it afterwards. Empty means no idempotency guard (the CLI
 	// purchase path, which has no owning execution, leaves it empty and keeps
-	// its prior non-idempotent behaviour).
+	// its prior non-idempotent behavior).
 	IdempotencyToken string
 	// ExecutionID, when non-empty, is the purchase_executions row UUID that
 	// owns this purchase attempt. Carried so the purchase-execution flow can
@@ -392,7 +392,7 @@ type PurchaseOptions struct {
 	// OfferingClass is the EC2 Reserved Instance offering class for this
 	// purchase: "convertible" (exchangeable) or "standard" (locked, ~5%
 	// cheaper). Empty means the caller has not set one; the EC2 client
-	// defaults to "convertible" to preserve pre-694 behaviour.
+	// defaults to "convertible" to preserve pre-694 behavior.
 	// Only meaningful for EC2 RI purchases; ignored by other providers.
 	OfferingClass string
 }
@@ -440,7 +440,7 @@ type Commitment struct {
 	Cost           float64        `json:"cost"`
 }
 
-// OfferingDetails represents cloud provider offering details
+// OfferingDetails represents cloud provider offering details.
 type OfferingDetails struct {
 	OfferingID          string  `json:"offering_id"`
 	ResourceType        string  `json:"resource_type"`
@@ -453,7 +453,7 @@ type OfferingDetails struct {
 	Currency            string  `json:"currency"`
 }
 
-// RecommendationParams represents parameters for fetching recommendations
+// RecommendationParams represents parameters for fetching recommendations.
 type RecommendationParams struct {
 	Service        ServiceType
 	Region         string
@@ -468,7 +468,7 @@ type RecommendationParams struct {
 	ExcludeSPTypes []string
 }
 
-// Account represents a cloud account/subscription/project
+// Account represents a cloud account/subscription/project.
 type Account struct {
 	Provider    ProviderType `json:"provider"`
 	ID          string       `json:"id"`
@@ -477,7 +477,7 @@ type Account struct {
 	IsDefault   bool         `json:"is_default"`
 }
 
-// Region represents a cloud region/location
+// Region represents a cloud region/location.
 type Region struct {
 	Provider    ProviderType `json:"provider"`
 	ID          string       `json:"id"`
@@ -487,10 +487,10 @@ type Region struct {
 
 // ComputeDetails represents compute-specific details (EC2, VM, Compute Engine).
 //
-// VCPU + MemoryGB are populated by per-provider catalogue lookups when
+// VCPU + MemoryGB are populated by per-provider catalog lookups when
 // available (Azure: armcompute.ResourceSKU.Capabilities; AWS:
-// ec2:DescribeInstanceTypes; GCP: machine-type catalogue). They are
-// optional — converters that don't yet wire a catalogue leave them at the
+// ec2:DescribeInstanceTypes; GCP: machine-type catalog). They are
+// optional — converters that don't yet wire a catalog leave them at the
 // zero value, and the JSON tag uses omitempty so unknown values don't
 // pollute the API payload.
 type ComputeDetails struct {
@@ -521,7 +521,7 @@ func (d ComputeDetails) GetDetailDescription() string {
 	return base
 }
 
-// DatabaseDetails represents database-specific details (RDS, Azure SQL, Cloud SQL)
+// DatabaseDetails represents database-specific details (RDS, Azure SQL, Cloud SQL).
 type DatabaseDetails struct {
 	Engine        string `json:"engine"` // mysql, postgres, sqlserver, etc.
 	EngineVersion string `json:"engine_version,omitempty"`
@@ -538,7 +538,7 @@ func (d DatabaseDetails) GetDetailDescription() string {
 	return d.Engine + "/" + d.AZConfig
 }
 
-// CacheDetails represents cache-specific details (ElastiCache, Azure Cache, Memorystore)
+// CacheDetails represents cache-specific details (ElastiCache, Azure Cache, Memorystore).
 type CacheDetails struct {
 	Engine   string `json:"engine"` // redis, memcached
 	NodeType string `json:"node_type"`
@@ -553,7 +553,7 @@ func (d CacheDetails) GetDetailDescription() string {
 	return d.Engine + "/" + d.NodeType
 }
 
-// SearchDetails represents search-specific details (OpenSearch, Azure Search)
+// SearchDetails represents search-specific details (OpenSearch, Azure Search).
 type SearchDetails struct {
 	InstanceType    string `json:"instance_type"`
 	MasterNodeCount int    `json:"master_node_count,omitempty"`
@@ -568,7 +568,7 @@ func (d SearchDetails) GetDetailDescription() string {
 	return d.InstanceType
 }
 
-// DataWarehouseDetails represents data warehouse-specific details (Redshift, Synapse, BigQuery)
+// DataWarehouseDetails represents data warehouse-specific details (Redshift, Synapse, BigQuery).
 type DataWarehouseDetails struct {
 	NodeType      string `json:"node_type"`
 	NumberOfNodes int    `json:"number_of_nodes"`
@@ -608,7 +608,7 @@ func (d NoSQLDetails) GetDetailDescription() string {
 	return d.Engine + "/" + d.APIType
 }
 
-// SavingsPlanDetails represents AWS Savings Plans specific details
+// SavingsPlanDetails represents AWS Savings Plans specific details.
 type SavingsPlanDetails struct {
 	PlanType         string  `json:"plan_type"` // Compute, EC2Instance, SageMaker
 	HourlyCommitment float64 `json:"hourly_commitment"`

@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // --- mock helpers ---
@@ -502,7 +502,12 @@ func TestNewClient_UsesHardenedHTTPClient(t *testing.T) {
 	require.NotNil(t, c.httpClient)
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://169.254.169.254/metadata/instance", nil)
 	require.NoError(t, err)
-	_, err = c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req)
+	if resp != nil && resp.Body != nil {
+		t.Cleanup(func() {
+			require.NoError(t, resp.Body.Close())
+		})
+	}
 	require.Error(t, err, "hardened client must reject IMDS connections")
 	assert.Contains(t, err.Error(), "blocked")
 }
@@ -514,7 +519,12 @@ func TestNewClientWithHTTP_NilFallbackIsHardened(t *testing.T) {
 	require.NotNil(t, c.httpClient)
 	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://169.254.169.254/metadata/instance", nil)
 	require.NoError(t, err)
-	_, err = c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req)
+	if resp != nil && resp.Body != nil {
+		t.Cleanup(func() {
+			require.NoError(t, resp.Body.Close())
+		})
+	}
 	require.Error(t, err, "nil-fallback client must also reject IMDS connections")
 	assert.Contains(t, err.Error(), "blocked")
 }
@@ -527,7 +537,11 @@ func TestNewClientWithHTTP_NilFallbackIsHardened(t *testing.T) {
 func TestFetchOnDemandRate_NotFound(t *testing.T) {
 	h := &mockHTTPClient{}
 	t.Cleanup(func() { h.AssertExpectations(t) })
-	h.On("Do", mock.Anything).Return(fakeHTTPResp(http.StatusOK, `{"Items":[],"NextPageLink":""}`), nil)
+	pricingResp1 := fakeHTTPResp(http.StatusOK, `{"Items":[],"NextPageLink":""}`)
+	t.Cleanup(func() {
+		require.NoError(t, pricingResp1.Body.Close())
+	})
+	h.On("Do", mock.Anything).Return(pricingResp1, nil)
 
 	c := NewClientWithHTTP(nil, "sub", "eastus", h)
 	_, err := c.fetchOnDemandRate(context.Background(), "Compute")
@@ -546,7 +560,11 @@ func TestFetchOnDemandRate_ReturnsFirstPositivePrice(t *testing.T) {
 		],
 		"NextPageLink": ""
 	}`
-	h.On("Do", mock.Anything).Return(fakeHTTPResp(http.StatusOK, body), nil)
+	lookupResp2 := fakeHTTPResp(http.StatusOK, body)
+	t.Cleanup(func() {
+		require.NoError(t, lookupResp2.Body.Close())
+	})
+	h.On("Do", mock.Anything).Return(lookupResp2, nil)
 
 	c := NewClientWithHTTP(nil, "sub", "eastus", h)
 	rate, err := c.fetchOnDemandRate(context.Background(), "Compute")
@@ -562,10 +580,14 @@ func TestFetchOnDemandRate_URLEncoding(t *testing.T) {
 	t.Cleanup(func() { h.AssertExpectations(t) })
 	// Capture the request URL and assert it is properly encoded.
 	var capturedURL string
+	pricingResp3 := fakeHTTPResp(http.StatusOK, `{"Items":[],"NextPageLink":""}`)
+	t.Cleanup(func() {
+		require.NoError(t, pricingResp3.Body.Close())
+	})
 	h.On("Do", mock.MatchedBy(func(req *http.Request) bool {
 		capturedURL = req.URL.RawQuery
 		return true
-	})).Return(fakeHTTPResp(http.StatusOK, `{"Items":[],"NextPageLink":""}`), nil)
+	})).Return(pricingResp3, nil)
 
 	c := NewClientWithHTTP(nil, "sub", "eastus", h)
 	_, _ = c.fetchOnDemandRate(context.Background(), "Compute")

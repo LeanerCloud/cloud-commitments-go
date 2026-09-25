@@ -3,33 +3,33 @@ package azure
 
 import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/LeanerCloud/CUDly/pkg/provider"
-	"github.com/LeanerCloud/CUDly/providers/azure/services/cache"
-	"github.com/LeanerCloud/CUDly/providers/azure/services/compute"
-	"github.com/LeanerCloud/CUDly/providers/azure/services/cosmosdb"
-	"github.com/LeanerCloud/CUDly/providers/azure/services/database"
-	"github.com/LeanerCloud/CUDly/providers/azure/services/managedredis"
-	"github.com/LeanerCloud/CUDly/providers/azure/services/savingsplans"
-	"github.com/LeanerCloud/CUDly/providers/azure/services/search"
-	"github.com/LeanerCloud/CUDly/providers/azure/services/synapse"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/cache"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/compute"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/cosmosdb"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/database"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/managedredis"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/savingsplans"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/search"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/synapse"
 )
 
-// NewComputeClient creates a new Azure Compute (VM) client
+// NewComputeClient creates a new Azure Compute (VM) client.
 func NewComputeClient(cred azcore.TokenCredential, subscriptionID, region string) provider.ServiceClient {
 	return compute.NewClient(cred, subscriptionID, region)
 }
 
-// NewDatabaseClient creates a new Azure SQL Database client
+// NewDatabaseClient creates a new Azure SQL Database client.
 func NewDatabaseClient(cred azcore.TokenCredential, subscriptionID, region string) provider.ServiceClient {
 	return database.NewClient(cred, subscriptionID, region)
 }
 
-// NewCacheClient creates a new Azure Cache for Redis client
+// NewCacheClient creates a new Azure Cache for Redis client.
 func NewCacheClient(cred azcore.TokenCredential, subscriptionID, region string) provider.ServiceClient {
 	return cache.NewClient(cred, subscriptionID, region)
 }
 
-// NewCosmosDBClient creates a new Azure Cosmos DB client
+// NewCosmosDBClient creates a new Azure Cosmos DB client.
 func NewCosmosDBClient(cred azcore.TokenCredential, subscriptionID, region string) provider.ServiceClient {
 	return cosmosdb.NewClient(cred, subscriptionID, region)
 }
@@ -40,17 +40,17 @@ func NewManagedRedisClient(cred azcore.TokenCredential, subscriptionID, region s
 	return managedredis.NewClient(cred, subscriptionID, region)
 }
 
-// NewSavingsPlansClient creates a new Azure Savings Plans client
+// NewSavingsPlansClient creates a new Azure Savings Plans client.
 func NewSavingsPlansClient(cred azcore.TokenCredential, subscriptionID, region string) provider.ServiceClient {
 	return savingsplans.NewClient(cred, subscriptionID, region)
 }
 
-// NewSearchClient creates a new Azure Cognitive Search client
+// NewSearchClient creates a new Azure Cognitive Search client.
 func NewSearchClient(cred azcore.TokenCredential, subscriptionID, region string) provider.ServiceClient {
 	return search.NewClient(cred, subscriptionID, region)
 }
 
-// NewSynapseClient creates a new Azure Synapse Analytics client
+// NewSynapseClient creates a new Azure Synapse Analytics client.
 func NewSynapseClient(cred azcore.TokenCredential, subscriptionID, region string) provider.ServiceClient {
 	return synapse.NewClient(cred, subscriptionID, region)
 }

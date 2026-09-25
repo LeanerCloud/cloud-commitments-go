@@ -13,10 +13,10 @@ import (
 	"google.golang.org/api/iterator"
 	"google.golang.org/genproto/googleapis/type/money"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
-// MockStorageService mocks the StorageService interface
+// MockStorageService mocks the StorageService interface.
 type MockStorageService struct {
 	buckets      []*storage.BucketAttrs
 	listErr      error
@@ -38,7 +38,7 @@ func (m *MockStorageService) Close() error {
 	return nil
 }
 
-// MockBucketIterator mocks the BucketIterator interface
+// MockBucketIterator mocks the BucketIterator interface.
 type MockBucketIterator struct {
 	buckets []*storage.BucketAttrs
 	index   int
@@ -57,7 +57,7 @@ func (m *MockBucketIterator) Next() (*storage.BucketAttrs, error) {
 	return b, nil
 }
 
-// MockBucketHandle mocks the BucketHandle interface
+// MockBucketHandle mocks the BucketHandle interface.
 type MockBucketHandle struct {
 	createErr    error
 	createCalled *bool
@@ -70,7 +70,7 @@ func (m *MockBucketHandle) Create(ctx context.Context, projectID string, attrs *
 	return m.createErr
 }
 
-// MockRecommenderClient mocks the RecommenderClient interface
+// MockRecommenderClient mocks the RecommenderClient interface.
 type MockRecommenderClient struct {
 	recommendations []*recommenderpb.Recommendation
 	err             error
@@ -86,7 +86,7 @@ func (m *MockRecommenderClient) Close() error {
 	return nil
 }
 
-// MockRecommenderIterator mocks the RecommenderIterator interface
+// MockRecommenderIterator mocks the RecommenderIterator interface.
 type MockRecommenderIterator struct {
 	recommendations []*recommenderpb.Recommendation
 	index           int
@@ -105,7 +105,7 @@ func (m *MockRecommenderIterator) Next() (*recommenderpb.Recommendation, error) 
 	return rec, nil
 }
 
-// MockBillingService mocks the BillingService interface
+// MockBillingService mocks the BillingService interface.
 type MockBillingService struct {
 	skus *cloudbilling.ListSkusResponse
 	err  error

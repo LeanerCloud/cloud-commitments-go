@@ -7,7 +7,7 @@
 // Without this package every service client carries a near-identical
 // copy of the pagination loop — the same seen-URL guard, the same
 // max-pages cap, the same per-page timeout, the same error wording.
-// Centralising those invariants means a bug in one (e.g. a missing
+// Centralizing those invariants means a bug in one (e.g. a missing
 // timeout) can't diverge across services.
 package pricing
 
@@ -45,9 +45,9 @@ const DefaultPageTimeout = 10 * time.Second
 // DefaultMaxPages caps the NextPageLink loop. The Retail Prices API
 // (api-version 2023-01-01-preview) pages at about 1,000 items, so 50
 // pages is roughly 50,000 items. The largest filter any client issues
-// (a region-wide service catalogue, cosmosdb/search) measured 1 page on
-// 2026-09-08; the whole Virtual Machines catalogue for one region, which
-// no client requests, measured 16. The cap is a defence against a
+// (a region-wide service catalog, cosmosdb/search) measured 1 page on
+// 2026-09-08; the whole Virtual Machines catalog for one region, which
+// no client requests, measured 16. The cap is a defense against a
 // server bug returning a NextPageLink that never empties. Reaching it
 // with a NextPageLink still pending is an error, never a truncated
 // result (#1963).

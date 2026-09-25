@@ -11,9 +11,9 @@ import (
 	awsec2 "github.com/aws/aws-sdk-go-v2/service/ec2"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/concurrency"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 )
 
 // maxRecommendationPages caps the number of pages fetched per Cost Explorer
@@ -28,7 +28,7 @@ const maxRecommendationPages = 20
 // the cmd-side fallback, and the client-side fallback all refer to a single
 // source of truth (avoids the magic-value duplication called out by
 // feedback_no_hardcoded_magic_values.md). Valid CE values are 7d/30d/60d
-// (see convertLookbackPeriodE); 7d matches the prior hardcoded behaviour
+// (see convertLookbackPeriodE); 7d matches the prior hardcoded behavior
 // from before --rec-lookback-period existed.
 const DefaultRecLookbackPeriod = "7d"
 
@@ -127,7 +127,7 @@ func (c *Client) instanceTypeLookup(ctx context.Context, instanceType string) (i
 
 // SetRecLookbackPeriod configures the LookbackPeriodInDays used by
 // GetRecommendationsForService. Valid values: "7d", "30d", "60d".
-// An empty or unrecognised value falls back to "7d" at call time.
+// An empty or unrecognized value falls back to "7d" at call time.
 func (c *Client) SetRecLookbackPeriod(period string) {
 	c.recLookbackPeriod = period
 }
@@ -261,7 +261,7 @@ var defaultDiscoveryPaymentOptions = []string{"all-upfront", "partial-upfront", 
 // If the context is already done before the call, it returns (nil, ctx.Err()).
 // If GetRecommendations returns an error after ctx cancellation, it also
 // returns (nil, ctx.Err()) so the caller exits the sweep immediately. Per-combo
-// errors (throttle, 5xx) return (nil, err) with ctx.Err() == nil, signalling
+// errors (throttle, 5xx) return (nil, err) with ctx.Err() == nil, signaling
 // skip-and-continue tolerance in the outer loop.
 func (c *Client) fetchSingleComboRecs(ctx context.Context, service common.ServiceType, term string, payment string) ([]common.Recommendation, error) {
 	if ctx.Err() != nil {

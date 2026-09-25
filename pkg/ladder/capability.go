@@ -3,7 +3,7 @@ package ladder
 import (
 	"context"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // LadderCapability is implemented by each cloud provider to give the ladder

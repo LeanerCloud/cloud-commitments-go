@@ -14,13 +14,13 @@ import (
 	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/concurrency"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
-	"github.com/LeanerCloud/CUDly/providers/gcp/services/cloudsql"
-	"github.com/LeanerCloud/CUDly/providers/gcp/services/cloudstorage"
-	"github.com/LeanerCloud/CUDly/providers/gcp/services/computeengine"
-	"github.com/LeanerCloud/CUDly/providers/gcp/services/memorystore"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/services/cloudsql"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/services/cloudstorage"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/services/computeengine"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/services/memorystore"
 )
 
 // defaultGCPRegionConcurrency caps the parallel per-region goroutines inside
@@ -68,7 +68,7 @@ type regionResult struct {
 	lastErr   error
 }
 
-// RecommendationsClientAdapter aggregates GCP CUD and commitment recommendations across all services
+// RecommendationsClientAdapter aggregates GCP CUD and commitment recommendations across all services.
 type RecommendationsClientAdapter struct {
 	ctx        context.Context
 	projectID  string
@@ -87,7 +87,7 @@ type RecommendationsClientAdapter struct {
 //     goroutines under a per-region sub-errgroup, so the per-region cost is
 //     max(service latencies) rather than their sum.
 //
-// Behaviour change vs the previous nested for-loops: per-(region, service)
+// Behavior change vs the previous nested for-loops: per-(region, service)
 // errors that were previously silently swallowed (`if err == nil { ... }`
 // shape) are now logged at WARN with region+service identifiers so
 // misconfigured projects are diagnosable. Errors do NOT cancel siblings —
@@ -108,7 +108,7 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 	params := *p
 	// Context cancellation is terminal: bail out before any API fan-out.
 	// Newer cloud.google.com/go/compute REST clients can complete a regions
-	// List call (and return a real 403) even when ctx is already cancelled,
+	// List call (and return a real 403) even when ctx is already canceled,
 	// which would otherwise be swallowed by the permission branch below.
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -121,7 +121,7 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 		// service account lacks Compute Viewer on this project. Log at Warn
 		// so it doesn't spam as ERROR in Lambda — the application-layer auth
 		// still works; only GCP recommendations for this account are skipped.
-		// See issue #247. A cancelled ctx never reaches this branch (guarded
+		// See issue #247. A canceled ctx never reaches this branch (guarded
 		// above), so a genuine 403 is the only thing swallowed here.
 		if isPermissionError(err) {
 			logging.Warnf("GCP account %s: skipping recommendations — insufficient Compute permission to list regions (grant roles/compute.viewer): %v", r.projectID, err)
@@ -350,7 +350,7 @@ func (r *RecommendationsClientAdapter) collectRegion(ctx context.Context, params
 	}
 }
 
-// GetRecommendationsForService retrieves GCP commitment recommendations for a specific service
+// GetRecommendationsForService retrieves GCP commitment recommendations for a specific service.
 func (r *RecommendationsClientAdapter) GetRecommendationsForService(ctx context.Context, service common.ServiceType) ([]common.Recommendation, error) {
 	params := common.RecommendationParams{
 		Service: service,
@@ -358,13 +358,13 @@ func (r *RecommendationsClientAdapter) GetRecommendationsForService(ctx context.
 	return r.GetRecommendations(ctx, &params)
 }
 
-// GetAllRecommendations retrieves all GCP commitment recommendations across all services
+// GetAllRecommendations retrieves all GCP commitment recommendations across all services.
 func (r *RecommendationsClientAdapter) GetAllRecommendations(ctx context.Context) ([]common.Recommendation, error) {
 	params := common.RecommendationParams{}
 	return r.GetRecommendations(ctx, &params)
 }
 
-// getRegions retrieves available GCP regions for the project
+// getRegions retrieves available GCP regions for the project.
 func (r *RecommendationsClientAdapter) getRegions(ctx context.Context) ([]string, error) {
 	// Create a temporary provider to get regions. The local variable is named
 	// p (not provider) to avoid shadowing the imported provider package (10-N3).
@@ -383,7 +383,7 @@ func (r *RecommendationsClientAdapter) getRegions(ctx context.Context) ([]string
 	return regionNames, nil
 }
 
-// shouldIncludeService checks if a service should be included based on params
+// shouldIncludeService checks if a service should be included based on params.
 func shouldIncludeService(params common.RecommendationParams, service common.ServiceType) bool {
 	// If no service specified in params, include all
 	if params.Service == "" {

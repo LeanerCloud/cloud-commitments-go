@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/provider"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
 )
 
 // fakeRecommendationsClient implements provider.RecommendationsClient for
@@ -22,7 +22,7 @@ type fakeRecommendationsClient struct {
 	recs []common.Recommendation
 	err  error
 	// ignoreCtx makes the fake return its canned response even for a
-	// cancelled context, modelling a per-subscription client that fails to
+	// canceled context, modeling a per-subscription client that fails to
 	// observe cancellation (an SDK layer that answers from its own cache, or
 	// a call that already completed before the parent context died). This is
 	// the only shape in which the fan-out's own post-Wait ctx.Err() check is
@@ -271,11 +271,11 @@ func TestMultiSubscriptionRecommendationsClient_GetRecommendations_NilParams(t *
 // TestMultiSubscriptionRecommendationsClient_GetRecommendations_PropagatesContextCancellation
 // guards the post-Wait ctx.Err() check specifically.
 //
-// The fakes here deliberately IGNORE the cancelled context and return
+// The fakes here deliberately IGNORE the canceled context and return
 // results, so the only thing that can turn this call into an error is the
 // fan-out's own ctx.Err() check. Deleting that check makes this test fail
 // with a nil error and two merged recommendations -- which is exactly the
-// bug it exists to catch: a cancelled request quietly yielding data as if it
+// bug it exists to catch: a canceled request quietly yielding data as if it
 // had completed normally.
 func TestMultiSubscriptionRecommendationsClient_GetRecommendations_PropagatesContextCancellation(t *testing.T) {
 	accounts := twoTestAccounts()

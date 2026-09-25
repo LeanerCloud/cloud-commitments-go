@@ -13,19 +13,19 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/elasticache"
 	"github.com/aws/aws-sdk-go-v2/service/elasticache/types"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/providers/aws/internal/purchasecfg"
-	"github.com/LeanerCloud/CUDly/providers/aws/internal/tagging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/tagging"
 )
 
-// ElastiCacheAPI defines the interface for ElastiCache operations (enables mocking)
+// ElastiCacheAPI defines the interface for ElastiCache operations (enables mocking).
 type ElastiCacheAPI interface {
 	DescribeReservedCacheNodesOfferings(ctx context.Context, params *elasticache.DescribeReservedCacheNodesOfferingsInput, optFns ...func(*elasticache.Options)) (*elasticache.DescribeReservedCacheNodesOfferingsOutput, error)
 	PurchaseReservedCacheNodesOffering(ctx context.Context, params *elasticache.PurchaseReservedCacheNodesOfferingInput, optFns ...func(*elasticache.Options)) (*elasticache.PurchaseReservedCacheNodesOfferingOutput, error)
 	DescribeReservedCacheNodes(ctx context.Context, params *elasticache.DescribeReservedCacheNodesInput, optFns ...func(*elasticache.Options)) (*elasticache.DescribeReservedCacheNodesOutput, error)
 }
 
-// Client handles AWS ElastiCache Reserved Cache Nodes
+// Client handles AWS ElastiCache Reserved Cache Nodes.
 type Client struct {
 	client ElastiCacheAPI
 	region string
@@ -41,27 +41,27 @@ func NewClient(cfg aws.Config) *Client {
 	}
 }
 
-// SetElastiCacheAPI sets a custom ElastiCache API client (for testing)
+// SetElastiCacheAPI sets a custom ElastiCache API client (for testing).
 func (c *Client) SetElastiCacheAPI(api ElastiCacheAPI) {
 	c.client = api
 }
 
-// GetServiceType returns the service type
+// GetServiceType returns the service type.
 func (c *Client) GetServiceType() common.ServiceType {
 	return common.ServiceCache
 }
 
-// GetRegion returns the region
+// GetRegion returns the region.
 func (c *Client) GetRegion() string {
 	return c.region
 }
 
-// GetRecommendations returns empty as ElastiCache uses centralized Cost Explorer recommendations
+// GetRecommendations returns empty as ElastiCache uses centralized Cost Explorer recommendations.
 func (c *Client) GetRecommendations(_ context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	return []common.Recommendation{}, nil
 }
 
-// GetExistingCommitments retrieves existing ElastiCache Reserved Cache Nodes
+// GetExistingCommitments retrieves existing ElastiCache Reserved Cache Nodes.
 func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	commitments := make([]common.Commitment, 0)
 	var marker *string
@@ -114,7 +114,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 	return commitments, nil
 }
 
-// PurchaseCommitment purchases an ElastiCache Reserved Cache Node
+// PurchaseCommitment purchases an ElastiCache Reserved Cache Node.
 func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
 	result := common.PurchaseResult{
 		Recommendation: rec,
@@ -356,13 +356,13 @@ func scanElastiCacheOfferingPage(offerings []types.ReservedCacheNodesOffering, r
 	return "", nil
 }
 
-// ValidateOffering checks if an offering exists without purchasing
+// ValidateOffering checks if an offering exists without purchasing.
 func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
 	_, err := c.findOfferingID(ctx, rec, "")
 	return err
 }
 
-// GetOfferingDetails retrieves offering details
+// GetOfferingDetails retrieves offering details.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	offeringID, err := c.findOfferingID(ctx, rec, "")
 	if err != nil {
@@ -397,7 +397,7 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	return details, nil
 }
 
-// GetValidResourceTypes returns valid ElastiCache node types
+// GetValidResourceTypes returns valid ElastiCache node types.
 func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	instanceTypesMap := make(map[string]bool)
 	var marker *string
@@ -434,7 +434,7 @@ func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	return instanceTypes, nil
 }
 
-// Duration constants for RI term calculations
+// Duration constants for RI term calculations.
 const (
 	OneYearSeconds   = 31536000 // 365 days in seconds
 	ThreeYearSeconds = 94608000 // 3 * 365 days in seconds

@@ -17,8 +17,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	pkgladder "github.com/LeanerCloud/CUDly/pkg/ladder"
-	"github.com/LeanerCloud/CUDly/providers/aws/recommendations"
+	pkgladder "github.com/LeanerCloud/cloud-commitments-go/pkg/ladder"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/recommendations"
 )
 
 // testRegion is the ladder region used across adapter tests.
@@ -370,7 +370,7 @@ func TestSPLister_EmptyResult(t *testing.T) {
 	assert.Empty(t, got)
 }
 
-// TestSPLister_ContextCancelled verifies that a cancelled context terminates
+// TestSPLister_ContextCancelled verifies that a canceled context terminates
 // the listing loop before the first (or any subsequent) API call.
 func TestSPLister_ContextCancelled(t *testing.T) {
 	pages := []*sdksp.DescribeSavingsPlansOutput{
@@ -384,7 +384,7 @@ func TestSPLister_ContextCancelled(t *testing.T) {
 	cancel()
 
 	_, err := lister.ListActiveSPs(ctx)
-	require.Error(t, err, "cancelled context must produce an error")
+	require.ErrorIs(t, err, context.Canceled, "canceled context must produce an error")
 }
 
 // TestSPLister_NilIDFails verifies fail-loud on a SP entry with a nil
@@ -584,7 +584,7 @@ func TestSPUtilizationAdapter_NilWhenNoData(t *testing.T) {
 // ---------------------------------------------------------------------------
 // Regression test: real spListerAdapter wired into New() must produce
 // non-zero ExistingUSDPerHour for an active SP.
-// Pre-fix behaviour: noop stub always returned 0.0.
+// Pre-fix behavior: noop stub always returned 0.0.
 // ---------------------------------------------------------------------------
 
 // TestGetLayerStates_RealSPLister_NonZeroExisting wires a real spListerAdapter

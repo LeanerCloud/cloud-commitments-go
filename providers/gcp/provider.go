@@ -17,38 +17,38 @@ import (
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
-	"github.com/LeanerCloud/CUDly/pkg/provider"
-	"github.com/LeanerCloud/CUDly/providers/gcp/services/cloudsql"
-	"github.com/LeanerCloud/CUDly/providers/gcp/services/cloudstorage"
-	"github.com/LeanerCloud/CUDly/providers/gcp/services/computeengine"
-	"github.com/LeanerCloud/CUDly/providers/gcp/services/memorystore"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/services/cloudsql"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/services/cloudstorage"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/services/computeengine"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/services/memorystore"
 )
 
-// ProjectsClient interface for project operations (enables mocking)
+// ProjectsClient interface for project operations (enables mocking).
 type ProjectsClient interface {
 	GetProject(ctx context.Context, req *resourcemanagerpb.GetProjectRequest) (*resourcemanagerpb.Project, error)
 	Close() error
 }
 
-// RegionsClient interface for regions operations (enables mocking)
+// RegionsClient interface for regions operations (enables mocking).
 type RegionsClient interface {
 	List(ctx context.Context, req *computepb.ListRegionsRequest) RegionsIterator
 	Close() error
 }
 
-// RegionsIterator interface for regions iteration (enables mocking)
+// RegionsIterator interface for regions iteration (enables mocking).
 type RegionsIterator interface {
 	Next() (*computepb.Region, error)
 }
 
-// ResourceManagerService interface for resource manager operations (enables mocking)
+// ResourceManagerService interface for resource manager operations (enables mocking).
 type ResourceManagerService interface {
 	ListProjects(ctx context.Context) ([]*cloudresourcemanager.Project, error)
 }
 
-// realProjectsClient wraps the real resourcemanager.ProjectsClient
+// realProjectsClient wraps the real resourcemanager.ProjectsClient.
 type realProjectsClient struct {
 	client *resourcemanager.ProjectsClient
 }
@@ -61,7 +61,7 @@ func (r *realProjectsClient) Close() error {
 	return r.client.Close()
 }
 
-// realRegionsClient wraps the real compute.RegionsClient
+// realRegionsClient wraps the real compute.RegionsClient.
 type realRegionsClient struct {
 	client *compute.RegionsClient
 }
@@ -74,7 +74,7 @@ func (r *realRegionsClient) Close() error {
 	return r.client.Close()
 }
 
-// realResourceManagerService wraps the real cloudresourcemanager service
+// realResourceManagerService wraps the real cloudresourcemanager service.
 type realResourceManagerService struct {
 	service *cloudresourcemanager.Service
 }
@@ -91,7 +91,7 @@ func (r *realResourceManagerService) ListProjects(ctx context.Context) ([]*cloud
 	return projects, nil
 }
 
-// GCPProvider implements the Provider interface for Google Cloud Platform
+// GCPProvider implements the Provider interface for Google Cloud Platform.
 type GCPProvider struct {
 	ctx                    context.Context
 	projectID              string
@@ -158,7 +158,7 @@ func resolveGCPProjectID(config *provider.ProviderConfig) string {
 	return config.Profile
 }
 
-// NewProviderWithProject creates a new GCP provider with a specific project
+// NewProviderWithProject creates a new GCP provider with a specific project.
 func NewProviderWithProject(ctx context.Context, projectID string, opts ...option.ClientOption) *GCPProvider {
 	return &GCPProvider{
 		ctx:        ctx,
@@ -174,27 +174,27 @@ func NewProviderWithCredentials(ctx context.Context, projectID string, ts oauth2
 	return NewProviderWithProject(ctx, projectID, option.WithTokenSource(ts))
 }
 
-// SetProjectsClient sets the projects client (for testing)
+// SetProjectsClient sets the projects client (for testing).
 func (p *GCPProvider) SetProjectsClient(client ProjectsClient) {
 	p.projectsClient = client
 }
 
-// SetRegionsClient sets the regions client (for testing)
+// SetRegionsClient sets the regions client (for testing).
 func (p *GCPProvider) SetRegionsClient(client RegionsClient) {
 	p.regionsClient = client
 }
 
-// SetResourceManagerService sets the resource manager service (for testing)
+// SetResourceManagerService sets the resource manager service (for testing).
 func (p *GCPProvider) SetResourceManagerService(svc ResourceManagerService) {
 	p.resourceManagerService = svc
 }
 
-// Name returns the provider name
+// Name returns the provider name.
 func (p *GCPProvider) Name() string {
 	return string(common.ProviderGCP)
 }
 
-// DisplayName returns the provider display name
+// DisplayName returns the provider display name.
 func (p *GCPProvider) DisplayName() string {
 	return "Google Cloud Platform"
 }
@@ -336,14 +336,14 @@ func (p *GCPProvider) GetCredentials() (provider.Credentials, error) {
 	}, nil
 }
 
-// GetDefaultRegion returns the default GCP region
+// GetDefaultRegion returns the default GCP region.
 func (p *GCPProvider) GetDefaultRegion() string {
 	// GCP doesn't have a concept of "default region" like AWS
 	// Common defaults are us-central1 (Iowa) or us-east1 (South Carolina)
 	return "us-central1"
 }
 
-// GetAccounts returns all accessible GCP projects
+// GetAccounts returns all accessible GCP projects.
 func (p *GCPProvider) GetAccounts(ctx context.Context) ([]common.Account, error) {
 	accounts := make([]common.Account, 0)
 
@@ -378,13 +378,13 @@ func (p *GCPProvider) GetAccounts(ctx context.Context) ([]common.Account, error)
 	}
 
 	// Return empty if no ACTIVE projects are visible to the credentials (10-M7).
-	// Synthesising a fallback account from p.projectID can silently succeed
+	// Synthesizing a fallback account from p.projectID can silently succeed
 	// when the account has no accessible projects, hiding auth / permission
 	// errors from callers. Return empty so the caller can surface the gap.
 	return accounts, nil
 }
 
-// GetRegions returns all available GCP regions using Compute Engine API
+// GetRegions returns all available GCP regions using Compute Engine API.
 func (p *GCPProvider) GetRegions(ctx context.Context) ([]common.Region, error) {
 	regClient, err := p.createRegionsClient(ctx)
 	if err != nil {
@@ -458,7 +458,7 @@ func convertGCPRegion(region *computepb.Region) *common.Region {
 	}
 }
 
-// GetSupportedServices returns the list of supported GCP services
+// GetSupportedServices returns the list of supported GCP services.
 func (p *GCPProvider) GetSupportedServices() []common.ServiceType {
 	return []common.ServiceType{
 		common.ServiceCompute,
@@ -468,7 +468,7 @@ func (p *GCPProvider) GetSupportedServices() []common.ServiceType {
 	}
 }
 
-// GetServiceClient creates a service client for the specified service and region
+// GetServiceClient creates a service client for the specified service and region.
 func (p *GCPProvider) GetServiceClient(ctx context.Context, service common.ServiceType, region string) (provider.ServiceClient, error) {
 	switch service {
 	case common.ServiceCompute:
@@ -484,7 +484,7 @@ func (p *GCPProvider) GetServiceClient(ctx context.Context, service common.Servi
 	}
 }
 
-// GetRecommendationsClient creates a recommendations client
+// GetRecommendationsClient creates a recommendations client.
 func (p *GCPProvider) GetRecommendationsClient(ctx context.Context) (provider.RecommendationsClient, error) {
 	return &RecommendationsClientAdapter{
 		ctx:        ctx,
@@ -495,7 +495,7 @@ func (p *GCPProvider) GetRecommendationsClient(ctx context.Context) (provider.Re
 
 // errStopProjectPagination is a sentinel used by Pages() to short-circuit
 // iteration as soon as getDefaultProject finds its first ACTIVE project,
-// avoiding unnecessary page fetches in large organisations.
+// avoiding unnecessary page fetches in large organizations.
 var errStopProjectPagination = errors.New("stop pagination: found active project")
 
 // listProjectsForDefault walks all resource-manager project pages, calling
@@ -510,7 +510,7 @@ var listProjectsForDefault = func(ctx context.Context, opts []option.ClientOptio
 }
 
 // getDefaultProject attempts to get the default GCP project from environment
-// or ADC. In organisations with more than one page of projects (~500 per
+// or ADC. In organizations with more than one page of projects (~500 per
 // page), this walks pages via Pages() until the first ACTIVE project is
 // found — a single req.Do() would only see page 1 and falsely report
 // "no active GCP projects found" if the active one sat on a later page.

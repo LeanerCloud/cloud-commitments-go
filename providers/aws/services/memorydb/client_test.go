@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/memorydb"
 	"github.com/aws/aws-sdk-go-v2/service/memorydb/types"
@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// MockMemoryDBClient implements MemoryDBAPI for testing
+// MockMemoryDBClient implements MemoryDBAPI for testing.
 type MockMemoryDBClient struct {
 	mock.Mock
 }
@@ -385,7 +385,7 @@ func TestFindOfferingID_HappyPath(t *testing.T) {
 }
 
 // TestFindOfferingID_CtxCancelledBeforePage asserts that findOfferingID returns
-// context.Canceled immediately when the context is already cancelled before the
+// context.Canceled immediately when the context is already canceled before the
 // first pagination iteration, without calling the AWS API (issue #515).
 func TestFindOfferingID_CtxCancelledBeforePage(t *testing.T) {
 	mockMDB := &MockMemoryDBClient{}

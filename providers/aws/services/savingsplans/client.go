@@ -12,11 +12,11 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/savingsplans"
 	"github.com/aws/aws-sdk-go-v2/service/savingsplans/types"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/providers/aws/internal/purchasecfg"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
 )
 
-// SavingsPlansAPI defines the interface for Savings Plans operations (enables mocking)
+// SavingsPlansAPI defines the interface for Savings Plans operations (enables mocking).
 type SavingsPlansAPI interface {
 	CreateSavingsPlan(ctx context.Context, params *savingsplans.CreateSavingsPlanInput, optFns ...func(*savingsplans.Options)) (*savingsplans.CreateSavingsPlanOutput, error)
 	DescribeSavingsPlans(ctx context.Context, params *savingsplans.DescribeSavingsPlansInput, optFns ...func(*savingsplans.Options)) (*savingsplans.DescribeSavingsPlansOutput, error)
@@ -48,7 +48,7 @@ func NewClient(cfg aws.Config, planType types.SavingsPlanType) *Client {
 	}
 }
 
-// SetSavingsPlansAPI sets a custom Savings Plans API client (for testing)
+// SetSavingsPlansAPI sets a custom Savings Plans API client (for testing).
 func (c *Client) SetSavingsPlansAPI(api SavingsPlansAPI) {
 	c.client = api
 }
@@ -56,7 +56,7 @@ func (c *Client) SetSavingsPlansAPI(api SavingsPlansAPI) {
 // GetServiceType returns the per-plan-type service slug (e.g.
 // ServiceSavingsPlansCompute for a client constructed with
 // SavingsPlanTypeCompute). Falls back to the legacy umbrella constant if the
-// plan type is unrecognised — that branch should be unreachable in practice.
+// plan type is unrecognized — that branch should be unreachable in practice.
 func (c *Client) GetServiceType() common.ServiceType {
 	return ServiceTypeForPlanType(c.planType)
 }
@@ -95,12 +95,12 @@ func PlanTypeForServiceType(s common.ServiceType) (types.SavingsPlanType, bool) 
 	return "", false
 }
 
-// GetRegion returns the region
+// GetRegion returns the region.
 func (c *Client) GetRegion() string {
 	return c.region
 }
 
-// GetRecommendations returns empty as Savings Plans uses centralized Cost Explorer recommendations
+// GetRecommendations returns empty as Savings Plans uses centralized Cost Explorer recommendations.
 func (c *Client) GetRecommendations(_ context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	return []common.Recommendation{}, nil
 }
@@ -120,7 +120,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 	// An empty planType signals umbrella sentinel mode (the
 	// `case common.ServiceSavingsPlansAll` branch in provider.go's
 	// GetServiceClient): in that mode, return every commitment unfiltered
-	// to match pre-split behaviour. Per-plan-type clients still partition.
+	// to match pre-split behavior. Per-plan-type clients still partition.
 	commitments := make([]common.Commitment, 0)
 	service := c.GetServiceType()
 	page := 0
@@ -206,7 +206,7 @@ func (c *Client) toCommitment(sp types.SavingsPlan, service common.ServiceType) 
 	return commitment, true
 }
 
-// PurchaseCommitment purchases a Savings Plan
+// PurchaseCommitment purchases a Savings Plan.
 func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
 	result := common.PurchaseResult{
 		Recommendation: rec,
@@ -240,7 +240,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	// creating a second one, so re-driving a stranded execution can never
 	// double-purchase. The token is deterministic across re-drives (derived from
 	// execution_id + rec index). Left unset for the CLI path, which carries no
-	// owning execution and keeps its prior non-idempotent behaviour.
+	// owning execution and keeps its prior non-idempotent behavior.
 	if opts.IdempotencyToken != "" {
 		input.ClientToken = aws.String(opts.IdempotencyToken)
 	}
@@ -514,7 +514,7 @@ func (c *Client) lookupEC2OfferingIDStrict(ctx context.Context, input *savingspl
 	return ids[0], nil
 }
 
-// convertPlanType converts a plan type string to AWS SDK type
+// convertPlanType converts a plan type string to AWS SDK type.
 func convertPlanType(planType string) (types.SavingsPlanType, error) {
 	switch planType {
 	case "Compute":
@@ -597,13 +597,13 @@ func (c *Client) lookupOfferingID(ctx context.Context, input *savingsplans.Descr
 	return ids[0], nil
 }
 
-// ValidateOffering checks if a Savings Plans offering exists
+// ValidateOffering checks if a Savings Plans offering exists.
 func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
 	_, err := c.findOfferingID(ctx, rec, "")
 	return err
 }
 
-// GetOfferingDetails retrieves offering details
+// GetOfferingDetails retrieves offering details.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	offeringID, err := c.findOfferingID(ctx, rec, "")
 	if err != nil {
@@ -636,7 +636,7 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	}, nil
 }
 
-// validateOffering validates that the offering exists
+// validateOffering validates that the offering exists.
 func (c *Client) validateOffering(ctx context.Context, offeringID string) error {
 	input := &savingsplans.DescribeSavingsPlansOfferingRatesInput{
 		SavingsPlanOfferingIds: []string{offeringID},
@@ -659,7 +659,7 @@ func calculateHoursInTerm(term string) float64 {
 	return 365 * 24 // 1 year (8760 hours)
 }
 
-// calculatePaymentBreakdown calculates upfront and recurring costs based on payment option
+// calculatePaymentBreakdown calculates upfront and recurring costs based on payment option.
 func calculatePaymentBreakdown(paymentOption string, totalCost, hoursInTerm float64) (upfrontCost, recurringCost float64) {
 	switch paymentOption {
 	case "All Upfront", "all-upfront":
@@ -673,7 +673,7 @@ func calculatePaymentBreakdown(paymentOption string, totalCost, hoursInTerm floa
 	}
 }
 
-// normalizeTermString normalizes a term string to standard format
+// normalizeTermString normalizes a term string to standard format.
 func normalizeTermString(term string) string {
 	if term == "3yr" || term == "3" {
 		return "3yr"
@@ -681,7 +681,7 @@ func normalizeTermString(term string) string {
 	return "1yr"
 }
 
-// GetValidResourceTypes returns valid Savings Plan types
+// GetValidResourceTypes returns valid Savings Plan types.
 func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	return []string{
 		"Compute",

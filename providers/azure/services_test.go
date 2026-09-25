@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 func TestNewComputeClient(t *testing.T) {
@@ -62,7 +62,7 @@ func TestNewRecommendationsClient(t *testing.T) {
 func TestNewRecommendationsClient_RejectsEmptySubscriptionID(t *testing.T) {
 	client, err := NewRecommendationsClient(nil, "")
 	require.Error(t, err)
-	assert.Nil(t, client, "constructor must not return a partially-initialised adapter on invariant failure")
+	assert.Nil(t, client, "constructor must not return a partially-initialized adapter on invariant failure")
 	assert.Contains(t, err.Error(), "subscriptionID is required")
 }
 

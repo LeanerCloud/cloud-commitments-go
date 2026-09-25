@@ -13,19 +13,19 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/memorydb"
 	"github.com/aws/aws-sdk-go-v2/service/memorydb/types"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/providers/aws/internal/purchasecfg"
-	"github.com/LeanerCloud/CUDly/providers/aws/internal/tagging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/tagging"
 )
 
-// MemoryDBAPI defines the interface for MemoryDB operations (enables mocking)
+// MemoryDBAPI defines the interface for MemoryDB operations (enables mocking).
 type MemoryDBAPI interface {
 	PurchaseReservedNodesOffering(ctx context.Context, params *memorydb.PurchaseReservedNodesOfferingInput, optFns ...func(*memorydb.Options)) (*memorydb.PurchaseReservedNodesOfferingOutput, error)
 	DescribeReservedNodesOfferings(ctx context.Context, params *memorydb.DescribeReservedNodesOfferingsInput, optFns ...func(*memorydb.Options)) (*memorydb.DescribeReservedNodesOfferingsOutput, error)
 	DescribeReservedNodes(ctx context.Context, params *memorydb.DescribeReservedNodesInput, optFns ...func(*memorydb.Options)) (*memorydb.DescribeReservedNodesOutput, error)
 }
 
-// Client handles AWS MemoryDB Reserved Nodes
+// Client handles AWS MemoryDB Reserved Nodes.
 type Client struct {
 	client MemoryDBAPI
 	region string
@@ -41,27 +41,27 @@ func NewClient(cfg aws.Config) *Client {
 	}
 }
 
-// SetMemoryDBAPI sets a custom MemoryDB API client (for testing)
+// SetMemoryDBAPI sets a custom MemoryDB API client (for testing).
 func (c *Client) SetMemoryDBAPI(api MemoryDBAPI) {
 	c.client = api
 }
 
-// GetServiceType returns the service type
+// GetServiceType returns the service type.
 func (c *Client) GetServiceType() common.ServiceType {
 	return common.ServiceCache
 }
 
-// GetRegion returns the region
+// GetRegion returns the region.
 func (c *Client) GetRegion() string {
 	return c.region
 }
 
-// GetRecommendations returns empty as MemoryDB uses centralized Cost Explorer recommendations
+// GetRecommendations returns empty as MemoryDB uses centralized Cost Explorer recommendations.
 func (c *Client) GetRecommendations(_ context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	return []common.Recommendation{}, nil
 }
 
-// GetExistingCommitments retrieves existing MemoryDB Reserved Nodes
+// GetExistingCommitments retrieves existing MemoryDB Reserved Nodes.
 func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	commitments := make([]common.Commitment, 0)
 	var nextToken *string
@@ -110,7 +110,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 	return commitments, nil
 }
 
-// PurchaseCommitment purchases a MemoryDB Reserved Node
+// PurchaseCommitment purchases a MemoryDB Reserved Node.
 func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
 	result := common.PurchaseResult{
 		Recommendation: rec,
@@ -395,13 +395,13 @@ func (c *Client) getDurationStringForAPI(term string) (string, error) {
 	}
 }
 
-// ValidateOffering checks if an offering exists without purchasing
+// ValidateOffering checks if an offering exists without purchasing.
 func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
 	_, err := c.findOfferingID(ctx, rec, "")
 	return err
 }
 
-// GetOfferingDetails retrieves offering details
+// GetOfferingDetails retrieves offering details.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	offeringID, err := c.findOfferingID(ctx, rec, "")
 	if err != nil {
@@ -444,7 +444,7 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	return details, nil
 }
 
-// GetValidResourceTypes returns valid MemoryDB node types by querying the API
+// GetValidResourceTypes returns valid MemoryDB node types by querying the API.
 func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	nodeTypesMap := make(map[string]bool)
 	var nextToken *string
@@ -494,7 +494,7 @@ func (c *Client) createPurchaseTags(rec common.Recommendation, source string) []
 	return out
 }
 
-// getTermMonthsFromDuration converts duration in seconds to months
+// getTermMonthsFromDuration converts duration in seconds to months.
 func getTermMonthsFromDuration(duration int32) int {
 	offeringMonths := duration / 2592000
 	if offeringMonths >= 30 {

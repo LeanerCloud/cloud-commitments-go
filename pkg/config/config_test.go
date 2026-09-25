@@ -160,6 +160,146 @@ func TestLoad_FlagOverridesEnvAndYAML(t *testing.T) {
 	assert.Equal(t, 0.0, cfg.Scorer.MinSavingsPct)
 }
 
+func TestLoad_OtherFlags(t *testing.T) {
+	// NOT parallel: uses t.Setenv (process-wide env mutation panics with t.Parallel).
+	for _, name := range []string{
+		"CUDLY_CONFIG",
+		"CUDLY_DRY_RUN",
+		"CUDLY_AUTO_APPROVE",
+		"CUDLY_AUDIT_LOG",
+		"CUDLY_CLOUDS",
+		"CUDLY_IDEMPOTENCY_WINDOW",
+		"CUDLY_MIN_SAVINGS_PCT",
+		"CUDLY_MAX_BREAK_EVEN_MONTHS",
+		"CUDLY_MIN_COUNT",
+		"CUDLY_AZURE_SUBSCRIPTION_ID",
+		"CUDLY_GCP_ORG_ID",
+		"CUDLY_GCP_PROJECTS",
+	} {
+		t.Setenv(name, "")
+	}
+
+	cases := []struct {
+		name       string
+		register   func(*pflag.FlagSet)
+		args       []string
+		wantPrefix string
+		wantText   string
+	}{
+		{
+			name: "yes registered as string",
+			register: func(fs *pflag.FlagSet) {
+				fs.String("yes", "", "")
+			},
+			args:       []string{"--yes=enabled"},
+			wantPrefix: "--yes:",
+			wantText:   "trying to get bool value",
+		},
+		{
+			name: "audit-log registered as bool",
+			register: func(fs *pflag.FlagSet) {
+				fs.Bool("audit-log", false, "")
+			},
+			args:       []string{"--audit-log"},
+			wantPrefix: "--audit-log:",
+			wantText:   "trying to get string value",
+		},
+		{
+			name: "profile registered as bool",
+			register: func(fs *pflag.FlagSet) {
+				fs.Bool("profile", false, "")
+			},
+			args:       []string{"--profile"},
+			wantPrefix: "--profile:",
+			wantText:   "trying to get string value",
+		},
+		{
+			name: "idempotency-window registered as bool",
+			register: func(fs *pflag.FlagSet) {
+				fs.Bool("idempotency-window", false, "")
+			},
+			args:       []string{"--idempotency-window"},
+			wantPrefix: "--idempotency-window:",
+			wantText:   "trying to get string value",
+		},
+	}
+
+	path := writeYAML(t, "")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fs := pflag.NewFlagSet(tc.name, pflag.ContinueOnError)
+			tc.register(fs)
+			require.NoError(t, fs.Parse(tc.args))
+
+			cfg, err := Load(path, fs)
+			require.Error(t, err)
+			assert.Equal(t, Config{}, cfg)
+			assert.Contains(t, err.Error(), tc.wantPrefix)
+			assert.Contains(t, err.Error(), tc.wantText)
+			if tc.name == "idempotency-window registered as bool" {
+				assert.NotContains(t, err.Error(), "invalid duration")
+			}
+		})
+	}
+
+	t.Run("valid values", func(t *testing.T) {
+		t.Run("changed values", func(t *testing.T) {
+			path := writeYAML(t, "audit_log: yaml-audit\naws:\n  profile: yaml-profile\n")
+			fs := newFlags()
+			require.NoError(t, fs.Parse([]string{
+				"--yes=true",
+				"--audit-log", "flag-audit",
+				"--profile", "flag-profile",
+				"--idempotency-window", "0s",
+			}))
+
+			cfg, err := Load(path, fs)
+			require.NoError(t, err)
+			assert.True(t, cfg.AutoApprove)
+			assert.Equal(t, "flag-audit", cfg.AuditLog)
+			assert.Equal(t, "flag-profile", cfg.AWS.Profile)
+			assert.Equal(t, time.Duration(0), cfg.IdempotencyWindow)
+		})
+
+		t.Run("explicit false and empty overrides", func(t *testing.T) {
+			path := writeYAML(t, "auto_approve: true\naudit_log: yaml-audit\naws:\n  profile: yaml-profile\n")
+			fs := newFlags()
+			require.NoError(t, fs.Parse([]string{
+				"--yes=false",
+				"--audit-log=",
+				"--profile=",
+				"--idempotency-window=0s",
+			}))
+
+			cfg, err := Load(path, fs)
+			require.NoError(t, err)
+			assert.False(t, cfg.AutoApprove)
+			assert.Empty(t, cfg.AuditLog)
+			assert.Empty(t, cfg.AWS.Profile)
+			assert.Equal(t, time.Duration(0), cfg.IdempotencyWindow)
+		})
+
+		t.Run("omitted values preserve prior layers", func(t *testing.T) {
+			path := writeYAML(t, "auto_approve: true\naudit_log: yaml-audit\naws:\n  profile: yaml-profile\nidempotency_window: 6h\n")
+			cfg, err := Load(path, newFlags())
+			require.NoError(t, err)
+			assert.True(t, cfg.AutoApprove)
+			assert.Equal(t, "yaml-audit", cfg.AuditLog)
+			assert.Equal(t, "yaml-profile", cfg.AWS.Profile)
+			assert.Equal(t, 6*time.Hour, cfg.IdempotencyWindow)
+		})
+	})
+
+	t.Run("invalid duration", func(t *testing.T) {
+		fs := newFlags()
+		require.NoError(t, fs.Parse([]string{"--idempotency-window=not-a-duration"}))
+		_, err := Load(writeYAML(t, ""), fs)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "--idempotency-window:")
+		assert.Contains(t, err.Error(), "invalid duration")
+	})
+}
+
 func TestLoad_DryRunAndPurchaseConflict(t *testing.T) {
 	t.Parallel()
 	fs := newFlags()

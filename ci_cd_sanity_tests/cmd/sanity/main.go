@@ -8,7 +8,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/ci_cd_sanity_tests/pkg/sanity/aws"
+	"github.com/LeanerCloud/cloud-commitments-go/ci_cd_sanity_tests/pkg/sanity/aws"
 )
 
 // requireInt32Range exits with an error when n is outside [1, math.MaxInt32].

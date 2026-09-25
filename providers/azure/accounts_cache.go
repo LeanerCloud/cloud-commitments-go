@@ -9,7 +9,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // accountsCacheSFKeyPrefix prefixes the singleflight.Group key this cache
@@ -69,7 +69,7 @@ func (p *AzureProvider) getOrFetchAccounts(ctx context.Context) ([]common.Accoun
 }
 
 // isContextError reports whether err was produced by a context being
-// cancelled or timing out.
+// canceled or timing out.
 func isContextError(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
@@ -243,7 +243,7 @@ func (p *AzureProvider) fetchAccounts(ctx context.Context) ([]common.Account, er
 //  1. explicitSubID (from ProviderConfig.AzureSubscriptionID / Profile).
 //  2. AZURE_SUBSCRIPTION_ID environment variable.
 //  3. When exactly one subscription is visible, mark it default (mirrors AWS
-//     behaviour where the STS-identified account is always the default).
+//     behavior where the STS-identified account is always the default).
 func resolveDefaultSubscription(accounts []common.Account, explicitSubID string) {
 	if len(accounts) == 0 {
 		return

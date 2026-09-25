@@ -4,7 +4,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // rdsInstanceNU maps an RDS instance size suffix to the normalized-units
@@ -49,7 +49,7 @@ func RDSInstanceNUFromType(instanceType string) float64 {
 // RDSFamilyFromType is the exported counterpart of rdsFamilyFromType for
 // callers outside this package that need the family prefix of an RDS
 // instance type (e.g. CSV writers grouping rows by family). Empty
-// string when the type doesn't carry a recognisable size suffix.
+// string when the type doesn't carry a recognizable size suffix.
 func RDSFamilyFromType(instanceType string) string {
 	return rdsFamilyFromType(instanceType)
 }
@@ -69,7 +69,7 @@ func rdsInstanceNUFromType(instanceType string) float64 {
 
 // rdsFamilyFromType returns the family prefix for an instance type, e.g.
 // "db.r7g.2xlarge" → "db.r7g". Empty string when the type doesn't carry
-// a recognisable size suffix.
+// a recognizable size suffix.
 func rdsFamilyFromType(instanceType string) string {
 	parts := strings.Split(instanceType, ".")
 	if len(parts) < 3 {
@@ -204,7 +204,7 @@ func ApplyFamilyNUSizingRDS(
 // rdsFamilyKey that groups RDS RI recs by their (region, family, engine,
 // deployment), and (b) a slice of non-RDS recs that flow through to the
 // caller's per-pool sizing path unchanged. Recs that are RDS RIs but
-// carry an instance type without a recognisable size suffix (and thus
+// carry an instance type without a recognizable size suffix (and thus
 // can't be NU-scaled) fall into nonRDS so per-pool sizing still handles
 // them.
 func partitionRDSRecsByFamily(recs []common.Recommendation) (map[string][]int, []common.Recommendation) {

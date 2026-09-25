@@ -10,11 +10,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/providers/aws/recommendations"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/recommendations"
 )
 
-// mockCostExplorerClient implements recommendations.CostExplorerAPI for testing
+// mockCostExplorerClient implements recommendations.CostExplorerAPI for testing.
 type mockCostExplorerClient struct {
 	getRecommendationsFunc func() []common.Recommendation
 }
@@ -48,7 +48,7 @@ func (m *mockCostExplorerClient) GetCostAndUsage(_ context.Context, _ *costexplo
 	return &costexplorer.GetCostAndUsageOutput{}, nil
 }
 
-// newTestRecommendationsClient creates a recommendations client with a mock CE client
+// newTestRecommendationsClient creates a recommendations client with a mock CE client.
 func newTestRecommendationsClient(ce *mockCostExplorerClient) *recommendations.Client {
 	return recommendations.NewClientWithAPI(ce, "us-east-1")
 }
@@ -153,7 +153,7 @@ func TestRecommendationsClientAdapter_GetRecommendationsForService(t *testing.T)
 }
 
 // testRecommendationsClientAdapter is a test-only version of RecommendationsClientAdapter
-// that uses an interface for easier mocking
+// that uses an interface for easier mocking.
 type testRecommendationsClientAdapter struct {
 	getRecommendationsFunc           func(ctx context.Context, params *common.RecommendationParams) ([]common.Recommendation, error)
 	getRecommendationsForServiceFunc func(ctx context.Context, service common.ServiceType) ([]common.Recommendation, error)
@@ -546,7 +546,7 @@ func TestApplyRecommendationFilters_RegionlessEC2InstanceSPNotExempt(t *testing.
 		}
 	})
 
-	t.Run("an unrecognised plan type is treated as region-scoped, not exempt", func(t *testing.T) {
+	t.Run("an unrecognized plan type is treated as region-scoped, not exempt", func(t *testing.T) {
 		// spPlanTypeDisplayString passes unknown SDK plan types through
 		// verbatim, so this is reachable on a future AWS product. The
 		// conservative direction is to filter it, not to exempt it.
@@ -558,7 +558,7 @@ func TestApplyRecommendationFilters_RegionlessEC2InstanceSPNotExempt(t *testing.
 		}
 		got := applyRecommendationFilters([]common.Recommendation{unknownSP},
 			common.RecommendationParams{Region: "us-east-1"})
-		assert.Empty(t, got, "a plan type this build does not recognise must not be granted the exemption")
+		assert.Empty(t, got, "a plan type this build does not recognize must not be granted the exemption")
 	})
 
 	t.Run("an SP carrying no Details at all is not exempt", func(t *testing.T) {
@@ -638,6 +638,6 @@ func TestRegionHelpers_NonAWSRecommendation(t *testing.T) {
 		awsSP := nonAWSSP
 		awsSP.Provider = common.ProviderAWS
 		assert.Equal(t, "eastus", EffectiveRegion(awsSP),
-			"the gate must not change behaviour for AWS recs, or it would break the #1582 fix")
+			"the gate must not change behavior for AWS recs, or it would break the #1582 fix")
 	})
 }

@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/ci_cd_sanity_tests/pkg/sanity/azure"
+	"github.com/LeanerCloud/cloud-commitments-go/ci_cd_sanity_tests/pkg/sanity/azure"
 )
 
 func main() {

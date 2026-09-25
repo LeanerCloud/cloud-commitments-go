@@ -11,9 +11,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
-	"github.com/LeanerCloud/CUDly/pkg/provider"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
 )
 
 // newSubscriptionRecommendationsClientFn builds the per-subscription
@@ -262,7 +262,7 @@ func (m *MultiSubscriptionRecommendationsClient) GetRecommendations(ctx context.
 // subset of accounts must not be handed another account's data by the Azure
 // path either. Before org-wide fan-out existed this was moot -- a
 // subscription-scoped client could only ever return its own subscription --
-// but a client covering every visible subscription has to honour the filter
+// but a client covering every visible subscription has to honor the filter
 // or it silently widens the caller's scope.
 //
 // Filtering BEFORE the fan-out (rather than discarding rows afterwards, as

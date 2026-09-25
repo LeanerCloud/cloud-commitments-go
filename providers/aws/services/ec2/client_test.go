@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// MockEC2Client implements EC2API for testing
+// MockEC2Client implements EC2API for testing.
 type MockEC2Client struct {
 	mock.Mock
 }
@@ -652,7 +652,7 @@ func TestFindOfferingID_PaginationCapFires(t *testing.T) {
 // offering whose OfferingType does not match the requested payment option
 // is soft-skipped (logged, not returned). With the typed OfferingType field
 // on the request this should never fire in production; the test pins the
-// defense-in-depth behaviour for the rare API anomaly. After skipping the
+// defense-in-depth behavior for the rare API anomaly. After skipping the
 // only mismatched offering on the only page, findOfferingID returns the
 // "no offerings found" diagnostic (issue #688).
 func TestFindOfferingID_WrongVariantRejected(t *testing.T) {
@@ -1115,7 +1115,7 @@ func TestClient_CancelMarketplaceListing(t *testing.T) {
 	res, err := client.CancelMarketplaceListing(context.Background(), "ril-cancel")
 	assert.NoError(t, err)
 	assert.Equal(t, "ril-cancel", res.ListingID)
-	assert.Equal(t, "cancelled", res.State)
+	assert.Equal(t, string(types.ListingStatusCancelled), res.State)
 	mockEC2.AssertExpectations(t)
 }
 
@@ -1274,7 +1274,7 @@ func TestFindOfferingID_OfferingClassReachesSDKCall(t *testing.T) {
 }
 
 // TestFindOfferingID_CtxCancelledBeforePage asserts that findOfferingID returns
-// context.Canceled immediately when the context is already cancelled at the top
+// context.Canceled immediately when the context is already canceled at the top
 // of the first pagination iteration, without calling the AWS API (issue #515).
 func TestFindOfferingID_CtxCancelledBeforePage(t *testing.T) {
 	t.Parallel()

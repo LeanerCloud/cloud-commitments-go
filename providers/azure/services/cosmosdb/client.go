@@ -19,12 +19,12 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cosmos/armcosmos/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
-	"github.com/LeanerCloud/CUDly/providers/azure/internal/httpclient"
-	"github.com/LeanerCloud/CUDly/providers/azure/internal/pricing"
-	azrecs "github.com/LeanerCloud/CUDly/providers/azure/internal/recommendations"
-	"github.com/LeanerCloud/CUDly/providers/azure/services/internal/reservations"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/httpclient"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/pricing"
+	azrecs "github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/recommendations"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
 )
 
 // reservationResourceTypeCosmosDB is the canonical resourceType value for
@@ -43,30 +43,30 @@ const maxReservationsPages = 50
 // maxAccountsPages caps Cosmos DB account list pagination.
 const maxAccountsPages = 20
 
-// HTTPClient interface for HTTP operations (enables mocking)
+// HTTPClient interface for HTTP operations (enables mocking).
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-// RecommendationsPager interface for recommendations pager (enables mocking)
+// RecommendationsPager interface for recommendations pager (enables mocking).
 type RecommendationsPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armconsumption.ReservationRecommendationsClientListResponse, error)
 }
 
-// ReservationsDetailsPager interface for reservations details pager (enables mocking)
+// ReservationsDetailsPager interface for reservations details pager (enables mocking).
 type ReservationsDetailsPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armconsumption.ReservationsDetailsClientListResponse, error)
 }
 
-// CosmosAccountsPager interface for Cosmos DB accounts pager (enables mocking)
+// CosmosAccountsPager interface for Cosmos DB accounts pager (enables mocking).
 type CosmosAccountsPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armcosmos.DatabaseAccountsClientListResponse, error)
 }
 
-// CosmosDBClient handles Azure Cosmos DB Reserved Capacity
+// CosmosDBClient handles Azure Cosmos DB Reserved Capacity.
 type CosmosDBClient struct {
 	cred                 azcore.TokenCredential
 	subscriptionID       string
@@ -87,7 +87,7 @@ type CosmosDBClient struct {
 	apiType     string
 }
 
-// NewClient creates a new Azure Cosmos DB client
+// NewClient creates a new Azure Cosmos DB client.
 func NewClient(cred azcore.TokenCredential, subscriptionID, region string) *CosmosDBClient {
 	return &CosmosDBClient{
 		cred:           cred,
@@ -97,7 +97,7 @@ func NewClient(cred azcore.TokenCredential, subscriptionID, region string) *Cosm
 	}
 }
 
-// NewClientWithHTTP creates a new Azure Cosmos DB client with a custom HTTP client (for testing)
+// NewClientWithHTTP creates a new Azure Cosmos DB client with a custom HTTP client (for testing).
 func NewClientWithHTTP(cred azcore.TokenCredential, subscriptionID, region string, httpClient HTTPClient) *CosmosDBClient {
 	return &CosmosDBClient{
 		cred:           cred,
@@ -107,27 +107,27 @@ func NewClientWithHTTP(cred azcore.TokenCredential, subscriptionID, region strin
 	}
 }
 
-// SetRecommendationsPager sets the recommendations pager (for testing)
+// SetRecommendationsPager sets the recommendations pager (for testing).
 func (c *CosmosDBClient) SetRecommendationsPager(pager RecommendationsPager) {
 	c.recommendationsPager = pager
 }
 
-// SetReservationsPager sets the reservations pager (for testing)
+// SetReservationsPager sets the reservations pager (for testing).
 func (c *CosmosDBClient) SetReservationsPager(pager ReservationsDetailsPager) {
 	c.reservationsPager = pager
 }
 
-// SetCosmosAccountsPager sets the Cosmos DB accounts pager (for testing)
+// SetCosmosAccountsPager sets the Cosmos DB accounts pager (for testing).
 func (c *CosmosDBClient) SetCosmosAccountsPager(pager CosmosAccountsPager) {
 	c.cosmosAccountsPager = pager
 }
 
-// GetServiceType returns the service type
+// GetServiceType returns the service type.
 func (c *CosmosDBClient) GetServiceType() common.ServiceType {
 	return common.ServiceNoSQL
 }
 
-// GetRegion returns the region
+// GetRegion returns the region.
 func (c *CosmosDBClient) GetRegion() string {
 	return c.region
 }
@@ -139,7 +139,7 @@ type CosmosRetailPriceItem = pricing.RetailPriceItem
 // AzureRetailPrice is the response envelope for the Azure Retail Prices API.
 type AzureRetailPrice = pricing.Page[pricing.RetailPriceItem]
 
-// GetRecommendations gets Cosmos DB reservation recommendations from Azure Consumption API
+// GetRecommendations gets Cosmos DB reservation recommendations from Azure Consumption API.
 func (c *CosmosDBClient) GetRecommendations(ctx context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	recommendations := make([]common.Recommendation, 0)
 
@@ -162,7 +162,7 @@ func (c *CosmosDBClient) GetRecommendations(ctx context.Context, _ *common.Recom
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxRecsPages {
 			return nil, fmt.Errorf("cosmosdb: GetRecommendations pagination cap (%d pages) reached", maxRecsPages)
@@ -183,7 +183,7 @@ func (c *CosmosDBClient) GetRecommendations(ctx context.Context, _ *common.Recom
 	return recommendations, nil
 }
 
-// GetExistingCommitments retrieves existing Cosmos DB reserved capacity using Azure Resource Graph
+// GetExistingCommitments retrieves existing Cosmos DB reserved capacity using Azure Resource Graph.
 func (c *CosmosDBClient) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	pager, err := c.createReservationsPager()
 	if err != nil {
@@ -194,7 +194,7 @@ func (c *CosmosDBClient) GetExistingCommitments(ctx context.Context) ([]common.C
 	return c.collectCosmosReservations(ctx, pager)
 }
 
-// createReservationsPager creates a pager for listing reservations
+// createReservationsPager creates a pager for listing reservations.
 func (c *CosmosDBClient) createReservationsPager() (ReservationsDetailsPager, error) {
 	// Use injected pager if available (for testing)
 	if c.reservationsPager != nil {
@@ -218,7 +218,7 @@ func (c *CosmosDBClient) collectCosmosReservations(ctx context.Context, pager Re
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxReservationsPages {
 			return nil, fmt.Errorf("cosmosdb: GetExistingCommitments pagination cap (%d pages) reached", maxReservationsPages)
@@ -238,7 +238,7 @@ func (c *CosmosDBClient) collectCosmosReservations(ctx context.Context, pager Re
 	return commitments, nil
 }
 
-// convertCosmosReservation converts a reservation detail to a commitment if it's a Cosmos DB reservation
+// convertCosmosReservation converts a reservation detail to a commitment if it's a Cosmos DB reservation.
 func (c *CosmosDBClient) convertCosmosReservation(detail *armconsumption.ReservationDetail) *common.Commitment {
 	if detail.Properties == nil {
 		return nil
@@ -355,7 +355,7 @@ func (c *CosmosDBClient) PurchaseCommitment(ctx context.Context, rec common.Reco
 	return result, nil
 }
 
-// ValidateOffering validates that a Cosmos DB SKU exists
+// ValidateOffering validates that a Cosmos DB SKU exists.
 func (c *CosmosDBClient) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
 	validSKUs, err := c.GetValidResourceTypes(ctx)
 	if err != nil {
@@ -372,7 +372,7 @@ func (c *CosmosDBClient) ValidateOffering(ctx context.Context, rec common.Recomm
 	return fmt.Errorf("invalid Azure Cosmos DB SKU: %s", rec.ResourceType)
 }
 
-// GetOfferingDetails retrieves Cosmos DB reservation offering details from Azure Retail Prices API
+// GetOfferingDetails retrieves Cosmos DB reservation offering details from Azure Retail Prices API.
 func (c *CosmosDBClient) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	termYears, err := reservations.ParseTermYears(rec.Term)
 	if err != nil {
@@ -395,7 +395,7 @@ func (c *CosmosDBClient) GetOfferingDetails(ctx context.Context, rec common.Reco
 		upfrontCost = 0
 		recurringCost = totalCost / (float64(termYears) * 12)
 	default:
-		// Fail loud on an unrecognised payment option rather than silently
+		// Fail loud on an unrecognized payment option rather than silently
 		// billing it as all-upfront (owner policy: no silent fallbacks on
 		// money-affecting fields).
 		return nil, fmt.Errorf("unsupported payment option for Azure Cosmos DB offering details: %q", rec.PaymentOption)
@@ -414,7 +414,7 @@ func (c *CosmosDBClient) GetOfferingDetails(ctx context.Context, rec common.Reco
 	}, nil
 }
 
-// GetValidResourceTypes returns valid Cosmos DB SKUs from Azure API
+// GetValidResourceTypes returns valid Cosmos DB SKUs from Azure API.
 func (c *CosmosDBClient) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	pager, err := c.createCosmosAccountsPager()
 	if err != nil {
@@ -435,7 +435,7 @@ func (c *CosmosDBClient) GetValidResourceTypes(ctx context.Context) ([]string, e
 	return c.getCommonSKUs(), nil
 }
 
-// createCosmosAccountsPager creates a pager for listing Cosmos DB accounts
+// createCosmosAccountsPager creates a pager for listing Cosmos DB accounts.
 func (c *CosmosDBClient) createCosmosAccountsPager() (CosmosAccountsPager, error) {
 	// Use injected pager if available (for testing)
 	if c.cosmosAccountsPager != nil {
@@ -458,7 +458,7 @@ func (c *CosmosDBClient) collectCapabilitiesFromAccounts(ctx context.Context, pa
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("cosmosdb: GetValidResourceTypes context cancelled after %d pages: %w", pageIdx, err)
+			return nil, fmt.Errorf("cosmosdb: GetValidResourceTypes context canceled after %d pages: %w", pageIdx, err)
 		}
 		if pageIdx >= maxAccountsPages {
 			log.Printf("WARNING: cosmosdb: GetValidResourceTypes pagination cap (%d pages) reached", maxAccountsPages)
@@ -481,7 +481,7 @@ func (c *CosmosDBClient) collectCapabilitiesFromAccounts(ctx context.Context, pa
 	return skuSet, nil
 }
 
-// extractCapabilitiesFromAccount extracts capability names from a Cosmos DB account
+// extractCapabilitiesFromAccount extracts capability names from a Cosmos DB account.
 func extractCapabilitiesFromAccount(account *armcosmos.DatabaseAccountGetResults) []string {
 	if account.Properties == nil || account.Properties.Capabilities == nil {
 		return nil
@@ -497,7 +497,7 @@ func extractCapabilitiesFromAccount(account *armcosmos.DatabaseAccountGetResults
 	return capabilities
 }
 
-// convertCapabilitySetToSlice converts a map of capabilities to a slice
+// convertCapabilitySetToSlice converts a map of capabilities to a slice.
 func convertCapabilitySetToSlice(skuSet map[string]bool) []string {
 	skus := make([]string, 0, len(skuSet))
 	for sku := range skuSet {
@@ -506,7 +506,7 @@ func convertCapabilitySetToSlice(skuSet map[string]bool) []string {
 	return skus
 }
 
-// getCommonSKUs returns common Cosmos DB SKUs
+// getCommonSKUs returns common Cosmos DB SKUs.
 func (c *CosmosDBClient) getCommonSKUs() []string {
 	return []string{
 		// Cosmos DB API types
@@ -518,7 +518,7 @@ func (c *CosmosDBClient) getCommonSKUs() []string {
 	}
 }
 
-// CosmosPricing contains pricing information for Cosmos DB
+// CosmosPricing contains pricing information for Cosmos DB.
 type CosmosPricing struct {
 	HourlyRate        float64
 	ReservationPrice  float64
@@ -527,7 +527,7 @@ type CosmosPricing struct {
 	SavingsPercentage float64
 }
 
-// getCosmosPricing gets real pricing from Azure Retail Prices API
+// getCosmosPricing gets real pricing from Azure Retail Prices API.
 func (c *CosmosDBClient) getCosmosPricing(ctx context.Context, sku, region string, termYears int) (*CosmosPricing, error) {
 	filter := fmt.Sprintf("serviceName eq 'Azure Cosmos DB' and armRegionName eq '%s'", region)
 
@@ -593,7 +593,7 @@ func azureTermString(termYears int) string {
 	return fmt.Sprintf("%d Years", termYears)
 }
 
-// extractCosmosPricing extracts on-demand and reservation pricing from price items
+// extractCosmosPricing extracts on-demand and reservation pricing from price items.
 func extractCosmosPricing(items []CosmosRetailPriceItem, termYears int) (onDemand, reservation float64, currency string) {
 	currency = "USD"
 	termStr := azureTermString(termYears)
@@ -613,7 +613,7 @@ func extractCosmosPricing(items []CosmosRetailPriceItem, termYears int) (onDeman
 	return onDemand, reservation, currency
 }
 
-// calculateCosmosSavingsPercentage calculates the savings percentage
+// calculateCosmosSavingsPercentage calculates the savings percentage.
 func calculateCosmosSavingsPercentage(onDemandPrice, hoursInTerm, reservationPrice float64) float64 {
 	onDemandTotal := onDemandPrice * hoursInTerm
 	return ((onDemandTotal - reservationPrice) / onDemandTotal) * 100
@@ -664,7 +664,7 @@ func (c *CosmosDBClient) convertAzureCosmosRecommendation(ctx context.Context, a
 // via armcosmos.DatabaseAccountsClient.NewListPager — subsequent
 // converter calls in the same GetRecommendations run hit the cached
 // string. Failure is logged WARN once; the converter falls back to the
-// previous empty-APIType behaviour.
+// previous empty-APIType behavior.
 //
 // Why dominant-only: a Cosmos reservation SKU like "100RU" doesn't
 // reference an account, so we can't pick "the right" APIType per rec.

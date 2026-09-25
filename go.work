@@ -1,10 +1,9 @@
 go 1.26.6
 
 use (
-	.
 	./pkg
 	./providers/aws
 	./providers/azure
 	./providers/gcp
-	./tests/e2e
+	./ci_cd_sanity_tests
 )

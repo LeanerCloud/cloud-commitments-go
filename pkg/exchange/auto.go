@@ -6,8 +6,8 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 )
 
 // ExchangeRecord is a lightweight record type for the auto exchange logic.
@@ -162,18 +162,18 @@ func RunAutoExchange(ctx context.Context, params RunAutoExchangeParams) (*AutoEx
 	// the standalone task does not wipe out ladder-linked pendings and vice versa.
 	// Race condition note: if a user clicks approve at 5h59m while this new run
 	// fires and cancels pending records, the TransitionRIExchangeStatus atomic
-	// WHERE clause prevents the exchange from executing (record already cancelled
+	// WHERE clause prevents the exchange from executing (record already canceled
 	// → returns nil → handler returns 409).
 	if !params.DryRun {
 		origin := common.ExchangeOriginStandalone
 		if params.LadderRunID != nil {
 			origin = common.ExchangeOriginLadder
 		}
-		cancelled, err := params.Store.CancelPendingExchangesByOrigin(ctx, origin)
+		canceled, err := params.Store.CancelPendingExchangesByOrigin(ctx, origin)
 		if err != nil {
 			logging.Warnf("failed to cancel pending exchanges: %v", err)
-		} else if cancelled > 0 {
-			logging.Infof("cancelled %d stale pending exchange records (origin=%s)", cancelled, origin)
+		} else if canceled > 0 {
+			logging.Infof("canceled %d stale pending exchange records (origin=%s)", canceled, origin)
 		}
 	}
 
@@ -200,7 +200,7 @@ func RunAutoExchange(ctx context.Context, params RunAutoExchangeParams) (*AutoEx
 
 	for _, rec := range recs {
 		if processRecommendation(ctx, params, rec, perExchangeCap, result) {
-			// H4: processAutoExchange signalled halt because a ledger write failed
+			// H4: processAutoExchange signaled halt because a ledger write failed
 			// after money moved. Stop processing further recommendations so
 			// subsequent exchanges don't bypass the daily cap.
 			break

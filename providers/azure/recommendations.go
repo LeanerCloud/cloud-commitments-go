@@ -11,15 +11,15 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/advisor/armadvisor"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/concurrency"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
-	azrecs "github.com/LeanerCloud/CUDly/providers/azure/internal/recommendations"
-	"github.com/LeanerCloud/CUDly/providers/azure/services/cache"
-	"github.com/LeanerCloud/CUDly/providers/azure/services/compute"
-	"github.com/LeanerCloud/CUDly/providers/azure/services/cosmosdb"
-	"github.com/LeanerCloud/CUDly/providers/azure/services/database"
-	"github.com/LeanerCloud/CUDly/providers/azure/services/savingsplans"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	azrecs "github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/recommendations"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/cache"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/compute"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/cosmosdb"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/database"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/savingsplans"
 )
 
 // serviceRecsGetter is the narrow interface satisfied by each per-service
@@ -97,7 +97,7 @@ func NewRecommendationsClientAdapter(cred azcore.TokenCredential, subscriptionID
 //
 // The Azure Consumption Reservation Recommendations API is subscription-scoped:
 // the response covers every region in one call. Iterating regions and calling each
-// service per region (the previous behaviour) produced ~60× duplicate results,
+// service per region (the previous behavior) produced ~60× duplicate results,
 // hammered the rate limit, and meant downstream consumers had to deduplicate.
 // We now call each service client exactly once. Region is intentionally left
 // blank on the client — converters must populate Region from the response data
@@ -263,7 +263,7 @@ type serviceResult struct {
 }
 
 // mergeServiceResults logs per-service errors (matches the previous sequential
-// behaviour where each error was logged inline via logging.Warnf) and appends
+// behavior where each error was logged inline via logging.Warnf) and appends
 // successful results in the order the slice is passed — callers must preserve
 // the canonical compute → database → cache → cosmosdb → savingsplans → advisor
 // order so that order-sensitive consumers remain stable. The advisor entry's
@@ -312,7 +312,7 @@ func mergeServiceResults(results ...serviceResult) ([]common.Recommendation, err
 	return out, nil
 }
 
-// GetRecommendationsForService retrieves Azure reservation recommendations for a specific service
+// GetRecommendationsForService retrieves Azure reservation recommendations for a specific service.
 func (r *RecommendationsClientAdapter) GetRecommendationsForService(ctx context.Context, service common.ServiceType) ([]common.Recommendation, error) {
 	params := common.RecommendationParams{
 		Service: service,
@@ -320,13 +320,13 @@ func (r *RecommendationsClientAdapter) GetRecommendationsForService(ctx context.
 	return r.GetRecommendations(ctx, &params)
 }
 
-// GetAllRecommendations retrieves all Azure reservation recommendations across all services
+// GetAllRecommendations retrieves all Azure reservation recommendations across all services.
 func (r *RecommendationsClientAdapter) GetAllRecommendations(ctx context.Context) ([]common.Recommendation, error) {
 	params := common.RecommendationParams{}
 	return r.GetRecommendations(ctx, &params)
 }
 
-// getAdvisorRecommendations retrieves cost optimization recommendations from Azure Advisor
+// getAdvisorRecommendations retrieves cost optimization recommendations from Azure Advisor.
 func (r *RecommendationsClientAdapter) getAdvisorRecommendations(ctx context.Context, params common.RecommendationParams) ([]common.Recommendation, error) {
 	client, err := armadvisor.NewRecommendationsClient(r.subscriptionID, r.cred, nil)
 	if err != nil {
@@ -407,7 +407,7 @@ func resolveAdvisorRegion(advisorRec *armadvisor.ResourceRecommendationBase) str
 	return ""
 }
 
-// convertAdvisorRecommendation converts an Azure Advisor recommendation to common format
+// convertAdvisorRecommendation converts an Azure Advisor recommendation to common format.
 func (r *RecommendationsClientAdapter) convertAdvisorRecommendation(advisorRec *armadvisor.ResourceRecommendationBase) *common.Recommendation {
 	if advisorRec.Properties == nil {
 		return nil
@@ -539,7 +539,7 @@ func serviceFromExtendedProperties(ext map[string]*string) string {
 // Advisor recommendation whose ID happens to carry a /locations/{region}/
 // segment (some reservation-scope resource IDs do).
 //
-// Returns "" when the ID has no recognisable region segment.
+// Returns "" when the ID has no recognizable region segment.
 func extractRegionFromResourceID(resourceID string) string {
 	// Case-insensitive scan for /locations/{region}/ — Azure is inconsistent
 	// between `locations`, `Locations`, `location`.
@@ -560,7 +560,7 @@ func extractRegionFromResourceID(resourceID string) string {
 	return ""
 }
 
-// shouldIncludeService checks if a service should be included based on params
+// shouldIncludeService checks if a service should be included based on params.
 func shouldIncludeService(params common.RecommendationParams, service common.ServiceType) bool {
 	// If no service specified in params, include all
 	if params.Service == "" {

@@ -10,8 +10,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/concurrency"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
 )
 
 // coverageServiceFilters lists the Cost Explorer service-dimension values
@@ -265,7 +265,7 @@ func (c *Client) fetchCoveragePaged(
 	var token *string
 	for {
 		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("coverage: pagination cancelled: %w", err)
+			return fmt.Errorf("coverage: pagination canceled: %w", err)
 		}
 		input.NextPageToken = token
 		result, err := c.fetchCoveragePage(ctx, input)
@@ -400,7 +400,7 @@ func extractGroupAttributes(attrs map[string]string) (instanceType, deployment s
 // Rebalancing scales each rec's avg by (cov.avg / sum-of-rec-avgs-in-pool)
 // so the sized per-rec purchases sum to what the coverage CSV's gap math
 // implies. When AWS rec API already matches coverage, the scale factor is
-// ~1.0 and behaviour is unchanged. When multiple recs have zero avg
+// ~1.0 and behavior is unchanged. When multiple recs have zero avg
 // (no per-account signal at all), the coverage avg is split evenly across
 // them so the total still lines up.
 //

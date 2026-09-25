@@ -12,8 +12,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/concurrency"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
 )
 
 // RIUtilization is an alias for common.RIUtilization so existing callers that
@@ -68,7 +68,7 @@ func (c *Client) GetRIUtilization(ctx context.Context, lookbackDays int, region 
 	var nextPageToken *string
 	for {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("utilization: pagination cancelled: %w", err)
+			return nil, fmt.Errorf("utilization: pagination canceled: %w", err)
 		}
 		input.NextPageToken = nextPageToken
 

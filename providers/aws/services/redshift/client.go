@@ -14,12 +14,12 @@ import (
 	redshifttypes "github.com/aws/aws-sdk-go-v2/service/redshift/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/retry"
-	"github.com/LeanerCloud/CUDly/providers/aws/internal/purchasecfg"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/retry"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
 )
 
-// RedshiftAPI defines the interface for Redshift operations (enables mocking)
+// RedshiftAPI defines the interface for Redshift operations (enables mocking).
 type RedshiftAPI interface {
 	PurchaseReservedNodeOffering(ctx context.Context, params *redshift.PurchaseReservedNodeOfferingInput, optFns ...func(*redshift.Options)) (*redshift.PurchaseReservedNodeOfferingOutput, error)
 	DescribeReservedNodeOfferings(ctx context.Context, params *redshift.DescribeReservedNodeOfferingsInput, optFns ...func(*redshift.Options)) (*redshift.DescribeReservedNodeOfferingsOutput, error)
@@ -35,7 +35,7 @@ type STSAPI interface {
 	GetCallerIdentity(ctx context.Context, params *sts.GetCallerIdentityInput, optFns ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error)
 }
 
-// Client handles AWS Redshift Reserved Nodes
+// Client handles AWS Redshift Reserved Nodes.
 type Client struct {
 	client    RedshiftAPI
 	stsClient STSAPI
@@ -59,32 +59,32 @@ func NewClient(cfg aws.Config) *Client {
 	}
 }
 
-// SetRedshiftAPI sets a custom Redshift API client (for testing)
+// SetRedshiftAPI sets a custom Redshift API client (for testing).
 func (c *Client) SetRedshiftAPI(api RedshiftAPI) {
 	c.client = api
 }
 
-// SetSTSAPI sets a custom STS client (for testing)
+// SetSTSAPI sets a custom STS client (for testing).
 func (c *Client) SetSTSAPI(api STSAPI) {
 	c.stsClient = api
 }
 
-// GetServiceType returns the service type
+// GetServiceType returns the service type.
 func (c *Client) GetServiceType() common.ServiceType {
 	return common.ServiceDataWarehouse
 }
 
-// GetRegion returns the region
+// GetRegion returns the region.
 func (c *Client) GetRegion() string {
 	return c.region
 }
 
-// GetRecommendations returns empty as Redshift uses centralized Cost Explorer recommendations
+// GetRecommendations returns empty as Redshift uses centralized Cost Explorer recommendations.
 func (c *Client) GetRecommendations(_ context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	return []common.Recommendation{}, nil
 }
 
-// GetExistingCommitments retrieves existing Redshift Reserved Nodes
+// GetExistingCommitments retrieves existing Redshift Reserved Nodes.
 func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	commitments := make([]common.Commitment, 0)
 	var marker *string
@@ -167,7 +167,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	// CAVEAT (documented residual window): the guard's correctness depends on
 	// the post-purchase CreateTags below actually persisting on a reserved-node
 	// ARN, which AWS has not confirmed it supports. If tagging is silently
-	// unsupported the guard cannot recognise the prior purchase and a re-drive
+	// unsupported the guard cannot recognize the prior purchase and a re-drive
 	// could double-buy — the same irreducible "purchase-then-tag-fails" window
 	// EC2 has, but potentially permanent here. This residual is backstopped by
 	// the recovery sweep's safe-fail + operator-confirm (issue #635), which is
@@ -329,7 +329,7 @@ func (c *Client) resolveAccountID(ctx context.Context) (string, error) {
 //
 // The idempotency token tag (issue #641) is load-bearing for the pre-purchase
 // findNodeByIdempotencyToken guard: if it is not written, a re-drive cannot
-// recognise this node as already-purchased.
+// recognize this node as already-purchased.
 func (c *Client) tagReservedNode(ctx context.Context, nodeID string, rec common.Recommendation, source, idempotencyToken string) error {
 	if source == "" && idempotencyToken == "" {
 		return nil
@@ -472,7 +472,7 @@ func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation, 
 // scanRedshiftOfferingPage finds a matching offering in a single page of results.
 // Returns ("", nil) when no match is found on the page so the caller can continue paginating.
 // Returns an error when an offering matches on node type and duration but carries an
-// unrecognised ReservedNodeOfferingType -- this surfaces unexpected enum values rather
+// unrecognized ReservedNodeOfferingType -- this surfaces unexpected enum values rather
 // than silently skipping them and potentially committing to the wrong offering.
 //
 // In addition to node type and duration, the requested payment option is matched
@@ -580,13 +580,13 @@ func (c *Client) matchesOfferingType(offeringType string) bool {
 	return offeringType == "Regular" || offeringType == "Upgradable"
 }
 
-// ValidateOffering checks if an offering exists without purchasing
+// ValidateOffering checks if an offering exists without purchasing.
 func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
 	_, err := c.findOfferingID(ctx, rec, "")
 	return err
 }
 
-// GetOfferingDetails retrieves offering details
+// GetOfferingDetails retrieves offering details.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	offeringID, err := c.findOfferingID(ctx, rec, "")
 	if err != nil {
@@ -644,7 +644,7 @@ func derivePaymentOption(offering redshifttypes.ReservedNodeOffering) string {
 	}
 }
 
-// GetValidResourceTypes returns valid Redshift node types by querying the API
+// GetValidResourceTypes returns valid Redshift node types by querying the API.
 func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	nodeTypes := make(map[string]bool)
 	var marker *string
@@ -680,7 +680,7 @@ func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	return types, nil
 }
 
-// getTermMonthsFromDuration converts duration in seconds to months
+// getTermMonthsFromDuration converts duration in seconds to months.
 func getTermMonthsFromDuration(duration int32) int {
 	offeringMonths := duration / 2592000
 	if offeringMonths >= 30 {

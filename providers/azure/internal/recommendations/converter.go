@@ -25,8 +25,8 @@ package recommendations
 import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/consumption/armconsumption"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 )
 
 // ExtractedFields holds the per-rec data common to all four Azure
@@ -348,7 +348,7 @@ func normaliseTerm(term *string) string {
 	case "P3Y":
 		return "3yr"
 	default:
-		logging.Warnf("azure recommendations: unrecognised Term value %q; passing through verbatim", *term)
+		logging.Warnf("azure recommendations: unrecognized Term value %q; passing through verbatim", *term)
 		return *term
 	}
 }

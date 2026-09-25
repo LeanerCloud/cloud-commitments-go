@@ -13,13 +13,13 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
 	"github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/exchange"
-	"github.com/LeanerCloud/CUDly/pkg/retry"
-	"github.com/LeanerCloud/CUDly/providers/aws/internal/purchasecfg"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/exchange"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/retry"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
 )
 
-// EC2API defines the interface for EC2 operations (enables mocking)
+// EC2API defines the interface for EC2 operations (enables mocking).
 type EC2API interface {
 	PurchaseReservedInstancesOffering(ctx context.Context, params *ec2.PurchaseReservedInstancesOfferingInput, optFns ...func(*ec2.Options)) (*ec2.PurchaseReservedInstancesOfferingOutput, error)
 	DescribeReservedInstancesOfferings(ctx context.Context, params *ec2.DescribeReservedInstancesOfferingsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeReservedInstancesOfferingsOutput, error)
@@ -33,7 +33,7 @@ type EC2API interface {
 	CancelReservedInstancesListing(ctx context.Context, params *ec2.CancelReservedInstancesListingInput, optFns ...func(*ec2.Options)) (*ec2.CancelReservedInstancesListingOutput, error)
 }
 
-// Client handles AWS EC2 Reserved Instances
+// Client handles AWS EC2 Reserved Instances.
 type Client struct {
 	client EC2API
 	region string
@@ -50,28 +50,28 @@ func NewClient(cfg aws.Config) *Client {
 	}
 }
 
-// SetEC2API sets a custom EC2 API client (for testing)
+// SetEC2API sets a custom EC2 API client (for testing).
 func (c *Client) SetEC2API(api EC2API) {
 	c.client = api
 }
 
-// GetServiceType returns the service type
+// GetServiceType returns the service type.
 func (c *Client) GetServiceType() common.ServiceType {
 	return common.ServiceCompute
 }
 
-// GetRegion returns the region
+// GetRegion returns the region.
 func (c *Client) GetRegion() string {
 	return c.region
 }
 
-// GetRecommendations returns empty as EC2 uses centralized Cost Explorer recommendations
+// GetRecommendations returns empty as EC2 uses centralized Cost Explorer recommendations.
 func (c *Client) GetRecommendations(_ context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	// EC2 recommendations come from Cost Explorer API via RecommendationsClient
 	return []common.Recommendation{}, nil
 }
 
-// GetExistingCommitments retrieves existing EC2 Reserved Instances
+// GetExistingCommitments retrieves existing EC2 Reserved Instances.
 func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	commitments := make([]common.Commitment, 0)
 
@@ -110,7 +110,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 	return commitments, nil
 }
 
-// PurchaseCommitment purchases an EC2 Reserved Instance
+// PurchaseCommitment purchases an EC2 Reserved Instance.
 func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
 	result := common.PurchaseResult{
 		Recommendation: rec,
@@ -196,7 +196,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 // findRIByIdempotencyToken looks for an active or payment-pending Reserved
 // Instance tagged with the given idempotency token (issue #636). It returns the
 // RI ID and true when exactly such an RI exists, so a re-driven purchase can
-// short-circuit instead of buying a second commitment. Retired/cancelled RIs are
+// short-circuit instead of buying a second commitment. Retired/canceled RIs are
 // excluded (they carry the same state filter as GetExistingCommitments) so a
 // returned or expired commitment does not suppress a legitimate fresh purchase.
 func (c *Client) findRIByIdempotencyToken(ctx context.Context, token string) (string, bool, error) {
@@ -265,7 +265,7 @@ func (c *Client) tagReservedInstance(ctx context.Context, riID string, rec commo
 		})
 	}
 	// The idempotency tag is what findRIByIdempotencyToken matches on for the
-	// dedupe guard (issue #636); it must be written for a re-drive to recognise
+	// dedupe guard (issue #636); it must be written for a re-drive to recognize
 	// this RI as already-purchased.
 	if idempotencyToken != "" {
 		tags = append(tags, types.Tag{
@@ -487,7 +487,7 @@ func (c *Client) buildEC2QueryFromRec(rec common.Recommendation) (ec2OfferingQue
 // execID is the purchase execution UUID for log correlation; pass "" when
 // calling outside of a purchase flow (ValidateOffering, GetOfferingDetails).
 // offeringClassStr is the GlobalConfig.OfferingClass value; "" is treated as
-// "convertible" to preserve pre-694 behaviour. Unknown values fail loudly.
+// "convertible" to preserve pre-694 behavior. Unknown values fail loudly.
 func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation, execID string, offeringClassStr string) (string, error) {
 	q, err := c.buildEC2QueryFromRec(rec)
 	if err != nil {
@@ -623,7 +623,7 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	return details, nil
 }
 
-// GetValidResourceTypes returns valid EC2 instance types
+// GetValidResourceTypes returns valid EC2 instance types.
 func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	instanceTypesMap := make(map[string]bool)
 	var nextToken *string
@@ -659,7 +659,7 @@ func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	return instanceTypes, nil
 }
 
-// Duration constants for RI term calculations
+// Duration constants for RI term calculations.
 const (
 	OneYearSeconds   = 31536000 // 365 days in seconds
 	ThreeYearSeconds = 94608000 // 3 * 365 days in seconds
@@ -1006,7 +1006,7 @@ type MarketplacePriceTier struct {
 type MarketplaceListingResult struct {
 	// ListingID is the AWS ReservedInstancesListingId.
 	ListingID string
-	// State is the AWS listing state: active, cancelled, closed, pending-fulfillment, etc.
+	// State is the AWS listing status, preserved verbatim from types.ListingStatus.
 	State string
 }
 

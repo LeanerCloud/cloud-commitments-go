@@ -18,12 +18,12 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/sql/armsql"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
-	"github.com/LeanerCloud/CUDly/providers/azure/internal/httpclient"
-	"github.com/LeanerCloud/CUDly/providers/azure/internal/pricing"
-	azrecs "github.com/LeanerCloud/CUDly/providers/azure/internal/recommendations"
-	"github.com/LeanerCloud/CUDly/providers/azure/services/internal/reservations"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/httpclient"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/pricing"
+	azrecs "github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/recommendations"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
 )
 
 // reservationResourceTypeSQLDB is the canonical resourceType value for Azure
@@ -39,7 +39,7 @@ const maxRecsPages = 10
 // maxReservationsPages caps reservation-detail pagination.
 const maxReservationsPages = 50
 
-// sqlSKUEntry holds the SKU-catalogue-derived fields the converter
+// sqlSKUEntry holds the SKU-catalog-derived fields the converter
 // wants for each Azure SQL SKU. Sourced from the
 // armsql.CapabilitiesClient.ListByLocation response which embeds the
 // SQL Server version in the ServerVersionCapability.Name (e.g. "12.0")
@@ -48,24 +48,24 @@ type sqlSKUEntry struct {
 	engineVersion string
 }
 
-// HTTPClient interface for HTTP operations (enables mocking)
+// HTTPClient interface for HTTP operations (enables mocking).
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-// RecommendationsPager interface for recommendations pager (enables mocking)
+// RecommendationsPager interface for recommendations pager (enables mocking).
 type RecommendationsPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armconsumption.ReservationRecommendationsClientListResponse, error)
 }
 
-// ReservationsDetailsPager interface for reservations details pager (enables mocking)
+// ReservationsDetailsPager interface for reservations details pager (enables mocking).
 type ReservationsDetailsPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armconsumption.ReservationsDetailsClientListResponse, error)
 }
 
-// CapabilitiesClient interface for SQL capabilities (enables mocking)
+// CapabilitiesClient interface for SQL capabilities (enables mocking).
 type CapabilitiesClient interface {
 	ListByLocation(ctx context.Context, locationName string, options *armsql.CapabilitiesClientListByLocationOptions) (armsql.CapabilitiesClientListByLocationResponse, error)
 }
@@ -82,7 +82,7 @@ type SQLManagedInstancesPager interface {
 	NextPage(ctx context.Context) (armsql.ManagedInstancesClientListResponse, error)
 }
 
-// DatabaseClient handles Azure SQL Database Reserved Capacity
+// DatabaseClient handles Azure SQL Database Reserved Capacity.
 type DatabaseClient struct {
 	cred                  azcore.TokenCredential
 	subscriptionID        string
@@ -94,7 +94,7 @@ type DatabaseClient struct {
 	serversPager          SQLServersPager
 	managedInstancesPager SQLManagedInstancesPager
 
-	// Lazy SKU catalogue cache. Populated once on the first
+	// Lazy SKU catalog cache. Populated once on the first
 	// recommendation conversion in this client's GetRecommendations
 	// call — single ListByLocation per region instead of N+1 per rec.
 	// A failed fetch leaves skuCacheMap nil; converters then fall back
@@ -111,7 +111,7 @@ type DatabaseClient struct {
 	deployment     string
 }
 
-// NewClient creates a new Azure Database client
+// NewClient creates a new Azure Database client.
 func NewClient(cred azcore.TokenCredential, subscriptionID, region string) *DatabaseClient {
 	return &DatabaseClient{
 		cred:           cred,
@@ -121,7 +121,7 @@ func NewClient(cred azcore.TokenCredential, subscriptionID, region string) *Data
 	}
 }
 
-// NewClientWithHTTP creates a new Azure Database client with a custom HTTP client (for testing)
+// NewClientWithHTTP creates a new Azure Database client with a custom HTTP client (for testing).
 func NewClientWithHTTP(cred azcore.TokenCredential, subscriptionID, region string, httpClient HTTPClient) *DatabaseClient {
 	return &DatabaseClient{
 		cred:           cred,
@@ -131,17 +131,17 @@ func NewClientWithHTTP(cred azcore.TokenCredential, subscriptionID, region strin
 	}
 }
 
-// SetRecommendationsPager sets the recommendations pager (for testing)
+// SetRecommendationsPager sets the recommendations pager (for testing).
 func (c *DatabaseClient) SetRecommendationsPager(pager RecommendationsPager) {
 	c.recommendationsPager = pager
 }
 
-// SetReservationsPager sets the reservations pager (for testing)
+// SetReservationsPager sets the reservations pager (for testing).
 func (c *DatabaseClient) SetReservationsPager(pager ReservationsDetailsPager) {
 	c.reservationsPager = pager
 }
 
-// SetCapabilitiesClient sets the capabilities client (for testing)
+// SetCapabilitiesClient sets the capabilities client (for testing).
 func (c *DatabaseClient) SetCapabilitiesClient(client CapabilitiesClient) {
 	c.capabilitiesClient = client
 }
@@ -156,12 +156,12 @@ func (c *DatabaseClient) SetManagedInstancesPager(pager SQLManagedInstancesPager
 	c.managedInstancesPager = pager
 }
 
-// GetServiceType returns the service type
+// GetServiceType returns the service type.
 func (c *DatabaseClient) GetServiceType() common.ServiceType {
 	return common.ServiceRelationalDB
 }
 
-// GetRegion returns the region
+// GetRegion returns the region.
 func (c *DatabaseClient) GetRegion() string {
 	return c.region
 }
@@ -169,7 +169,7 @@ func (c *DatabaseClient) GetRegion() string {
 // AzureRetailPrice is the response envelope for the Azure Retail Prices API.
 type AzureRetailPrice = pricing.Page[pricing.RetailPriceItem]
 
-// GetRecommendations gets SQL Database reservation recommendations from Azure Consumption API
+// GetRecommendations gets SQL Database reservation recommendations from Azure Consumption API.
 func (c *DatabaseClient) GetRecommendations(ctx context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	recommendations := make([]common.Recommendation, 0)
 
@@ -192,7 +192,7 @@ func (c *DatabaseClient) GetRecommendations(ctx context.Context, _ *common.Recom
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxRecsPages {
 			return nil, fmt.Errorf("database: GetRecommendations pagination cap (%d pages) reached", maxRecsPages)
@@ -213,7 +213,7 @@ func (c *DatabaseClient) GetRecommendations(ctx context.Context, _ *common.Recom
 	return recommendations, nil
 }
 
-// GetExistingCommitments retrieves existing SQL Database reserved capacity using Azure Resource Graph
+// GetExistingCommitments retrieves existing SQL Database reserved capacity using Azure Resource Graph.
 func (c *DatabaseClient) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	pager, err := c.createReservationsPager()
 	if err != nil {
@@ -224,7 +224,7 @@ func (c *DatabaseClient) GetExistingCommitments(ctx context.Context) ([]common.C
 	return c.collectSQLReservations(ctx, pager)
 }
 
-// createReservationsPager creates a pager for listing reservations
+// createReservationsPager creates a pager for listing reservations.
 func (c *DatabaseClient) createReservationsPager() (ReservationsDetailsPager, error) {
 	// Use injected pager if available (for testing)
 	if c.reservationsPager != nil {
@@ -248,7 +248,7 @@ func (c *DatabaseClient) collectSQLReservations(ctx context.Context, pager Reser
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxReservationsPages {
 			return nil, fmt.Errorf("database: GetExistingCommitments pagination cap (%d pages) reached", maxReservationsPages)
@@ -268,7 +268,7 @@ func (c *DatabaseClient) collectSQLReservations(ctx context.Context, pager Reser
 	return commitments, nil
 }
 
-// convertSQLReservation converts a reservation detail to a commitment if it's a SQL reservation
+// convertSQLReservation converts a reservation detail to a commitment if it's a SQL reservation.
 func (c *DatabaseClient) convertSQLReservation(detail *armconsumption.ReservationDetail) *common.Commitment {
 	if detail.Properties == nil {
 		return nil
@@ -385,7 +385,7 @@ func (c *DatabaseClient) PurchaseCommitment(ctx context.Context, rec common.Reco
 	return result, nil
 }
 
-// ValidateOffering validates that a SQL Database SKU exists
+// ValidateOffering validates that a SQL Database SKU exists.
 func (c *DatabaseClient) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
 	validSKUs, err := c.GetValidResourceTypes(ctx)
 	if err != nil {
@@ -402,7 +402,7 @@ func (c *DatabaseClient) ValidateOffering(ctx context.Context, rec common.Recomm
 	return fmt.Errorf("invalid Azure SQL Database SKU: %s", rec.ResourceType)
 }
 
-// GetOfferingDetails retrieves SQL Database reservation offering details from Azure Retail Prices API
+// GetOfferingDetails retrieves SQL Database reservation offering details from Azure Retail Prices API.
 func (c *DatabaseClient) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	termYears, err := reservations.ParseTermYears(rec.Term)
 	if err != nil {
@@ -425,7 +425,7 @@ func (c *DatabaseClient) GetOfferingDetails(ctx context.Context, rec common.Reco
 		upfrontCost = 0
 		recurringCost = totalCost / (float64(termYears) * 12)
 	default:
-		// Fail loud on an unrecognised payment option rather than silently
+		// Fail loud on an unrecognized payment option rather than silently
 		// billing it as all-upfront (owner policy: no silent fallbacks on
 		// money-affecting fields).
 		return nil, fmt.Errorf("unsupported payment option for Azure SQL Database offering details: %q", rec.PaymentOption)
@@ -444,7 +444,7 @@ func (c *DatabaseClient) GetOfferingDetails(ctx context.Context, rec common.Reco
 	}, nil
 }
 
-// GetValidResourceTypes returns valid SQL Database SKUs from Azure API
+// GetValidResourceTypes returns valid SQL Database SKUs from Azure API.
 func (c *DatabaseClient) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	capClient, err := c.getOrCreateCapabilitiesClient()
 	if err != nil {
@@ -478,7 +478,7 @@ func (c *DatabaseClient) GetValidResourceTypes(ctx context.Context) ([]string, e
 	return skus, nil
 }
 
-// getOrCreateCapabilitiesClient returns the injected client or creates a new one
+// getOrCreateCapabilitiesClient returns the injected client or creates a new one.
 func (c *DatabaseClient) getOrCreateCapabilitiesClient() (CapabilitiesClient, error) {
 	if c.capabilitiesClient != nil {
 		return c.capabilitiesClient, nil
@@ -492,7 +492,7 @@ func (c *DatabaseClient) getOrCreateCapabilitiesClient() (CapabilitiesClient, er
 	return client, nil
 }
 
-// extractServerSKUs extracts SKUs from server version capabilities
+// extractServerSKUs extracts SKUs from server version capabilities.
 func (c *DatabaseClient) extractServerSKUs(capabilities armsql.LocationCapabilities, skuSet map[string]bool) {
 	if capabilities.SupportedServerVersions == nil {
 		return
@@ -517,7 +517,7 @@ func (c *DatabaseClient) extractServerSKUs(capabilities armsql.LocationCapabilit
 	}
 }
 
-// extractManagedInstanceSKUs extracts SKUs from managed instance capabilities
+// extractManagedInstanceSKUs extracts SKUs from managed instance capabilities.
 func (c *DatabaseClient) extractManagedInstanceSKUs(capabilities armsql.LocationCapabilities, skuSet map[string]bool) {
 	if capabilities.SupportedManagedInstanceVersions == nil {
 		return
@@ -536,7 +536,7 @@ func (c *DatabaseClient) extractManagedInstanceSKUs(capabilities armsql.Location
 	}
 }
 
-// SQLPricing contains pricing information for SQL Database
+// SQLPricing contains pricing information for SQL Database.
 type SQLPricing struct {
 	HourlyRate        float64
 	ReservationPrice  float64
@@ -545,7 +545,7 @@ type SQLPricing struct {
 	SavingsPercentage float64
 }
 
-// getSQLPricing gets real pricing from Azure Retail Prices API
+// getSQLPricing gets real pricing from Azure Retail Prices API.
 func (c *DatabaseClient) getSQLPricing(ctx context.Context, sku, region string, termYears int) (*SQLPricing, error) {
 	filter := fmt.Sprintf("serviceName eq 'SQL Database' and armRegionName eq '%s' and armSkuName eq '%s'",
 		region, sku)
@@ -613,7 +613,7 @@ func azureTermString(termYears int) string {
 	return fmt.Sprintf("%d Years", termYears)
 }
 
-// extractSQLPricing extracts on-demand and reservation pricing from price items
+// extractSQLPricing extracts on-demand and reservation pricing from price items.
 func extractSQLPricing(items []pricing.RetailPriceItem, termYears int) (onDemand, reservation float64, currency string) {
 	currency = "USD"
 	termStr := azureTermString(termYears)
@@ -640,7 +640,7 @@ func extractSQLPricing(items []pricing.RetailPriceItem, termYears int) (onDemand
 //
 // Details: Engine="sqlserver" + InstanceClass=ResourceType (always
 // populated). EngineVersion enriched from the lazily-cached
-// armsql.CapabilitiesClient catalogue when the recommendation's SKU
+// armsql.CapabilitiesClient catalog when the recommendation's SKU
 // string matches a ServiceLevelObjective in the location capabilities;
 // otherwise stays empty. AZConfig and Deployment are enriched from the
 // lazily-cached subscription-wide server/managed-instance lists;
@@ -679,11 +679,11 @@ func (c *DatabaseClient) convertAzureSQLRecommendation(ctx context.Context, azur
 	}
 }
 
-// cachedSKULookup returns the SKU catalogue entry for skuName, fetching
-// the catalogue lazily on first call. The catalogue is fetched ONCE per
+// cachedSKULookup returns the SKU catalog entry for skuName, fetching
+// the catalog lazily on first call. The catalog is fetched ONCE per
 // client lifetime via armsql.CapabilitiesClient.ListByLocation;
 // subsequent calls are O(1) map lookups. ok=false on cache miss OR
-// catalogue-fetch failure — the caller falls back to empty
+// catalog-fetch failure — the caller falls back to empty
 // EngineVersion rather than failing the whole conversion.
 func (c *DatabaseClient) cachedSKULookup(ctx context.Context, skuName string) (sqlSKUEntry, bool) {
 	c.skuCacheOnce.Do(func() {
@@ -703,12 +703,12 @@ func (c *DatabaseClient) cachedSKULookup(ctx context.Context, skuName string) (s
 func (c *DatabaseClient) fetchSKUCatalogue(ctx context.Context) map[string]sqlSKUEntry {
 	capClient, err := c.getOrCreateCapabilitiesClient()
 	if err != nil {
-		logging.Warnf("azure database: SKU catalogue capabilities client create failed for region %s: %v — Details.EngineVersion left empty", c.region, err)
+		logging.Warnf("azure database: SKU catalog capabilities client create failed for region %s: %v — Details.EngineVersion left empty", c.region, err)
 		return nil
 	}
 	resp, err := capClient.ListByLocation(ctx, c.region, &armsql.CapabilitiesClientListByLocationOptions{Include: nil})
 	if err != nil {
-		logging.Warnf("azure database: SKU catalogue ListByLocation failed for region %s: %v — Details.EngineVersion left empty", c.region, err)
+		logging.Warnf("azure database: SKU catalog ListByLocation failed for region %s: %v — Details.EngineVersion left empty", c.region, err)
 		return nil
 	}
 	out := make(map[string]sqlSKUEntry)
@@ -727,7 +727,7 @@ func (c *DatabaseClient) fetchSKUCatalogue(ctx context.Context) map[string]sqlSK
 // threshold enforced by the pre-commit hook. First-write-wins semantics: if
 // the same SKU name appears under multiple server versions (rare in
 // practice), the first one wins. Order is deterministic per ListByLocation
-// response; downstream consumers don't switch behaviour on the
+// response; downstream consumers don't switch behavior on the
 // engine-version delta within a single region.
 func populateSQLSKUMapFromVersion(out map[string]sqlSKUEntry, engineVersion string, editions []*armsql.EditionCapability) {
 	for _, edition := range editions {

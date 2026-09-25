@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/semaphore"
 
-	"github.com/LeanerCloud/CUDly/pkg/concurrency"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
 )
 
 // semCountingCE counts coverage/utilization SDK calls so the tests below can
@@ -31,7 +31,7 @@ func (m *semCountingCE) GetReservationUtilization(ctx context.Context, params *c
 	return &costexplorer.GetReservationUtilizationOutput{}, nil
 }
 
-// fullSemaphoreCtx returns a cancelled context carrying a capacity-1 shared
+// fullSemaphoreCtx returns a canceled context carrying a capacity-1 shared
 // semaphore whose only slot is already held, replicating the scheduler's
 // collection path when the CUDLY_MAX_PARALLELISM cap is saturated. A correct
 // leaf call must block on Acquire (and surface ctx cancellation) instead of
@@ -59,7 +59,7 @@ func TestFetchCoveragePage_RespectsSharedSemaphore(t *testing.T) {
 
 	_, err := client.fetchCoveragePage(fullSemaphoreCtx(t), &costexplorer.GetReservationCoverageInput{})
 
-	require.Error(t, err, "fetch must fail when the cap is saturated and ctx is cancelled")
+	require.Error(t, err, "fetch must fail when the cap is saturated and ctx is canceled")
 	assert.ErrorIs(t, err, context.Canceled)
 	assert.Equal(t, int32(0), mock.coverageCalls.Load(),
 		"GetReservationCoverage escaped the shared concurrency semaphore")
@@ -73,7 +73,7 @@ func TestFetchUtilizationPage_RespectsSharedSemaphore(t *testing.T) {
 
 	_, err := client.fetchUtilizationPage(fullSemaphoreCtx(t), &costexplorer.GetReservationUtilizationInput{})
 
-	require.Error(t, err, "fetch must fail when the cap is saturated and ctx is cancelled")
+	require.Error(t, err, "fetch must fail when the cap is saturated and ctx is canceled")
 	assert.ErrorIs(t, err, context.Canceled)
 	assert.Equal(t, int32(0), mock.utilizationCalls.Load(),
 		"GetReservationUtilization escaped the shared concurrency semaphore")
