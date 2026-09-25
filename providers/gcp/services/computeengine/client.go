@@ -401,7 +401,7 @@ func (c *ComputeEngineClient) GetRecommendations(ctx context.Context, p *common.
 	it := recClient.ListRecommendations(ctx, req)
 	for pageIdx := 0; ; pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxRecsPages {
 			return nil, fmt.Errorf("computeengine: GetRecommendations iteration cap (%d items) reached", maxRecsPages)
@@ -473,7 +473,7 @@ func (c *ComputeEngineClient) collectCommitments(ctx context.Context, svc Commit
 	it := svc.List(ctx, req)
 	for pageIdx := 0; ; pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxCommitmentsPages {
 			return nil, fmt.Errorf("computeengine: GetExistingCommitments iteration cap (%d items) reached", maxCommitmentsPages)
@@ -915,7 +915,7 @@ func (c *ComputeEngineClient) GetValidResourceTypes(ctx context.Context) ([]stri
 
 	for itemIdx := 0; ; itemIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if itemIdx >= maxMachineTypeItems {
 			return nil, fmt.Errorf("computeengine: GetValidResourceTypes iteration cap (%d items) reached", maxMachineTypeItems)

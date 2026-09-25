@@ -176,7 +176,7 @@ func (c *CloudSQLClient) GetRecommendations(ctx context.Context, p *common.Recom
 	it := recClient.ListRecommendations(ctx, req)
 	for pageIdx := 0; ; pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxRecsPages {
 			return nil, fmt.Errorf("cloudsql: GetRecommendations iteration cap (%d items) reached", maxRecsPages)

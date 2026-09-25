@@ -87,7 +87,7 @@ type RecommendationsClientAdapter struct {
 //     goroutines under a per-region sub-errgroup, so the per-region cost is
 //     max(service latencies) rather than their sum.
 //
-// Behaviour change vs the previous nested for-loops: per-(region, service)
+// Behavior change vs the previous nested for-loops: per-(region, service)
 // errors that were previously silently swallowed (`if err == nil { ... }`
 // shape) are now logged at WARN with region+service identifiers so
 // misconfigured projects are diagnosable. Errors do NOT cancel siblings —
@@ -108,7 +108,7 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 	params := *p
 	// Context cancellation is terminal: bail out before any API fan-out.
 	// Newer cloud.google.com/go/compute REST clients can complete a regions
-	// List call (and return a real 403) even when ctx is already cancelled,
+	// List call (and return a real 403) even when ctx is already canceled,
 	// which would otherwise be swallowed by the permission branch below.
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -121,7 +121,7 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 		// service account lacks Compute Viewer on this project. Log at Warn
 		// so it doesn't spam as ERROR in Lambda — the application-layer auth
 		// still works; only GCP recommendations for this account are skipped.
-		// See issue #247. A cancelled ctx never reaches this branch (guarded
+		// See issue #247. A canceled ctx never reaches this branch (guarded
 		// above), so a genuine 403 is the only thing swallowed here.
 		if isPermissionError(err) {
 			logging.Warnf("GCP account %s: skipping recommendations — insufficient Compute permission to list regions (grant roles/compute.viewer): %v", r.projectID, err)

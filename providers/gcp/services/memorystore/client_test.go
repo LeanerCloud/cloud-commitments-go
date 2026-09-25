@@ -292,14 +292,14 @@ func TestMemorystoreClient_ValidateOffering_InvalidTier(t *testing.T) {
 }
 
 // TestMemorystoreClient_GetExistingCommitments_Stub verifies the documented
-// stub behaviour: the GCP Memorystore Redis API does not expose commitment
+// stub behavior: the GCP Memorystore Redis API does not expose commitment
 // status — ReservedIpRange is the VPC-peering CIDR, not a commitment
 // indicator. The production code returns (nil, nil) and the injected
 // redisService is intentionally never called from this path.
 //
 // If a future implementation adds real commitment detection here, this test
 // must be updated to match — do NOT silently swap in the mock-based variant
-// that was previously merged (it asserted behaviour the production code never
+// that was previously merged (it asserted behavior the production code never
 // implemented, causing false CI failures).
 func TestMemorystoreClient_GetExistingCommitments_Stub(t *testing.T) {
 	ctx := context.Background()

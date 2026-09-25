@@ -378,7 +378,7 @@ func (p *GCPProvider) GetAccounts(ctx context.Context) ([]common.Account, error)
 	}
 
 	// Return empty if no ACTIVE projects are visible to the credentials (10-M7).
-	// Synthesising a fallback account from p.projectID can silently succeed
+	// Synthesizing a fallback account from p.projectID can silently succeed
 	// when the account has no accessible projects, hiding auth / permission
 	// errors from callers. Return empty so the caller can surface the gap.
 	return accounts, nil
@@ -495,7 +495,7 @@ func (p *GCPProvider) GetRecommendationsClient(ctx context.Context) (provider.Re
 
 // errStopProjectPagination is a sentinel used by Pages() to short-circuit
 // iteration as soon as getDefaultProject finds its first ACTIVE project,
-// avoiding unnecessary page fetches in large organisations.
+// avoiding unnecessary page fetches in large organizations.
 var errStopProjectPagination = errors.New("stop pagination: found active project")
 
 // listProjectsForDefault walks all resource-manager project pages, calling
@@ -510,7 +510,7 @@ var listProjectsForDefault = func(ctx context.Context, opts []option.ClientOptio
 }
 
 // getDefaultProject attempts to get the default GCP project from environment
-// or ADC. In organisations with more than one page of projects (~500 per
+// or ADC. In organizations with more than one page of projects (~500 per
 // page), this walks pages via Pages() until the first ACTIVE project is
 // found — a single req.Do() would only see page 1 and falsely report
 // "no active GCP projects found" if the active one sat on a later page.

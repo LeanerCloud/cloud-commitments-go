@@ -231,7 +231,7 @@ func TestNewProvider_ProjectIDResolution(t *testing.T) {
 			expected: "only-typed",
 		},
 		{
-			name: "Deprecated Profile is honoured when typed field is empty",
+			name: "Deprecated Profile is honored when typed field is empty",
 			config: &provider.ProviderConfig{
 				Profile: "legacy-project",
 			},
@@ -570,8 +570,8 @@ func TestGCPProvider_GetAccounts_WithMock(t *testing.T) {
 }
 
 // TestGCPProvider_GetAccounts_Empty asserts that GetAccounts returns an empty
-// slice (not a synthesised fallback project) when no ACTIVE projects are
-// visible to the credentials (10-M7). A synthesised account would hide
+// slice (not a synthesized fallback project) when no ACTIVE projects are
+// visible to the credentials (10-M7). A synthesized account would hide
 // permission / auth errors from callers.
 func TestGCPProvider_GetAccounts_Empty(t *testing.T) {
 	ctx := context.Background()
