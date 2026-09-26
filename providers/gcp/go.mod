@@ -8,7 +8,7 @@ require (
 	cloud.google.com/go/redis v1.18.3
 	cloud.google.com/go/resourcemanager v1.10.7
 	cloud.google.com/go/storage v1.59.2
-	github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0
+	github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20260925082912-43ab778da7ac
 	github.com/googleapis/gax-go/v2 v2.21.0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/oauth2 v0.36.0
@@ -66,5 +66,3 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
-
-replace github.com/LeanerCloud/cloud-commitments-go/pkg => ../../pkg

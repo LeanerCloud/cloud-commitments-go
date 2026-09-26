@@ -41,16 +41,8 @@ require (
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
-	github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0
+	github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20260925082912-43ab778da7ac
 	github.com/aws/aws-sdk-go-v2/service/sts v1.33.17
 )
 
 require github.com/google/uuid v1.6.0 // indirect
-
-replace github.com/LeanerCloud/cloud-commitments-go/pkg => ../pkg
-
-replace github.com/LeanerCloud/cloud-commitments-go/providers/aws => ../providers/aws
-
-replace github.com/LeanerCloud/cloud-commitments-go/providers/azure => ../providers/azure
-
-replace github.com/LeanerCloud/cloud-commitments-go/providers/gcp => ../providers/gcp
