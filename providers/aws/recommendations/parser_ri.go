@@ -18,9 +18,11 @@ import (
 func (c *Client) parseRecommendations(ctx context.Context, awsRecs []types.ReservationPurchaseRecommendation, params common.RecommendationParams) ([]common.Recommendation, error) {
 	var recommendations []common.Recommendation
 
-	for _, awsRec := range awsRecs {
-		for i, details := range awsRec.RecommendationDetails {
-			rec, err := c.parseRecommendationDetail(ctx, &details, params)
+	for r := range awsRecs {
+		awsRec := &awsRecs[r]
+		for i := range awsRec.RecommendationDetails {
+			details := &awsRec.RecommendationDetails[i]
+			rec, err := c.parseRecommendationDetail(ctx, details, params)
 			if err != nil {
 				// log (stderr), never fmt.Print (stdout): this package is
 				// linked into cmd/cudly-mcp, whose stdio transport owns
@@ -144,16 +146,16 @@ func (c *Client) parseRecommendedQuantity(details *types.ReservationPurchaseReco
 // recommended quantity, which AWS CE sizes for ~100% coverage of the account's
 // historical on-demand demand. This is the 100%-coverage baseline the dashboard
 // scaling in summarizeRecommendationsWithCoverage depends on (issue #215 audit).
-func (c *Client) parseCostInformation(details *types.ReservationPurchaseRecommendationDetail) (float64, float64, error) {
+func (c *Client) parseCostInformation(details *types.ReservationPurchaseRecommendationDetail) (estimatedSavings, savingsPercent float64, err error) {
 	// Route through parseOptionalFloat so a present-but-non-finite CE money value
 	// (NaN/Inf parse to a nil error under strconv.ParseFloat) is rejected the same
 	// way as on the SP path, keeping this parser and the SP parser at genuine
 	// parity. A nil pointer yields (0, nil).
-	estimatedSavings, err := parseOptionalFloat("EstimatedMonthlySavingsAmount", details.EstimatedMonthlySavingsAmount)
+	estimatedSavings, err = parseOptionalFloat("EstimatedMonthlySavingsAmount", details.EstimatedMonthlySavingsAmount)
 	if err != nil {
 		return 0, 0, err
 	}
-	savingsPercent, err := parseOptionalFloat("EstimatedMonthlySavingsPercentage", details.EstimatedMonthlySavingsPercentage)
+	savingsPercent, err = parseOptionalFloat("EstimatedMonthlySavingsPercentage", details.EstimatedMonthlySavingsPercentage)
 	if err != nil {
 		return 0, 0, err
 	}

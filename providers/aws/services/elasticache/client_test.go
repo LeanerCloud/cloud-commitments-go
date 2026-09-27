@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// MockElastiCacheClient implements ElastiCacheAPI for testing.
+// MockElastiCacheClient implements API for testing.
 type MockElastiCacheClient struct {
 	mock.Mock
 }

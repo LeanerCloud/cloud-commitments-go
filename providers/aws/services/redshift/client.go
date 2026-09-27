@@ -19,8 +19,8 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
 )
 
-// RedshiftAPI defines the interface for Redshift operations (enables mocking).
-type RedshiftAPI interface {
+// API defines the interface for Redshift operations (enables mocking).
+type API interface {
 	PurchaseReservedNodeOffering(ctx context.Context, params *redshift.PurchaseReservedNodeOfferingInput, optFns ...func(*redshift.Options)) (*redshift.PurchaseReservedNodeOfferingOutput, error)
 	DescribeReservedNodeOfferings(ctx context.Context, params *redshift.DescribeReservedNodeOfferingsInput, optFns ...func(*redshift.Options)) (*redshift.DescribeReservedNodeOfferingsOutput, error)
 	DescribeReservedNodes(ctx context.Context, params *redshift.DescribeReservedNodesInput, optFns ...func(*redshift.Options)) (*redshift.DescribeReservedNodesOutput, error)
@@ -37,7 +37,7 @@ type STSAPI interface {
 
 // Client handles AWS Redshift Reserved Nodes.
 type Client struct {
-	client    RedshiftAPI
+	client    API
 	stsClient STSAPI
 	region    string
 
@@ -60,7 +60,7 @@ func NewClient(cfg aws.Config) *Client {
 }
 
 // SetRedshiftAPI sets a custom Redshift API client (for testing).
-func (c *Client) SetRedshiftAPI(api RedshiftAPI) {
+func (c *Client) SetRedshiftAPI(api API) {
 	c.client = api
 }
 
@@ -100,7 +100,8 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 			return nil, fmt.Errorf("failed to describe reserved nodes: %w", err)
 		}
 
-		for _, node := range response.ReservedNodes {
+		for i := range response.ReservedNodes {
+			node := &response.ReservedNodes[i]
 			state := aws.ToString(node.State)
 			if state != "active" && state != "payment-pending" {
 				continue
@@ -223,7 +224,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 // nodes are excluded (same state filter as GetExistingCommitments). A DescribeTags
 // error short-circuits as a lookup failure so the caller fails loud rather than
 // risk a double-buy.
-func (c *Client) findNodeByIdempotencyToken(ctx context.Context, token string) (string, bool, error) {
+func (c *Client) findNodeByIdempotencyToken(ctx context.Context, token string) (outID string, outFound bool, outErr error) {
 	accountID, err := c.resolveAccountID(ctx)
 	if err != nil {
 		return "", false, fmt.Errorf("resolve account ID for idempotency check: %w", err)
@@ -257,8 +258,9 @@ func (c *Client) findNodeByIdempotencyToken(ctx context.Context, token string) (
 // scanNodesForToken checks each active/payment-pending node for the idempotency
 // token tag (issue #641), returning the first match. A DescribeTags error
 // short-circuits as a lookup failure.
-func (c *Client) scanNodesForToken(ctx context.Context, nodes []redshifttypes.ReservedNode, accountID, token string) (string, bool, error) {
-	for _, node := range nodes {
+func (c *Client) scanNodesForToken(ctx context.Context, nodes []redshifttypes.ReservedNode, accountID, token string) (outID string, outFound bool, outErr error) {
+	for i := range nodes {
+		node := &nodes[i]
 		state := aws.ToString(node.State)
 		if state != "active" && state != "payment-pending" {
 			continue
@@ -491,7 +493,7 @@ func (c *Client) scanRedshiftOfferingPage(offerings []redshifttypes.ReservedNode
 		}
 		offeringTypeStr := string(offering.ReservedNodeOfferingType)
 		if !c.matchesOfferingType(offeringTypeStr) {
-			return "", fmt.Errorf("Redshift offering %s has unexpected type %q (rec: %s)",
+			return "", fmt.Errorf("redshift offering %s has unexpected type %q (rec: %s)",
 				aws.ToString(offering.ReservedNodeOfferingId), offeringTypeStr, rec.ResourceType)
 		}
 		if !matchesPaymentOption(offering, rec.PaymentOption) {

@@ -15,9 +15,7 @@ import (
 )
 
 // mockCostExplorerClient implements recommendations.CostExplorerAPI for testing.
-type mockCostExplorerClient struct {
-	getRecommendationsFunc func() []common.Recommendation
-}
+type mockCostExplorerClient struct{}
 
 func (m *mockCostExplorerClient) GetReservationPurchaseRecommendation(ctx context.Context, params *costexplorer.GetReservationPurchaseRecommendationInput, optFns ...func(*costexplorer.Options)) (*costexplorer.GetReservationPurchaseRecommendationOutput, error) {
 	// Return empty recommendations - the mock focuses on the adapter's filtering logic
@@ -226,7 +224,6 @@ func TestRecommendationsClientAdapter_GetRecommendations_Integration(t *testing.
 		// Should not error (may return empty list)
 		require.NoError(t, err)
 	})
-
 }
 
 func TestRecommendationsClientAdapter_GetRecommendationsForService_WithMock(t *testing.T) {

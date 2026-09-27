@@ -79,8 +79,8 @@ func (r *realOrganizationsPaginator) NextPage(ctx context.Context, optFns ...fun
 	return r.paginator.NextPage(ctx, optFns...)
 }
 
-// AWSProvider implements the Provider interface for AWS.
-type AWSProvider struct {
+// Provider implements the provider.Provider interface for AWS.
+type Provider struct {
 	cfg                 aws.Config
 	cfgOnce             sync.Once
 	cfgErr              error // non-nil if config loading failed
@@ -98,13 +98,13 @@ type AWSProvider struct {
 // Profile resolution order:
 //  1. config.AWSProfile (typed field, preferred)
 //  2. config.Profile (deprecated overload — kept for backwards compatibility)
-func NewAWSProvider(config *provider.ProviderConfig) (*AWSProvider, error) {
-	p := &AWSProvider{}
+func NewAWSProvider(cfg *provider.ProviderConfig) (*Provider, error) {
+	p := &Provider{}
 
-	if config != nil {
-		p.profile = resolveAWSProfile(config)
-		p.region = config.Region
-		p.credentialsProvider = config.AWSCredentialsProvider
+	if cfg != nil {
+		p.profile = resolveAWSProfile(cfg)
+		p.region = cfg.Region
+		p.credentialsProvider = cfg.AWSCredentialsProvider
 	}
 
 	return p, nil
@@ -112,46 +112,46 @@ func NewAWSProvider(config *provider.ProviderConfig) (*AWSProvider, error) {
 
 // resolveAWSProfile picks the AWS profile name from the typed field,
 // falling back to the deprecated Profile field.
-func resolveAWSProfile(config *provider.ProviderConfig) string {
-	if config.AWSProfile != "" {
-		return config.AWSProfile
+func resolveAWSProfile(cfg *provider.ProviderConfig) string {
+	if cfg.AWSProfile != "" {
+		return cfg.AWSProfile
 	}
-	return config.Profile
+	return cfg.Profile //nolint:staticcheck // SA1019: this is the one intentional read of the deprecated field, implementing its documented fallback
 }
 
 // SetConfigLoader sets the config loader (for testing).
-func (p *AWSProvider) SetConfigLoader(loader ConfigLoader) {
+func (p *Provider) SetConfigLoader(loader ConfigLoader) {
 	p.configLoader = loader
 }
 
 // SetSTSClient sets the STS client (for testing).
-func (p *AWSProvider) SetSTSClient(client STSClient) {
+func (p *Provider) SetSTSClient(client STSClient) {
 	p.stsClient = client
 }
 
 // SetEC2Client sets the EC2 client (for testing).
-func (p *AWSProvider) SetEC2Client(client EC2Client) {
+func (p *Provider) SetEC2Client(client EC2Client) {
 	p.ec2Client = client
 }
 
 // SetOrganizationsPaginator sets the organizations paginator (for testing).
-func (p *AWSProvider) SetOrganizationsPaginator(paginator OrganizationsPaginator) {
+func (p *Provider) SetOrganizationsPaginator(paginator OrganizationsPaginator) {
 	p.orgPaginator = paginator
 }
 
 // Name returns the provider name.
-func (p *AWSProvider) Name() string {
+func (p *Provider) Name() string {
 	return "aws"
 }
 
 // DisplayName returns the human-readable provider name.
-func (p *AWSProvider) DisplayName() string {
+func (p *Provider) DisplayName() string {
 	return "Amazon Web Services"
 }
 
 // IsConfigured checks if AWS credentials are available. The config is loaded at most
 // once (thread-safe via sync.Once) to avoid data races on concurrent calls.
-func (p *AWSProvider) IsConfigured() bool {
+func (p *Provider) IsConfigured() bool {
 	p.cfgOnce.Do(func() {
 		p.cfgErr = p.loadConfig()
 	})
@@ -159,7 +159,7 @@ func (p *AWSProvider) IsConfigured() bool {
 }
 
 // loadConfig loads the AWS SDK config. Called at most once via cfgOnce.
-func (p *AWSProvider) loadConfig() error {
+func (p *Provider) loadConfig() error {
 	ctx := context.Background()
 
 	var opts []func(*config.LoadOptions) error
@@ -189,7 +189,7 @@ func (p *AWSProvider) loadConfig() error {
 }
 
 // GetCredentials returns AWS credentials.
-func (p *AWSProvider) GetCredentials() (provider.Credentials, error) {
+func (p *Provider) GetCredentials() (provider.Credentials, error) {
 	if !p.IsConfigured() {
 		return nil, fmt.Errorf("AWS is not configured")
 	}
@@ -221,7 +221,7 @@ func (p *AWSProvider) GetCredentials() (provider.Credentials, error) {
 }
 
 // ValidateCredentials validates that AWS credentials are working.
-func (p *AWSProvider) ValidateCredentials(ctx context.Context) error {
+func (p *Provider) ValidateCredentials(ctx context.Context) error {
 	if !p.IsConfigured() {
 		return fmt.Errorf("AWS is not configured")
 	}
@@ -273,7 +273,7 @@ var orgListAccountsSilentErrorCodes = map[string]struct{}{
 // other mid-pagination error (throttling, network, SDK bug) is returned to
 // the caller so an incomplete list can't silently slip into the purchase
 // flow as if it were complete. See orgListAccountsSilentErrorCodes above.
-func (p *AWSProvider) appendOrgAccounts(ctx context.Context, accounts []common.Account, currentAccountID string) ([]common.Account, error) {
+func (p *Provider) appendOrgAccounts(ctx context.Context, accounts []common.Account, currentAccountID string) ([]common.Account, error) {
 	var paginator OrganizationsPaginator
 	if p.orgPaginator != nil {
 		paginator = p.orgPaginator
@@ -313,7 +313,7 @@ func (p *AWSProvider) appendOrgAccounts(ctx context.Context, accounts []common.A
 }
 
 // GetAccounts returns all accessible AWS accounts.
-func (p *AWSProvider) GetAccounts(ctx context.Context) ([]common.Account, error) {
+func (p *Provider) GetAccounts(ctx context.Context) ([]common.Account, error) {
 	if !p.IsConfigured() {
 		return nil, fmt.Errorf("AWS is not configured")
 	}
@@ -345,7 +345,7 @@ func (p *AWSProvider) GetAccounts(ctx context.Context) ([]common.Account, error)
 }
 
 // GetRegions returns all available AWS regions using EC2 DescribeRegions API.
-func (p *AWSProvider) GetRegions(ctx context.Context) ([]common.Region, error) {
+func (p *Provider) GetRegions(ctx context.Context) ([]common.Region, error) {
 	if !p.IsConfigured() {
 		return nil, fmt.Errorf("AWS is not configured")
 	}
@@ -406,7 +406,7 @@ func (p *AWSProvider) GetRegions(ctx context.Context) ([]common.Region, error) {
 // explicitly. Reading the already-set p.cfg.Region first keeps test
 // fixtures honest while still falling through to the SDK chain when no
 // caller has touched cfg.
-func (p *AWSProvider) GetDefaultRegion() string {
+func (p *Provider) GetDefaultRegion() string {
 	if p.region != "" {
 		return p.region
 	}
@@ -422,7 +422,7 @@ func (p *AWSProvider) GetDefaultRegion() string {
 // GetSupportedServices returns the list of services supported by AWS provider.
 // Savings Plans are exposed as four distinct services (one per AWS plan type)
 // so users can configure term/payment defaults per plan type via ServiceConfig.
-func (p *AWSProvider) GetSupportedServices() []common.ServiceType {
+func (p *Provider) GetSupportedServices() []common.ServiceType {
 	return []common.ServiceType{
 		common.ServiceCompute,
 		common.ServiceRelationalDB,
@@ -447,7 +447,7 @@ func (p *AWSProvider) GetSupportedServices() []common.ServiceType {
 }
 
 // GetServiceClient returns a service client for the specified service and region.
-func (p *AWSProvider) GetServiceClient(ctx context.Context, service common.ServiceType, region string) (provider.ServiceClient, error) {
+func (p *Provider) GetServiceClient(ctx context.Context, service common.ServiceType, region string) (provider.ServiceClient, error) {
 	if !p.IsConfigured() {
 		return nil, fmt.Errorf("AWS is not configured")
 	}
@@ -492,7 +492,7 @@ func (p *AWSProvider) GetServiceClient(ctx context.Context, service common.Servi
 }
 
 // GetRecommendationsClient returns a recommendations client.
-func (p *AWSProvider) GetRecommendationsClient(ctx context.Context) (provider.RecommendationsClient, error) {
+func (p *Provider) GetRecommendationsClient(ctx context.Context) (provider.RecommendationsClient, error) {
 	if !p.IsConfigured() {
 		return nil, fmt.Errorf("AWS is not configured")
 	}

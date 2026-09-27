@@ -148,12 +148,12 @@ func TestNewAWSProvider(t *testing.T) {
 }
 
 func TestAWSProvider_Name(t *testing.T) {
-	p := &AWSProvider{}
+	p := &Provider{}
 	assert.Equal(t, "aws", p.Name())
 }
 
 func TestAWSProvider_DisplayName(t *testing.T) {
-	p := &AWSProvider{}
+	p := &Provider{}
 	assert.Equal(t, "Amazon Web Services", p.DisplayName())
 }
 
@@ -167,29 +167,29 @@ func TestAWSProvider_GetDefaultRegion(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		provider       *AWSProvider
+		provider       *Provider
 		expectedRegion string
 	}{
 		{
 			name:           "No region set - returns default us-east-1",
-			provider:       &AWSProvider{},
+			provider:       &Provider{},
 			expectedRegion: "us-east-1",
 		},
 		{
 			name:           "Provider region set",
-			provider:       &AWSProvider{region: "eu-central-1"},
+			provider:       &Provider{region: "eu-central-1"},
 			expectedRegion: "eu-central-1",
 		},
 		{
 			name: "Config region set (no provider region)",
-			provider: &AWSProvider{
+			provider: &Provider{
 				cfg: aws.Config{Region: "ap-southeast-1"},
 			},
 			expectedRegion: "ap-southeast-1",
 		},
 		{
 			name: "Provider region takes precedence over config",
-			provider: &AWSProvider{
+			provider: &Provider{
 				region: "us-west-2",
 				cfg:    aws.Config{Region: "ap-southeast-1"},
 			},
@@ -218,7 +218,7 @@ func TestAWSProvider_GetDefaultRegion_NoLeakViaIsConfigured(t *testing.T) {
 	// Don't clear AWS_CONFIG_FILE here — the test still works if one exists,
 	// because our fix consults p.cfg.Region BEFORE IsConfigured.
 
-	p := &AWSProvider{
+	p := &Provider{
 		cfg: aws.Config{Region: "ap-southeast-1"},
 	}
 	got := p.GetDefaultRegion()
@@ -238,7 +238,7 @@ func clearAWSAmbientEnv(t *testing.T) {
 }
 
 func TestAWSProvider_GetSupportedServices(t *testing.T) {
-	p := &AWSProvider{}
+	p := &Provider{}
 	services := p.GetSupportedServices()
 
 	require.NotEmpty(t, services)
@@ -265,13 +265,13 @@ func TestAWSProvider_GetSupportedServices(t *testing.T) {
 func TestAWSProvider_IsConfigured(t *testing.T) {
 	// Test with various configurations
 	// Note: The actual result depends on the environment (AWS credentials may be present)
-	p := &AWSProvider{}
+	p := &Provider{}
 	// Just verify it doesn't panic and returns a boolean
 	_ = p.IsConfigured()
 }
 
 func TestAWSProvider_IsConfigured_WithProfile(t *testing.T) {
-	p := &AWSProvider{
+	p := &Provider{
 		profile: "test-profile",
 	}
 	// The result depends on whether this profile exists, but shouldn't panic
@@ -279,7 +279,7 @@ func TestAWSProvider_IsConfigured_WithProfile(t *testing.T) {
 }
 
 func TestAWSProvider_IsConfigured_WithRegion(t *testing.T) {
-	p := &AWSProvider{
+	p := &Provider{
 		region: "us-west-2",
 	}
 	// Test the region branch in IsConfigured
@@ -288,7 +288,7 @@ func TestAWSProvider_IsConfigured_WithRegion(t *testing.T) {
 
 func TestAWSProvider_GetServiceClient_UnsupportedService(t *testing.T) {
 	// Create a provider with a valid config
-	p := &AWSProvider{
+	p := &Provider{
 		cfg: aws.Config{Region: "us-east-1"},
 	}
 
@@ -300,7 +300,7 @@ func TestAWSProvider_GetServiceClient_UnsupportedService(t *testing.T) {
 
 func TestAWSProvider_GetServiceClient_AllServiceTypes(t *testing.T) {
 	// Create a provider with a valid config
-	p := &AWSProvider{
+	p := &Provider{
 		cfg: aws.Config{Region: "us-east-1"},
 	}
 
@@ -341,18 +341,18 @@ func TestAWSProvider_GetServiceClient_AllServiceTypes(t *testing.T) {
 
 func TestAWSProvider_GetRecommendationsClient(t *testing.T) {
 	// Create a provider with a valid config
-	p := &AWSProvider{
+	p := &Provider{
 		cfg: aws.Config{Region: "us-east-1"},
 	}
 
-	client, err := p.GetRecommendationsClient(nil)
+	client, err := p.GetRecommendationsClient(context.TODO())
 	require.NoError(t, err)
 	require.NotNil(t, client)
 }
 
 func TestAWSProvider_IsConfigured_WithMock(t *testing.T) {
 	t.Run("returns true when config loads successfully", func(t *testing.T) {
-		p := &AWSProvider{}
+		p := &Provider{}
 		p.SetConfigLoader(&mockConfigLoader{
 			cfg: aws.Config{Region: "us-east-1"},
 			err: nil,
@@ -362,7 +362,7 @@ func TestAWSProvider_IsConfigured_WithMock(t *testing.T) {
 	})
 
 	t.Run("returns false when config load fails", func(t *testing.T) {
-		p := &AWSProvider{}
+		p := &Provider{}
 		p.SetConfigLoader(&mockConfigLoader{
 			err: errors.New("failed to load config"),
 		})
@@ -372,7 +372,7 @@ func TestAWSProvider_IsConfigured_WithMock(t *testing.T) {
 
 func TestAWSProvider_ValidateCredentials_WithMock(t *testing.T) {
 	t.Run("success with mock STS client", func(t *testing.T) {
-		p := &AWSProvider{}
+		p := &Provider{}
 		p.SetConfigLoader(&mockConfigLoader{
 			cfg: aws.Config{Region: "us-east-1"},
 		})
@@ -391,7 +391,7 @@ func TestAWSProvider_ValidateCredentials_WithMock(t *testing.T) {
 	})
 
 	t.Run("returns error when not configured", func(t *testing.T) {
-		p := &AWSProvider{}
+		p := &Provider{}
 		p.SetConfigLoader(&mockConfigLoader{
 			err: errors.New("config error"),
 		})
@@ -402,7 +402,7 @@ func TestAWSProvider_ValidateCredentials_WithMock(t *testing.T) {
 	})
 
 	t.Run("returns error when STS call fails", func(t *testing.T) {
-		p := &AWSProvider{}
+		p := &Provider{}
 		p.SetConfigLoader(&mockConfigLoader{
 			cfg: aws.Config{Region: "us-east-1"},
 		})
@@ -420,7 +420,7 @@ func TestAWSProvider_ValidateCredentials_WithMock(t *testing.T) {
 
 func TestAWSProvider_GetAccounts_WithMock(t *testing.T) {
 	t.Run("returns current account only when no org accounts", func(t *testing.T) {
-		p := &AWSProvider{
+		p := &Provider{
 			cfg: aws.Config{Region: "us-east-1"},
 		}
 		p.SetSTSClient(&mockSTSClient{
@@ -443,7 +443,7 @@ func TestAWSProvider_GetAccounts_WithMock(t *testing.T) {
 	})
 
 	t.Run("returns current account and org accounts", func(t *testing.T) {
-		p := &AWSProvider{
+		p := &Provider{
 			cfg: aws.Config{Region: "us-east-1"},
 		}
 		p.SetSTSClient(&mockSTSClient{
@@ -477,7 +477,7 @@ func TestAWSProvider_GetAccounts_WithMock(t *testing.T) {
 	})
 
 	t.Run("returns current account when caller not in an Organization", func(t *testing.T) {
-		p := &AWSProvider{
+		p := &Provider{
 			cfg: aws.Config{Region: "us-east-1"},
 		}
 		p.SetSTSClient(&mockSTSClient{
@@ -502,7 +502,7 @@ func TestAWSProvider_GetAccounts_WithMock(t *testing.T) {
 	})
 
 	t.Run("returns current account when Organizations access is denied", func(t *testing.T) {
-		p := &AWSProvider{
+		p := &Provider{
 			cfg: aws.Config{Region: "us-east-1"},
 		}
 		p.SetSTSClient(&mockSTSClient{
@@ -523,7 +523,7 @@ func TestAWSProvider_GetAccounts_WithMock(t *testing.T) {
 	})
 
 	t.Run("propagates non-classified errors so callers don't see a silent truncation", func(t *testing.T) {
-		p := &AWSProvider{
+		p := &Provider{
 			cfg: aws.Config{Region: "us-east-1"},
 		}
 		p.SetSTSClient(&mockSTSClient{
@@ -549,7 +549,7 @@ func TestAWSProvider_GetAccounts_WithMock(t *testing.T) {
 	})
 
 	t.Run("propagates opaque non-API errors too", func(t *testing.T) {
-		p := &AWSProvider{
+		p := &Provider{
 			cfg: aws.Config{Region: "us-east-1"},
 		}
 		p.SetSTSClient(&mockSTSClient{
@@ -571,7 +571,7 @@ func TestAWSProvider_GetAccounts_WithMock(t *testing.T) {
 	})
 
 	t.Run("returns error when STS fails", func(t *testing.T) {
-		p := &AWSProvider{
+		p := &Provider{
 			cfg: aws.Config{Region: "us-east-1"},
 		}
 		p.SetSTSClient(&mockSTSClient{
@@ -588,7 +588,7 @@ func TestAWSProvider_GetAccounts_WithMock(t *testing.T) {
 
 func TestAWSProvider_GetRegions_WithMock(t *testing.T) {
 	t.Run("success with regions", func(t *testing.T) {
-		p := &AWSProvider{
+		p := &Provider{
 			cfg: aws.Config{Region: "us-east-1"},
 		}
 		optIn := "opt-in-not-required"
@@ -614,7 +614,7 @@ func TestAWSProvider_GetRegions_WithMock(t *testing.T) {
 	})
 
 	t.Run("skips regions with nil name", func(t *testing.T) {
-		p := &AWSProvider{
+		p := &Provider{
 			cfg: aws.Config{Region: "us-east-1"},
 		}
 		p.SetEC2Client(&mockEC2Client{
@@ -635,7 +635,7 @@ func TestAWSProvider_GetRegions_WithMock(t *testing.T) {
 	})
 
 	t.Run("returns error on EC2 API failure", func(t *testing.T) {
-		p := &AWSProvider{
+		p := &Provider{
 			cfg: aws.Config{Region: "us-east-1"},
 		}
 		p.SetEC2Client(&mockEC2Client{
@@ -652,28 +652,28 @@ func TestAWSProvider_GetRegions_WithMock(t *testing.T) {
 
 func TestAWSProvider_SetterMethods(t *testing.T) {
 	t.Run("SetConfigLoader", func(t *testing.T) {
-		p := &AWSProvider{}
+		p := &Provider{}
 		mockLoader := &mockConfigLoader{}
 		p.SetConfigLoader(mockLoader)
 		assert.NotNil(t, p.configLoader)
 	})
 
 	t.Run("SetSTSClient", func(t *testing.T) {
-		p := &AWSProvider{}
+		p := &Provider{}
 		mockSTS := &mockSTSClient{}
 		p.SetSTSClient(mockSTS)
 		assert.NotNil(t, p.stsClient)
 	})
 
 	t.Run("SetEC2Client", func(t *testing.T) {
-		p := &AWSProvider{}
+		p := &Provider{}
 		mockEC2 := &mockEC2Client{}
 		p.SetEC2Client(mockEC2)
 		assert.NotNil(t, p.ec2Client)
 	})
 
 	t.Run("SetOrganizationsPaginator", func(t *testing.T) {
-		p := &AWSProvider{}
+		p := &Provider{}
 		mockPaginator := &mockOrganizationsPaginator{}
 		p.SetOrganizationsPaginator(mockPaginator)
 		assert.NotNil(t, p.orgPaginator)
@@ -692,7 +692,7 @@ func (m *mockCredentialsProvider) Retrieve(ctx context.Context) (aws.Credentials
 
 func TestAWSProvider_GetCredentials_WithMock(t *testing.T) {
 	t.Run("returns error when not configured", func(t *testing.T) {
-		p := &AWSProvider{}
+		p := &Provider{}
 		p.SetConfigLoader(&mockConfigLoader{
 			err: errors.New("config error"),
 		})
@@ -702,7 +702,7 @@ func TestAWSProvider_GetCredentials_WithMock(t *testing.T) {
 	})
 
 	t.Run("success with environment credentials", func(t *testing.T) {
-		p := &AWSProvider{}
+		p := &Provider{}
 		p.SetConfigLoader(&mockConfigLoader{
 			cfg: aws.Config{
 				Region: "us-east-1",
@@ -725,7 +725,7 @@ func TestAWSProvider_GetCredentials_WithMock(t *testing.T) {
 	})
 
 	t.Run("success with shared config credentials", func(t *testing.T) {
-		p := &AWSProvider{}
+		p := &Provider{}
 		p.SetConfigLoader(&mockConfigLoader{
 			cfg: aws.Config{
 				Region: "us-east-1",
@@ -747,7 +747,7 @@ func TestAWSProvider_GetCredentials_WithMock(t *testing.T) {
 	})
 
 	t.Run("success with assume role credentials", func(t *testing.T) {
-		p := &AWSProvider{}
+		p := &Provider{}
 		p.SetConfigLoader(&mockConfigLoader{
 			cfg: aws.Config{
 				Region: "us-east-1",
@@ -769,7 +769,7 @@ func TestAWSProvider_GetCredentials_WithMock(t *testing.T) {
 	})
 
 	t.Run("returns error when credential retrieval fails", func(t *testing.T) {
-		p := &AWSProvider{}
+		p := &Provider{}
 		p.SetConfigLoader(&mockConfigLoader{
 			cfg: aws.Config{
 				Region: "us-east-1",
@@ -787,7 +787,7 @@ func TestAWSProvider_GetCredentials_WithMock(t *testing.T) {
 }
 
 func TestAWSProvider_GetRecommendationsClient_NotConfigured(t *testing.T) {
-	p := &AWSProvider{}
+	p := &Provider{}
 	p.SetConfigLoader(&mockConfigLoader{
 		err: errors.New("config error"),
 	})
@@ -798,7 +798,7 @@ func TestAWSProvider_GetRecommendationsClient_NotConfigured(t *testing.T) {
 }
 
 func TestAWSProvider_GetServiceClient_NotConfigured(t *testing.T) {
-	p := &AWSProvider{}
+	p := &Provider{}
 	p.SetConfigLoader(&mockConfigLoader{
 		err: errors.New("config error"),
 	})
@@ -884,18 +884,6 @@ func TestRealOrganizationsPaginator_NextPage(t *testing.T) {
 	})
 }
 
-// mockOrganizationsClient for testing realOrganizationsPaginator.
-type mockOrganizationsClient struct {
-	listAccountsFunc func(ctx context.Context, params *organizations.ListAccountsInput, optFns ...func(*organizations.Options)) (*organizations.ListAccountsOutput, error)
-}
-
-func (m *mockOrganizationsClient) ListAccounts(ctx context.Context, params *organizations.ListAccountsInput, optFns ...func(*organizations.Options)) (*organizations.ListAccountsOutput, error) {
-	if m.listAccountsFunc != nil {
-		return m.listAccountsFunc(ctx, params, optFns...)
-	}
-	return nil, errors.New("not implemented")
-}
-
 func TestProviderRegistration(t *testing.T) {
 	t.Run("AWS provider is registered in global registry", func(t *testing.T) {
 		// The init() function should have registered the AWS provider
@@ -926,8 +914,8 @@ func TestProviderRegistration(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, p)
 
-		awsProvider, ok := p.(*AWSProvider)
-		require.True(t, ok, "provider should be of type *AWSProvider")
+		awsProvider, ok := p.(*Provider)
+		require.True(t, ok, "provider should be of type *Provider")
 		assert.Equal(t, "test-profile", awsProvider.profile)
 		assert.Equal(t, "us-west-2", awsProvider.region)
 	})
@@ -964,7 +952,7 @@ func TestGetCredentials_SourceMapping(t *testing.T) {
 					}, nil
 				}),
 			}
-			p := &AWSProvider{cfg: cfg}
+			p := &Provider{cfg: cfg}
 			// Bypass IsConfigured's loadConfig path — set cfgErr=nil so
 			// IsConfigured returns true without touching the AWS SDK config.
 			p.cfgOnce.Do(func() {})
@@ -975,7 +963,7 @@ func TestGetCredentials_SourceMapping(t *testing.T) {
 			// provider returns *BaseCredentials, so type-assert to inspect
 			// the concrete CredentialSource enum directly.
 			base, ok := creds.(*provider.BaseCredentials)
-			require.True(t, ok, "AWSProvider.GetCredentials should return *provider.BaseCredentials")
+			require.True(t, ok, "Provider.GetCredentials should return *provider.BaseCredentials")
 			assert.Equal(t, tt.wantSource, base.Source)
 		})
 	}

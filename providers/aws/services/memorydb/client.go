@@ -18,8 +18,8 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/tagging"
 )
 
-// MemoryDBAPI defines the interface for MemoryDB operations (enables mocking).
-type MemoryDBAPI interface {
+// API defines the interface for MemoryDB operations (enables mocking).
+type API interface {
 	PurchaseReservedNodesOffering(ctx context.Context, params *memorydb.PurchaseReservedNodesOfferingInput, optFns ...func(*memorydb.Options)) (*memorydb.PurchaseReservedNodesOfferingOutput, error)
 	DescribeReservedNodesOfferings(ctx context.Context, params *memorydb.DescribeReservedNodesOfferingsInput, optFns ...func(*memorydb.Options)) (*memorydb.DescribeReservedNodesOfferingsOutput, error)
 	DescribeReservedNodes(ctx context.Context, params *memorydb.DescribeReservedNodesInput, optFns ...func(*memorydb.Options)) (*memorydb.DescribeReservedNodesOutput, error)
@@ -27,7 +27,7 @@ type MemoryDBAPI interface {
 
 // Client handles AWS MemoryDB Reserved Nodes.
 type Client struct {
-	client MemoryDBAPI
+	client API
 	region string
 }
 
@@ -42,7 +42,7 @@ func NewClient(cfg aws.Config) *Client {
 }
 
 // SetMemoryDBAPI sets a custom MemoryDB API client (for testing).
-func (c *Client) SetMemoryDBAPI(api MemoryDBAPI) {
+func (c *Client) SetMemoryDBAPI(api API) {
 	c.client = api
 }
 
@@ -190,7 +190,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 // node with the given ReservationId (issue #641), so a re-driven purchase can
 // short-circuit instead of buying a second node. Retired/expired nodes are
 // excluded (same state filter as GetExistingCommitments).
-func (c *Client) findReservationByID(ctx context.Context, reservationID string) (string, bool, error) {
+func (c *Client) findReservationByID(ctx context.Context, reservationID string) (reservedID string, found bool, err error) {
 	response, err := c.client.DescribeReservedNodes(ctx, &memorydb.DescribeReservedNodesInput{
 		ReservationId: aws.String(reservationID),
 	})
@@ -220,7 +220,7 @@ func (c *Client) findReservationByID(ctx context.Context, reservationID string) 
 // reports (existingID, true, nil) if a reserved node already exists under
 // reservationID, ("", false, nil) for a first-time purchase, or a fail-loud
 // error on lookup failure. With an empty token it is a no-op.
-func (c *Client) idempotencyGuard(ctx context.Context, token, reservationID string) (string, bool, error) {
+func (c *Client) idempotencyGuard(ctx context.Context, token, reservationID string) (existingID string, found bool, err error) {
 	if token == "" {
 		return "", false, nil
 	}
@@ -353,18 +353,22 @@ func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation, 
 //
 // Pulled out of findOfferingID to keep that function under the cyclomatic limit.
 func scanMemoryDBOfferingPage(offerings []types.ReservedNodesOffering, wantOfferingType string, rec common.Recommendation, tag string, page int, t0 time.Time) (string, error) {
-	for _, o := range offerings {
-		got := aws.ToString(o.OfferingType)
-		if got != wantOfferingType {
-			return "", fmt.Errorf("MemoryDB offering %s has payment option %q, want %q (rec: %s %s) -- API filter mismatch",
-				aws.ToString(o.ReservedNodesOfferingId), got, wantOfferingType,
-				rec.ResourceType, rec.PaymentOption)
-		}
-		log.Printf("purchase[%s]: MemoryDB findOfferingID found match on page %d after %s total",
-			tag, page, time.Since(t0))
-		return aws.ToString(o.ReservedNodesOfferingId), nil
+	if len(offerings) == 0 {
+		return "", nil
 	}
-	return "", nil
+	// The DescribeReservedNodesOfferings call already filters server-side by
+	// offering type, so only the first result is examined; a mismatch here
+	// indicates an AWS API-side anomaly worth a hard error, not a scan target.
+	o := &offerings[0]
+	got := aws.ToString(o.OfferingType)
+	if got != wantOfferingType {
+		return "", fmt.Errorf("MemoryDB offering %s has payment option %q, want %q (rec: %s %s) -- API filter mismatch",
+			aws.ToString(o.ReservedNodesOfferingId), got, wantOfferingType,
+			rec.ResourceType, rec.PaymentOption)
+	}
+	log.Printf("purchase[%s]: MemoryDB findOfferingID found match on page %d after %s total",
+		tag, page, time.Since(t0))
+	return aws.ToString(o.ReservedNodesOfferingId), nil
 }
 
 // isLastMemoryDBPage reports whether a NextToken indicates the terminal page.

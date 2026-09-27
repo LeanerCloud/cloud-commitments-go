@@ -123,9 +123,9 @@ func filterByAccounts(recs []common.Recommendation, accounts []string) []common.
 	}
 
 	filtered := make([]common.Recommendation, 0, len(recs))
-	for _, rec := range recs {
-		if accountMap[rec.Account] {
-			filtered = append(filtered, rec)
+	for i := range recs {
+		if accountMap[recs[i].Account] {
+			filtered = append(filtered, recs[i])
 		}
 	}
 
@@ -254,9 +254,9 @@ func filterByIncludedRegions(recs []common.Recommendation, regions []string) []c
 	regionMap := regionSet(regions)
 
 	filtered := make([]common.Recommendation, 0, len(recs))
-	for _, rec := range recs {
-		if IsRegionAgnostic(rec) || regionMap[EffectiveRegion(rec)] {
-			filtered = append(filtered, rec)
+	for i := range recs {
+		if IsRegionAgnostic(recs[i]) || regionMap[EffectiveRegion(recs[i])] {
+			filtered = append(filtered, recs[i])
 		}
 	}
 
@@ -271,9 +271,9 @@ func filterByExcludedRegions(recs []common.Recommendation, regions []string) []c
 	regionMap := regionSet(regions)
 
 	filtered := make([]common.Recommendation, 0, len(recs))
-	for _, rec := range recs {
-		if IsRegionAgnostic(rec) || !regionMap[EffectiveRegion(rec)] {
-			filtered = append(filtered, rec)
+	for i := range recs {
+		if IsRegionAgnostic(recs[i]) || !regionMap[EffectiveRegion(recs[i])] {
+			filtered = append(filtered, recs[i])
 		}
 	}
 

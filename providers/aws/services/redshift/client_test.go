@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
-// MockRedshiftClient implements RedshiftAPI for testing.
+// MockRedshiftClient implements API for testing.
 type MockRedshiftClient struct {
 	mock.Mock
 }

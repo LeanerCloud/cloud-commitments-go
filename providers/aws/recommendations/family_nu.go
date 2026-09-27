@@ -291,10 +291,8 @@ func sizeRDSFamilyRecs(
 // returning the surviving recs (newCount > 0), the cumulative
 // post-scaling NU across them, and the number of recs dropped because
 // floor(count * scale) == 0.
-func scaleFamilyRecs(recs []common.Recommendation, indices []int, scale float64) ([]common.Recommendation, float64, int) {
-	sized := make([]common.Recommendation, 0, len(indices))
-	totalNewNU := 0.0
-	zeroDrops := 0
+func scaleFamilyRecs(recs []common.Recommendation, indices []int, scale float64) (sized []common.Recommendation, totalNewNU float64, zeroDrops int) {
+	sized = make([]common.Recommendation, 0, len(indices))
 	for _, i := range indices {
 		rec, kept := scaleRDSRecInFamily(recs[i], scale)
 		if !kept {

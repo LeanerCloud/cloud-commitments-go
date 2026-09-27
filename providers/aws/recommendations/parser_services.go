@@ -203,7 +203,7 @@ func (c *Client) parseOpenSearchDetails(_ context.Context, rec *common.Recommend
 // parseRedshiftDetails extracts Redshift-specific details.
 func (c *Client) parseRedshiftDetails(_ context.Context, rec *common.Recommendation, details *types.ReservationPurchaseRecommendationDetail) error {
 	if details.InstanceDetails == nil || details.InstanceDetails.RedshiftInstanceDetails == nil {
-		return fmt.Errorf("Redshift instance details not found")
+		return fmt.Errorf("no Redshift instance details found")
 	}
 
 	rsDetails := details.InstanceDetails.RedshiftInstanceDetails

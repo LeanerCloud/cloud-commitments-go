@@ -172,8 +172,9 @@ func (c *Client) parseSavingsPlansRecommendations(
 ) []common.Recommendation {
 	var recommendations []common.Recommendation
 
-	for _, detail := range spRec.SavingsPlansPurchaseRecommendationDetails {
-		rec, err := c.parseSavingsPlanDetail(&detail, params, planType)
+	for i := range spRec.SavingsPlansPurchaseRecommendationDetails {
+		detail := &spRec.SavingsPlansPurchaseRecommendationDetails[i]
+		rec, err := c.parseSavingsPlanDetail(detail, params, planType)
 		if err != nil {
 			// present-but-unparseable money field: drop this recommendation
 			// rather than forwarding a corrupt $0 to the scheduler/frontend.

@@ -17,7 +17,7 @@ import (
 )
 
 // activeSPListAPI is the minimal interface for listing Savings Plans.
-// Only DescribeSavingsPlans is needed; the full SavingsPlansAPI from
+// Only DescribeSavingsPlans is needed; the full API from
 // providers/aws/services/savingsplans includes purchase and offering methods
 // the read-only lister does not require (interface-segregation principle).
 // Tests inject a hermetic fake implementing this narrow interface.
@@ -121,8 +121,8 @@ func (a *spListerAdapter) ListActiveSPs(ctx context.Context) ([]ActiveSP, error)
 // global and always kept (see ListActiveSPs doc). Extracted to keep
 // ListActiveSPs under the cyclomatic complexity limit.
 func appendRegionScopedSPs(sps []ActiveSP, page []sptypes.SavingsPlan, region string) ([]ActiveSP, error) {
-	for _, sp := range page {
-		entry, err := mapActiveSP(sp)
+	for i := range page {
+		entry, err := mapActiveSP(page[i])
 		if err != nil {
 			return nil, err
 		}

@@ -143,11 +143,12 @@ type tupleKey struct{ service, region, resourceType string }
 
 // groupRecsByTuple builds an ordered unique list of tuples and an index map
 // from each tuple to the recommendation indices that share it.
-func groupRecsByTuple(recs []common.Recommendation) ([]tupleKey, map[tupleKey][]int) {
-	order := make([]tupleKey, 0)
+func groupRecsByTuple(recs []common.Recommendation) (order []tupleKey, recsByTuple map[tupleKey][]int) {
+	order = make([]tupleKey, 0)
 	seen := make(map[tupleKey]struct{})
-	recsByTuple := make(map[tupleKey][]int)
-	for i, r := range recs {
+	recsByTuple = make(map[tupleKey][]int)
+	for i := range recs {
+		r := &recs[i]
 		sf := getServiceStringForCostExplorer(r.Service)
 		if sf == "" || r.Region == "" || r.ResourceType == "" {
 			continue

@@ -96,7 +96,8 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 			return nil, fmt.Errorf("failed to describe reserved instances: %w", err)
 		}
 
-		for _, ri := range response.ReservedInstances {
+		for i := range response.ReservedInstances {
+			ri := &response.ReservedInstances[i]
 			state := aws.ToString(ri.State)
 			if state != "active" && state != "payment-pending" {
 				continue
@@ -239,17 +240,18 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 // name filter, so it pages through all reservations and matches client-side.
 // Retired/expired reservations are excluded (same state filter as
 // GetExistingCommitments).
-func (c *Client) findReservationByName(ctx context.Context, name string) (string, bool, error) {
+func (c *Client) findReservationByName(ctx context.Context, name string) (reservationID string, found bool, err error) {
 	var nextToken *string
 	for {
-		response, err := c.client.DescribeReservedInstances(ctx, &opensearch.DescribeReservedInstancesInput{
+		response, descErr := c.client.DescribeReservedInstances(ctx, &opensearch.DescribeReservedInstancesInput{
 			NextToken:  nextToken,
 			MaxResults: 100,
 		})
-		if err != nil {
-			return "", false, fmt.Errorf("failed to describe reserved instances for idempotency check: %w", err)
+		if descErr != nil {
+			return "", false, fmt.Errorf("failed to describe reserved instances for idempotency check: %w", descErr)
 		}
-		for _, ri := range response.ReservedInstances {
+		for i := range response.ReservedInstances {
+			ri := &response.ReservedInstances[i]
 			if aws.ToString(ri.ReservationName) != name {
 				continue
 			}
@@ -273,7 +275,7 @@ func (c *Client) findReservationByName(ctx context.Context, name string) (string
 // reports (existingID, true, nil) if a reservation with reservationName already
 // exists, ("", false, nil) for a first-time purchase, or a fail-loud error on
 // lookup failure. With an empty token it is a no-op.
-func (c *Client) idempotencyGuard(ctx context.Context, token, reservationName string) (string, bool, error) {
+func (c *Client) idempotencyGuard(ctx context.Context, token, reservationName string) (existingID string, found bool, err error) {
 	if token == "" {
 		return "", false, nil
 	}

@@ -263,7 +263,7 @@ var defaultDiscoveryPaymentOptions = []string{"all-upfront", "partial-upfront", 
 // returns (nil, ctx.Err()) so the caller exits the sweep immediately. Per-combo
 // errors (throttle, 5xx) return (nil, err) with ctx.Err() == nil, signaling
 // skip-and-continue tolerance in the outer loop.
-func (c *Client) fetchSingleComboRecs(ctx context.Context, service common.ServiceType, term string, payment string) ([]common.Recommendation, error) {
+func (c *Client) fetchSingleComboRecs(ctx context.Context, service common.ServiceType, term, payment string) ([]common.Recommendation, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}

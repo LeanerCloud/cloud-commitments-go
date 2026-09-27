@@ -71,7 +71,7 @@ func NewFromAWSConfig(ctx context.Context, region, accountID string) (pkgladder.
 
 	// sdksp.Client satisfies activeSPListAPI (DescribeSavingsPlans), which is the
 	// narrow interface spListerAdapter expects (interface-segregation: we do not
-	// need the offering and purchase methods the full SavingsPlansAPI exposes).
+	// need the offering and purchase methods the full API exposes).
 	spSDKClient := sdksp.NewFromConfig(awsCfg)
 
 	cfg := Config{

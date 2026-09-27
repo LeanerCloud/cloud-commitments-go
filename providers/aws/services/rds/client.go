@@ -20,8 +20,8 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/tagging"
 )
 
-// RDSAPI defines the interface for RDS operations (enables mocking).
-type RDSAPI interface {
+// API defines the interface for RDS operations (enables mocking).
+type API interface {
 	DescribeReservedDBInstancesOfferings(ctx context.Context, params *rds.DescribeReservedDBInstancesOfferingsInput, optFns ...func(*rds.Options)) (*rds.DescribeReservedDBInstancesOfferingsOutput, error)
 	PurchaseReservedDBInstancesOffering(ctx context.Context, params *rds.PurchaseReservedDBInstancesOfferingInput, optFns ...func(*rds.Options)) (*rds.PurchaseReservedDBInstancesOfferingOutput, error)
 	DescribeReservedDBInstances(ctx context.Context, params *rds.DescribeReservedDBInstancesInput, optFns ...func(*rds.Options)) (*rds.DescribeReservedDBInstancesOutput, error)
@@ -29,7 +29,7 @@ type RDSAPI interface {
 
 // Client handles AWS RDS Reserved Instances.
 type Client struct {
-	client RDSAPI
+	client API
 	region string
 }
 
@@ -44,7 +44,7 @@ func NewClient(cfg aws.Config) *Client {
 }
 
 // SetRDSAPI sets a custom RDS API client (for testing).
-func (c *Client) SetRDSAPI(api RDSAPI) {
+func (c *Client) SetRDSAPI(api API) {
 	c.client = api
 }
 
@@ -79,7 +79,8 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 			return nil, fmt.Errorf("failed to describe reserved DB instances: %w", err)
 		}
 
-		for _, instance := range response.ReservedDBInstances {
+		for i := range response.ReservedDBInstances {
+			instance := &response.ReservedDBInstances[i]
 			state := aws.ToString(instance.State)
 			if state != "active" && state != "payment-pending" {
 				continue
@@ -221,7 +222,7 @@ func (c *Client) deriveReservationID(rec common.Recommendation, opts common.Purc
 // reports (existingID, true, nil) if a reservation already exists under
 // reservationID, ("", false, nil) for a first-time purchase, or a fail-loud
 // error on lookup failure. With an empty token it is a no-op.
-func (c *Client) idempotencyGuard(ctx context.Context, token, reservationID string) (string, bool, error) {
+func (c *Client) idempotencyGuard(ctx context.Context, token, reservationID string) (existingID string, found bool, err error) {
 	if token == "" {
 		return "", false, nil
 	}
@@ -263,7 +264,7 @@ func (c *Client) recoverAlreadyExists(ctx context.Context, token, reservationID 
 // purchase can short-circuit. Retired/expired reservations are excluded (same
 // state filter as GetExistingCommitments) so a returned reservation does not
 // suppress a legitimate fresh purchase.
-func (c *Client) findReservationByID(ctx context.Context, reservationID string) (string, bool, error) {
+func (c *Client) findReservationByID(ctx context.Context, reservationID string) (reservedID string, found bool, err error) {
 	response, err := c.client.DescribeReservedDBInstances(ctx, &rds.DescribeReservedDBInstancesInput{
 		ReservedDBInstanceId: aws.String(reservationID),
 	})
@@ -277,7 +278,8 @@ func (c *Client) findReservationByID(ctx context.Context, reservationID string) 
 		}
 		return "", false, fmt.Errorf("failed to describe reserved DB instances for idempotency check: %w", err)
 	}
-	for _, ri := range response.ReservedDBInstances {
+	for i := range response.ReservedDBInstances {
+		ri := &response.ReservedDBInstances[i]
 		state := aws.ToString(ri.State)
 		if state != "active" && state != "payment-pending" {
 			continue
@@ -336,7 +338,7 @@ type rdsOfferingPageResult struct {
 // fetchRDSOfferingPage calls DescribeReservedDBInstancesOfferings for one page and
 // scans the results. It returns a match ID when found, a non-nil marker when more
 // pages remain, or an error on API/offering-validation failure.
-func (c *Client) fetchRDSOfferingPage(ctx context.Context, baseInput *rds.DescribeReservedDBInstancesOfferingsInput, marker *string, rec common.Recommendation, offeringType string, tag string, page int, t0 time.Time) (rdsOfferingPageResult, error) {
+func (c *Client) fetchRDSOfferingPage(ctx context.Context, baseInput *rds.DescribeReservedDBInstancesOfferingsInput, marker *string, rec common.Recommendation, offeringType, tag string, page int, t0 time.Time) (rdsOfferingPageResult, error) {
 	input := *baseInput
 	input.Marker = marker
 
@@ -368,7 +370,7 @@ func (c *Client) fetchRDSOfferingPage(ctx context.Context, baseInput *rds.Descri
 // paginateRDSOfferings walks DescribeReservedDBInstancesOfferings pages and returns
 // the first matching offering ID. It caps at maxOfferingPages to prevent Lambda
 // timeout exhaustion (issue #688).
-func (c *Client) paginateRDSOfferings(ctx context.Context, rec common.Recommendation, details *common.DatabaseDetails, offeringType string, execID string) (string, error) {
+func (c *Client) paginateRDSOfferings(ctx context.Context, rec common.Recommendation, details *common.DatabaseDetails, offeringType, execID string) (string, error) {
 	multiAZ := details.AZConfig == "multi-az"
 	normalizedEngine, err := c.normalizeEngineName(details.Engine)
 	if err != nil {
@@ -425,16 +427,20 @@ func (c *Client) paginateRDSOfferings(ctx context.Context, rec common.Recommenda
 // scanRDSOfferingPage finds a matching offering in a single page of results.
 // Returns ("", nil) when no match is found on the page so the caller can continue paginating.
 func scanRDSOfferingPage(offerings []types.ReservedDBInstancesOffering, rec common.Recommendation, wantType string) (string, error) {
-	for _, o := range offerings {
-		got := aws.ToString(o.OfferingType)
-		if got != wantType {
-			return "", fmt.Errorf("RDS offering %s has payment option %q, want %q (rec: %s %s) -- API filter mismatch",
-				aws.ToString(o.ReservedDBInstancesOfferingId), got, wantType,
-				rec.ResourceType, rec.PaymentOption)
-		}
-		return aws.ToString(o.ReservedDBInstancesOfferingId), nil
+	if len(offerings) == 0 {
+		return "", nil
 	}
-	return "", nil
+	// The DescribeReservedDBInstancesOfferings call already filters server-side
+	// by offering type, so only the first result is examined; a mismatch here
+	// indicates an AWS API-side anomaly worth a hard error, not a scan target.
+	o := &offerings[0]
+	got := aws.ToString(o.OfferingType)
+	if got != wantType {
+		return "", fmt.Errorf("RDS offering %s has payment option %q, want %q (rec: %s %s) -- API filter mismatch",
+			aws.ToString(o.ReservedDBInstancesOfferingId), got, wantType,
+			rec.ResourceType, rec.PaymentOption)
+	}
+	return aws.ToString(o.ReservedDBInstancesOfferingId), nil
 }
 
 // ValidateOffering checks if an offering exists without purchasing.

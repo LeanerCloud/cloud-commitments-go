@@ -16,8 +16,8 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
 )
 
-// SavingsPlansAPI defines the interface for Savings Plans operations (enables mocking).
-type SavingsPlansAPI interface {
+// API defines the interface for Savings Plans operations (enables mocking).
+type API interface {
 	CreateSavingsPlan(ctx context.Context, params *savingsplans.CreateSavingsPlanInput, optFns ...func(*savingsplans.Options)) (*savingsplans.CreateSavingsPlanOutput, error)
 	DescribeSavingsPlans(ctx context.Context, params *savingsplans.DescribeSavingsPlansInput, optFns ...func(*savingsplans.Options)) (*savingsplans.DescribeSavingsPlansOutput, error)
 	DescribeSavingsPlansOfferings(ctx context.Context, params *savingsplans.DescribeSavingsPlansOfferingsInput, optFns ...func(*savingsplans.Options)) (*savingsplans.DescribeSavingsPlansOfferingsOutput, error)
@@ -30,7 +30,7 @@ type SavingsPlansAPI interface {
 // the recommendations and existing commitments it returns with the matching
 // per-plan-type ServiceType slug.
 type Client struct {
-	client   SavingsPlansAPI
+	client   API
 	region   string
 	planType types.SavingsPlanType
 }
@@ -49,7 +49,7 @@ func NewClient(cfg aws.Config, planType types.SavingsPlanType) *Client {
 }
 
 // SetSavingsPlansAPI sets a custom Savings Plans API client (for testing).
-func (c *Client) SetSavingsPlansAPI(api SavingsPlansAPI) {
+func (c *Client) SetSavingsPlansAPI(api API) {
 	c.client = api
 }
 
@@ -153,8 +153,8 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 			return nil, fmt.Errorf("failed to describe Savings Plans: %w", err)
 		}
 
-		for _, sp := range result.SavingsPlans {
-			if commitment, ok := c.toCommitment(sp, service); ok {
+		for i := range result.SavingsPlans {
+			if commitment, ok := c.toCommitment(result.SavingsPlans[i], service); ok {
 				commitments = append(commitments, commitment)
 			}
 		}
@@ -392,8 +392,8 @@ func (c *Client) collectSPOfferings(ctx context.Context, input *savingsplans.Des
 		}
 		log.Printf("purchase[SavingsPlans]: DescribeSavingsPlansOfferings page %d returned %d results in %s",
 			page, len(result.SearchResults), time.Since(t0))
-		for _, o := range result.SearchResults {
-			if off, ok := decodeOfferingProps(o); ok {
+		for i := range result.SearchResults {
+			if off, ok := decodeOfferingProps(result.SearchResults[i]); ok {
 				offerings = append(offerings, off)
 			}
 		}
