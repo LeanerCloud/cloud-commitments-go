@@ -9,7 +9,7 @@
 // is true regardless of whether someNotFound.ID == "x". To assert on specific
 // fields, use errors.As to extract the concrete value and inspect it directly,
 // or one of the Is*Error helpers below (which also use errors.As).
-package errors
+package cudlyerrors
 
 import (
 	"errors"

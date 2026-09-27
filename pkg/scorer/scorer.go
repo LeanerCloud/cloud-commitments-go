@@ -42,14 +42,15 @@ func Score(recs []common.Recommendation, cfg Config) ScoredResult {
 
 	enabledSet := buildServiceSet(cfg.EnabledServices)
 
-	for _, rec := range recs {
-		if reason := filterReason(rec, cfg, enabledSet); reason != "" {
+	for i := range recs {
+		rec := &recs[i]
+		if reason := filterReason(*rec, cfg, enabledSet); reason != "" {
 			result.Filtered = append(result.Filtered, FilteredRecommendation{
-				Recommendation: rec,
+				Recommendation: *rec,
 				FilterReason:   reason,
 			})
 		} else {
-			result.Passed = append(result.Passed, rec)
+			result.Passed = append(result.Passed, *rec)
 		}
 	}
 

@@ -479,7 +479,9 @@ func buildResult(in *AllocationInput, lowWater, target, existingTotal, gap *big.
 	}
 	allocs, skipHolds := dropSubMinimumAllocations(allocs, in.DataSources)
 	allocs, reshapes, truncHolds := truncateToMaxActions(allocs, reshapes, in.Config.MaxActionsPerRun, in.LayerStates, in.DataSources)
-	holds := append(maintHolds, skipHolds...)
+	holds := make([]PlannedAction, 0, len(maintHolds)+len(skipHolds)+len(truncHolds))
+	holds = append(holds, maintHolds...)
+	holds = append(holds, skipHolds...)
 	holds = append(holds, truncHolds...)
 	return &AllocateResult{
 		Allocations: allocs,
@@ -530,7 +532,7 @@ func truncateToMaxActions(
 	maxActions int,
 	layerStates map[LayerType]LayerState,
 	dataSources []string,
-) ([]Allocation, []PlannedAction, []PlannedAction) {
+) (allocsOut []Allocation, reshapesOut, holdsOut []PlannedAction) {
 	if len(allocs)+len(reshapes) <= maxActions {
 		return allocs, reshapes, nil
 	}
@@ -558,7 +560,7 @@ func truncateToMaxActions(
 // truncateReshapes keeps the most urgent (lowest utilization) reshapes up to
 // maxActions, emitting an ActionHold for each dropped one. Split from
 // truncateToMaxActions to keep cyclomatic complexity within the project limit.
-func truncateReshapes(reshapes []PlannedAction, maxActions int, layerStates map[LayerType]LayerState, dataSources []string) ([]PlannedAction, []PlannedAction) {
+func truncateReshapes(reshapes []PlannedAction, maxActions int, layerStates map[LayerType]LayerState, dataSources []string) (kept, holds []PlannedAction) {
 	sorted := make([]PlannedAction, len(reshapes))
 	copy(sorted, reshapes)
 	slices.SortStableFunc(sorted, func(a, b PlannedAction) int {
@@ -578,7 +580,7 @@ func truncateReshapes(reshapes []PlannedAction, maxActions int, layerStates map[
 		}
 		return 0
 	})
-	var holds []PlannedAction
+	holds = make([]PlannedAction, 0, len(sorted)-maxActions)
 	for _, r := range sorted[maxActions:] {
 		holds = append(holds, PlannedAction{
 			Action:      ActionHold,
@@ -611,7 +613,7 @@ func truncatePurchases(allocs []Allocation, purchaseCap, maxActions int, dataSou
 		}
 		return 0
 	})
-	var holds []PlannedAction
+	holds := make([]PlannedAction, 0, len(sorted)-purchaseCap)
 	for _, a := range sorted[purchaseCap:] {
 		holds = append(holds, PlannedAction{
 			Action: ActionHold,

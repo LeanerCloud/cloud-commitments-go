@@ -47,10 +47,7 @@ func Load(path string, flags *pflag.FlagSet) (Config, error) {
 	cfg := defaults()
 
 	// --- Layer 2: YAML file ---
-	filePath, explicit, err := resolveFilePath(path)
-	if err != nil {
-		return Config{}, err
-	}
+	filePath, explicit := resolveFilePath(path)
 	if filePath != "" {
 		if err := applyYAML(&cfg, filePath, explicit); err != nil {
 			return Config{}, err
@@ -76,15 +73,15 @@ func Load(path string, flags *pflag.FlagSet) (Config, error) {
 }
 
 // resolveFilePath determines which config file to load.
-// Returns (path, explicit, error). explicit=true means missing file is an error.
-func resolveFilePath(argPath string) (string, bool, error) {
+// Returns (path, explicit). explicit=true means missing file is an error.
+func resolveFilePath(argPath string) (path string, explicit bool) {
 	if argPath != "" {
-		return argPath, true, nil
+		return argPath, true
 	}
 	if env := os.Getenv("CUDLY_CONFIG"); env != "" {
-		return env, true, nil
+		return env, true
 	}
-	return "./cudly.yaml", false, nil
+	return "./cudly.yaml", false
 }
 
 // applyYAML reads the YAML file at path and merges it into cfg.

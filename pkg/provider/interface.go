@@ -72,6 +72,8 @@ type Credentials interface {
 }
 
 // ProviderConfig represents configuration for a provider.
+//
+//nolint:revive // exported far beyond this repo (consumer-mcp references provider.ProviderConfig 100+ times); renaming to Config would break every consumer
 type ProviderConfig struct {
 	Name string
 

@@ -4,13 +4,11 @@ package provider
 import (
 	"context"
 	"fmt"
-	"sync"
 )
 
 // CredentialDetector detects available cloud credentials.
 type CredentialDetector struct {
 	providers []Provider
-	mu        sync.RWMutex
 }
 
 // NewCredentialDetector creates a new credential detector.

@@ -16,9 +16,9 @@ import (
 
 // mockExchangeStore implements RIExchangeStore for testing.
 type mockExchangeStore struct {
-	savedRecords   []*ExchangeRecord
+	savedRecords   []*Record
 	cancelledCount int64
-	staleRecords   []ExchangeRecord
+	staleRecords   []Record
 	dailySpend     string
 	dailySpendErr  error
 	// cancelByOriginLast captures the origin argument of the last
@@ -27,10 +27,10 @@ type mockExchangeStore struct {
 	// saveErrFor, when non-nil, is called for each SaveRIExchangeRecord call.
 	// Returning a non-nil error simulates a DB write failure for that record.
 	// Use this to inject ledger-write failures without affecting other saves.
-	saveErrFor func(record *ExchangeRecord) error
+	saveErrFor func(record *Record) error
 }
 
-func (m *mockExchangeStore) SaveRIExchangeRecord(_ context.Context, record *ExchangeRecord) error {
+func (m *mockExchangeStore) SaveRIExchangeRecord(_ context.Context, record *Record) error {
 	if m.saveErrFor != nil {
 		if err := m.saveErrFor(record); err != nil {
 			return err
@@ -52,7 +52,7 @@ func (m *mockExchangeStore) CancelPendingExchangesByOrigin(_ context.Context, or
 	return m.cancelledCount, nil
 }
 
-func (m *mockExchangeStore) GetStaleProcessingExchanges(_ context.Context, _ time.Duration) ([]ExchangeRecord, error) {
+func (m *mockExchangeStore) GetStaleProcessingExchanges(_ context.Context, _ time.Duration) ([]Record, error) {
 	return m.staleRecords, nil
 }
 
@@ -78,7 +78,7 @@ type testifyExchangeStore struct {
 	mock.Mock
 }
 
-func (m *testifyExchangeStore) SaveRIExchangeRecord(ctx context.Context, record *ExchangeRecord) error {
+func (m *testifyExchangeStore) SaveRIExchangeRecord(ctx context.Context, record *Record) error {
 	args := m.Called(ctx, record)
 	return args.Error(0)
 }
@@ -93,12 +93,12 @@ func (m *testifyExchangeStore) CancelPendingExchangesByOrigin(ctx context.Contex
 	return args.Get(0).(int64), args.Error(1)
 }
 
-func (m *testifyExchangeStore) GetStaleProcessingExchanges(ctx context.Context, olderThan time.Duration) ([]ExchangeRecord, error) {
+func (m *testifyExchangeStore) GetStaleProcessingExchanges(ctx context.Context, olderThan time.Duration) ([]Record, error) {
 	args := m.Called(ctx, olderThan)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).([]ExchangeRecord), args.Error(1)
+	return args.Get(0).([]Record), args.Error(1)
 }
 
 func (m *testifyExchangeStore) GetRIExchangeDailySpend(ctx context.Context, date time.Time) (string, error) {
@@ -116,9 +116,9 @@ func (m *testifyExchangeStore) FailRIExchange(ctx context.Context, id string, er
 	return args.Error(0)
 }
 
-// mockExchangeClient implements ExchangeClientInterface for testing.
+// mockExchangeClient implements ClientInterface for testing.
 type mockExchangeClient struct {
-	quoteResult   *ExchangeQuoteSummary
+	quoteResult   *QuoteSummary
 	quoteErr      error
 	executeResult string
 	executeErr    error
@@ -129,14 +129,14 @@ type mockExchangeClient struct {
 	// executeQuoteResult, when non-nil, is returned as the quote from Execute
 	// instead of quoteResult. Use this to simulate a fresh quote whose amount
 	// differs from the pre-execution GetQuote result (H3 test).
-	executeQuoteResult *ExchangeQuoteSummary
+	executeQuoteResult *QuoteSummary
 }
 
-func (m *mockExchangeClient) GetQuote(_ context.Context, _ ExchangeQuoteRequest) (*ExchangeQuoteSummary, error) {
+func (m *mockExchangeClient) GetQuote(_ context.Context, _ ExchangeQuoteRequest) (*QuoteSummary, error) {
 	return m.quoteResult, m.quoteErr
 }
 
-func (m *mockExchangeClient) Execute(_ context.Context, req ExchangeExecuteRequest) (string, *ExchangeQuoteSummary, error) {
+func (m *mockExchangeClient) Execute(_ context.Context, req ExchangeExecuteRequest) (string, *QuoteSummary, error) {
 	m.executeCalls++
 	m.executeRequests = append(m.executeRequests, req)
 	q := m.quoteResult
@@ -146,9 +146,9 @@ func (m *mockExchangeClient) Execute(_ context.Context, req ExchangeExecuteReque
 	return m.executeResult, q, m.executeErr
 }
 
-func defaultQuote() *ExchangeQuoteSummary {
+func defaultQuote() *QuoteSummary {
 	due, _ := ParseDecimalRat("0.000000")
-	return &ExchangeQuoteSummary{
+	return &QuoteSummary{
 		IsValidExchange:  true,
 		PaymentDueRaw:    "0.000000",
 		PaymentDueUSD:    due,
@@ -157,10 +157,10 @@ func defaultQuote() *ExchangeQuoteSummary {
 	}
 }
 
-func defaultParams(store RIExchangeStore, client ExchangeClientInterface) RunAutoExchangeParams {
+func defaultParams(store RIExchangeStore, client ClientInterface) RunAutoExchangeParams {
 	return RunAutoExchangeParams{
-		Store:          store,
-		ExchangeClient: client,
+		Store:  store,
+		Client: client,
 		LookupOffering: func(_ context.Context, _, _, _, _ string, _ int64) (string, error) {
 			return "offering-123", nil
 		},
@@ -285,7 +285,7 @@ func TestRunAutoExchange_PerExchangeCapExceeded(t *testing.T) {
 	t.Parallel()
 	due, _ := ParseDecimalRat("200.00")
 	store := &mockExchangeStore{dailySpend: "0"}
-	client := &mockExchangeClient{quoteResult: &ExchangeQuoteSummary{
+	client := &mockExchangeClient{quoteResult: &QuoteSummary{
 		IsValidExchange:  true,
 		PaymentDueRaw:    "200.00",
 		PaymentDueUSD:    due,
@@ -306,7 +306,7 @@ func TestRunAutoExchange_AutoMode_DailyCapExceeded(t *testing.T) {
 	t.Parallel()
 	store := &mockExchangeStore{dailySpend: "450.00"}
 	due, _ := ParseDecimalRat("60.00")
-	client := &mockExchangeClient{quoteResult: &ExchangeQuoteSummary{
+	client := &mockExchangeClient{quoteResult: &QuoteSummary{
 		IsValidExchange:  true,
 		PaymentDueRaw:    "60.00",
 		PaymentDueUSD:    due,
@@ -394,7 +394,7 @@ func TestRunAutoExchange_MissingPaymentDue_RefusedBeforeAnyRecord(t *testing.T) 
 			client := &mockExchangeClient{
 				// PaymentDueRaw "", PaymentDueUSD nil, PaymentDueUSDStr "":
 				// the AWS response carried no PaymentDue at all.
-				quoteResult: &ExchangeQuoteSummary{
+				quoteResult: &QuoteSummary{
 					IsValidExchange: true,
 					CurrencyCode:    "USD",
 				},
@@ -429,7 +429,7 @@ func TestProcessAutoExchange_FreshQuoteWithoutAmount_LedgerKeepsInitialQuote(t *
 	preQuoteDue, _ := ParseDecimalRat("30.000000")
 	store := &mockExchangeStore{dailySpend: "0"}
 	client := &mockExchangeClient{
-		quoteResult: &ExchangeQuoteSummary{
+		quoteResult: &QuoteSummary{
 			IsValidExchange:  true,
 			PaymentDueRaw:    "30.000000",
 			PaymentDueUSD:    preQuoteDue,
@@ -439,7 +439,7 @@ func TestProcessAutoExchange_FreshQuoteWithoutAmount_LedgerKeepsInitialQuote(t *
 		executeResult: "exch-no-fresh-amount",
 		// A client that skipped Execute's own re-quote check and returned
 		// a fresh quote without an amount.
-		executeQuoteResult: &ExchangeQuoteSummary{IsValidExchange: true, CurrencyCode: "USD"},
+		executeQuoteResult: &QuoteSummary{IsValidExchange: true, CurrencyCode: "USD"},
 	}
 	params := defaultParams(store, client)
 	params.Config.Mode = "auto"
@@ -489,7 +489,7 @@ func TestRunAutoExchange_AutoMode_ExecutionFails(t *testing.T) {
 func TestRunAutoExchange_InvalidExchange(t *testing.T) {
 	t.Parallel()
 	store := &mockExchangeStore{dailySpend: "0"}
-	client := &mockExchangeClient{quoteResult: &ExchangeQuoteSummary{
+	client := &mockExchangeClient{quoteResult: &QuoteSummary{
 		IsValidExchange:         false,
 		ValidationFailureReason: "source RI expired",
 	}}
@@ -588,7 +588,7 @@ func TestRunAutoExchange_DryRun_ManualMode_ZeroMutations(t *testing.T) {
 	result, err := RunAutoExchange(context.Background(), params)
 	require.NoError(t, err)
 
-	// Outcome must be simulated — no real token, no record ID.
+	// ExchangeOutcome must be simulated — no real token, no record ID.
 	require.Len(t, result.Pending, 1)
 	assert.True(t, result.Pending[0].Simulated, "outcome must be tagged Simulated in dry-run")
 	assert.Empty(t, result.Pending[0].ApprovalToken, "no live approval token must be generated in dry-run")
@@ -680,7 +680,7 @@ func TestProcessAutoExchange_EffectiveCap_BoundedByDailyHeadroom(t *testing.T) {
 		quoteResult:   defaultQuote(),
 		executeResult: "exch-h2-test",
 		// The fresh Execute quote is $40, which is under the effective cap ($50).
-		executeQuoteResult: &ExchangeQuoteSummary{
+		executeQuoteResult: &QuoteSummary{
 			IsValidExchange:  true,
 			PaymentDueRaw:    "40.000000",
 			PaymentDueUSD:    due,
@@ -770,7 +770,7 @@ func TestProcessAutoExchange_AcceptedAmountFromFreshQuote(t *testing.T) {
 
 	store := &mockExchangeStore{dailySpend: "0"}
 	client := &mockExchangeClient{
-		quoteResult: &ExchangeQuoteSummary{
+		quoteResult: &QuoteSummary{
 			IsValidExchange:  true,
 			PaymentDueRaw:    "30.000000",
 			PaymentDueUSD:    preQuoteDue,
@@ -779,7 +779,7 @@ func TestProcessAutoExchange_AcceptedAmountFromFreshQuote(t *testing.T) {
 		},
 		executeResult: "exch-h3-test",
 		// Execute returns a higher accepted amount.
-		executeQuoteResult: &ExchangeQuoteSummary{
+		executeQuoteResult: &QuoteSummary{
 			IsValidExchange:  true,
 			PaymentDueRaw:    "35.500000",
 			PaymentDueUSD:    freshDue,
@@ -824,7 +824,7 @@ func TestProcessAutoExchange_LedgerSaveFailure_HaltsAndReturnsError(t *testing.T
 
 	store := &mockExchangeStore{
 		dailySpend: "0",
-		saveErrFor: func(r *ExchangeRecord) error {
+		saveErrFor: func(r *Record) error {
 			if r.Status == "completed" {
 				return fmt.Errorf("DB connection refused")
 			}
@@ -866,7 +866,7 @@ func TestRunAutoExchange_LedgerSaveFailure_StopsAfterFirstExchange(t *testing.T)
 
 	store := &mockExchangeStore{
 		dailySpend: "0",
-		saveErrFor: func(r *ExchangeRecord) error {
+		saveErrFor: func(r *Record) error {
 			if r.Status == "completed" {
 				return fmt.Errorf("DB write failed")
 			}

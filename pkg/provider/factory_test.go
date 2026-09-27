@@ -164,8 +164,8 @@ func TestCreateProviders(t *testing.T) {
 	r := setupTestRegistry(t)
 
 	// Create multiple providers
-	providers := make([]Provider, 0)
 	names := []string{"test-aws", "test-azure"}
+	providers := make([]Provider, 0, len(names))
 	for _, name := range names {
 		provider, err := r.GetProviderWithConfig(name, &ProviderConfig{Name: name})
 		require.NoError(t, err)

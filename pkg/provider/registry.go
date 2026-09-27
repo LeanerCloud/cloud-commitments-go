@@ -14,17 +14,17 @@ var (
 
 // Registry manages registered cloud providers.
 type Registry struct {
-	providers map[string]ProviderFactory
+	providers map[string]Factory
 	mu        sync.RWMutex
 }
 
-// ProviderFactory is a function that creates a new provider instance.
-type ProviderFactory func(config *ProviderConfig) (Provider, error)
+// Factory is a function that creates a new provider instance.
+type Factory func(config *ProviderConfig) (Provider, error)
 
 // NewRegistry creates a new provider registry.
 func NewRegistry() *Registry {
 	return &Registry{
-		providers: make(map[string]ProviderFactory),
+		providers: make(map[string]Factory),
 	}
 }
 
@@ -37,7 +37,7 @@ func GetRegistry() *Registry {
 }
 
 // Register registers a provider factory with the registry.
-func (r *Registry) Register(name string, factory ProviderFactory) error {
+func (r *Registry) Register(name string, factory Factory) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -99,7 +99,7 @@ func (r *Registry) GetAllProviders() []Provider {
 	// running them under r.mu would serialize every provider's network init and
 	// block other registry users for the whole fan-out.
 	r.mu.RLock()
-	factories := make(map[string]ProviderFactory, len(r.providers))
+	factories := make(map[string]Factory, len(r.providers))
 	for name, factory := range r.providers {
 		factories[name] = factory
 	}
@@ -149,6 +149,6 @@ func (r *Registry) Unregister(name string) {
 }
 
 // RegisterProvider is a convenience function to register with the global registry.
-func RegisterProvider(name string, factory ProviderFactory) error {
+func RegisterProvider(name string, factory Factory) error {
 	return GetRegistry().Register(name, factory)
 }
