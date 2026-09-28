@@ -400,8 +400,11 @@ func doCalculatePrice(ctx context.Context, httpClient HTTPClient, calcURL string
 	if err != nil {
 		return "", fmt.Errorf("calculatePrice HTTP call: %w", err)
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	resp.Body.Close() // #nosec G104 -- body fully drained by io.ReadAll before Close; transport close error does not affect correctness
+	if err != nil {
+		return "", fmt.Errorf("read calculatePrice response: %w", err)
+	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", fmt.Errorf("calculatePrice failed with status %d: %s", resp.StatusCode, string(body))
@@ -467,7 +470,7 @@ var reservationOrderTerminalFailedStates = map[string]struct{}{
 // Terminal-failed orders (canceled, failed, expired) are skipped so they do
 // not suppress a legitimate fresh purchase of the same recommendation -- this
 // mirrors the EC2 dedupe guard's state filter (active + payment-pending only).
-func FindReservationOrderByIdempotencyToken(ctx context.Context, httpClient HTTPClient, bearerToken, idempotencyToken string) (string, bool, error) {
+func FindReservationOrderByIdempotencyToken(ctx context.Context, httpClient HTTPClient, bearerToken, idempotencyToken string) (resultOrderID string, resultFound bool, resultErr error) {
 	if idempotencyToken == "" {
 		return "", false, nil
 	}
@@ -492,7 +495,7 @@ func FindReservationOrderByIdempotencyToken(ctx context.Context, httpClient HTTP
 // FindReservationOrderByIdempotencyToken so the outer pagination loop stays
 // under the gocyclo:10 threshold.
 func fetchReservationOrdersPage(ctx context.Context, httpClient HTTPClient, pageURL, bearerToken string) (*reservationOrdersListResponse, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("build list reservation orders request: %w", err)
 	}
@@ -503,8 +506,11 @@ func fetchReservationOrdersPage(ctx context.Context, httpClient HTTPClient, page
 	if err != nil {
 		return nil, fmt.Errorf("list reservation orders HTTP call: %w", err)
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	resp.Body.Close() // #nosec G104 -- body fully drained by io.ReadAll before Close; transport close error does not affect correctness
+	if err != nil {
+		return nil, fmt.Errorf("read list reservation orders response: %w", err)
+	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("list reservation orders failed with status %d: %s", resp.StatusCode, string(body))

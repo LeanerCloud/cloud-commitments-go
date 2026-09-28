@@ -1174,7 +1174,7 @@ func TestBuildReservationBody_BillingPlan(t *testing.T) {
 			}
 			require.NoError(t, err)
 
-			c := &ComputeClient{region: "eastus", subscriptionID: "sub-abc"}
+			c := &Client{region: "eastus", subscriptionID: "sub-abc"}
 			rec := common.Recommendation{ResourceType: "Standard_D2s_v3", Count: 1, Term: "1yr", PaymentOption: tc.paymentOption}
 
 			body, err := c.buildReservationBody(rec, billingPlan, common.PurchaseSourceWeb, "")
@@ -1189,7 +1189,7 @@ func TestBuildReservationBody_BillingPlan(t *testing.T) {
 }
 
 func TestBuildReservationBody_IncludesPurchaseAutomationTag(t *testing.T) {
-	c := &ComputeClient{region: "eastus", subscriptionID: "sub-abc"}
+	c := &Client{region: "eastus", subscriptionID: "sub-abc"}
 	rec := common.Recommendation{ResourceType: "Standard_D2s_v3", Count: 1, Term: "1yr", PaymentOption: "no-upfront"}
 	billingPlan, err := reservations.BillingPlanForPaymentOption(rec.PaymentOption)
 	require.NoError(t, err)
@@ -1205,7 +1205,7 @@ func TestBuildReservationBody_IncludesPurchaseAutomationTag(t *testing.T) {
 }
 
 func TestBuildReservationBody_OmitsTagsWhenSourceAndTokenEmpty(t *testing.T) {
-	c := &ComputeClient{region: "eastus", subscriptionID: "sub-abc"}
+	c := &Client{region: "eastus", subscriptionID: "sub-abc"}
 	rec := common.Recommendation{ResourceType: "Standard_D2s_v3", Count: 1, Term: "1yr", PaymentOption: "no-upfront"}
 	billingPlan, err := reservations.BillingPlanForPaymentOption(rec.PaymentOption)
 	require.NoError(t, err)
@@ -1225,7 +1225,7 @@ func TestBuildReservationBody_OmitsTagsWhenSourceAndTokenEmpty(t *testing.T) {
 // can find the prior reservation via FindReservationOrderByIdempotencyToken
 // and skip the duplicate buy.
 func TestBuildReservationBody_IncludesIdempotencyTokenTag(t *testing.T) {
-	c := &ComputeClient{region: "eastus", subscriptionID: "sub-abc"}
+	c := &Client{region: "eastus", subscriptionID: "sub-abc"}
 	rec := common.Recommendation{ResourceType: "Standard_D2s_v3", Count: 1, Term: "1yr", PaymentOption: "no-upfront"}
 	token := common.DeriveIdempotencyToken("exec-721-compute", 0)
 	billingPlan, err := reservations.BillingPlanForPaymentOption(rec.PaymentOption)
@@ -1277,9 +1277,9 @@ func (m *vmSKUCatalogueMockPager) NextPage(_ context.Context) (armcompute.Resour
 // buildVMSKU constructs an armcompute.ResourceSKU for "virtualMachines"
 // in the given region with the standard vCPUs / MemoryGB capabilities
 // the converter parses out.
-func buildVMSKU(name, region string, vCPUs int, memoryGB string) *armcompute.ResourceSKU {
+func buildVMSKU(name string, vCPUs int, memoryGB string) *armcompute.ResourceSKU {
 	resourceType := "virtualMachines"
-	regionStr := region
+	regionStr := "eastus"
 	nameStr := name
 	vcpuName := "vCPUs"
 	vcpuVal := strconv.Itoa(vCPUs)
@@ -1308,8 +1308,8 @@ func TestComputeClient_ConvertAzureVMRecommendation_PopulatesVCPUAndMemoryFromSK
 			{
 				ResourceSKUsResult: armcompute.ResourceSKUsResult{
 					Value: []*armcompute.ResourceSKU{
-						buildVMSKU("Standard_D2s_v3", "eastus", 2, "8"),
-						buildVMSKU("Standard_D4s_v3", "eastus", 4, "16"),
+						buildVMSKU("Standard_D2s_v3", 2, "8"),
+						buildVMSKU("Standard_D4s_v3", 4, "16"),
 					},
 				},
 			},
@@ -1367,7 +1367,7 @@ func TestComputeClient_ConvertAzureVMRecommendation_NoMatchLeavesFieldsZero(t *t
 			{
 				ResourceSKUsResult: armcompute.ResourceSKUsResult{
 					Value: []*armcompute.ResourceSKU{
-						buildVMSKU("Standard_D2s_v3", "eastus", 2, "8"),
+						buildVMSKU("Standard_D2s_v3", 2, "8"),
 					},
 				},
 			},
@@ -1399,7 +1399,7 @@ func TestComputeClient_CachedSKULookup_FetchedOnce(t *testing.T) {
 			{
 				ResourceSKUsResult: armcompute.ResourceSKUsResult{
 					Value: []*armcompute.ResourceSKU{
-						buildVMSKU("Standard_D2s_v3", "eastus", 2, "8"),
+						buildVMSKU("Standard_D2s_v3", 2, "8"),
 					},
 				},
 			},
@@ -1429,7 +1429,7 @@ func TestComputeClient_FetchSKUCatalogue_CancelledContextFallsBack(t *testing.T)
 			{
 				ResourceSKUsResult: armcompute.ResourceSKUsResult{
 					Value: []*armcompute.ResourceSKU{
-						buildVMSKU("Standard_D2s_v3", "eastus", 2, "8"),
+						buildVMSKU("Standard_D2s_v3", 2, "8"),
 					},
 				},
 			},
@@ -1652,7 +1652,7 @@ func TestPurchaseBody_SKUAndQuantityStayInMatchingUnits(t *testing.T) {
 				mocks.WithCosts(1000, 600, 400),
 			)...)
 
-			c := &ComputeClient{subscriptionID: "sub-1", region: "eastus"}
+			c := &Client{subscriptionID: "sub-1", region: "eastus"}
 			rec := c.convertAzureVMRecommendation(context.Background(), apiRec)
 			require.NotNil(t, rec)
 

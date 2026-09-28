@@ -105,7 +105,7 @@ func fetchOnePage[T any](ctx context.Context, httpClient HTTPClient, pageURL str
 	pageCtx, cancel := context.WithTimeout(ctx, pageTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(pageCtx, "GET", pageURL, nil)
+	req, err := http.NewRequestWithContext(pageCtx, "GET", pageURL, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request (page %d): %w", pageIdx, err)
 	}
@@ -116,7 +116,10 @@ func fetchOnePage[T any](ctx context.Context, httpClient HTTPClient, pageURL str
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return nil, fmt.Errorf("pricing API returned status %d (page %d), body unreadable: %w", resp.StatusCode, pageIdx, readErr)
+		}
 		return nil, fmt.Errorf("pricing API returned status %d (page %d): %s", resp.StatusCode, pageIdx, string(body))
 	}
 

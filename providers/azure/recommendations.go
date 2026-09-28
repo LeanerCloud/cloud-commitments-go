@@ -217,7 +217,7 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 	// "the parent ctx was canceled mid-fan-out". Without this check the
 	// CHECK could swallow a deadline exceeded that the caller expected to
 	// see.
-	_ = g.Wait()
+	_ = g.Wait() //nolint:errcheck // always nil by construction, see comment above
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

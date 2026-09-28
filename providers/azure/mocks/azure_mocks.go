@@ -4,6 +4,7 @@ package mocks
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -131,7 +132,11 @@ func (m *MockHTTPClient) Do(req *http.Request) (*http.Response, error) {
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*http.Response), args.Error(1)
+	resp, ok := args.Get(0).(*http.Response)
+	if !ok {
+		panic(fmt.Sprintf("MockHTTPClient.Do: expected *http.Response, got %T", args.Get(0)))
+	}
+	return resp, args.Error(1)
 }
 
 // CreateMockHTTPResponse creates a mock HTTP response.

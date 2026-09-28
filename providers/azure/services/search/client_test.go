@@ -65,7 +65,7 @@ func (m *MockReservationsDetailsPager) NextPage(ctx context.Context) (armconsump
 	return page, nil
 }
 
-// MockSearchServicesPager mocks the SearchServicesPager interface.
+// MockSearchServicesPager mocks the ServicesPager interface.
 type MockSearchServicesPager struct {
 	pages []armsearch.ServicesClientListBySubscriptionResponse
 	index int
@@ -418,7 +418,7 @@ func TestAzureRetailPriceStructure(t *testing.T) {
 }
 
 func TestSearchPricingStructure(t *testing.T) {
-	pricing := SearchPricing{
+	pricing := Pricing{
 		HourlyRate:        0.15,
 		ReservationPrice:  1314.0,
 		OnDemandPrice:     2628.0,

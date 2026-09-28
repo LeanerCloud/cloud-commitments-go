@@ -88,8 +88,8 @@ func (r *realCredentialProvider) NewDefaultAzureCredential() (azcore.TokenCreden
 	return azidentity.NewDefaultAzureCredential(nil)
 }
 
-// AzureProvider implements the Provider interface for Azure.
-type AzureProvider struct {
+// Provider implements the provider.Provider interface for Azure.
+type Provider struct {
 	cred                azcore.TokenCredential
 	credOnce            sync.Once
 	credErr             error
@@ -135,8 +135,8 @@ type AzureProvider struct {
 // azcore.TokenCredential, it is installed directly so all downstream clients
 // use those credentials. Otherwise, GetCredentials lazily falls back to
 // DefaultAzureCredential.
-func NewAzureProvider(config *provider.ProviderConfig) (*AzureProvider, error) {
-	p := &AzureProvider{}
+func NewAzureProvider(config *provider.ProviderConfig) (*Provider, error) {
+	p := &Provider{}
 
 	if config != nil {
 		p.region = config.Region
@@ -163,7 +163,7 @@ func resolveAzureSubscriptionID(config *provider.ProviderConfig) string {
 	if config.AzureSubscriptionID != "" {
 		return config.AzureSubscriptionID
 	}
-	return config.Profile
+	return config.Profile //nolint:staticcheck // SA1019: this is the one intentional read of the deprecated field, implementing its documented fallback
 }
 
 // SetSubscriptionsClient sets the subscriptions client (for testing).
@@ -174,8 +174,8 @@ func resolveAzureSubscriptionID(config *provider.ProviderConfig) string {
 //
 // The swap and the invalidation happen under a single accountsMu write so a
 // concurrent fetch can never observe the new client alongside the old cache
-// generation -- see the accountsMu comment on AzureProvider.
-func (p *AzureProvider) SetSubscriptionsClient(client SubscriptionsClient) {
+// generation -- see the accountsMu comment on Provider.
+func (p *Provider) SetSubscriptionsClient(client SubscriptionsClient) {
 	p.accountsMu.Lock()
 	defer p.accountsMu.Unlock()
 	p.subscriptionsClient = client
@@ -193,7 +193,7 @@ func (p *AzureProvider) SetSubscriptionsClient(client SubscriptionsClient) {
 // only feeds IsConfigured's lazy resolution, which runs at most once and only
 // when no credential was installed at all, so at the moment it is read there is
 // no cached subscription list resolved under a different credential.
-func (p *AzureProvider) SetCredentialProvider(credProvider CredentialProvider) {
+func (p *Provider) SetCredentialProvider(credProvider CredentialProvider) {
 	p.accountsMu.Lock()
 	defer p.accountsMu.Unlock()
 	p.credProvider = credProvider
@@ -206,7 +206,7 @@ func (p *AzureProvider) SetCredentialProvider(credProvider CredentialProvider) {
 // Reads go through accountsMu, the same lock SetCredentialProvider publishes
 // under, so a swap concurrent with IsConfigured's lazy resolution is a defined
 // handoff rather than a data race.
-func (p *AzureProvider) credentialProvider() CredentialProvider {
+func (p *Provider) credentialProvider() CredentialProvider {
 	p.accountsMu.RLock()
 	defer p.accountsMu.RUnlock()
 	return p.credProvider
@@ -227,7 +227,7 @@ func (p *AzureProvider) credentialProvider() CredentialProvider {
 // snapshots it under: writing it outside the lock and only then taking the
 // lock to invalidate leaves a window in which an in-flight fetch pairs the new
 // credential with the old subscriptions client.
-func (p *AzureProvider) SetCredential(cred azcore.TokenCredential) {
+func (p *Provider) SetCredential(cred azcore.TokenCredential) {
 	p.accountsMu.Lock()
 	defer p.accountsMu.Unlock()
 	p.cred = cred
@@ -241,7 +241,7 @@ func (p *AzureProvider) SetCredential(cred azcore.TokenCredential) {
 // handoff rather than a data race. Returns nil when no credential has been
 // installed yet; every client-construction caller runs after an IsConfigured()
 // check, which is what guarantees a non-nil result there.
-func (p *AzureProvider) credential() azcore.TokenCredential {
+func (p *Provider) credential() azcore.TokenCredential {
 	p.accountsMu.RLock()
 	defer p.accountsMu.RUnlock()
 	return p.cred
@@ -255,7 +255,7 @@ func (p *AzureProvider) credential() azcore.TokenCredential {
 // SetX call, which is precisely the mixed-state hazard the locking exists to
 // prevent. The returned client is nil when none was injected, in which case
 // the caller builds a real one from cred.
-func (p *AzureProvider) credentialAndSubscriptionsClient() (azcore.TokenCredential, SubscriptionsClient) {
+func (p *Provider) credentialAndSubscriptionsClient() (azcore.TokenCredential, SubscriptionsClient) {
 	p.accountsMu.RLock()
 	defer p.accountsMu.RUnlock()
 	return p.cred, p.subscriptionsClient
@@ -268,19 +268,19 @@ func (p *AzureProvider) credentialAndSubscriptionsClient() (azcore.TokenCredenti
 // when no credential was installed at all. Unlike SetCredential it does not
 // invalidate: there is no previous credential whose subscription list could
 // have been cached under it.
-func (p *AzureProvider) publishCredential(cred azcore.TokenCredential) {
+func (p *Provider) publishCredential(cred azcore.TokenCredential) {
 	p.accountsMu.Lock()
 	defer p.accountsMu.Unlock()
 	p.cred = cred
 }
 
 // Name returns the provider name.
-func (p *AzureProvider) Name() string {
+func (p *Provider) Name() string {
 	return "azure"
 }
 
 // DisplayName returns the human-readable provider name.
-func (p *AzureProvider) DisplayName() string {
+func (p *Provider) DisplayName() string {
 	return "Microsoft Azure"
 }
 
@@ -294,7 +294,7 @@ func (p *AzureProvider) DisplayName() string {
 // current Lambda/container deployment model where restarts are cheap; if a
 // long-lived daemon pattern is introduced, replace the sync.Once with a
 // time-bounded cache or single-flight retry.
-func (p *AzureProvider) IsConfigured() bool {
+func (p *Provider) IsConfigured() bool {
 	// If credential was injected via SetCredential, skip the Once path.
 	if p.credential() != nil {
 		return true
@@ -316,7 +316,7 @@ func (p *AzureProvider) IsConfigured() bool {
 }
 
 // GetCredentials returns Azure credentials.
-func (p *AzureProvider) GetCredentials() (provider.Credentials, error) {
+func (p *Provider) GetCredentials() (provider.Credentials, error) {
 	if !p.IsConfigured() {
 		return nil, fmt.Errorf("azure provider is not configured")
 	}
@@ -331,7 +331,7 @@ func (p *AzureProvider) GetCredentials() (provider.Credentials, error) {
 }
 
 // ValidateCredentials validates that Azure credentials are working.
-func (p *AzureProvider) ValidateCredentials(ctx context.Context) error {
+func (p *Provider) ValidateCredentials(ctx context.Context) error {
 	if !p.IsConfigured() {
 		return fmt.Errorf("azure provider is not configured")
 	}
@@ -365,7 +365,7 @@ func (p *AzureProvider) ValidateCredentials(ctx context.Context) error {
 //  2. The AZURE_SUBSCRIPTION_ID environment variable.
 //  3. The sole subscription, when exactly one is visible (mirrors AWS behavior
 //     where the STS-identified account is always the default).
-func (p *AzureProvider) GetAccounts(ctx context.Context) ([]common.Account, error) {
+func (p *Provider) GetAccounts(ctx context.Context) ([]common.Account, error) {
 	if !p.IsConfigured() {
 		return nil, fmt.Errorf("azure provider is not configured")
 	}
@@ -383,7 +383,7 @@ func (p *AzureProvider) GetAccounts(ctx context.Context) ([]common.Account, erro
 // p.subscriptionID is written once in NewAzureProvider and never mutated
 // afterwards, so it needs no lock (unlike cred/subscriptionsClient/credProvider,
 // which have SetX swappers).
-func (p *AzureProvider) configuredSubscriptionTarget() (target, source string) {
+func (p *Provider) configuredSubscriptionTarget() (target, source string) {
 	if p.subscriptionID != "" {
 		return p.subscriptionID, "the configured Azure subscription ID"
 	}
@@ -407,7 +407,7 @@ func (p *AzureProvider) configuredSubscriptionTarget() (target, source string) {
 // answering a misconfiguration with a plausible wrong subscription instead of
 // an error. Validating the target up front makes it fail loud regardless of how
 // many subscriptions are visible.
-func (p *AzureProvider) validateConfiguredSubscription(accounts []common.Account) (string, error) {
+func (p *Provider) validateConfiguredSubscription(accounts []common.Account) (string, error) {
 	target, source := p.configuredSubscriptionTarget()
 	if target == "" {
 		return "", nil
@@ -428,7 +428,7 @@ func (p *AzureProvider) validateConfiguredSubscription(accounts []common.Account
 // applies the same validate-then-default ordering GetRecommendationsClient
 // does. Without it the same misconfiguration would error on the
 // recommendations path and silently retarget on this one.
-func (p *AzureProvider) resolveSubscriptionIDFromCtx(ctx context.Context) (string, error) {
+func (p *Provider) resolveSubscriptionIDFromCtx(ctx context.Context) (string, error) {
 	accounts, err := p.GetAccounts(ctx)
 	if err != nil {
 		return "", fmt.Errorf("failed to resolve default Azure subscription: %w", err)
@@ -451,7 +451,7 @@ func (p *AzureProvider) resolveSubscriptionIDFromCtx(ctx context.Context) (strin
 }
 
 // GetRegions returns all available Azure regions using the Subscriptions API.
-func (p *AzureProvider) GetRegions(ctx context.Context) ([]common.Region, error) {
+func (p *Provider) GetRegions(ctx context.Context) ([]common.Region, error) {
 	// Resolve the subscription to query available locations. The wrapper stays
 	// neutral about WHY resolution failed: resolveSubscriptionIDFromCtx now
 	// also rejects a configured subscription the principal cannot see, and
@@ -504,7 +504,7 @@ func (p *AzureProvider) GetRegions(ctx context.Context) ([]common.Region, error)
 }
 
 // GetDefaultRegion returns the default Azure region.
-func (p *AzureProvider) GetDefaultRegion() string {
+func (p *Provider) GetDefaultRegion() string {
 	if p.region != "" {
 		return p.region
 	}
@@ -513,7 +513,7 @@ func (p *AzureProvider) GetDefaultRegion() string {
 }
 
 // GetSupportedServices returns the list of services supported by Azure provider.
-func (p *AzureProvider) GetSupportedServices() []common.ServiceType {
+func (p *Provider) GetSupportedServices() []common.ServiceType {
 	return []common.ServiceType{
 		common.ServiceCompute,
 		common.ServiceRelationalDB,
@@ -532,7 +532,7 @@ func (p *AzureProvider) GetSupportedServices() []common.ServiceType {
 // When operating across multiple subscriptions (fan-out), prefer
 // GetServiceClientForAccount: it accepts an explicit subscriptionID and avoids
 // an extra GetAccounts round-trip per iteration.
-func (p *AzureProvider) GetServiceClient(ctx context.Context, service common.ServiceType, region string) (provider.ServiceClient, error) {
+func (p *Provider) GetServiceClient(ctx context.Context, service common.ServiceType, region string) (provider.ServiceClient, error) {
 	if !p.IsConfigured() {
 		return nil, fmt.Errorf("azure provider is not configured")
 	}
@@ -561,7 +561,7 @@ func (p *AzureProvider) GetServiceClient(ctx context.Context, service common.Ser
 // GetServiceClientForAccount returns a service client for the specified service,
 // region, and subscription ID. Use this when iterating over all subscriptions
 // returned by GetAccounts to avoid O(n) redundant API calls.
-func (p *AzureProvider) GetServiceClientForAccount(ctx context.Context, service common.ServiceType, region, subscriptionID string) (provider.ServiceClient, error) {
+func (p *Provider) GetServiceClientForAccount(ctx context.Context, service common.ServiceType, region, subscriptionID string) (provider.ServiceClient, error) {
 	if !p.IsConfigured() {
 		return nil, fmt.Errorf("azure provider is not configured")
 	}
@@ -574,7 +574,7 @@ func (p *AzureProvider) GetServiceClientForAccount(ctx context.Context, service 
 // newServiceClientForSubscription constructs the concrete service client for
 // the given subscription and region. It is the shared backend for both
 // GetServiceClient and GetServiceClientForAccount.
-func (p *AzureProvider) newServiceClientForSubscription(service common.ServiceType, subscriptionID, region string) (provider.ServiceClient, error) {
+func (p *Provider) newServiceClientForSubscription(service common.ServiceType, subscriptionID, region string) (provider.ServiceClient, error) {
 	// Snapshot once so every branch below builds its client from the same
 	// credential, even if a SetCredential lands mid-call.
 	cred := p.credential()
@@ -633,7 +633,7 @@ func (p *AzureProvider) newServiceClientForSubscription(service common.ServiceTy
 // Advisor APIs are subscription-scoped -- so this client-side fan-out is what
 // brings Azure to parity with the AWS provider's automatic whole-organization
 // coverage.
-func (p *AzureProvider) GetRecommendationsClient(ctx context.Context) (provider.RecommendationsClient, error) {
+func (p *Provider) GetRecommendationsClient(ctx context.Context) (provider.RecommendationsClient, error) {
 	if !p.IsConfigured() {
 		return nil, fmt.Errorf("azure provider is not configured")
 	}
@@ -688,7 +688,7 @@ func (p *AzureProvider) GetRecommendationsClient(ctx context.Context) (provider.
 // GetRecommendationsClientForAccount returns a recommendations client scoped to
 // the given subscription ID. Use this when iterating over all subscriptions
 // returned by GetAccounts to avoid O(n) redundant API calls.
-func (p *AzureProvider) GetRecommendationsClientForAccount(ctx context.Context, subscriptionID string) (provider.RecommendationsClient, error) {
+func (p *Provider) GetRecommendationsClientForAccount(ctx context.Context, subscriptionID string) (provider.RecommendationsClient, error) {
 	if !p.IsConfigured() {
 		return nil, fmt.Errorf("azure provider is not configured")
 	}

@@ -157,18 +157,18 @@ type DoExchangeCallerFunc func(
 // SetCalculateExchangeCaller injects a test-only override for the
 // CalculateExchange LRO. Tests use this to avoid real Azure API calls and to
 // make the LRO synchronous (no time.Sleep / real polling needed).
-func (c *ComputeClient) SetCalculateExchangeCaller(fn CalculateExchangeCallerFunc) {
+func (c *Client) SetCalculateExchangeCaller(fn CalculateExchangeCallerFunc) {
 	c.calculateExchangeCaller = fn
 }
 
 // SetDoExchangeCaller injects a test-only override for the Exchange LRO.
-func (c *ComputeClient) SetDoExchangeCaller(fn DoExchangeCallerFunc) {
+func (c *Client) SetDoExchangeCaller(fn DoExchangeCallerFunc) {
 	c.doExchangeCaller = fn
 }
 
 // buildCalculateExchangeCaller returns the injected test stub when set, or
 // constructs a real armreservations.CalculateExchangeClient wrapper.
-func (c *ComputeClient) buildCalculateExchangeCaller() (CalculateExchangeCallerFunc, error) {
+func (c *Client) buildCalculateExchangeCaller() (CalculateExchangeCallerFunc, error) {
 	if c.calculateExchangeCaller != nil {
 		return c.calculateExchangeCaller, nil
 	}
@@ -191,7 +191,7 @@ func (c *ComputeClient) buildCalculateExchangeCaller() (CalculateExchangeCallerF
 
 // buildDoExchangeCaller returns the injected test stub when set, or
 // constructs a real armreservations.ExchangeClient wrapper.
-func (c *ComputeClient) buildDoExchangeCaller() (DoExchangeCallerFunc, error) {
+func (c *Client) buildDoExchangeCaller() (DoExchangeCallerFunc, error) {
 	if c.doExchangeCaller != nil {
 		return c.doExchangeCaller, nil
 	}
@@ -231,7 +231,7 @@ func (c *ComputeClient) buildDoExchangeCaller() (DoExchangeCallerFunc, error) {
 // priced-but-policy-rejected combination is a successful call whose
 // ExchangePreview.PolicyErrors is non-empty -- callers must check that
 // before treating the preview as executable.
-func (c *ComputeClient) CalculateExchange(
+func (c *Client) CalculateExchange(
 	ctx context.Context,
 	sources []ExchangeableReservation,
 	targets []ExchangeTarget,
@@ -303,7 +303,7 @@ func checkCalculateExchangeResult(result armreservations.CalculateExchangeOperat
 // sessionID must be non-empty. Azure's CalculateExchange session ID is the
 // idempotency mechanism for this call: replaying the same session ID after
 // the exchange completes has no further effect server-side.
-func (c *ComputeClient) ExecuteExchange(ctx context.Context, sessionID string) (*ExchangeResult, error) {
+func (c *Client) ExecuteExchange(ctx context.Context, sessionID string) (*ExchangeResult, error) {
 	if sessionID == "" {
 		return nil, fmt.Errorf("azure: ExecuteExchange: session_id is required (obtain from CalculateExchange)")
 	}

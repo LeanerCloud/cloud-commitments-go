@@ -45,21 +45,6 @@ func (m *mockTokenCredential) GetToken(_ context.Context, _ policy.TokenRequestO
 // The mock HTTP client and response helper live in the shared
 // providers/azure/mocks package (mocks.MockHTTPClient, mocks.CreateMockHTTPResponse).
 
-// captureHTTPClient captures the request body on each call.
-type captureHTTPClient struct {
-	response *http.Response
-	captured []byte
-}
-
-func (c *captureHTTPClient) Do(req *http.Request) (*http.Response, error) {
-	if req.Body != nil {
-		b, _ := io.ReadAll(req.Body)
-		c.captured = b
-		req.Body = io.NopCloser(bytes.NewReader(b))
-	}
-	return c.response, nil
-}
-
 // ---- pager mocks -----------------------------------------------------------
 
 type fakeRecommendationsPager struct {
@@ -115,8 +100,8 @@ func (m *fakeReservationsPager) NextPage(_ context.Context) (armconsumption.Rese
 
 // ---- helpers ---------------------------------------------------------------
 
-func newTestClient() *SynapseClient {
-	return &SynapseClient{
+func newTestClient() *Client {
+	return &Client{
 		subscriptionID: "sub-123",
 		region:         "eastus",
 	}
@@ -444,7 +429,7 @@ func TestGetOfferingDetails_upfront(t *testing.T) {
 	})
 	mHTTP.On("Do", mock.Anything).Return(response1, nil)
 
-	c := &SynapseClient{subscriptionID: "sub-123", region: "eastus", httpClient: mHTTP}
+	c := &Client{subscriptionID: "sub-123", region: "eastus", httpClient: mHTTP}
 
 	rec := common.Recommendation{ResourceType: "DW100c", Term: "1yr", PaymentOption: "upfront"}
 	details, err := c.GetOfferingDetails(context.Background(), rec)
@@ -464,7 +449,7 @@ func TestGetOfferingDetails_monthly(t *testing.T) {
 	})
 	mHTTP.On("Do", mock.Anything).Return(response2, nil)
 
-	c := &SynapseClient{subscriptionID: "sub-123", region: "eastus", httpClient: mHTTP}
+	c := &Client{subscriptionID: "sub-123", region: "eastus", httpClient: mHTTP}
 
 	rec := common.Recommendation{ResourceType: "DW100c", Term: "1yr", PaymentOption: "monthly"}
 	details, err := c.GetOfferingDetails(context.Background(), rec)
@@ -477,7 +462,7 @@ func TestGetOfferingDetails_httpError(t *testing.T) {
 	mHTTP := &mocks.MockHTTPClient{}
 	mHTTP.On("Do", mock.Anything).Return(nil, errors.New("network error"))
 
-	c := &SynapseClient{subscriptionID: "sub-123", region: "eastus", httpClient: mHTTP}
+	c := &Client{subscriptionID: "sub-123", region: "eastus", httpClient: mHTTP}
 
 	rec := common.Recommendation{ResourceType: "DW100c", Term: "1yr"}
 	_, err := c.GetOfferingDetails(context.Background(), rec)
@@ -718,7 +703,7 @@ func TestConvertSynapseReservation_nilSKUName(t *testing.T) {
 // ---- extractSynapsePricing ------------------------------------------------
 
 func TestExtractSynapsePricing_1yr(t *testing.T) {
-	items := []SynapseRetailPriceItem{
+	items := []RetailPriceItem{
 		{CurrencyCode: "USD", RetailPrice: 0.5, Type: "Consumption"},
 		{CurrencyCode: "USD", RetailPrice: 2000.0, ReservationTerm: "1 Year", Type: "Reservation"},
 		{CurrencyCode: "USD", RetailPrice: 3500.0, ReservationTerm: "3 Years", Type: "Reservation"},
@@ -730,7 +715,7 @@ func TestExtractSynapsePricing_1yr(t *testing.T) {
 }
 
 func TestExtractSynapsePricing_3yr(t *testing.T) {
-	items := []SynapseRetailPriceItem{
+	items := []RetailPriceItem{
 		{CurrencyCode: "USD", RetailPrice: 0.5, Type: "Consumption"},
 		{CurrencyCode: "USD", RetailPrice: 2000.0, ReservationTerm: "1 Year", Type: "Reservation"},
 		{CurrencyCode: "USD", RetailPrice: 3500.0, ReservationTerm: "3 Years", Type: "Reservation"},
@@ -742,7 +727,7 @@ func TestExtractSynapsePricing_3yr(t *testing.T) {
 }
 
 func TestExtractSynapsePricing_noReservation(t *testing.T) {
-	items := []SynapseRetailPriceItem{
+	items := []RetailPriceItem{
 		{CurrencyCode: "USD", RetailPrice: 0.5, Type: "Consumption"},
 	}
 	onDemand, reservation, currency := extractSynapsePricing(items, 1)
@@ -941,7 +926,7 @@ func TestGetOfferingDetails_noReservationPrice(t *testing.T) {
 		require.NoError(t, response13.Body.Close())
 	})
 	mHTTP.On("Do", mock.Anything).Return(response13, nil)
-	c := &SynapseClient{subscriptionID: "sub-123", region: "eastus", httpClient: mHTTP}
+	c := &Client{subscriptionID: "sub-123", region: "eastus", httpClient: mHTTP}
 	rec := common.Recommendation{ResourceType: "DW100c", Term: "1yr"}
 	_, err := c.GetOfferingDetails(context.Background(), rec)
 	require.Error(t, err)

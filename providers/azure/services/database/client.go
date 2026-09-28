@@ -82,8 +82,8 @@ type SQLManagedInstancesPager interface {
 	NextPage(ctx context.Context) (armsql.ManagedInstancesClientListResponse, error)
 }
 
-// DatabaseClient handles Azure SQL Database Reserved Capacity.
-type DatabaseClient struct {
+// Client handles Azure SQL Database Reserved Capacity.
+type Client struct {
 	cred                  azcore.TokenCredential
 	subscriptionID        string
 	region                string
@@ -112,8 +112,8 @@ type DatabaseClient struct {
 }
 
 // NewClient creates a new Azure Database client.
-func NewClient(cred azcore.TokenCredential, subscriptionID, region string) *DatabaseClient {
-	return &DatabaseClient{
+func NewClient(cred azcore.TokenCredential, subscriptionID, region string) *Client {
+	return &Client{
 		cred:           cred,
 		subscriptionID: subscriptionID,
 		region:         region,
@@ -122,8 +122,8 @@ func NewClient(cred azcore.TokenCredential, subscriptionID, region string) *Data
 }
 
 // NewClientWithHTTP creates a new Azure Database client with a custom HTTP client (for testing).
-func NewClientWithHTTP(cred azcore.TokenCredential, subscriptionID, region string, httpClient HTTPClient) *DatabaseClient {
-	return &DatabaseClient{
+func NewClientWithHTTP(cred azcore.TokenCredential, subscriptionID, region string, httpClient HTTPClient) *Client {
+	return &Client{
 		cred:           cred,
 		subscriptionID: subscriptionID,
 		region:         region,
@@ -132,37 +132,37 @@ func NewClientWithHTTP(cred azcore.TokenCredential, subscriptionID, region strin
 }
 
 // SetRecommendationsPager sets the recommendations pager (for testing).
-func (c *DatabaseClient) SetRecommendationsPager(pager RecommendationsPager) {
+func (c *Client) SetRecommendationsPager(pager RecommendationsPager) {
 	c.recommendationsPager = pager
 }
 
 // SetReservationsPager sets the reservations pager (for testing).
-func (c *DatabaseClient) SetReservationsPager(pager ReservationsDetailsPager) {
+func (c *Client) SetReservationsPager(pager ReservationsDetailsPager) {
 	c.reservationsPager = pager
 }
 
 // SetCapabilitiesClient sets the capabilities client (for testing).
-func (c *DatabaseClient) SetCapabilitiesClient(client CapabilitiesClient) {
+func (c *Client) SetCapabilitiesClient(client CapabilitiesClient) {
 	c.capabilitiesClient = client
 }
 
 // SetServersPager sets the SQL servers pager (for testing).
-func (c *DatabaseClient) SetServersPager(pager SQLServersPager) {
+func (c *Client) SetServersPager(pager SQLServersPager) {
 	c.serversPager = pager
 }
 
 // SetManagedInstancesPager sets the SQL managed instances pager (for testing).
-func (c *DatabaseClient) SetManagedInstancesPager(pager SQLManagedInstancesPager) {
+func (c *Client) SetManagedInstancesPager(pager SQLManagedInstancesPager) {
 	c.managedInstancesPager = pager
 }
 
 // GetServiceType returns the service type.
-func (c *DatabaseClient) GetServiceType() common.ServiceType {
+func (c *Client) GetServiceType() common.ServiceType {
 	return common.ServiceRelationalDB
 }
 
 // GetRegion returns the region.
-func (c *DatabaseClient) GetRegion() string {
+func (c *Client) GetRegion() string {
 	return c.region
 }
 
@@ -170,7 +170,7 @@ func (c *DatabaseClient) GetRegion() string {
 type AzureRetailPrice = pricing.Page[pricing.RetailPriceItem]
 
 // GetRecommendations gets SQL Database reservation recommendations from Azure Consumption API.
-func (c *DatabaseClient) GetRecommendations(ctx context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
+func (c *Client) GetRecommendations(ctx context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	recommendations := make([]common.Recommendation, 0)
 
 	// Use injected pager if available (for testing)
@@ -214,7 +214,7 @@ func (c *DatabaseClient) GetRecommendations(ctx context.Context, _ *common.Recom
 }
 
 // GetExistingCommitments retrieves existing SQL Database reserved capacity using Azure Resource Graph.
-func (c *DatabaseClient) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
+func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	pager, err := c.createReservationsPager()
 	if err != nil {
 		log.Printf("WARNING: failed to create SQL reservations pager: %v", err)
@@ -225,7 +225,7 @@ func (c *DatabaseClient) GetExistingCommitments(ctx context.Context) ([]common.C
 }
 
 // createReservationsPager creates a pager for listing reservations.
-func (c *DatabaseClient) createReservationsPager() (ReservationsDetailsPager, error) {
+func (c *Client) createReservationsPager() (ReservationsDetailsPager, error) {
 	// Use injected pager if available (for testing)
 	if c.reservationsPager != nil {
 		return c.reservationsPager, nil
@@ -243,7 +243,7 @@ func (c *DatabaseClient) createReservationsPager() (ReservationsDetailsPager, er
 // collectSQLReservations collects SQL Database reservations from the pager.
 // Returns an error on first pagination failure so callers can't silently act
 // on a partial list — see the compute client for the full rationale.
-func (c *DatabaseClient) collectSQLReservations(ctx context.Context, pager ReservationsDetailsPager) ([]common.Commitment, error) {
+func (c *Client) collectSQLReservations(ctx context.Context, pager ReservationsDetailsPager) ([]common.Commitment, error) {
 	commitments := make([]common.Commitment, 0)
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
@@ -269,7 +269,7 @@ func (c *DatabaseClient) collectSQLReservations(ctx context.Context, pager Reser
 }
 
 // convertSQLReservation converts a reservation detail to a commitment if it's a SQL reservation.
-func (c *DatabaseClient) convertSQLReservation(detail *armconsumption.ReservationDetail) *common.Commitment {
+func (c *Client) convertSQLReservation(detail *armconsumption.ReservationDetail) *common.Commitment {
 	if detail.Properties == nil {
 		return nil
 	}
@@ -300,7 +300,7 @@ func (c *DatabaseClient) convertSQLReservation(detail *armconsumption.Reservatio
 
 // PurchaseCommitment purchases SQL Database reserved capacity using the two-step
 // calculatePrice->purchase flow required by Azure's Reservations API (issue #677).
-func (c *DatabaseClient) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
+func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
 	result := common.PurchaseResult{
 		Recommendation: rec,
 		DryRun:         false,
@@ -386,7 +386,7 @@ func (c *DatabaseClient) PurchaseCommitment(ctx context.Context, rec common.Reco
 }
 
 // ValidateOffering validates that a SQL Database SKU exists.
-func (c *DatabaseClient) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
+func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
 	validSKUs, err := c.GetValidResourceTypes(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get valid SKUs: %w", err)
@@ -403,19 +403,19 @@ func (c *DatabaseClient) ValidateOffering(ctx context.Context, rec common.Recomm
 }
 
 // GetOfferingDetails retrieves SQL Database reservation offering details from Azure Retail Prices API.
-func (c *DatabaseClient) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
+func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	termYears, err := reservations.ParseTermYears(rec.Term)
 	if err != nil {
 		return nil, fmt.Errorf("invalid term: %w", err)
 	}
 
-	pricing, err := c.getSQLPricing(ctx, rec.ResourceType, c.region, termYears)
+	sqlPricing, err := c.getSQLPricing(ctx, rec.ResourceType, c.region, termYears)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pricing: %w", err)
 	}
 
 	var upfrontCost, recurringCost float64
-	totalCost := pricing.ReservationPrice
+	totalCost := sqlPricing.ReservationPrice
 
 	switch rec.PaymentOption {
 	case "all-upfront", "upfront":
@@ -439,13 +439,13 @@ func (c *DatabaseClient) GetOfferingDetails(ctx context.Context, rec common.Reco
 		UpfrontCost:         upfrontCost,
 		RecurringCost:       recurringCost,
 		TotalCost:           totalCost,
-		EffectiveHourlyRate: pricing.HourlyRate,
-		Currency:            pricing.Currency,
+		EffectiveHourlyRate: sqlPricing.HourlyRate,
+		Currency:            sqlPricing.Currency,
 	}, nil
 }
 
 // GetValidResourceTypes returns valid SQL Database SKUs from Azure API.
-func (c *DatabaseClient) GetValidResourceTypes(ctx context.Context) ([]string, error) {
+func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	capClient, err := c.getOrCreateCapabilitiesClient()
 	if err != nil {
 		return nil, err
@@ -479,7 +479,7 @@ func (c *DatabaseClient) GetValidResourceTypes(ctx context.Context) ([]string, e
 }
 
 // getOrCreateCapabilitiesClient returns the injected client or creates a new one.
-func (c *DatabaseClient) getOrCreateCapabilitiesClient() (CapabilitiesClient, error) {
+func (c *Client) getOrCreateCapabilitiesClient() (CapabilitiesClient, error) {
 	if c.capabilitiesClient != nil {
 		return c.capabilitiesClient, nil
 	}
@@ -493,7 +493,7 @@ func (c *DatabaseClient) getOrCreateCapabilitiesClient() (CapabilitiesClient, er
 }
 
 // extractServerSKUs extracts SKUs from server version capabilities.
-func (c *DatabaseClient) extractServerSKUs(capabilities armsql.LocationCapabilities, skuSet map[string]bool) {
+func (c *Client) extractServerSKUs(capabilities armsql.LocationCapabilities, skuSet map[string]bool) {
 	if capabilities.SupportedServerVersions == nil {
 		return
 	}
@@ -518,7 +518,7 @@ func (c *DatabaseClient) extractServerSKUs(capabilities armsql.LocationCapabilit
 }
 
 // extractManagedInstanceSKUs extracts SKUs from managed instance capabilities.
-func (c *DatabaseClient) extractManagedInstanceSKUs(capabilities armsql.LocationCapabilities, skuSet map[string]bool) {
+func (c *Client) extractManagedInstanceSKUs(capabilities armsql.LocationCapabilities, skuSet map[string]bool) {
 	if capabilities.SupportedManagedInstanceVersions == nil {
 		return
 	}
@@ -546,7 +546,7 @@ type SQLPricing struct {
 }
 
 // getSQLPricing gets real pricing from Azure Retail Prices API.
-func (c *DatabaseClient) getSQLPricing(ctx context.Context, sku, region string, termYears int) (*SQLPricing, error) {
+func (c *Client) getSQLPricing(ctx context.Context, sku, region string, termYears int) (*SQLPricing, error) {
 	filter := fmt.Sprintf("serviceName eq 'SQL Database' and armRegionName eq '%s' and armSkuName eq '%s'",
 		region, sku)
 
@@ -590,7 +590,7 @@ func (c *DatabaseClient) getSQLPricing(ctx context.Context, sku, region string, 
 // Delegates pagination to pricing.FetchAll — see
 // providers/azure/internal/pricing for the per-page timeout, max-pages
 // cap, and seen-URL guard invariants.
-func (c *DatabaseClient) fetchAzurePricing(ctx context.Context, filter string) (*AzureRetailPrice, error) {
+func (c *Client) fetchAzurePricing(ctx context.Context, filter string) (*AzureRetailPrice, error) {
 	params := url.Values{}
 	params.Add("$filter", filter)
 	params.Add("api-version", "2023-01-01-preview")
@@ -618,7 +618,8 @@ func extractSQLPricing(items []pricing.RetailPriceItem, termYears int) (onDemand
 	currency = "USD"
 	termStr := azureTermString(termYears)
 
-	for _, item := range items {
+	for i := range items {
+		item := &items[i]
 		if item.CurrencyCode != "" {
 			currency = item.CurrencyCode
 		}
@@ -645,7 +646,7 @@ func extractSQLPricing(items []pricing.RetailPriceItem, termYears int) (onDemand
 // otherwise stays empty. AZConfig and Deployment are enriched from the
 // lazily-cached subscription-wide server/managed-instance lists;
 // both stay empty when the fetch fails or the subscription is ambiguous.
-func (c *DatabaseClient) convertAzureSQLRecommendation(ctx context.Context, azureRec armconsumption.ReservationRecommendationClassification) *common.Recommendation {
+func (c *Client) convertAzureSQLRecommendation(ctx context.Context, azureRec armconsumption.ReservationRecommendationClassification) *common.Recommendation {
 	f := azrecs.Extract(azureRec)
 	if f == nil {
 		return nil
@@ -685,7 +686,7 @@ func (c *DatabaseClient) convertAzureSQLRecommendation(ctx context.Context, azur
 // subsequent calls are O(1) map lookups. ok=false on cache miss OR
 // catalog-fetch failure — the caller falls back to empty
 // EngineVersion rather than failing the whole conversion.
-func (c *DatabaseClient) cachedSKULookup(ctx context.Context, skuName string) (sqlSKUEntry, bool) {
+func (c *Client) cachedSKULookup(ctx context.Context, skuName string) (sqlSKUEntry, bool) {
 	c.skuCacheOnce.Do(func() {
 		c.skuCacheMap = c.fetchSKUCatalogue(ctx)
 	})
@@ -700,7 +701,7 @@ func (c *DatabaseClient) cachedSKULookup(ctx context.Context, skuName string) (s
 // the response into a name->sqlSKUEntry map keyed by ServiceLevelObjective
 // SKU.Name (matches the recommendation engine's ResourceType). Returns
 // nil on error so the sync.Once-gated cache field stays nil.
-func (c *DatabaseClient) fetchSKUCatalogue(ctx context.Context) map[string]sqlSKUEntry {
+func (c *Client) fetchSKUCatalogue(ctx context.Context) map[string]sqlSKUEntry {
 	capClient, err := c.getOrCreateCapabilitiesClient()
 	if err != nil {
 		logging.Warnf("azure database: SKU catalog capabilities client create failed for region %s: %v — Details.EngineVersion left empty", c.region, err)
@@ -712,7 +713,7 @@ func (c *DatabaseClient) fetchSKUCatalogue(ctx context.Context) map[string]sqlSK
 		return nil
 	}
 	out := make(map[string]sqlSKUEntry)
-	for _, version := range resp.LocationCapabilities.SupportedServerVersions {
+	for _, version := range resp.SupportedServerVersions {
 		if version == nil || version.Name == nil {
 			continue
 		}
@@ -756,7 +757,7 @@ func populateSQLSKUMapFromVersion(out map[string]sqlSKUEntry, engineVersion stri
 // Both AZConfig and Deployment are populated by a single
 // fetchServerInfo call gated by serverInfoOnce; there is no double walk.
 // This ensures the injected test pager is consumed exactly once.
-func (c *DatabaseClient) cachedDominantAZConfig(ctx context.Context) string {
+func (c *Client) cachedDominantAZConfig(ctx context.Context) string {
 	c.serverInfoOnce.Do(func() {
 		c.azConfig, c.deployment = c.fetchServerInfo(ctx)
 	})
@@ -767,7 +768,7 @@ func (c *DatabaseClient) cachedDominantAZConfig(ctx context.Context) string {
 // across the subscription's SQL resources, or "" when ambiguous or
 // unavailable. Values: "managed" / "single". Shares the single
 // fetchServerInfo walk with cachedDominantAZConfig.
-func (c *DatabaseClient) cachedDominantDeployment(ctx context.Context) string {
+func (c *Client) cachedDominantDeployment(ctx context.Context) string {
 	c.serverInfoOnce.Do(func() {
 		c.azConfig, c.deployment = c.fetchServerInfo(ctx)
 	})
@@ -782,7 +783,7 @@ func (c *DatabaseClient) cachedDominantDeployment(ctx context.Context) string {
 //
 // AZConfig: "zoneRedundant" / "none" / "" (ambiguous or no signal).
 // Deployment: "managed" / "single" / "" (mixed or no signal).
-func (c *DatabaseClient) fetchServerInfo(ctx context.Context) (azConfig, deployment string) {
+func (c *Client) fetchServerInfo(ctx context.Context) (azConfig, deployment string) {
 	zoneRedundantCount, nonZoneRedundantCount, managedCount := c.walkManagedInstances(ctx)
 	hasServers := c.hasRegularServers(ctx)
 
@@ -817,7 +818,7 @@ func (c *DatabaseClient) fetchServerInfo(ctx context.Context) (azConfig, deploym
 // returns the count of zone-redundant, non-zone-redundant, and total
 // managed instances observed. Stops immediately on context cancellation
 // or unrecoverable page error.
-func (c *DatabaseClient) walkManagedInstances(ctx context.Context) (zoneRedundant, nonZoneRedundant, total int) {
+func (c *Client) walkManagedInstances(ctx context.Context) (zoneRedundant, nonZoneRedundant, total int) {
 	pager, err := c.createManagedInstancesPager()
 	if err != nil {
 		logging.Warnf("azure database: managed instances pager create failed: %v; AZConfig/Deployment signal unavailable", err)
@@ -848,7 +849,7 @@ func (c *DatabaseClient) walkManagedInstances(ctx context.Context) (zoneRedundan
 }
 
 // createManagedInstancesPager returns the injected pager or creates a real one.
-func (c *DatabaseClient) createManagedInstancesPager() (SQLManagedInstancesPager, error) {
+func (c *Client) createManagedInstancesPager() (SQLManagedInstancesPager, error) {
 	if c.managedInstancesPager != nil {
 		return c.managedInstancesPager, nil
 	}
@@ -861,7 +862,7 @@ func (c *DatabaseClient) createManagedInstancesPager() (SQLManagedInstancesPager
 
 // hasRegularServers returns true when at least one SQL server exists in
 // the subscription. Stops after the first non-empty page.
-func (c *DatabaseClient) hasRegularServers(ctx context.Context) bool {
+func (c *Client) hasRegularServers(ctx context.Context) bool {
 	pager, err := c.createServersPager()
 	if err != nil {
 		logging.Warnf("azure database: servers pager create failed: %v; Deployment signal unavailable", err)
@@ -884,7 +885,7 @@ func (c *DatabaseClient) hasRegularServers(ctx context.Context) bool {
 }
 
 // createServersPager returns the injected pager or creates a real one.
-func (c *DatabaseClient) createServersPager() (SQLServersPager, error) {
+func (c *Client) createServersPager() (SQLServersPager, error) {
 	if c.serversPager != nil {
 		return c.serversPager, nil
 	}
