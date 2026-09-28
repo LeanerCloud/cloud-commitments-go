@@ -540,7 +540,7 @@ func TestPurchaseCommitment_success(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.Equal(t, "syn-order-001", result.CommitmentID)
-	assert.InDelta(t, 5000.0, result.Cost, 0.01)
+	assert.InDelta(t, 5000.0, *result.Cost, 0.01)
 }
 
 func TestPurchaseCommitment_3yrTerm(t *testing.T) {

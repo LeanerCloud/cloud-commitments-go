@@ -370,7 +370,7 @@ func TestClient_PurchaseCommitment(t *testing.T) {
 				ReservedDBInstanceId: aws.String("ri-789"),
 				DBInstanceClass:      aws.String("db.r6g.xlarge"),
 				DBInstanceCount:      aws.Int32(2),
-				FixedPrice:           aws.Float64(10000.0),
+				FixedPrice:           aws.Float64(5000.0),
 				StartTime:            aws.Time(time.Now()),
 				State:                aws.String("payment-pending"),
 			},
@@ -381,7 +381,8 @@ func TestClient_PurchaseCommitment(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.Equal(t, "ri-789", result.CommitmentID)
-	assert.Equal(t, 10000.0, result.Cost)
+	require.NotNil(t, result.Cost, "upfront cost must be recorded")
+	assert.Equal(t, 10000.0, *result.Cost, "total upfront is per-instance FixedPrice x DBInstanceCount")
 	mockRDS.AssertExpectations(t)
 }
 

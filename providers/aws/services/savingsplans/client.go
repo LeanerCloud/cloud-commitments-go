@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -260,7 +261,38 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		return result, result.Error
 	}
 
+	result.Cost = c.upfrontPaymentAmount(ctx, result.CommitmentID)
+
 	return result, nil
+}
+
+// upfrontPaymentAmount reads the upfront charge AWS assigned to a just-created
+// Savings Plan. CreateSavingsPlan returns only the ID and AWS derives the
+// partial-upfront amount itself, so DescribeSavingsPlans is the only
+// authoritative source. Returns nil when it cannot be read: the plan is
+// already bought, so a lookup failure must not fail the purchase.
+func (c *Client) upfrontPaymentAmount(ctx context.Context, savingsPlanID string) *float64 {
+	out, err := c.client.DescribeSavingsPlans(ctx, &savingsplans.DescribeSavingsPlansInput{
+		SavingsPlanIds: []string{savingsPlanID},
+	})
+	if err != nil {
+		log.Printf("WARNING: failed to read upfront cost of Savings Plan %s after purchase (plan is bought; cost unrecorded): %v", savingsPlanID, err)
+		return nil
+	}
+	for i := range out.SavingsPlans {
+		sp := &out.SavingsPlans[i]
+		if aws.ToString(sp.SavingsPlanId) != savingsPlanID {
+			continue
+		}
+		amount, err := strconv.ParseFloat(aws.ToString(sp.UpfrontPaymentAmount), 64)
+		if err != nil {
+			log.Printf("WARNING: Savings Plan %s has unparseable upfront amount %q (cost unrecorded): %v", savingsPlanID, aws.ToString(sp.UpfrontPaymentAmount), err)
+			return nil
+		}
+		return &amount
+	}
+	log.Printf("WARNING: Savings Plan %s not returned by DescribeSavingsPlans after purchase (cost unrecorded)", savingsPlanID)
+	return nil
 }
 
 // resolveSPPlanType resolves the effective plan type for an offering lookup.

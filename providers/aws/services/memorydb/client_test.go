@@ -266,7 +266,7 @@ func TestClient_PurchaseCommitment(t *testing.T) {
 				ReservationId: aws.String("mdb-789"),
 				NodeType:      aws.String("db.r6gd.2xlarge"),
 				NodeCount:     3,
-				FixedPrice:    24000.0,
+				FixedPrice:    8000.0,
 				StartTime:     aws.Time(time.Now()),
 				State:         aws.String("payment-pending"),
 			},
@@ -277,7 +277,8 @@ func TestClient_PurchaseCommitment(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.Equal(t, "mdb-789", result.CommitmentID)
-	assert.Equal(t, 24000.0, result.Cost)
+	require.NotNil(t, result.Cost, "upfront cost must be recorded")
+	assert.Equal(t, 24000.0, *result.Cost, "total upfront is per-node FixedPrice x NodeCount")
 	mockMDB.AssertExpectations(t)
 }
 

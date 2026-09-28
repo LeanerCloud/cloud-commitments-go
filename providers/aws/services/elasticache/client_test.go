@@ -312,7 +312,7 @@ func TestClient_PurchaseCommitment(t *testing.T) {
 				ReservedCacheNodeId: aws.String("rc-789"),
 				CacheNodeType:       aws.String("cache.m6g.xlarge"),
 				CacheNodeCount:      aws.Int32(3),
-				FixedPrice:          aws.Float64(12000.0),
+				FixedPrice:          aws.Float64(4000.0),
 				StartTime:           aws.Time(time.Now()),
 				State:               aws.String("payment-pending"),
 			},
@@ -323,7 +323,8 @@ func TestClient_PurchaseCommitment(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.Equal(t, "rc-789", result.CommitmentID)
-	assert.Equal(t, 12000.0, result.Cost)
+	require.NotNil(t, result.Cost, "upfront cost must be recorded")
+	assert.Equal(t, 12000.0, *result.Cost, "total upfront is per-node FixedPrice x CacheNodeCount")
 	mockEC.AssertExpectations(t)
 }
 

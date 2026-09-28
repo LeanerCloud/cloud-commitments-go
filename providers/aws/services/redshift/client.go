@@ -201,8 +201,10 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	if response.ReservedNode != nil {
 		result.Success = true
 		result.CommitmentID = aws.ToString(response.ReservedNode.ReservedNodeId)
-		if response.ReservedNode.FixedPrice != nil {
-			result.Cost = *response.ReservedNode.FixedPrice
+		// FixedPrice is per node; the reservation total is FixedPrice x count.
+		if rn := response.ReservedNode; rn.FixedPrice != nil && rn.NodeCount != nil {
+			total := *rn.FixedPrice * float64(*rn.NodeCount)
+			result.Cost = &total
 		}
 	} else {
 		result.Error = fmt.Errorf("purchase response was empty")

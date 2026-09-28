@@ -485,11 +485,53 @@ func TestClient_PurchaseCommitment(t *testing.T) {
 			SavingsPlanId: aws.String("sp-789"),
 		}, nil)
 
+	mockSP.On("DescribeSavingsPlans", mock.Anything, mock.MatchedBy(func(in *savingsplans.DescribeSavingsPlansInput) bool {
+		return len(in.SavingsPlanIds) == 1 && in.SavingsPlanIds[0] == "sp-789"
+	})).Return(&savingsplans.DescribeSavingsPlansOutput{
+		SavingsPlans: []types.SavingsPlan{{SavingsPlanId: aws.String("sp-789"), UpfrontPaymentAmount: aws.String("87600.00")}},
+	}, nil)
+
 	result, err := client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
 
 	assert.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.Equal(t, "sp-789", result.CommitmentID)
+	require.NotNil(t, result.Cost, "Savings Plan purchase must record its upfront cost, not leave it unset")
+	assert.Equal(t, 87600.0, *result.Cost, "upfront cost is the amount AWS assigned to the created plan")
+	mockSP.AssertExpectations(t)
+}
+
+// TestClient_PurchaseCommitment_UpfrontUnreadableIsNil asserts that when the
+// post-purchase lookup fails, the bought plan still reports success and its
+// cost is absent (nil) rather than a fabricated 0.
+func TestClient_PurchaseCommitment_UpfrontUnreadableIsNil(t *testing.T) {
+	mockSP := &MockSavingsPlansClient{}
+	client := &Client{client: mockSP, region: "us-east-1"}
+
+	rec := common.Recommendation{
+		Service:       common.ServiceSavingsPlansAll,
+		ResourceType:  "Compute",
+		Count:         1,
+		PaymentOption: "all-upfront",
+		Term:          "1yr",
+		Details:       &common.SavingsPlanDetails{PlanType: "Compute", HourlyCommitment: 10.0},
+	}
+
+	mockSP.On("DescribeSavingsPlansOfferings", mock.Anything, mock.Anything).
+		Return(&savingsplans.DescribeSavingsPlansOfferingsOutput{
+			SearchResults: []types.SavingsPlanOffering{{OfferingId: aws.String("offering-123")}},
+		}, nil)
+	mockSP.On("CreateSavingsPlan", mock.Anything, mock.Anything).
+		Return(&savingsplans.CreateSavingsPlanOutput{SavingsPlanId: aws.String("sp-789")}, nil)
+	mockSP.On("DescribeSavingsPlans", mock.Anything, mock.Anything).
+		Return(nil, fmt.Errorf("throttled"))
+
+	result, err := client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
+
+	require.NoError(t, err)
+	assert.True(t, result.Success)
+	assert.Equal(t, "sp-789", result.CommitmentID)
+	assert.Nil(t, result.Cost)
 	mockSP.AssertExpectations(t)
 }
 
@@ -523,6 +565,7 @@ func TestClient_PurchaseCommitment_SetsClientTokenForIdempotency(t *testing.T) {
 			captured = args.Get(1).(*savingsplans.CreateSavingsPlanInput)
 		}).
 		Return(&savingsplans.CreateSavingsPlanOutput{SavingsPlanId: aws.String("sp-789")}, nil)
+	mockSP.On("DescribeSavingsPlans", mock.Anything, mock.Anything).Return(&savingsplans.DescribeSavingsPlansOutput{}, nil)
 
 	token := common.DeriveIdempotencyToken("exec-sp-1", 0)
 	result, err := client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{IdempotencyToken: token})
@@ -565,6 +608,7 @@ func TestClient_PurchaseCommitment_NoClientTokenWhenUnset(t *testing.T) {
 			captured = args.Get(1).(*savingsplans.CreateSavingsPlanInput)
 		}).
 		Return(&savingsplans.CreateSavingsPlanOutput{SavingsPlanId: aws.String("sp-789")}, nil)
+	mockSP.On("DescribeSavingsPlans", mock.Anything, mock.Anything).Return(&savingsplans.DescribeSavingsPlansOutput{}, nil)
 
 	_, err := client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
 	require.NoError(t, err)

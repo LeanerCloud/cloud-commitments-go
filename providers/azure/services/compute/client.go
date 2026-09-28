@@ -533,7 +533,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 
 	result.Success = true
 	result.CommitmentID = reservationOrderID
-	result.Cost = rec.CommitmentCost
+	result.Cost = &rec.CommitmentCost
 	return result, nil
 }
 

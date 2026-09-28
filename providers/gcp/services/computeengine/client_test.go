@@ -479,7 +479,7 @@ func TestComputeEngineClient_PurchaseCommitment_WithMock(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.NotEmpty(t, result.CommitmentID)
-	assert.Equal(t, 1000.0, result.Cost)
+	assert.Equal(t, 1000.0, *result.Cost)
 }
 
 // TestComputeEngineClient_PurchaseCommitment_PointerDetails is the regression
@@ -510,7 +510,7 @@ func TestComputeEngineClient_PurchaseCommitment_PointerDetails(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.NotEmpty(t, result.CommitmentID)
-	assert.Equal(t, 1000.0, result.Cost)
+	assert.Equal(t, 1000.0, *result.Cost)
 }
 
 // TestComputeEngineClient_PurchaseCommitment_NilPointerDetails verifies that
