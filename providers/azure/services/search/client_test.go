@@ -813,7 +813,7 @@ func TestSearchClient_PurchaseCommitment_Success(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.Equal(t, "search-order-001", result.CommitmentID)
-	assert.Equal(t, 3000.0, result.Cost)
+	assert.Equal(t, 3000.0, *result.Cost)
 	mockHTTP.AssertExpectations(t)
 }
 

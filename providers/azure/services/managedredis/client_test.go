@@ -661,7 +661,7 @@ func TestPurchaseCommitment_Success(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.Equal(t, "mr-order-001", result.CommitmentID)
-	assert.Equal(t, 500.0, result.Cost)
+	assert.Equal(t, 500.0, *result.Cost)
 }
 
 func TestPurchaseCommitment_3yr(t *testing.T) {

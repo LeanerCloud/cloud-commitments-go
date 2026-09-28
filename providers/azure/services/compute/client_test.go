@@ -671,7 +671,7 @@ func TestComputeClient_PurchaseCommitment_Success(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.Equal(t, "order-vm-001", result.CommitmentID)
-	assert.Equal(t, 2000.0, result.Cost)
+	assert.Equal(t, 2000.0, *result.Cost)
 	mockHTTP.AssertExpectations(t)
 }
 

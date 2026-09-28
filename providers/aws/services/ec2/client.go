@@ -150,8 +150,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		}
 	}
 
-	// Find the offering ID
-	offeringID, err := c.findOfferingID(ctx, rec, opts.ExecutionID, opts.OfferingClass)
+	offering, err := c.findOffering(ctx, rec, opts.ExecutionID, opts.OfferingClass)
 	if err != nil {
 		result.Error = fmt.Errorf("failed to find offering: %w", err)
 		return result, result.Error
@@ -159,7 +158,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 
 	// Create the purchase request
 	input := &ec2.PurchaseReservedInstancesOfferingInput{
-		ReservedInstancesOfferingId: aws.String(offeringID),
+		ReservedInstancesOfferingId: offering.ReservedInstancesOfferingId,
 		InstanceCount:               aws.Int32(int32(rec.Count)), // #nosec G115 -- Count from CE recommendation; AWS RI purchase limits keep this far below math.MaxInt32
 	}
 
@@ -174,6 +173,12 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	if response.ReservedInstancesId != nil {
 		result.Success = true
 		result.CommitmentID = aws.ToString(response.ReservedInstancesId)
+		// The purchase response carries no price; the offering's FixedPrice is per
+		// instance, so the total upfront is FixedPrice x the purchased count.
+		if offering.FixedPrice != nil {
+			total := float64(aws.ToFloat32(offering.FixedPrice)) * float64(rec.Count)
+			result.Cost = &total
+		}
 	} else {
 		result.Error = fmt.Errorf("purchase response was empty")
 		return result, result.Error
@@ -456,9 +461,9 @@ func describeInputFromQuery(q ec2OfferingQuery, nextToken *string) *ec2.Describe
 }
 
 // buildEC2QueryFromRec extracts ComputeDetails from rec, converts the payment
-// option, and assembles the ec2OfferingQuery used by findOfferingID.
+// option, and assembles the ec2OfferingQuery used by findOffering.
 //
-// Pulled out of findOfferingID to keep that function under the cyclomatic limit.
+// Pulled out of findOffering to keep that function under the cyclomatic limit.
 func (c *Client) buildEC2QueryFromRec(rec common.Recommendation) (ec2OfferingQuery, error) {
 	details, ok := rec.Details.(*common.ComputeDetails)
 	if !ok || details == nil {
@@ -480,7 +485,7 @@ func (c *Client) buildEC2QueryFromRec(rec common.Recommendation) (ec2OfferingQue
 	return q, nil
 }
 
-// findOfferingID finds the appropriate EC2 Reserved Instance offering ID.
+// findOffering finds the appropriate EC2 Reserved Instance offering.
 //
 // The input is built from typed first-class fields on
 // DescribeReservedInstancesOfferingsInput (InstanceType, ProductDescription,
@@ -495,14 +500,14 @@ func (c *Client) buildEC2QueryFromRec(rec common.Recommendation) (ec2OfferingQue
 // calling outside of a purchase flow (ValidateOffering, GetOfferingDetails).
 // offeringClassStr is the GlobalConfig.OfferingClass value; "" is treated as
 // "convertible" to preserve pre-694 behavior. Unknown values fail loudly.
-func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation, execID, offeringClassStr string) (string, error) {
+func (c *Client) findOffering(ctx context.Context, rec common.Recommendation, execID, offeringClassStr string) (*types.ReservedInstancesOffering, error) {
 	q, err := c.buildEC2QueryFromRec(rec)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	oc, err := resolveOfferingClassType(offeringClassStr)
 	if err != nil {
-		return "", fmt.Errorf("offering class config error: %w", err)
+		return nil, fmt.Errorf("offering class config error: %w", err)
 	}
 	q.offeringClass = oc
 
@@ -511,42 +516,42 @@ func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation, 
 		tag = "no-exec"
 	}
 	t0 := time.Now()
-	log.Printf("purchase[%s]: EC2 findOfferingID starting (instance=%s platform=%s tenancy=%s term=%s payment=%s)",
+	log.Printf("purchase[%s]: EC2 findOffering starting (instance=%s platform=%s tenancy=%s term=%s payment=%s)",
 		tag, rec.ResourceType, q.productDesc, q.tenancy, rec.Term, rec.PaymentOption)
 
 	var nextToken *string
 	page := 0
 	for {
 		if err := ctx.Err(); err != nil {
-			return "", err
+			return nil, err
 		}
 		page++
 		if page > maxOfferingPages {
-			return "", fmt.Errorf("pagination cap reached after %d pages for EC2 %s %s %s (issue #688)",
+			return nil, fmt.Errorf("pagination cap reached after %d pages for EC2 %s %s %s (issue #688)",
 				maxOfferingPages, rec.ResourceType, q.productDesc, rec.PaymentOption)
 		}
 		pageStart := time.Now()
 		result, err := c.client.DescribeReservedInstancesOfferings(ctx, describeInputFromQuery(q, nextToken))
 		if err != nil {
-			log.Printf("purchase[%s]: EC2 findOfferingID page %d failed after %s (total %s): %v",
+			log.Printf("purchase[%s]: EC2 findOffering page %d failed after %s (total %s): %v",
 				tag, page, time.Since(pageStart), time.Since(t0), err)
-			return "", fmt.Errorf("failed to describe offerings: %w", err)
+			return nil, fmt.Errorf("failed to describe offerings: %w", err)
 		}
-		log.Printf("purchase[%s]: EC2 findOfferingID page %d: %d offerings in %s",
+		log.Printf("purchase[%s]: EC2 findOffering page %d: %d offerings in %s",
 			tag, page, len(result.ReservedInstancesOfferings), time.Since(pageStart))
-		if id := scanEC2OfferingPage(result.ReservedInstancesOfferings, q.wantOfferingType); id != "" {
-			log.Printf("purchase[%s]: EC2 findOfferingID found match on page %d after %s total",
+		if o := scanEC2OfferingPage(result.ReservedInstancesOfferings, q.wantOfferingType); o != nil {
+			log.Printf("purchase[%s]: EC2 findOffering found match on page %d after %s total",
 				tag, page, time.Since(t0))
-			return id, nil
+			return o, nil
 		}
 		if isLastEC2Page(result.NextToken) {
 			break
 		}
 		nextToken = result.NextToken
 	}
-	log.Printf("purchase[%s]: EC2 findOfferingID exhausted %d page(s) in %s -- no match",
+	log.Printf("purchase[%s]: EC2 findOffering exhausted %d page(s) in %s -- no match",
 		tag, page, time.Since(t0))
-	return "", fmt.Errorf("no offerings found for EC2 %s %s %s after %d page(s) (issue #688)",
+	return nil, fmt.Errorf("no offerings found for EC2 %s %s %s after %d page(s) (issue #688)",
 		rec.ResourceType, q.productDesc, rec.PaymentOption, page)
 }
 
@@ -559,29 +564,29 @@ func isLastEC2Page(nextToken *string) bool {
 }
 
 // scanEC2OfferingPage returns the first offering whose OfferingType matches
-// wantType. With the typed OfferingType field set on the request this should
+// wantType, or nil. With the typed OfferingType field set on the request this should
 // always be the first offering, but the check is kept as defense in depth.
 // Mismatched offerings are skipped (logged), not treated as errors -- a
 // mismatch indicates an API-side anomaly worth observing, not a reason to fail
 // the rec while a valid offering may still be on a later page.
-func scanEC2OfferingPage(offerings []types.ReservedInstancesOffering, wantType types.OfferingTypeValues) string {
+func scanEC2OfferingPage(offerings []types.ReservedInstancesOffering, wantType types.OfferingTypeValues) *types.ReservedInstancesOffering {
 	for i := range offerings {
 		o := &offerings[i]
 		if o.OfferingType != wantType {
-			log.Printf("EC2 findOfferingID skipping mismatched variant %s (got %q want %q)",
+			log.Printf("EC2 findOffering skipping mismatched variant %s (got %q want %q)",
 				aws.ToString(o.ReservedInstancesOfferingId), o.OfferingType, wantType)
 			continue
 		}
-		return aws.ToString(o.ReservedInstancesOfferingId)
+		return o
 	}
-	return ""
+	return nil
 }
 
 // ValidateOffering checks if an offering exists without purchasing.
 // Uses the convertible class (empty = convertible default) since the
 // validation path has no GlobalConfig context.
 func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
-	_, err := c.findOfferingID(ctx, rec, "", "")
+	_, err := c.findOffering(ctx, rec, "", "")
 	return err
 }
 
@@ -589,10 +594,11 @@ func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation
 // Uses the convertible class (empty = convertible default) since the
 // details-fetch path has no GlobalConfig context.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
-	offeringID, err := c.findOfferingID(ctx, rec, "", "")
+	match, err := c.findOffering(ctx, rec, "", "")
 	if err != nil {
 		return nil, err
 	}
+	offeringID := aws.ToString(match.ReservedInstancesOfferingId)
 
 	input := &ec2.DescribeReservedInstancesOfferingsInput{
 		ReservedInstancesOfferingIds: []string{offeringID},
@@ -921,7 +927,7 @@ func appendTargetOfferings(out []TargetOffering, offerings []types.ReservedInsta
 
 // ListTargetOfferings returns convertible RI offerings that are valid exchange
 // targets for a source RI described by params. The query uses the same
-// typed-field approach as findOfferingID / describeInputFromQuery (PR #690):
+// typed-field approach as findOffering / describeInputFromQuery (PR #690):
 // typed primary fields (OfferingClass, OfferingType, Duration, ProductDescription,
 // InstanceTenancy) instead of Filters[]-heavy style to avoid the empty-page
 // pagination bug documented in issue #688. Scope has no typed field and stays

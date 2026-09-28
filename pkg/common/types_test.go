@@ -372,16 +372,17 @@ func TestRecommendation_Struct(t *testing.T) {
 
 func TestPurchaseResult_Struct(t *testing.T) {
 	t.Parallel()
+	cost := 600.0
 	result := PurchaseResult{
 		Success:      true,
 		CommitmentID: "ri-12345",
-		Cost:         600.0,
+		Cost:         &cost,
 		DryRun:       false,
 	}
 
 	assert.True(t, result.Success)
 	assert.Equal(t, "ri-12345", result.CommitmentID)
-	assert.Equal(t, 600.0, result.Cost)
+	assert.Equal(t, 600.0, *result.Cost)
 	assert.False(t, result.DryRun)
 }
 

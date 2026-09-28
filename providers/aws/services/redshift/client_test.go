@@ -313,7 +313,7 @@ func TestClient_PurchaseCommitment(t *testing.T) {
 				ReservedNodeId: aws.String("rn-789"),
 				NodeType:       aws.String("ra3.xlplus"),
 				NodeCount:      aws.Int32(4),
-				FixedPrice:     aws.Float64(40000.0),
+				FixedPrice:     aws.Float64(10000.0),
 				StartTime:      aws.Time(time.Now()),
 				State:          aws.String("payment-pending"),
 			},
@@ -324,7 +324,8 @@ func TestClient_PurchaseCommitment(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.Equal(t, "rn-789", result.CommitmentID)
-	assert.Equal(t, 40000.0, result.Cost)
+	require.NotNil(t, result.Cost, "upfront cost must be recorded")
+	assert.Equal(t, 40000.0, *result.Cost, "total upfront is per-node FixedPrice x NodeCount")
 	mockRS.AssertExpectations(t)
 }
 

@@ -440,6 +440,8 @@ func TestClient_PurchaseCommitment(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.Equal(t, "ri-12345678", result.CommitmentID)
+	require.NotNil(t, result.Cost, "EC2 RI purchase must record its upfront cost, not leave it unset")
+	assert.Equal(t, 200.0, *result.Cost, "total upfront is the offering FixedPrice x purchased count")
 	mockEC2.AssertExpectations(t)
 }
 
@@ -640,7 +642,7 @@ func TestCanonicalizeEC2Scope(t *testing.T) {
 	}
 }
 
-// TestFindOfferingID_PaginationCapFires asserts that findOfferingID returns a
+// TestFindOfferingID_PaginationCapFires asserts that findOffering returns a
 // "pagination cap reached" error after maxOfferingPages empty pages and does NOT
 // make a (maxOfferingPages+1)th call (issue #688).
 func TestFindOfferingID_PaginationCapFires(t *testing.T) {
@@ -668,7 +670,7 @@ func TestFindOfferingID_PaginationCapFires(t *testing.T) {
 			}, nil).Once()
 	}
 
-	_, err := client.findOfferingID(context.Background(), rec, "", "")
+	_, err := client.findOffering(context.Background(), rec, "", "")
 
 	if assert.Error(t, err) {
 		assert.Contains(t, err.Error(), "pagination cap reached")
@@ -676,12 +678,12 @@ func TestFindOfferingID_PaginationCapFires(t *testing.T) {
 	mockEC2.AssertNumberOfCalls(t, "DescribeReservedInstancesOfferings", maxOfferingPages)
 }
 
-// TestFindOfferingID_WrongVariantRejected asserts that findOfferingID rejects an
+// TestFindOfferingID_WrongVariantRejected asserts that findOffering rejects an
 // offering whose OfferingType does not match the requested payment option
 // is soft-skipped (logged, not returned). With the typed OfferingType field
 // on the request this should never fire in production; the test pins the
 // defense-in-depth behavior for the rare API anomaly. After skipping the
-// only mismatched offering on the only page, findOfferingID returns the
+// only mismatched offering on the only page, findOffering returns the
 // "no offerings found" diagnostic (issue #688).
 func TestFindOfferingID_WrongVariantRejected(t *testing.T) {
 	t.Parallel()
@@ -711,7 +713,7 @@ func TestFindOfferingID_WrongVariantRejected(t *testing.T) {
 			},
 		}, nil).Once()
 
-	_, err := client.findOfferingID(context.Background(), rec, "", "")
+	_, err := client.findOffering(context.Background(), rec, "", "")
 
 	if assert.Error(t, err) {
 		assert.Contains(t, err.Error(), "no offerings found")
@@ -719,7 +721,7 @@ func TestFindOfferingID_WrongVariantRejected(t *testing.T) {
 	}
 }
 
-// TestFindOfferingID_HappyPath asserts that findOfferingID returns the correct
+// TestFindOfferingID_HappyPath asserts that findOffering returns the correct
 // offering ID on the first page when a matching offering is present (issue #688).
 func TestFindOfferingID_HappyPath(t *testing.T) {
 	t.Parallel()
@@ -749,10 +751,10 @@ func TestFindOfferingID_HappyPath(t *testing.T) {
 			},
 		}, nil).Once()
 
-	id, err := client.findOfferingID(context.Background(), rec, "", "")
+	offering, err := client.findOffering(context.Background(), rec, "", "")
 
-	assert.NoError(t, err)
-	assert.Equal(t, "offering-ok", id)
+	require.NoError(t, err)
+	assert.Equal(t, "offering-ok", aws.ToString(offering.ReservedInstancesOfferingId))
 }
 
 // TestFindOfferingID_InvalidTerm_ErrorsBeforeAPICall is the ARCH-04
@@ -778,9 +780,9 @@ func TestFindOfferingID_InvalidTerm_ErrorsBeforeAPICall(t *testing.T) {
 		},
 	}
 
-	_, err := client.findOfferingID(context.Background(), rec, "", "")
+	_, err := client.findOffering(context.Background(), rec, "", "")
 
-	require.Error(t, err, "findOfferingID must error on an unrecognized term (ARCH-04)")
+	require.Error(t, err, "findOffering must error on an unrecognized term (ARCH-04)")
 	assert.Contains(t, err.Error(), "unsupported EC2 reservation term")
 	mockEC2.AssertNotCalled(t, "DescribeReservedInstancesOfferings", mock.Anything, mock.Anything)
 }
@@ -1228,7 +1230,7 @@ func TestDescribeInputFromQuery_OfferingClass(t *testing.T) {
 
 // TestFindOfferingID_OfferingClassReachesSDKCall is the integration test for
 // issue #694: it verifies that the offeringClassStr argument passed to
-// findOfferingID is wired all the way through to the OfferingClass field on
+// findOffering is wired all the way through to the OfferingClass field on
 // the outbound DescribeReservedInstancesOfferings SDK call. The test fails if
 // the wiring regresses (e.g. the field is dropped or hardcoded).
 func TestFindOfferingID_OfferingClassReachesSDKCall(t *testing.T) {
@@ -1288,9 +1290,9 @@ func TestFindOfferingID_OfferingClassReachesSDKCall(t *testing.T) {
 
 			client := &Client{client: cap, region: "us-east-1"}
 
-			id, err := client.findOfferingID(context.Background(), rec, "", tc.offeringClassStr)
-			assert.NoError(t, err)
-			assert.Equal(t, "offering-std-123", id)
+			offering, err := client.findOffering(context.Background(), rec, "", tc.offeringClassStr)
+			require.NoError(t, err)
+			assert.Equal(t, "offering-std-123", aws.ToString(offering.ReservedInstancesOfferingId))
 
 			if assert.NotNil(t, cap.LastDescribeOfferingsInput, "DescribeReservedInstancesOfferings must have been called") {
 				assert.Equal(t, tc.wantOfferingClass, cap.LastDescribeOfferingsInput.OfferingClass,
@@ -1301,7 +1303,7 @@ func TestFindOfferingID_OfferingClassReachesSDKCall(t *testing.T) {
 	}
 }
 
-// TestFindOfferingID_CtxCancelledBeforePage asserts that findOfferingID returns
+// TestFindOfferingID_CtxCancelledBeforePage asserts that findOffering returns
 // context.Canceled immediately when the context is already canceled at the top
 // of the first pagination iteration, without calling the AWS API (issue #515).
 func TestFindOfferingID_CtxCancelledBeforePage(t *testing.T) {
@@ -1325,7 +1327,7 @@ func TestFindOfferingID_CtxCancelledBeforePage(t *testing.T) {
 	cancel() // cancel before the first iteration
 
 	// The mock must not be called: ctx.Err() fires at the top of the loop.
-	_, err := client.findOfferingID(ctx, rec, "", "")
+	_, err := client.findOffering(ctx, rec, "", "")
 
 	assert.ErrorIs(t, err, context.Canceled)
 	mockEC2.AssertNumberOfCalls(t, "DescribeReservedInstancesOfferings", 0)
@@ -1358,7 +1360,7 @@ func TestFindOfferingID_EmptyStringTokenEndsPagination(t *testing.T) {
 			NextToken:                  aws.String(""),
 		}, nil).Once()
 
-	_, err := client.findOfferingID(context.Background(), rec, "", "")
+	_, err := client.findOffering(context.Background(), rec, "", "")
 
 	if assert.Error(t, err) {
 		assert.Contains(t, err.Error(), "no offerings found")
