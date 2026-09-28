@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/recfilter"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/elasticache"
 	"github.com/aws/aws-sdk-go-v2/service/elasticache/types"
@@ -777,4 +778,38 @@ func TestFindOfferingID_EmptyStringTokenEndsPagination(t *testing.T) {
 		assert.Contains(t, err.Error(), "no offerings found")
 	}
 	mockEC.AssertNumberOfCalls(t, "DescribeReservedCacheNodesOfferings", 1)
+}
+
+// Regression for cloud-commitments-go#66: the commitment must carry the same
+// engine as the recommendation, or the dedupe key never matches and a node
+// bought minutes ago is recommended and bought again.
+func TestClient_GetExistingCommitments_DedupesMatchingRecommendation(t *testing.T) {
+	mockClient := &MockElastiCacheClient{}
+	t.Cleanup(func() { mockClient.AssertExpectations(t) })
+	mockClient.On("DescribeReservedCacheNodes", mock.Anything, mock.Anything).
+		Return(&elasticache.DescribeReservedCacheNodesOutput{
+			ReservedCacheNodes: []types.ReservedCacheNode{{
+				ReservedCacheNodeId: aws.String("ri-new"),
+				CacheNodeType:       aws.String("cache.r6g.large"),
+				CacheNodeCount:      aws.Int32(1),
+				ProductDescription:  aws.String("redis"),
+				State:               aws.String("active"),
+				Duration:            aws.Int32(31536000),
+				StartTime:           aws.Time(time.Now().Add(-time.Hour)),
+			}},
+		}, nil).Once()
+
+	client := &Client{client: mockClient, region: "us-east-1"}
+	rec := common.Recommendation{
+		ResourceType: "cache.r6g.large",
+		Region:       "us-east-1",
+		Count:        1,
+		Details:      &common.CacheDetails{Engine: "Redis", NodeType: "cache.r6g.large"},
+	}
+
+	passed, filtered, err := recfilter.NewDuplicateChecker(0).
+		AdjustRecommendationsForExisting(context.Background(), []common.Recommendation{rec}, client)
+	require.NoError(t, err)
+	assert.Empty(t, passed)
+	assert.Len(t, filtered, 1)
 }

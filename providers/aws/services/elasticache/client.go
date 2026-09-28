@@ -97,6 +97,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 				Service:        common.ServiceCache,
 				Region:         c.region,
 				ResourceType:   aws.ToString(node.CacheNodeType),
+				Engine:         aws.ToString(node.ProductDescription),
 				Count:          int(aws.ToInt32(node.CacheNodeCount)),
 				State:          common.CommitmentState(state),
 				StartDate:      aws.ToTime(node.StartTime),

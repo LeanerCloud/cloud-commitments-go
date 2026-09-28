@@ -9,6 +9,7 @@ import (
 	ec2types "github.com/aws/aws-sdk-go-v2/service/ec2/types"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/memorydb"
 )
 
 // parseRDSDetails extracts RDS-specific details.
@@ -253,7 +254,7 @@ func (c *Client) parseMemoryDBDetails(_ context.Context, rec *common.Recommendat
 		rec.Region = normalizeRegionName(*mdbDetails.Region)
 	}
 	rec.Details = &common.CacheDetails{
-		Engine:   "redis",
+		Engine:   memorydb.ReservedNodeEngine,
 		NodeType: *mdbDetails.NodeType,
 	}
 	return nil

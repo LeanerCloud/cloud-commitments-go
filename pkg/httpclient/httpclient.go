@@ -10,10 +10,11 @@
 package httpclient
 
 import (
-	"context"
 	"fmt"
 	"net"
 	"net/http"
+	"net/netip"
+	"syscall"
 	"time"
 )
 
@@ -26,36 +27,46 @@ const (
 	requestTimeout      = 30 * time.Second
 )
 
-// imdsAddresses are the well-known metadata service addresses that must never
-// be reachable from application-level HTTP clients.
-var imdsAddresses = map[string]bool{
-	"169.254.169.254": true, // AWS/Azure/GCP link-local IMDS (IPv4)
-	"fd00:ec2::254":   true, // AWS IMDS (IPv6)
+// metadataPrefixes are the address ranges of cloud metadata and credential
+// services: all of IPv4/IPv6 link-local (AWS/Azure/GCP IMDS at 169.254.169.254,
+// ECS task credentials at 169.254.170.2, EKS Pod Identity at 169.254.170.23)
+// plus the AWS IPv6 IMDS and Pod Identity addresses, which are not link-local.
+var metadataPrefixes = []netip.Prefix{
+	netip.MustParsePrefix("169.254.0.0/16"),
+	netip.MustParsePrefix("fe80::/10"),
+	netip.MustParsePrefix("fd00:ec2::254/128"),
+	netip.MustParsePrefix("fd00:ec2::23/128"),
 }
 
-// blockIMDSDialer wraps net.Dialer and rejects connections to IMDS addresses.
-type blockIMDSDialer struct {
-	inner net.Dialer
-}
+// resolver is the dialer's resolver; nil means net.DefaultResolver. Tests
+// override it to resolve names to metadata addresses.
+var resolver *net.Resolver
 
-func (d *blockIMDSDialer) DialContext(ctx context.Context, network, addr string) (net.Conn, error) {
-	host, _, err := net.SplitHostPort(addr)
+// blockMetadata is a net.Dialer Control hook. It runs after name resolution
+// with the exact IP about to be connected, so hostnames, alternate IPv4
+// spellings, IPv4-mapped IPv6 and redirects cannot bypass it.
+func blockMetadata(_, address string, _ syscall.RawConn) error {
+	ap, err := netip.ParseAddrPort(address)
 	if err != nil {
-		host = addr
+		return fmt.Errorf("refusing to dial unparseable address %q: %w", address, err)
 	}
-	if imdsAddresses[host] {
-		return nil, fmt.Errorf("connection to metadata endpoint %s is blocked", host)
+	// Prefix.Contains never matches a zoned address, so drop the zone.
+	ip := ap.Addr().Unmap().WithZone("")
+	for _, p := range metadataPrefixes {
+		if p.Contains(ip) {
+			return fmt.Errorf("connection to metadata endpoint %s is blocked", ip)
+		}
 	}
-	return d.inner.DialContext(ctx, network, addr)
+	return nil
 }
 
 // New returns an *http.Client with a 30-second timeout and IMDS blocking.
 func New() *http.Client {
-	dialer := &blockIMDSDialer{
-		inner: net.Dialer{
-			Timeout:   dialTimeout,
-			KeepAlive: keepAliveInterval,
-		},
+	dialer := &net.Dialer{
+		Timeout:   dialTimeout,
+		KeepAlive: keepAliveInterval,
+		Resolver:  resolver,
+		Control:   blockMetadata,
 	}
 	transport := &http.Transport{
 		DialContext:         dialer.DialContext,
