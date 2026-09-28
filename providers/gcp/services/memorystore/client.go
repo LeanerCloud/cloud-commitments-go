@@ -3,14 +3,14 @@ package memorystore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"time"
 
-	"cloud.google.com/go/recommender/apiv1"
+	recommender "cloud.google.com/go/recommender/apiv1"
 	"cloud.google.com/go/recommender/apiv1/recommenderpb"
-	"cloud.google.com/go/redis/apiv1"
 	"cloud.google.com/go/redis/apiv1/redispb"
 	gax "github.com/googleapis/gax-go/v2"
 	"google.golang.org/api/cloudbilling/v1"
@@ -56,8 +56,8 @@ type RecommenderClient interface {
 	Close() error
 }
 
-// MemorystoreClient handles GCP Memorystore (Redis) commitments.
-type MemorystoreClient struct {
+// Client handles GCP Memorystore (Redis) commitments.
+type Client struct {
 	ctx               context.Context
 	projectID         string
 	region            string
@@ -68,8 +68,8 @@ type MemorystoreClient struct {
 }
 
 // NewClient creates a new GCP Memorystore client.
-func NewClient(ctx context.Context, projectID, region string, opts ...option.ClientOption) (*MemorystoreClient, error) {
-	return &MemorystoreClient{
+func NewClient(ctx context.Context, projectID, region string, opts ...option.ClientOption) (*Client, error) {
+	return &Client{
 		ctx:        ctx,
 		projectID:  projectID,
 		region:     region,
@@ -78,35 +78,18 @@ func NewClient(ctx context.Context, projectID, region string, opts ...option.Cli
 }
 
 // SetRedisService sets the Redis service (for testing).
-func (c *MemorystoreClient) SetRedisService(svc RedisService) {
+func (c *Client) SetRedisService(svc RedisService) {
 	c.redisService = svc
 }
 
 // SetBillingService sets the billing service (for testing).
-func (c *MemorystoreClient) SetBillingService(svc BillingService) {
+func (c *Client) SetBillingService(svc BillingService) {
 	c.billingService = svc
 }
 
 // SetRecommenderClient sets the recommender client (for testing).
-func (c *MemorystoreClient) SetRecommenderClient(client RecommenderClient) {
+func (c *Client) SetRecommenderClient(client RecommenderClient) {
 	c.recommenderClient = client
-}
-
-// realRedisService wraps the actual Redis client.
-type realRedisService struct {
-	client *redis.CloudRedisClient
-}
-
-func (r *realRedisService) ListInstances(ctx context.Context, req *redispb.ListInstancesRequest) RedisIterator {
-	return r.client.ListInstances(ctx, req)
-}
-
-func (r *realRedisService) CreateInstance(ctx context.Context, req *redispb.CreateInstanceRequest) (CreateInstanceOperation, error) {
-	return r.client.CreateInstance(ctx, req)
-}
-
-func (r *realRedisService) Close() error {
-	return r.client.Close()
 }
 
 // realBillingService wraps the actual Cloud Billing service.
@@ -142,18 +125,18 @@ func (r *realRecommenderClient) Close() error {
 }
 
 // GetServiceType returns the service type.
-func (c *MemorystoreClient) GetServiceType() common.ServiceType {
+func (c *Client) GetServiceType() common.ServiceType {
 	return common.ServiceCache
 }
 
 // GetRegion returns the region.
-func (c *MemorystoreClient) GetRegion() string {
+func (c *Client) GetRegion() string {
 	return c.region
 }
 
 // resolveRecommenderClient returns the injected client (for testing) or creates
 // a new one from the stored options.
-func (c *MemorystoreClient) resolveRecommenderClient(ctx context.Context) (RecommenderClient, error) {
+func (c *Client) resolveRecommenderClient(ctx context.Context) (RecommenderClient, error) {
 	if c.recommenderClient != nil {
 		return c.recommenderClient, nil
 	}
@@ -165,7 +148,7 @@ func (c *MemorystoreClient) resolveRecommenderClient(ctx context.Context) (Recom
 }
 
 // GetRecommendations gets Memorystore Redis recommendations from GCP Recommender API.
-func (c *MemorystoreClient) GetRecommendations(ctx context.Context, p *common.RecommendationParams) ([]common.Recommendation, error) {
+func (c *Client) GetRecommendations(ctx context.Context, p *common.RecommendationParams) ([]common.Recommendation, error) {
 	if p == nil {
 		return nil, fmt.Errorf("params cannot be nil")
 	}
@@ -195,7 +178,7 @@ func (c *MemorystoreClient) GetRecommendations(ctx context.Context, p *common.Re
 			return nil, fmt.Errorf("memorystore: GetRecommendations iteration cap (%d items) reached", maxRecsPages)
 		}
 		rec, err := it.Next()
-		if err == iterator.Done {
+		if errors.Is(err, iterator.Done) {
 			break
 		}
 		if err != nil {
@@ -221,7 +204,7 @@ func (c *MemorystoreClient) GetRecommendations(ctx context.Context, p *common.Re
 }
 
 // GetExistingCommitments retrieves existing Memorystore Redis commitments.
-func (c *MemorystoreClient) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
+func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	// GCP Memorystore Redis does not expose commitment status via the Redis API.
 	// ReservedIpRange (previously used here) is the VPC peering CIDR, not a
 	// commitment indicator. Return empty until a proper detection method is available.
@@ -237,7 +220,7 @@ func (c *MemorystoreClient) GetExistingCommitments(ctx context.Context) ([]commo
 // Redis instance that kept billing. Memorystore recommendations are therefore
 // advisory only; this returns a clear not-supported error and never calls any
 // resource-creation API (issue #640).
-func (c *MemorystoreClient) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
+func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
 	return common.PurchaseResult{
 		Recommendation: rec,
 		DryRun:         false,
@@ -251,7 +234,7 @@ func (c *MemorystoreClient) PurchaseCommitment(ctx context.Context, rec common.R
 }
 
 // ValidateOffering validates that a Redis tier exists.
-func (c *MemorystoreClient) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
+func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
 	validTiers, err := c.GetValidResourceTypes(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get valid tiers: %w", err)
@@ -267,7 +250,7 @@ func (c *MemorystoreClient) ValidateOffering(ctx context.Context, rec common.Rec
 }
 
 // GetOfferingDetails retrieves Memorystore offering details from GCP Billing API.
-func (c *MemorystoreClient) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
+func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	termYears := 1
 	if rec.Term == "3yr" || rec.Term == "3" {
 		termYears = 3
@@ -306,7 +289,7 @@ func (c *MemorystoreClient) GetOfferingDetails(ctx context.Context, rec common.R
 }
 
 // GetValidResourceTypes returns valid Memorystore tiers.
-func (c *MemorystoreClient) GetValidResourceTypes(ctx context.Context) ([]string, error) {
+func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	// Memorystore Redis has predefined tiers
 	validTiers := []string{
 		"BASIC",
@@ -328,7 +311,7 @@ type RedisPricing struct {
 // getRedisPricing gets pricing from GCP Cloud Billing Catalog API.
 // It returns an error when commitment pricing is absent from the catalog rather
 // than fabricating a price from a hardcoded discount factor (issue #1020).
-func (c *MemorystoreClient) getRedisPricing(ctx context.Context, tier, region string, termYears int) (*RedisPricing, error) {
+func (c *Client) getRedisPricing(ctx context.Context, tier, region string, termYears int) (*RedisPricing, error) {
 	billingSvc, err := c.getOrCreateBillingService(ctx)
 	if err != nil {
 		return nil, err
@@ -364,7 +347,7 @@ func (c *MemorystoreClient) getRedisPricing(ctx context.Context, tier, region st
 }
 
 // getOrCreateBillingService returns the billing service, creating it if needed.
-func (c *MemorystoreClient) getOrCreateBillingService(ctx context.Context) (BillingService, error) {
+func (c *Client) getOrCreateBillingService(ctx context.Context) (BillingService, error) {
 	if c.billingService != nil {
 		return c.billingService, nil
 	}
@@ -406,7 +389,7 @@ func extractPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string) (onDe
 }
 
 // extractPriceFromSKU extracts the unit price from a SKU.
-func extractPriceFromSKU(sku *cloudbilling.Sku) (float64, string) {
+func extractPriceFromSKU(sku *cloudbilling.Sku) (price float64, currency string) {
 	if len(sku.PricingInfo) == 0 {
 		return 0, ""
 	}
@@ -421,7 +404,7 @@ func extractPriceFromSKU(sku *cloudbilling.Sku) (float64, string) {
 		return 0, ""
 	}
 
-	price := float64(rate.UnitPrice.Units) + float64(rate.UnitPrice.Nanos)/1e9
+	price = float64(rate.UnitPrice.Units) + float64(rate.UnitPrice.Nanos)/1e9
 	return price, rate.UnitPrice.CurrencyCode
 }
 
@@ -488,7 +471,7 @@ func extractGCPSavings(rec *recommenderpb.Recommendation) float64 {
 // fillRedisPricing calls getRedisPricing and, on success, writes CommitmentCost,
 // OnDemandCost, SavingsPercentage, and BreakEvenMonths into rec. Pricing
 // failures are logged and do not discard the recommendation.
-func (c *MemorystoreClient) fillRedisPricing(ctx context.Context, rec *common.Recommendation, termYears int) {
+func (c *Client) fillRedisPricing(ctx context.Context, rec *common.Recommendation, termYears int) {
 	pricing, err := c.getRedisPricing(ctx, rec.ResourceType, c.region, termYears)
 	if err != nil {
 		log.Printf("memorystore: pricing unavailable for %s in %s (issue #1020): %v", rec.ResourceType, c.region, err)
@@ -518,7 +501,7 @@ func termYearsFromLabel(term string) int {
 // It also calls getRedisPricing to fill CommitmentCost/OnDemandCost/SavingsPercentage/
 // BreakEvenMonths so the scorer can filter and rank GCP recommendations correctly
 // (issue #1022 C2). Pricing failures are logged but do not discard the recommendation.
-func (c *MemorystoreClient) convertGCPRecommendation(ctx context.Context, gcpRec *recommenderpb.Recommendation, params common.RecommendationParams) *common.Recommendation {
+func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommenderpb.Recommendation, params common.RecommendationParams) *common.Recommendation {
 	paymentOption := params.PaymentOption
 	if paymentOption == "" {
 		paymentOption = "monthly"

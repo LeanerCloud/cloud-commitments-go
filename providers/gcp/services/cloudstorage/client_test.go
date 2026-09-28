@@ -130,18 +130,18 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestCloudStorageClient_GetServiceType(t *testing.T) {
-	client := &CloudStorageClient{}
+	client := &Client{}
 	assert.Equal(t, common.ServiceStorage, client.GetServiceType())
 }
 
 func TestCloudStorageClient_GetRegion(t *testing.T) {
-	client := &CloudStorageClient{region: "europe-west1"}
+	client := &Client{region: "europe-west1"}
 	assert.Equal(t, "europe-west1", client.GetRegion())
 }
 
 func TestCloudStorageClient_GetValidResourceTypes(t *testing.T) {
 	ctx := context.Background()
-	client := &CloudStorageClient{
+	client := &Client{
 		ctx:       ctx,
 		projectID: "test-project",
 		region:    "us-central1",
@@ -161,7 +161,7 @@ func TestCloudStorageClient_GetValidResourceTypes(t *testing.T) {
 
 func TestCloudStorageClient_ValidateOffering_ValidClasses(t *testing.T) {
 	ctx := context.Background()
-	client := &CloudStorageClient{
+	client := &Client{
 		ctx:       ctx,
 		projectID: "test-project",
 		region:    "us-central1",
@@ -182,7 +182,7 @@ func TestCloudStorageClient_ValidateOffering_ValidClasses(t *testing.T) {
 
 func TestCloudStorageClient_ValidateOffering_InvalidClass(t *testing.T) {
 	ctx := context.Background()
-	client := &CloudStorageClient{
+	client := &Client{
 		ctx:       ctx,
 		projectID: "test-project",
 		region:    "us-central1",
@@ -270,7 +270,7 @@ func TestSkuMatchesStorageClass(t *testing.T) {
 
 func TestCloudStorageClient_Fields(t *testing.T) {
 	ctx := context.Background()
-	client := &CloudStorageClient{
+	client := &Client{
 		ctx:       ctx,
 		projectID: "my-project",
 		region:    "asia-east1",
@@ -420,7 +420,8 @@ func TestCloudStorageClient_GetRecommendations_IteratorError(t *testing.T) {
 // storageMockSkus returns a slice with both an on-demand and a commitment SKU for
 // the given storage class and region. Required by tests that exercise GetOfferingDetails
 // after the issue #1020 fix (fabricated commitment prices are no longer allowed).
-func storageMockSkus(storageClass, region string, onDemandNanos, commitmentNanos int64) []*cloudbilling.Sku {
+func storageMockSkus(storageClass string, onDemandNanos, commitmentNanos int64) []*cloudbilling.Sku {
+	const region = "us-central1"
 	return []*cloudbilling.Sku{
 		{
 			Description:    storageClass + " Storage in " + region,
@@ -470,7 +471,7 @@ func TestCloudStorageClient_GetOfferingDetails_WithMock(t *testing.T) {
 	// Both on-demand and commitment SKUs required after the issue #1020 fix.
 	mockService := &MockBillingService{
 		skus: &cloudbilling.ListSkusResponse{
-			Skus: storageMockSkus("STANDARD", "us-central1", 26000000, 19500000),
+			Skus: storageMockSkus("STANDARD", 26000000, 19500000),
 		},
 	}
 	client.SetBillingService(mockService)
@@ -498,7 +499,7 @@ func TestCloudStorageClient_GetOfferingDetails_3yr(t *testing.T) {
 	// Both on-demand and commitment SKUs required after the issue #1020 fix.
 	mockService := &MockBillingService{
 		skus: &cloudbilling.ListSkusResponse{
-			Skus: storageMockSkus("NEARLINE", "us-central1", 10000000, 7000000),
+			Skus: storageMockSkus("NEARLINE", 10000000, 7000000),
 		},
 	}
 	client.SetBillingService(mockService)
@@ -562,7 +563,7 @@ func TestCloudStorageClient_GetOfferingDetails_DefaultPaymentOption(t *testing.T
 	// Both on-demand and commitment SKUs required after the issue #1020 fix.
 	mockService := &MockBillingService{
 		skus: &cloudbilling.ListSkusResponse{
-			Skus: storageMockSkus("STANDARD", "us-central1", 26000000, 19500000),
+			Skus: storageMockSkus("STANDARD", 26000000, 19500000),
 		},
 	}
 	client.SetBillingService(mockService)
@@ -728,7 +729,7 @@ func TestCloudStorageClient_GetStoragePricing_3Year(t *testing.T) {
 	// without a commitment SKU, getStoragePricing returns an error.
 	mockService := &MockBillingService{
 		skus: &cloudbilling.ListSkusResponse{
-			Skus: storageMockSkus("STANDARD", "us-central1", 26000000, 18200000),
+			Skus: storageMockSkus("STANDARD", 26000000, 18200000),
 		},
 	}
 	client.SetBillingService(mockService)

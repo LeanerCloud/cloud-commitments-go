@@ -3,12 +3,13 @@ package cloudstorage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"time"
 
-	"cloud.google.com/go/recommender/apiv1"
+	recommender "cloud.google.com/go/recommender/apiv1"
 	"cloud.google.com/go/recommender/apiv1/recommenderpb"
 	"cloud.google.com/go/storage"
 	"google.golang.org/api/cloudbilling/v1"
@@ -55,8 +56,8 @@ type BillingService interface {
 	ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error)
 }
 
-// CloudStorageClient handles GCP Cloud Storage commitments.
-type CloudStorageClient struct {
+// Client handles GCP Cloud Storage commitments.
+type Client struct {
 	ctx               context.Context
 	projectID         string
 	region            string
@@ -67,8 +68,8 @@ type CloudStorageClient struct {
 }
 
 // NewClient creates a new GCP Cloud Storage client.
-func NewClient(ctx context.Context, projectID, region string, opts ...option.ClientOption) (*CloudStorageClient, error) {
-	return &CloudStorageClient{
+func NewClient(ctx context.Context, projectID, region string, opts ...option.ClientOption) (*Client, error) {
+	return &Client{
 		ctx:        ctx,
 		projectID:  projectID,
 		region:     region,
@@ -77,44 +78,18 @@ func NewClient(ctx context.Context, projectID, region string, opts ...option.Cli
 }
 
 // SetStorageService sets the storage service (for testing).
-func (c *CloudStorageClient) SetStorageService(svc StorageService) {
+func (c *Client) SetStorageService(svc StorageService) {
 	c.storageService = svc
 }
 
 // SetRecommenderClient sets the recommender client (for testing).
-func (c *CloudStorageClient) SetRecommenderClient(client RecommenderClient) {
+func (c *Client) SetRecommenderClient(client RecommenderClient) {
 	c.recommenderClient = client
 }
 
 // SetBillingService sets the billing service (for testing).
-func (c *CloudStorageClient) SetBillingService(svc BillingService) {
+func (c *Client) SetBillingService(svc BillingService) {
 	c.billingService = svc
-}
-
-// realStorageService wraps the real storage.Client.
-type realStorageService struct {
-	client *storage.Client
-}
-
-func (r *realStorageService) Buckets(ctx context.Context, projectID string) BucketIterator {
-	return r.client.Buckets(ctx, projectID)
-}
-
-func (r *realStorageService) Bucket(name string) BucketHandle {
-	return &realBucketHandle{bucket: r.client.Bucket(name)}
-}
-
-func (r *realStorageService) Close() error {
-	return r.client.Close()
-}
-
-// realBucketHandle wraps the real storage.BucketHandle.
-type realBucketHandle struct {
-	bucket *storage.BucketHandle
-}
-
-func (r *realBucketHandle) Create(ctx context.Context, projectID string, attrs *storage.BucketAttrs) error {
-	return r.bucket.Create(ctx, projectID, attrs)
 }
 
 // realRecommenderIterator wraps the real recommender iterator.
@@ -149,18 +124,18 @@ func (r *realBillingService) ListSKUs(serviceID string) (*cloudbilling.ListSkusR
 }
 
 // GetServiceType returns the service type.
-func (c *CloudStorageClient) GetServiceType() common.ServiceType {
+func (c *Client) GetServiceType() common.ServiceType {
 	return common.ServiceStorage
 }
 
 // GetRegion returns the region.
-func (c *CloudStorageClient) GetRegion() string {
+func (c *Client) GetRegion() string {
 	return c.region
 }
 
 // resolveRecommenderClient returns the injected client (for testing) or creates
 // a new one from the stored options.
-func (c *CloudStorageClient) resolveRecommenderClient(ctx context.Context) (RecommenderClient, error) {
+func (c *Client) resolveRecommenderClient(ctx context.Context) (RecommenderClient, error) {
 	if c.recommenderClient != nil {
 		return c.recommenderClient, nil
 	}
@@ -172,7 +147,7 @@ func (c *CloudStorageClient) resolveRecommenderClient(ctx context.Context) (Reco
 }
 
 // GetRecommendations gets Cloud Storage recommendations from GCP Recommender API.
-func (c *CloudStorageClient) GetRecommendations(ctx context.Context, p *common.RecommendationParams) ([]common.Recommendation, error) {
+func (c *Client) GetRecommendations(ctx context.Context, p *common.RecommendationParams) ([]common.Recommendation, error) {
 	if p == nil {
 		return nil, fmt.Errorf("params cannot be nil")
 	}
@@ -202,7 +177,7 @@ func (c *CloudStorageClient) GetRecommendations(ctx context.Context, p *common.R
 			return nil, fmt.Errorf("cloudstorage: GetRecommendations iteration cap (%d items) reached", maxRecsPages)
 		}
 		rec, err := it.Next()
-		if err == iterator.Done {
+		if errors.Is(err, iterator.Done) {
 			break
 		}
 		if err != nil {
@@ -232,7 +207,7 @@ func (c *CloudStorageClient) GetRecommendations(ctx context.Context, p *common.R
 // for GCS, and enumerating regional buckets does not represent a commitment --
 // it caused every bucket in a region to appear as a "commitment" in the UI
 // (10-L2). Return empty until a proper commitment-detection path is available.
-func (c *CloudStorageClient) GetExistingCommitments(_ context.Context) ([]common.Commitment, error) {
+func (c *Client) GetExistingCommitments(_ context.Context) ([]common.Commitment, error) {
 	return nil, nil
 }
 
@@ -242,7 +217,7 @@ func (c *CloudStorageClient) GetExistingCommitments(_ context.Context) ([]common
 // a "purchase" silently provisioned billable infrastructure. Cloud Storage
 // recommendations are therefore advisory only; this returns a clear not-supported
 // error and never calls any resource-creation API (issue #640).
-func (c *CloudStorageClient) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
+func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
 	return common.PurchaseResult{
 		Recommendation: rec,
 		DryRun:         false,
@@ -255,7 +230,7 @@ func (c *CloudStorageClient) PurchaseCommitment(ctx context.Context, rec common.
 }
 
 // ValidateOffering validates that a storage class exists.
-func (c *CloudStorageClient) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
+func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
 	validClasses, err := c.GetValidResourceTypes(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get valid storage classes: %w", err)
@@ -271,7 +246,7 @@ func (c *CloudStorageClient) ValidateOffering(ctx context.Context, rec common.Re
 }
 
 // GetOfferingDetails retrieves Cloud Storage offering details from GCP Billing API.
-func (c *CloudStorageClient) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
+func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	termYears := 1
 	if rec.Term == "3yr" || rec.Term == "3" {
 		termYears = 3
@@ -310,7 +285,7 @@ func (c *CloudStorageClient) GetOfferingDetails(ctx context.Context, rec common.
 }
 
 // GetValidResourceTypes returns valid Cloud Storage classes.
-func (c *CloudStorageClient) GetValidResourceTypes(ctx context.Context) ([]string, error) {
+func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	// Cloud Storage has predefined storage classes
 	validClasses := []string{
 		"STANDARD",
@@ -334,7 +309,7 @@ type StoragePricing struct {
 // getStoragePricing gets pricing from GCP Cloud Billing Catalog API.
 // It returns an error when commitment pricing is absent from the catalog rather
 // than fabricating a price from a hardcoded discount factor (issue #1020).
-func (c *CloudStorageClient) getStoragePricing(ctx context.Context, storageClass, region string, termYears int) (*StoragePricing, error) {
+func (c *Client) getStoragePricing(ctx context.Context, storageClass, region string, termYears int) (*StoragePricing, error) {
 	svc, err := c.getOrCreateBillingService(ctx)
 	if err != nil {
 		return nil, err
@@ -370,7 +345,7 @@ func (c *CloudStorageClient) getStoragePricing(ctx context.Context, storageClass
 }
 
 // getOrCreateBillingService returns the billing service, creating it if needed.
-func (c *CloudStorageClient) getOrCreateBillingService(ctx context.Context) (BillingService, error) {
+func (c *Client) getOrCreateBillingService(ctx context.Context) (BillingService, error) {
 	if c.billingService != nil {
 		return c.billingService, nil
 	}
@@ -412,7 +387,7 @@ func extractStoragePricingFromSKUs(skus []*cloudbilling.Sku, storageClass, regio
 }
 
 // extractStoragePriceFromSKU extracts the unit price from a SKU.
-func extractStoragePriceFromSKU(sku *cloudbilling.Sku) (float64, string) {
+func extractStoragePriceFromSKU(sku *cloudbilling.Sku) (price float64, currency string) {
 	if len(sku.PricingInfo) == 0 {
 		return 0, ""
 	}
@@ -427,7 +402,7 @@ func extractStoragePriceFromSKU(sku *cloudbilling.Sku) (float64, string) {
 		return 0, ""
 	}
 
-	price := float64(rate.UnitPrice.Units) + float64(rate.UnitPrice.Nanos)/1e9
+	price = float64(rate.UnitPrice.Units) + float64(rate.UnitPrice.Nanos)/1e9
 	return price, rate.UnitPrice.CurrencyCode
 }
 
@@ -494,7 +469,7 @@ func extractGCPSavings(rec *recommenderpb.Recommendation) float64 {
 // fillStoragePricing calls getStoragePricing and, on success, writes CommitmentCost,
 // OnDemandCost, SavingsPercentage, and BreakEvenMonths into rec. Pricing
 // failures are logged and do not discard the recommendation.
-func (c *CloudStorageClient) fillStoragePricing(ctx context.Context, rec *common.Recommendation, termYears int) {
+func (c *Client) fillStoragePricing(ctx context.Context, rec *common.Recommendation, termYears int) {
 	pricing, err := c.getStoragePricing(ctx, rec.ResourceType, c.region, termYears)
 	if err != nil {
 		log.Printf("cloudstorage: pricing unavailable for %s in %s (issue #1020): %v", rec.ResourceType, c.region, err)
@@ -524,7 +499,7 @@ func termYearsFromLabel(term string) int {
 // It also calls getStoragePricing to fill CommitmentCost/OnDemandCost/SavingsPercentage/
 // BreakEvenMonths so the scorer can filter and rank GCP recommendations correctly
 // (issue #1022 C2). Pricing failures are logged but do not discard the recommendation.
-func (c *CloudStorageClient) convertGCPRecommendation(ctx context.Context, gcpRec *recommenderpb.Recommendation, params common.RecommendationParams) *common.Recommendation {
+func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommenderpb.Recommendation, params common.RecommendationParams) *common.Recommendation {
 	paymentOption := params.PaymentOption
 	if paymentOption == "" {
 		paymentOption = "monthly"

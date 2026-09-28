@@ -3,12 +3,13 @@ package cloudsql
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
 	"time"
 
-	"cloud.google.com/go/recommender/apiv1"
+	recommender "cloud.google.com/go/recommender/apiv1"
 	"cloud.google.com/go/recommender/apiv1/recommenderpb"
 	"google.golang.org/api/cloudbilling/v1"
 	"google.golang.org/api/iterator"
@@ -44,8 +45,8 @@ type RecommenderClient interface {
 	Close() error
 }
 
-// CloudSQLClient handles GCP Cloud SQL commitments.
-type CloudSQLClient struct {
+// Client handles GCP Cloud SQL commitments.
+type Client struct {
 	ctx               context.Context
 	projectID         string
 	region            string
@@ -56,8 +57,8 @@ type CloudSQLClient struct {
 }
 
 // NewClient creates a new GCP Cloud SQL client.
-func NewClient(ctx context.Context, projectID, region string, opts ...option.ClientOption) (*CloudSQLClient, error) {
-	return &CloudSQLClient{
+func NewClient(ctx context.Context, projectID, region string, opts ...option.ClientOption) (*Client, error) {
+	return &Client{
 		ctx:        ctx,
 		projectID:  projectID,
 		region:     region,
@@ -66,17 +67,17 @@ func NewClient(ctx context.Context, projectID, region string, opts ...option.Cli
 }
 
 // SetSQLAdminService sets the SQL admin service (for testing).
-func (c *CloudSQLClient) SetSQLAdminService(svc SQLAdminService) {
+func (c *Client) SetSQLAdminService(svc SQLAdminService) {
 	c.sqlAdminService = svc
 }
 
 // SetBillingService sets the billing service (for testing).
-func (c *CloudSQLClient) SetBillingService(svc BillingService) {
+func (c *Client) SetBillingService(svc BillingService) {
 	c.billingService = svc
 }
 
 // SetRecommenderClient sets the recommender client (for testing).
-func (c *CloudSQLClient) SetRecommenderClient(client RecommenderClient) {
+func (c *Client) SetRecommenderClient(client RecommenderClient) {
 	c.recommenderClient = client
 }
 
@@ -129,18 +130,18 @@ func (r *realRecommenderClient) Close() error {
 }
 
 // GetServiceType returns the service type.
-func (c *CloudSQLClient) GetServiceType() common.ServiceType {
+func (c *Client) GetServiceType() common.ServiceType {
 	return common.ServiceRelationalDB
 }
 
 // GetRegion returns the region.
-func (c *CloudSQLClient) GetRegion() string {
+func (c *Client) GetRegion() string {
 	return c.region
 }
 
 // resolveRecommenderClient returns the injected client (for testing) or creates
 // a new one from the stored options.
-func (c *CloudSQLClient) resolveRecommenderClient(ctx context.Context) (RecommenderClient, error) {
+func (c *Client) resolveRecommenderClient(ctx context.Context) (RecommenderClient, error) {
 	if c.recommenderClient != nil {
 		return c.recommenderClient, nil
 	}
@@ -152,7 +153,7 @@ func (c *CloudSQLClient) resolveRecommenderClient(ctx context.Context) (Recommen
 }
 
 // GetRecommendations gets Cloud SQL recommendations from GCP Recommender API.
-func (c *CloudSQLClient) GetRecommendations(ctx context.Context, p *common.RecommendationParams) ([]common.Recommendation, error) {
+func (c *Client) GetRecommendations(ctx context.Context, p *common.RecommendationParams) ([]common.Recommendation, error) {
 	if p == nil {
 		return nil, fmt.Errorf("params cannot be nil")
 	}
@@ -182,7 +183,7 @@ func (c *CloudSQLClient) GetRecommendations(ctx context.Context, p *common.Recom
 			return nil, fmt.Errorf("cloudsql: GetRecommendations iteration cap (%d items) reached", maxRecsPages)
 		}
 		rec, err := it.Next()
-		if err == iterator.Done {
+		if errors.Is(err, iterator.Done) {
 			break
 		}
 		if err != nil {
@@ -214,7 +215,7 @@ func (c *CloudSQLClient) GetRecommendations(ctx context.Context, p *common.Recom
 // deprecated) -- treating it as a commitment caused double-counting against
 // real spend-based CUDs (10-L3). Return empty until a proper commitment-
 // detection path is available.
-func (c *CloudSQLClient) GetExistingCommitments(_ context.Context) ([]common.Commitment, error) {
+func (c *Client) GetExistingCommitments(_ context.Context) ([]common.Commitment, error) {
 	return nil, nil
 }
 
@@ -227,7 +228,7 @@ func (c *CloudSQLClient) GetExistingCommitments(_ context.Context) ([]common.Com
 // "purchase" silently spun up a new database that kept billing. Cloud SQL
 // recommendations are therefore advisory only; this returns a clear
 // not-supported error and never calls any resource-creation API (issue #640).
-func (c *CloudSQLClient) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
+func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
 	return common.PurchaseResult{
 		Recommendation: rec,
 		DryRun:         false,
@@ -240,7 +241,7 @@ func (c *CloudSQLClient) PurchaseCommitment(ctx context.Context, rec common.Reco
 }
 
 // ValidateOffering validates that a Cloud SQL tier exists.
-func (c *CloudSQLClient) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
+func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
 	validTiers, err := c.GetValidResourceTypes(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get valid tiers: %w", err)
@@ -256,7 +257,7 @@ func (c *CloudSQLClient) ValidateOffering(ctx context.Context, rec common.Recomm
 }
 
 // GetOfferingDetails retrieves Cloud SQL offering details from GCP Billing API.
-func (c *CloudSQLClient) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
+func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	termYears := 1
 	if rec.Term == "3yr" || rec.Term == "3" {
 		termYears = 3
@@ -295,7 +296,7 @@ func (c *CloudSQLClient) GetOfferingDetails(ctx context.Context, rec common.Reco
 }
 
 // GetValidResourceTypes returns valid Cloud SQL tiers.
-func (c *CloudSQLClient) GetValidResourceTypes(ctx context.Context) ([]string, error) {
+func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	// Use injected service if available (for testing)
 	var svc SQLAdminService
 	if c.sqlAdminService != nil {
@@ -341,7 +342,7 @@ type SQLPricing struct {
 // getSQLPricing gets pricing from GCP Cloud Billing Catalog API.
 // It returns an error when commitment pricing is absent from the catalog rather
 // than fabricating a price from a hardcoded discount factor (issue #1020).
-func (c *CloudSQLClient) getSQLPricing(ctx context.Context, tier, region string, termYears int) (*SQLPricing, error) {
+func (c *Client) getSQLPricing(ctx context.Context, tier, region string, termYears int) (*SQLPricing, error) {
 	svc, err := c.getOrCreateBillingService(ctx)
 	if err != nil {
 		return nil, err
@@ -377,7 +378,7 @@ func (c *CloudSQLClient) getSQLPricing(ctx context.Context, tier, region string,
 }
 
 // getOrCreateBillingService returns the billing service, creating it if needed.
-func (c *CloudSQLClient) getOrCreateBillingService(ctx context.Context) (BillingService, error) {
+func (c *Client) getOrCreateBillingService(ctx context.Context) (BillingService, error) {
 	if c.billingService != nil {
 		return c.billingService, nil
 	}
@@ -420,7 +421,7 @@ func extractSQLPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string) (o
 }
 
 // extractSQLPriceFromSKU extracts the unit price from a SKU.
-func extractSQLPriceFromSKU(sku *cloudbilling.Sku) (float64, string) {
+func extractSQLPriceFromSKU(sku *cloudbilling.Sku) (price float64, currency string) {
 	if len(sku.PricingInfo) == 0 {
 		return 0, ""
 	}
@@ -435,7 +436,7 @@ func extractSQLPriceFromSKU(sku *cloudbilling.Sku) (float64, string) {
 		return 0, ""
 	}
 
-	price := float64(rate.UnitPrice.Units) + float64(rate.UnitPrice.Nanos)/1e9
+	price = float64(rate.UnitPrice.Units) + float64(rate.UnitPrice.Nanos)/1e9
 	return price, rate.UnitPrice.CurrencyCode
 }
 
@@ -502,7 +503,7 @@ func extractGCPSavings(rec *recommenderpb.Recommendation) float64 {
 // fillSQLPricing calls getSQLPricing and, on success, writes CommitmentCost,
 // OnDemandCost, SavingsPercentage, and BreakEvenMonths into rec. Pricing
 // failures are logged and do not discard the recommendation.
-func (c *CloudSQLClient) fillSQLPricing(ctx context.Context, rec *common.Recommendation, termYears int) {
+func (c *Client) fillSQLPricing(ctx context.Context, rec *common.Recommendation, termYears int) {
 	pricing, err := c.getSQLPricing(ctx, rec.ResourceType, c.region, termYears)
 	if err != nil {
 		log.Printf("cloudsql: pricing unavailable for %s in %s (issue #1020): %v", rec.ResourceType, c.region, err)
@@ -532,7 +533,7 @@ func termYearsFromLabel(term string) int {
 // It also calls getSQLPricing to fill CommitmentCost/OnDemandCost/SavingsPercentage/
 // BreakEvenMonths so the scorer can filter and rank GCP recommendations correctly
 // (issue #1022 C2). Pricing failures are logged but do not discard the recommendation.
-func (c *CloudSQLClient) convertGCPRecommendation(ctx context.Context, gcpRec *recommenderpb.Recommendation, params common.RecommendationParams) *common.Recommendation {
+func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommenderpb.Recommendation, params common.RecommendationParams) *common.Recommendation {
 	paymentOption := params.PaymentOption
 	if paymentOption == "" {
 		paymentOption = "monthly"

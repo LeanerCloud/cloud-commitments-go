@@ -267,23 +267,23 @@ func TestNewProviderWithProject(t *testing.T) {
 }
 
 func TestGCPProvider_Name(t *testing.T) {
-	provider := &GCPProvider{}
+	provider := &Provider{}
 	assert.Equal(t, "gcp", provider.Name())
 }
 
 func TestGCPProvider_DisplayName(t *testing.T) {
-	provider := &GCPProvider{}
+	provider := &Provider{}
 	assert.Equal(t, "Google Cloud Platform", provider.DisplayName())
 }
 
 func TestGCPProvider_GetDefaultRegion(t *testing.T) {
-	provider := &GCPProvider{}
+	provider := &Provider{}
 	// GCP defaults to us-central1
 	assert.Equal(t, "us-central1", provider.GetDefaultRegion())
 }
 
 func TestGCPProvider_GetSupportedServices(t *testing.T) {
-	provider := &GCPProvider{}
+	provider := &Provider{}
 	services := provider.GetSupportedServices()
 
 	require.NotEmpty(t, services)
@@ -408,7 +408,7 @@ func TestGCPProvider_GetCredentials_WithEnvVar(t *testing.T) {
 	clearGCPCredEnv(t)
 	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "/path/to/creds.json")
 
-	p := &GCPProvider{projectID: "test-project"}
+	p := &Provider{projectID: "test-project"}
 
 	creds, err := p.GetCredentials()
 	require.NoError(t, err)
@@ -425,7 +425,7 @@ func TestGCPProvider_GetCredentials_ADCFileSource(t *testing.T) {
 	adcPath := filepath.Join(cfgDir, "application_default_credentials.json")
 	require.NoError(t, os.WriteFile(adcPath, []byte(`{"type":"authorized_user"}`), 0o600))
 
-	p := &GCPProvider{projectID: "test-project"}
+	p := &Provider{projectID: "test-project"}
 
 	creds, err := p.GetCredentials()
 	require.NoError(t, err)
@@ -737,7 +737,7 @@ func TestGCPProvider_GetCredentials_NotConfigured(t *testing.T) {
 	mockClient := &MockProjectsClient{
 		err: errors.New("network call must not happen"),
 	}
-	p := &GCPProvider{projectID: ""}
+	p := &Provider{projectID: ""}
 	p.SetProjectsClient(mockClient)
 
 	_, err := p.GetCredentials()
@@ -754,7 +754,7 @@ func TestGCPProvider_GetCredentials_Configured(t *testing.T) {
 	mockClient := &MockProjectsClient{
 		err: errors.New("network call must not happen"),
 	}
-	p := &GCPProvider{projectID: "test-project"}
+	p := &Provider{projectID: "test-project"}
 	p.SetProjectsClient(mockClient)
 
 	creds, err := p.GetCredentials()
@@ -774,7 +774,7 @@ func TestGCPProvider_GetCredentials_WithFileSource(t *testing.T) {
 	mockClient := &MockProjectsClient{
 		err: errors.New("network call must not happen"),
 	}
-	p := &GCPProvider{projectID: "test-project"}
+	p := &Provider{projectID: "test-project"}
 	p.SetProjectsClient(mockClient)
 
 	creds, err := p.GetCredentials()
@@ -796,7 +796,7 @@ func TestGCPProvider_GetCredentials_EmptyEnvVarNotFile(t *testing.T) {
 	// restore it as empty to reproduce the bug scenario).
 	t.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "")
 
-	p := &GCPProvider{projectID: "test-project"}
+	p := &Provider{projectID: "test-project"}
 
 	creds, err := p.GetCredentials()
 	require.NoError(t, err)

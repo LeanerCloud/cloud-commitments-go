@@ -3,6 +3,7 @@ package gcp
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -158,7 +159,7 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 	// After Wait, propagate ctx cancellation so callers can distinguish
 	// "all regions completed (with possibly per-region errors)" from "the
 	// parent ctx was canceled mid-fan-out".
-	_ = g.Wait()
+	_ = g.Wait() //nolint:errcheck // always nil: every g.Go closure above returns nil unconditionally, isolating per-region errors into results[region] instead of propagating them through errgroup
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -191,7 +192,12 @@ func mergeRegionResults(sortedRegions []string, results map[string]regionResult)
 	attempted := 0
 	failed := 0
 	var lastErr error
-	merged := make([]common.Recommendation, 0)
+	total := 0
+	for _, region := range sortedRegions {
+		res := results[region]
+		total += len(res.compute) + len(res.sql) + len(res.cache) + len(res.storage)
+	}
+	merged := make([]common.Recommendation, 0, total)
 	for _, region := range sortedRegions {
 		res := results[region]
 		attempted += res.attempted
@@ -319,7 +325,7 @@ func (r *RecommendationsClientAdapter) collectRegion(ctx context.Context, params
 			return nil
 		})
 	}
-	_ = g.Wait()
+	_ = g.Wait() //nolint:errcheck // always nil: every g.Go closure above returns nil unconditionally, isolating per-service errors into the named result vars below instead of propagating them through errgroup
 
 	failed := 0
 	var lastErr error
@@ -418,24 +424,11 @@ var errorAs = func(err error, target interface{}) bool {
 	switch t := target.(type) {
 	case **googleapi.Error:
 		var gErr *googleapi.Error
-		if !isGoogleAPIError(err, &gErr) {
+		if !errors.As(err, &gErr) {
 			return false
 		}
 		*t = gErr
 		return true
-	}
-	return false
-}
-
-func isGoogleAPIError(err error, out **googleapi.Error) bool {
-	if gErr, ok := err.(*googleapi.Error); ok {
-		*out = gErr
-		return true
-	}
-	// Unwrap one level for fmt.Errorf("%w", ...) wrapping.
-	type unwrapper interface{ Unwrap() error }
-	if u, ok := err.(unwrapper); ok {
-		return isGoogleAPIError(u.Unwrap(), out)
 	}
 	return false
 }
