@@ -413,13 +413,30 @@ func NormalizeSource(s string) (string, error) {
 	}
 }
 
-// Commitment.State values that count as an owned commitment for duplicate
-// detection. They match the AWS RI and Savings Plans state enums; queued is a
-// scheduled future purchase and must count, or it gets bought a second time.
+// CommitmentState is the provider-neutral lifecycle state of a Commitment.
+// Providers map their native states onto these values; a native state with
+// no mapping passes through verbatim, and duplicate detection counts it as
+// owned (fail closed).
+type CommitmentState string
+
+// Owned states: the commitment covers, or will cover, usage, so duplicate
+// detection counts it. They match the AWS RI and Savings Plans state enums;
+// queued is a scheduled future purchase and must count, or it gets bought a
+// second time.
 const (
-	CommitmentStateActive         = "active"
-	CommitmentStatePaymentPending = "payment-pending"
-	CommitmentStateQueued         = "queued"
+	CommitmentStateActive         CommitmentState = "active"
+	CommitmentStatePaymentPending CommitmentState = "payment-pending"
+	CommitmentStateQueued         CommitmentState = "queued"
+)
+
+// Ended states: the commitment no longer covers usage, or is being returned,
+// so duplicate detection ignores it.
+const (
+	CommitmentStateRetired       CommitmentState = "retired"
+	CommitmentStatePendingReturn CommitmentState = "pending-return"
+	CommitmentStateExpired       CommitmentState = "expired"
+	CommitmentStateCanceled      CommitmentState = "canceled"
+	CommitmentStateFailed        CommitmentState = "failed"
 )
 
 // Commitment represents an existing commitment (RI/SP/CUD/etc).
@@ -433,20 +450,20 @@ const (
 // adjustments would silently miss because Recommendation lookup keys
 // are deployment-aware while commitment keys defaulted to empty.
 type Commitment struct {
-	Provider       ProviderType   `json:"provider"`
-	Account        string         `json:"account"`
-	CommitmentID   string         `json:"commitment_id"`
-	CommitmentType CommitmentType `json:"commitment_type"`
-	Service        ServiceType    `json:"service"`
-	Region         string         `json:"region"`
-	ResourceType   string         `json:"resource_type"`
-	Engine         string         `json:"engine,omitempty"`     // Database engine for RDS/ElastiCache (e.g., "mysql", "aurora-postgresql")
-	Deployment     string         `json:"deployment,omitempty"` // RDS Multi-AZ vs Single-AZ; empty for non-RDS
-	Count          int            `json:"count"`
-	StartDate      time.Time      `json:"start_date"`
-	EndDate        time.Time      `json:"end_date"`
-	State          string         `json:"state"`
-	Cost           float64        `json:"cost"`
+	Provider       ProviderType    `json:"provider"`
+	Account        string          `json:"account"`
+	CommitmentID   string          `json:"commitment_id"`
+	CommitmentType CommitmentType  `json:"commitment_type"`
+	Service        ServiceType     `json:"service"`
+	Region         string          `json:"region"`
+	ResourceType   string          `json:"resource_type"`
+	Engine         string          `json:"engine,omitempty"`     // Database engine for RDS/ElastiCache (e.g., "mysql", "aurora-postgresql")
+	Deployment     string          `json:"deployment,omitempty"` // RDS Multi-AZ vs Single-AZ; empty for non-RDS
+	Count          int             `json:"count"`
+	StartDate      time.Time       `json:"start_date"`
+	EndDate        time.Time       `json:"end_date"`
+	State          CommitmentState `json:"state"`
+	Cost           float64         `json:"cost"`
 }
 
 // OfferingDetails represents cloud provider offering details.

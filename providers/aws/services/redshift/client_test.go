@@ -13,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 // MockRedshiftClient implements API for testing.
@@ -1535,4 +1536,39 @@ func TestFindOfferingID_EmptyStringTokenEndsPagination(t *testing.T) {
 		assert.Contains(t, err.Error(), "no offerings found")
 	}
 	mockRS.AssertNumberOfCalls(t, "DescribeReservedNodeOfferings", 1)
+}
+
+// Redshift spells an in-flight payment "pending-payment" (issue #142). Such a
+// node is already owned: it must be returned to duplicate detection and seen by
+// the idempotency tag guard, or a retry buys it a second time.
+func TestClient_PendingPaymentNodeIsOwned(t *testing.T) {
+	pending := types.ReservedNode{
+		ReservedNodeId: aws.String("rn-pending"),
+		NodeType:       aws.String("ra3.xlplus"),
+		NodeCount:      aws.Int32(2),
+		State:          aws.String(redshiftStatePendingPayment),
+		Duration:       aws.Int32(31536000),
+		StartTime:      aws.Time(time.Now()),
+	}
+	mockRS := &MockRedshiftClient{}
+	client := rsClientWithAccount(mockRS)
+	token := common.DeriveIdempotencyToken("exec-1", 0)
+	mockRS.On("DescribeReservedNodes", mock.Anything, mock.Anything).
+		Return(&redshift.DescribeReservedNodesOutput{ReservedNodes: []types.ReservedNode{pending}}, nil)
+	mockRS.On("DescribeTags", mock.Anything, mock.Anything).
+		Return(&redshift.DescribeTagsOutput{
+			TaggedResources: []types.TaggedResource{
+				{Tag: &types.Tag{Key: aws.String(common.IdempotencyTagKey), Value: aws.String(token)}},
+			},
+		}, nil)
+
+	commitments, err := client.GetExistingCommitments(context.Background())
+	require.NoError(t, err)
+	require.Len(t, commitments, 1)
+	assert.Equal(t, common.CommitmentStatePaymentPending, commitments[0].State)
+
+	id, found, err := client.scanNodesForToken(context.Background(), []types.ReservedNode{pending}, "123456789012", token)
+	require.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "rn-pending", id)
 }

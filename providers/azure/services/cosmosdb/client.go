@@ -258,7 +258,7 @@ func (c *Client) convertCosmosReservation(detail *armconsumption.ReservationDeta
 		CommitmentType: common.CommitmentReservedInstance,
 		Service:        common.ServiceNoSQL,
 		Region:         c.region,
-		State:          "active",
+		State:          common.CommitmentStateActive,
 	}
 
 	if props.ReservationID != nil {

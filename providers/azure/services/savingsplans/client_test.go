@@ -177,7 +177,7 @@ func TestGetExistingCommitments_Happy(t *testing.T) {
 	assert.Equal(t, common.ServiceSavingsPlansAll, got.Service)
 	assert.Equal(t, spID, got.CommitmentID)
 	assert.Equal(t, spName, got.ResourceType)
-	assert.Equal(t, "Succeeded", got.State)
+	assert.Equal(t, common.CommitmentStateActive, got.State)
 	assert.Equal(t, amount, got.Cost)
 }
 
@@ -628,5 +628,24 @@ func TestToAzureTerm(t *testing.T) {
 				assert.Equal(t, tt.expected, got)
 			}
 		})
+	}
+}
+
+// Azure reports a savings plan's lifecycle as a provisioning state (issue
+// #142). Succeeded and the in-flight billing states are owned and must count in
+// duplicate detection; ended states must not.
+func TestAzureSavingsPlanState(t *testing.T) {
+	cases := map[armbillingbenefits.ProvisioningState]common.CommitmentState{
+		armbillingbenefits.ProvisioningStateSucceeded:        common.CommitmentStateActive,
+		armbillingbenefits.ProvisioningStateCreating:         common.CommitmentStatePaymentPending,
+		armbillingbenefits.ProvisioningStateCreated:          common.CommitmentStatePaymentPending,
+		armbillingbenefits.ProvisioningStatePendingBilling:   common.CommitmentStatePaymentPending,
+		armbillingbenefits.ProvisioningStateConfirmedBilling: common.CommitmentStatePaymentPending,
+		armbillingbenefits.ProvisioningStateFailed:           common.CommitmentStateFailed,
+		armbillingbenefits.ProvisioningStateCancelled:        common.CommitmentStateCanceled,
+		armbillingbenefits.ProvisioningStateExpired:          common.CommitmentStateExpired,
+	}
+	for ps, want := range cases {
+		assert.Equal(t, want, azureSavingsPlanState(ps), "provisioning state %q", ps)
 	}
 }

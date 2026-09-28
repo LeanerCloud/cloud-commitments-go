@@ -229,7 +229,7 @@ func (c *Client) reservationDetailToCommitment(detail *armconsumption.Reservatio
 		CommitmentType: common.CommitmentReservedInstance,
 		Service:        common.ServiceMemoryDB,
 		Region:         c.region,
-		State:          "active",
+		State:          common.CommitmentStateActive,
 	}
 	if props.ReservationID != nil {
 		cm.CommitmentID = *props.ReservationID

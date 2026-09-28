@@ -141,6 +141,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 		input := &savingsplans.DescribeSavingsPlansInput{
 			States: []types.SavingsPlanState{
 				types.SavingsPlanStateActive,
+				types.SavingsPlanStatePaymentPending,
 				types.SavingsPlanStatePendingReturn,
 				types.SavingsPlanStateQueued,
 			},
@@ -189,7 +190,7 @@ func (c *Client) toCommitment(sp types.SavingsPlan, service common.ServiceType) 
 		Region:         aws.ToString(sp.Region),
 		ResourceType:   string(sp.SavingsPlanType),
 		Count:          1, // Savings Plans don't have a count
-		State:          string(sp.State),
+		State:          common.CommitmentState(sp.State),
 	}
 
 	if sp.Start != nil {

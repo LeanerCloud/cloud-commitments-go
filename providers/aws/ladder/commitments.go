@@ -86,7 +86,7 @@ func riToCommitment(ri *ec2svc.ConvertibleRI, accountID, region string) common.C
 		Region:         region,
 		ResourceType:   ri.InstanceType,
 		Count:          int(ri.InstanceCount),
-		State:          ri.State,
+		State:          common.CommitmentState(ri.State),
 		StartDate:      ri.Start,
 		EndDate:        ri.End,
 		Cost:           totalHourlyCost,
@@ -136,7 +136,7 @@ func spToCommitment(sp *ActiveSP, accountID string) common.Commitment {
 		Region:         sp.Region,
 		ResourceType:   sp.PlanType,
 		Count:          1, // Savings Plans are single commitment units
-		State:          sp.State,
+		State:          common.CommitmentState(sp.State),
 		StartDate:      sp.StartDate,
 		EndDate:        sp.EndDate,
 		Cost:           sp.HourlyCommitmentUSD,

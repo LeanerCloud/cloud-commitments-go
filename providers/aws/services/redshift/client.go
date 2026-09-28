@@ -102,8 +102,8 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 
 		for i := range response.ReservedNodes {
 			node := &response.ReservedNodes[i]
-			state := aws.ToString(node.State)
-			if state != "active" && state != "payment-pending" {
+			state, owned := ownedNodeState(node.State)
+			if !owned {
 				continue
 			}
 
@@ -261,8 +261,7 @@ func (c *Client) findNodeByIdempotencyToken(ctx context.Context, token string) (
 func (c *Client) scanNodesForToken(ctx context.Context, nodes []redshifttypes.ReservedNode, accountID, token string) (outID string, outFound bool, outErr error) {
 	for i := range nodes {
 		node := &nodes[i]
-		state := aws.ToString(node.State)
-		if state != "active" && state != "payment-pending" {
+		if _, owned := ownedNodeState(node.State); !owned {
 			continue
 		}
 		nodeID := aws.ToString(node.ReservedNodeId)
@@ -689,4 +688,23 @@ func getTermMonthsFromDuration(duration int32) int {
 		return 36
 	}
 	return 12
+}
+
+// redshiftStatePendingPayment is how Redshift spells a just-purchased node whose
+// payment is in flight (see redshifttypes.ReservedNode.State); the other RI
+// APIs spell it "payment-pending", which is still accepted in case the API
+// ever returns it. The SDK defines no enum for this field.
+const redshiftStatePendingPayment = "pending-payment"
+
+// ownedNodeState maps a reserved node state to the common state, reporting
+// whether the node is owned (active or paying) and so must count as existing.
+func ownedNodeState(raw *string) (common.CommitmentState, bool) {
+	switch aws.ToString(raw) {
+	case string(common.CommitmentStateActive):
+		return common.CommitmentStateActive, true
+	case redshiftStatePendingPayment, string(common.CommitmentStatePaymentPending):
+		return common.CommitmentStatePaymentPending, true
+	default:
+		return "", false
+	}
 }

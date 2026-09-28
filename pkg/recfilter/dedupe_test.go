@@ -45,9 +45,9 @@ func TestFilterRecentCommitments_StateAndWindow(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
 	commitments := []common.Commitment{
-		{ResourceType: "db.t3.small", Region: "us-east-1", Engine: "mysql", Count: 1, State: "active", StartDate: now.Add(-25 * time.Hour)},  // too old
-		{ResourceType: "db.t3.small", Region: "us-east-1", Engine: "mysql", Count: 2, State: "retired", StartDate: now.Add(-1 * time.Hour)},  // wrong state
-		{ResourceType: "db.t3.small", Region: "us-east-1", Engine: "mysql", Count: 3, State: "canceled", StartDate: now.Add(-1 * time.Hour)}, // wrong state
+		{ResourceType: "db.t3.small", Region: "us-east-1", Engine: "mysql", Count: 1, State: "active", StartDate: now.Add(-25 * time.Hour)},                      // too old
+		{ResourceType: "db.t3.small", Region: "us-east-1", Engine: "mysql", Count: 2, State: "retired", StartDate: now.Add(-1 * time.Hour)},                      // wrong state
+		{ResourceType: "db.t3.small", Region: "us-east-1", Engine: "mysql", Count: 3, State: common.CommitmentStateCanceled, StartDate: now.Add(-1 * time.Hour)}, // wrong state
 		{ResourceType: "db.t3.small", Region: "us-east-1", Engine: "mysql", Count: 4, State: "payment-pending", StartDate: now.Add(-1 * time.Hour)},
 		{ResourceType: "db.t3.small", Region: "us-east-1", Engine: "mysql", Count: 5, State: "active", StartDate: now.Add(-1 * time.Hour)},
 	}
@@ -350,4 +350,41 @@ func TestAdjustRecommendationsForExisting_NonRDSCommitmentStillDeduplicates(t *t
 	require.NoError(t, err)
 	assert.Empty(t, passed)
 	require.Len(t, filtered, 1)
+}
+
+// An unrecognized state fails closed (issue #142): the commitment counts as
+// existing and is logged, instead of being dropped and allowing a second
+// purchase.
+func TestAdjustRecommendationsForExisting_UnknownStateCountsAndLogs(t *testing.T) {
+	t.Parallel()
+	client := &fakeServiceClient{commitments: []common.Commitment{
+		{CommitmentID: "cud-1", ResourceType: "n2-standard-4", Region: "us-central1", Count: 2, State: "not_yet_active", StartDate: time.Now().Add(-time.Hour)},
+	}}
+	rec := common.Recommendation{ResourceType: "n2-standard-4", Region: "us-central1", Count: 2}
+
+	var logs []string
+	d := NewDuplicateChecker(DefaultDuplicateCheckLookbackHours)
+	d.Logf = func(format string, args ...any) { logs = append(logs, fmt.Sprintf(format, args...)) }
+	passed, filtered, err := d.AdjustRecommendationsForExisting(context.Background(), []common.Recommendation{rec}, client)
+
+	require.NoError(t, err)
+	assert.Empty(t, passed)
+	assert.Len(t, filtered, 1)
+	assert.Contains(t, strings.Join(logs, "\n"), `commitment cud-1 has unrecognized state "not_yet_active"`)
+}
+
+// Ended states still do not suppress a purchase.
+func TestFilterRecentCommitments_EndedStatesIgnored(t *testing.T) {
+	t.Parallel()
+	start := time.Now().Add(-time.Hour)
+	states := []common.CommitmentState{
+		common.CommitmentStateRetired, common.CommitmentStatePendingReturn, common.CommitmentStateExpired,
+		common.CommitmentStateCanceled, common.CommitmentStateFailed,
+	}
+	commitments := make([]common.Commitment, 0, len(states))
+	for _, s := range states {
+		commitments = append(commitments, common.Commitment{ResourceType: "m5.large", Region: "us-east-1", Count: 1, State: s, StartDate: start})
+	}
+
+	assert.Empty(t, NewDuplicateChecker(DefaultDuplicateCheckLookbackHours).filterRecentCommitments(commitments))
 }

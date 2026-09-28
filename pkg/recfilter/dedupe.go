@@ -70,7 +70,7 @@ func (d *DuplicateChecker) filterRecentCommitments(existing []common.Commitment)
 
 	for _rvc := range existing {
 		c := existing[_rvc]
-		if isRecentActiveCommitment(c, cutoffTime) {
+		if isRecentActiveCommitment(c, cutoffTime, d.Logf) {
 			recentExisting = append(recentExisting, c)
 		}
 	}
@@ -79,14 +79,20 @@ func (d *DuplicateChecker) filterRecentCommitments(existing []common.Commitment)
 }
 
 // isRecentActiveCommitment checks if a commitment is owned (active, paying, or
-// queued for a future start) and starts after the cutoff time.
-func isRecentActiveCommitment(c common.Commitment, cutoffTime time.Time) bool {
+// queued for a future start) and starts after the cutoff time. An unrecognized
+// state counts as owned: wrongly skipping a purchase is recoverable, a
+// duplicate commitment is not.
+func isRecentActiveCommitment(c common.Commitment, cutoffTime time.Time, logf Logf) bool {
 	switch c.State {
 	case common.CommitmentStateActive, common.CommitmentStatePaymentPending, common.CommitmentStateQueued:
-		return c.StartDate.After(cutoffTime)
-	default:
+	case common.CommitmentStateRetired, common.CommitmentStatePendingReturn, common.CommitmentStateExpired,
+		common.CommitmentStateCanceled, common.CommitmentStateFailed:
 		return false
+	default:
+		logf.printf("    [DuplicateChecker] WARNING: commitment %s has unrecognized state %q; counting it as existing",
+			c.CommitmentID, c.State)
 	}
+	return c.StartDate.After(cutoffTime)
 }
 
 // dedupeKey builds the duplicate-identity key shared by

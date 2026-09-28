@@ -229,7 +229,7 @@ func (c *Client) convertSynapseReservation(detail *armconsumption.ReservationDet
 		CommitmentType: common.CommitmentReservedInstance,
 		Service:        common.ServiceDataWarehouse,
 		Region:         c.region,
-		State:          "active",
+		State:          common.CommitmentStateActive,
 	}
 	if props.ReservationID != nil {
 		commitment.CommitmentID = *props.ReservationID

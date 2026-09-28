@@ -401,7 +401,7 @@ func TestCommitment_Struct(t *testing.T) {
 
 	assert.Equal(t, ProviderAWS, commitment.Provider)
 	assert.Equal(t, "ri-12345", commitment.CommitmentID)
-	assert.Equal(t, "active", commitment.State)
+	assert.Equal(t, CommitmentStateActive, commitment.State)
 }
 
 func TestOfferingDetails_Struct(t *testing.T) {

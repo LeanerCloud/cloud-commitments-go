@@ -105,7 +105,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 			Region:         c.region,
 			ResourceType:   string(ri.InstanceType),
 			Count:          int(aws.ToInt32(ri.InstanceCount)),
-			State:          string(ri.State),
+			State:          common.CommitmentState(ri.State),
 			StartDate:      aws.ToTime(ri.Start),
 			EndDate:        aws.ToTime(ri.End),
 		}
