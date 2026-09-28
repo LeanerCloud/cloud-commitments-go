@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -131,6 +132,7 @@ func createSampleCosmosPricingResponse() string {
 				"armRegionName": "eastus",
 				"productName": "Azure Cosmos DB",
 				"serviceName": "Azure Cosmos DB",
+				"armSkuName": "100RU",
 				"skuName": "100RU",
 				"meterName": "100 RU/s",
 				"reservationTerm": "1 Year",
@@ -143,6 +145,7 @@ func createSampleCosmosPricingResponse() string {
 				"armRegionName": "eastus",
 				"productName": "Azure Cosmos DB",
 				"serviceName": "Azure Cosmos DB",
+				"armSkuName": "100RU",
 				"skuName": "100RU",
 				"meterName": "100 RU/s",
 				"reservationTerm": "3 Years",
@@ -155,7 +158,107 @@ func createSampleCosmosPricingResponse() string {
 				"armRegionName": "eastus",
 				"productName": "Azure Cosmos DB",
 				"serviceName": "Azure Cosmos DB",
+				"armSkuName": "100RU",
 				"skuName": "100RU",
+				"type": "Consumption"
+			}
+		]
+	}`
+}
+
+// createMixedSKUCosmosPricingResponse returns a fixture where a 400RU price
+// is returned alongside the requested 100RU price, simulating an Azure
+// Retail Prices API response that was not (or could not be) narrowed to a
+// single SKU server-side. The 100RU (requested) items are listed FIRST and
+// the 400RU (other) items LAST: pre-fix, extractCosmosPricing ignored SKU
+// entirely and simply overwrote its running total on every matching item,
+// so the last item in the response order wins regardless of SKU. This
+// ordering makes that bug surface deterministically as a 5000.0 quote for a
+// 100RU request (#126).
+func createMixedSKUCosmosPricingResponse() string {
+	return `{
+		"Items": [
+			{
+				"currencyCode": "USD",
+				"retailPrice": 1000.0,
+				"unitPrice": 1000.0,
+				"armRegionName": "eastus",
+				"productName": "Azure Cosmos DB",
+				"serviceName": "Azure Cosmos DB",
+				"armSkuName": "100RU",
+				"skuName": "100RU",
+				"meterName": "100 RU/s",
+				"reservationTerm": "1 Year",
+				"type": "Reservation"
+			},
+			{
+				"currencyCode": "USD",
+				"retailPrice": 0.008,
+				"unitPrice": 0.008,
+				"armRegionName": "eastus",
+				"productName": "Azure Cosmos DB",
+				"serviceName": "Azure Cosmos DB",
+				"armSkuName": "100RU",
+				"skuName": "100RU",
+				"type": "Consumption"
+			},
+			{
+				"currencyCode": "USD",
+				"retailPrice": 5000.0,
+				"unitPrice": 5000.0,
+				"armRegionName": "eastus",
+				"productName": "Azure Cosmos DB",
+				"serviceName": "Azure Cosmos DB",
+				"armSkuName": "400RU",
+				"skuName": "400RU",
+				"meterName": "400 RU/s",
+				"reservationTerm": "1 Year",
+				"type": "Reservation"
+			},
+			{
+				"currencyCode": "USD",
+				"retailPrice": 0.03,
+				"unitPrice": 0.03,
+				"armRegionName": "eastus",
+				"productName": "Azure Cosmos DB",
+				"serviceName": "Azure Cosmos DB",
+				"armSkuName": "400RU",
+				"skuName": "400RU",
+				"type": "Consumption"
+			}
+		]
+	}`
+}
+
+// createOnlyOtherSKUCosmosPricingResponse returns a fixture that contains
+// pricing only for a SKU other than the one requested. extractCosmosPricing
+// must fail closed (return an error) rather than falling back to the first
+// item in the response.
+func createOnlyOtherSKUCosmosPricingResponse() string {
+	return `{
+		"Items": [
+			{
+				"currencyCode": "USD",
+				"retailPrice": 5000.0,
+				"unitPrice": 5000.0,
+				"armRegionName": "eastus",
+				"productName": "Azure Cosmos DB",
+				"serviceName": "Azure Cosmos DB",
+				"armSkuName": "400RU",
+				"skuName": "400RU",
+				"meterName": "400 RU/s",
+				"reservationTerm": "1 Year",
+				"type": "Reservation"
+			},
+			{
+				"currencyCode": "USD",
+				"retailPrice": 0.03,
+				"unitPrice": 0.03,
+				"armRegionName": "eastus",
+				"productName": "Azure Cosmos DB",
+				"serviceName": "Azure Cosmos DB",
+				"armSkuName": "400RU",
+				"skuName": "400RU",
 				"type": "Consumption"
 			}
 		]
@@ -369,6 +472,7 @@ func TestCosmosDBClient_GetOfferingDetails_NoReservationPricing(t *testing.T) {
 				"armRegionName": "eastus",
 				"productName": "Azure Cosmos DB",
 				"serviceName": "Azure Cosmos DB",
+				"armSkuName": "100RU",
 				"type": "Consumption"
 			}
 		],
@@ -391,6 +495,90 @@ func TestCosmosDBClient_GetOfferingDetails_NoReservationPricing(t *testing.T) {
 	_, err := client.GetOfferingDetails(ctx, rec)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no reservation pricing found")
+}
+
+// TestCosmosDBClient_GetOfferingDetails_MixedSKUsPicksRequestedSKU is the
+// regression test for #126: when the pricing response contains prices for
+// a SKU other than the one requested (400RU) alongside the requested SKU
+// (100RU), the quoted price must come from the requested SKU, not whichever
+// item the extraction loop happens to see first.
+func TestCosmosDBClient_GetOfferingDetails_MixedSKUsPicksRequestedSKU(t *testing.T) {
+	ctx := context.Background()
+	mockHTTP := &MockHTTPClient{}
+	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
+
+	response := createMockHTTPResponse(http.StatusOK, createMixedSKUCosmosPricingResponse())
+	t.Cleanup(func() {
+		require.NoError(t, response.Body.Close())
+	})
+	mockHTTP.On("Do", mock.Anything).Return(response, nil)
+
+	rec := common.Recommendation{
+		ResourceType:  "100RU",
+		Term:          "1yr",
+		PaymentOption: "upfront",
+	}
+
+	details, err := client.GetOfferingDetails(ctx, rec)
+	require.NoError(t, err)
+	require.NotNil(t, details)
+	// 100RU's reservation price is 1000.0; 400RU's is 5000.0. Picking the
+	// wrong SKU would surface 5000.0 here.
+	assert.Equal(t, float64(1000), details.TotalCost)
+}
+
+// TestCosmosDBClient_GetOfferingDetails_NoMatchingSKU_FailsClosed verifies
+// that when the pricing response contains only prices for SKUs other than
+// the one requested, GetOfferingDetails returns an error rather than
+// fabricating a quote from the first item present (#126).
+func TestCosmosDBClient_GetOfferingDetails_NoMatchingSKU_FailsClosed(t *testing.T) {
+	ctx := context.Background()
+	mockHTTP := &MockHTTPClient{}
+	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
+
+	response := createMockHTTPResponse(http.StatusOK, createOnlyOtherSKUCosmosPricingResponse())
+	t.Cleanup(func() {
+		require.NoError(t, response.Body.Close())
+	})
+	mockHTTP.On("Do", mock.Anything).Return(response, nil)
+
+	rec := common.Recommendation{
+		ResourceType:  "100RU",
+		Term:          "1yr",
+		PaymentOption: "upfront",
+	}
+
+	_, err := client.GetOfferingDetails(ctx, rec)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no on-demand pricing found")
+}
+
+// TestCosmosDBClient_GetOfferingDetails_RequestsSKUFilter verifies the
+// outbound Retail Prices API request scopes the query to the requested SKU
+// via armSkuName, matching the sibling pricing functions (#126).
+func TestCosmosDBClient_GetOfferingDetails_RequestsSKUFilter(t *testing.T) {
+	ctx := context.Background()
+	mockHTTP := &MockHTTPClient{}
+	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
+
+	response := createMockHTTPResponse(http.StatusOK, createSampleCosmosPricingResponse())
+	t.Cleanup(func() {
+		require.NoError(t, response.Body.Close())
+	})
+	mockHTTP.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+		filter := req.URL.Query().Get("$filter")
+		return strings.Contains(filter, "armSkuName eq '100RU'")
+	})).Return(response, nil)
+
+	rec := common.Recommendation{
+		ResourceType:  "100RU",
+		Term:          "1yr",
+		PaymentOption: "upfront",
+	}
+
+	_, err := client.GetOfferingDetails(ctx, rec)
+	require.NoError(t, err)
+	mockHTTP.AssertExpectations(t)
 }
 
 func TestCosmosDBClient_GetExistingCommitments_Empty(t *testing.T) {

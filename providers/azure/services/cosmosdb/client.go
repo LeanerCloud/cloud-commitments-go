@@ -530,18 +530,17 @@ type CosmosPricing struct {
 	SavingsPercentage float64
 }
 
-// getCosmosPricing gets real pricing from Azure Retail Prices API.
-//
-// PRE-EXISTING GAP (found while fixing lint, not fixed here to avoid an
-// unreviewed money-path behavior change): unlike its sibling services
+// getCosmosPricing gets real pricing from Azure Retail Prices API, scoped to
+// the given SKU (throughput tier, e.g. "100RU") like its sibling services
 // (getVMPricing, getRedisPricing, getSQLPricing, getSearchPricing — all of
-// which add an `armSkuName eq '%s'` clause), this filter is region-only and
-// does not scope by SKU. `sku` is accepted for interface parity with the
-// sibling functions and to preserve the call site, but is otherwise unused;
-// renamed to `_` to satisfy unparam. Flagged for follow-up rather than
-// silently filtered here.
-func (c *Client) getCosmosPricing(ctx context.Context, _, region string, termYears int) (*CosmosPricing, error) {
-	filter := fmt.Sprintf("serviceName eq 'Azure Cosmos DB' and armRegionName eq '%s'", region)
+// which add an `armSkuName eq '%s'` clause). Without the SKU filter the query
+// can return prices for other Cosmos DB SKUs and silently price the wrong
+// one; extractCosmosPricing additionally re-checks each item's ArmSKUName
+// so a filter that fails to narrow server-side still can't leak another
+// SKU's price into the quote.
+func (c *Client) getCosmosPricing(ctx context.Context, sku, region string, termYears int) (*CosmosPricing, error) {
+	filter := fmt.Sprintf("serviceName eq 'Azure Cosmos DB' and armRegionName eq '%s' and armSkuName eq '%s'",
+		region, sku)
 
 	priceData, err := c.fetchAzurePricing(ctx, filter)
 	if err != nil {
@@ -549,12 +548,12 @@ func (c *Client) getCosmosPricing(ctx context.Context, _, region string, termYea
 	}
 
 	if len(priceData.Items) == 0 {
-		return nil, fmt.Errorf("no pricing data found for Cosmos DB in region %s", region)
+		return nil, fmt.Errorf("no pricing data found for Cosmos DB SKU %s in region %s", sku, region)
 	}
 
-	onDemandPrice, reservationPrice, currency := extractCosmosPricing(priceData.Items, termYears)
+	onDemandPrice, reservationPrice, currency := extractCosmosPricing(priceData.Items, sku, termYears)
 	if onDemandPrice == 0 {
-		return nil, fmt.Errorf("no on-demand pricing found for Cosmos DB")
+		return nil, fmt.Errorf("no on-demand pricing found for Cosmos DB SKU %s", sku)
 	}
 
 	hoursInTerm := 8760.0 * float64(termYears)
@@ -564,7 +563,7 @@ func (c *Client) getCosmosPricing(ctx context.Context, _, region string, termYea
 	// and can justify uneconomical purchases. managedredis already uses
 	// this pattern as the model.
 	if reservationPrice == 0 {
-		return nil, fmt.Errorf("no reservation pricing found for Cosmos DB (%d year) in region %s", termYears, region)
+		return nil, fmt.Errorf("no reservation pricing found for Cosmos DB SKU %s (%d year) in region %s", sku, termYears, region)
 	}
 
 	savingsPercentage := calculateCosmosSavingsPercentage(onDemandPrice, hoursInTerm, reservationPrice)
@@ -605,13 +604,23 @@ func azureTermString(termYears int) string {
 	return fmt.Sprintf("%d Years", termYears)
 }
 
-// extractCosmosPricing extracts on-demand and reservation pricing from price items.
-func extractCosmosPricing(items []CosmosRetailPriceItem, termYears int) (onDemand, reservation float64, currency string) {
+// extractCosmosPricing extracts on-demand and reservation pricing from price
+// items, considering only items whose ArmSKUName matches sku. This is
+// defense in depth on top of the API-side armSkuName filter in
+// getCosmosPricing: if the Retail Prices API ever returns items for other
+// SKUs (a loose or failed server-side filter), extraction still won't pick
+// the wrong SKU's price. An item with an empty ArmSKUName is treated as
+// unscoped and skipped rather than trusted, since the filtered query should
+// only return items for the requested SKU.
+func extractCosmosPricing(items []CosmosRetailPriceItem, sku string, termYears int) (onDemand, reservation float64, currency string) {
 	currency = "USD"
 	termStr := azureTermString(termYears)
 
 	for i := range items {
 		item := &items[i]
+		if item.ArmSKUName != sku {
+			continue
+		}
 		if item.CurrencyCode != "" {
 			currency = item.CurrencyCode
 		}

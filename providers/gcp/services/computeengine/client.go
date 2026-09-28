@@ -1389,8 +1389,27 @@ func extractMemoryMBFromRecommendation(gcpRec *recommenderpb.Recommendation, rec
 // memoryMBFromDetails reads the MEMORY amount (in MB) from rec.Details when it
 // was populated by extractMemoryMBFromRecommendation. Returns an error when the
 // field is absent or zero -- callers must not silently fall back to a ratio.
+//
+// rec.Details can hold ComputeDetails as either a value (the in-process CLI
+// path, set above by extractMemoryMBFromRecommendation) or a pointer (the
+// scheduler/web purchase-execution path, which decodes it via
+// common.DecodeServiceDetailsFor into a *ComputeDetails). A type switch
+// accepts both forms so purchases driven by either path see the same memory
+// amount; a typed-nil pointer is treated as absent rather than dereferenced.
 func memoryMBFromDetails(rec common.Recommendation) (int64, error) {
-	if cd, ok := rec.Details.(common.ComputeDetails); ok && cd.MemoryGB > 0 {
+	var cd common.ComputeDetails
+	switch d := rec.Details.(type) {
+	case common.ComputeDetails:
+		cd = d
+	case *common.ComputeDetails:
+		if d == nil {
+			return 0, fmt.Errorf("memoryMBFromDetails: MEMORY resource amount absent from recommendation Details (no MEMORY op in Recommender payload); cannot build CUD insert without explicit memory")
+		}
+		cd = *d
+	default:
+		return 0, fmt.Errorf("memoryMBFromDetails: MEMORY resource amount absent from recommendation Details (no MEMORY op in Recommender payload); cannot build CUD insert without explicit memory")
+	}
+	if cd.MemoryGB > 0 {
 		return int64(cd.MemoryGB * 1024), nil
 	}
 	return 0, fmt.Errorf("memoryMBFromDetails: MEMORY resource amount absent from recommendation Details (no MEMORY op in Recommender payload); cannot build CUD insert without explicit memory")
