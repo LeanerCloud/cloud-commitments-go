@@ -555,6 +555,41 @@ func TestCosmosDBClient_GetExistingCommitments_CosmosCommitments(t *testing.T) {
 	assert.Equal(t, common.ServiceNoSQL, commitments[0].Service)
 }
 
+// TestCosmosDBClient_GetExistingCommitments_DedupesDailyUsageRows is the
+// regression test for #73: armconsumption.ReservationsDetails is a daily
+// usage API, one row per reservation per usage day. A pager returning three
+// rows for the same ReservationID must surface as a single commitment.
+func TestCosmosDBClient_GetExistingCommitments_DedupesDailyUsageRows(t *testing.T) {
+	ctx := context.Background()
+	client := NewClient(nil, "test-subscription", "eastus")
+
+	reservationID := "test-reservation-123"
+	skuName := "cosmos-db-standard"
+
+	dailyRow := &armconsumption.ReservationDetail{
+		Properties: &armconsumption.ReservationDetailProperties{
+			ReservationID: &reservationID,
+			SKUName:       &skuName,
+		},
+	}
+
+	mockPager := &MockReservationsDetailsPager{
+		pages: []armconsumption.ReservationsDetailsClientListResponse{
+			{
+				ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{
+					Value: []*armconsumption.ReservationDetail{dailyRow, dailyRow, dailyRow},
+				},
+			},
+		},
+	}
+	client.SetReservationsPager(mockPager)
+
+	commitments, err := client.GetExistingCommitments(ctx)
+	require.NoError(t, err)
+	require.Len(t, commitments, 1, "three daily rows for one reservation must collapse to one commitment (issue #73)")
+	assert.Equal(t, reservationID, commitments[0].CommitmentID)
+}
+
 func TestCosmosDBClient_GetExistingCommitments_PagerError(t *testing.T) {
 	ctx := context.Background()
 	client := NewClient(nil, "test-subscription", "eastus")

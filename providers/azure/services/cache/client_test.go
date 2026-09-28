@@ -570,6 +570,43 @@ func TestCacheClient_GetExistingCommitments_WithMockPager(t *testing.T) {
 	assert.Equal(t, common.ServiceCache, commitments[0].Service)
 }
 
+// TestCacheClient_GetExistingCommitments_DedupesDailyUsageRows is the
+// regression test for #73: armconsumption.ReservationsDetails is a daily
+// usage API, one row per reservation per usage day. A pager returning three
+// rows for the same ReservationID (simulating a reservation held across
+// three usage days) must surface as a single commitment, not three.
+func TestCacheClient_GetExistingCommitments_DedupesDailyUsageRows(t *testing.T) {
+	ctx := context.Background()
+	client := NewClient(nil, "test-subscription", "eastus")
+
+	reservationID := "test-reservation-123"
+	skuName := "redis-premium-p1"
+
+	dailyRow := &armconsumption.ReservationDetail{
+		Properties: &armconsumption.ReservationDetailProperties{
+			ReservationID: &reservationID,
+			SKUName:       &skuName,
+		},
+	}
+
+	mockPager := &MockReservationsDetailsPager{
+		pages: []armconsumption.ReservationsDetailsClientListResponse{
+			{
+				ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{
+					Value: []*armconsumption.ReservationDetail{dailyRow, dailyRow, dailyRow},
+				},
+			},
+		},
+	}
+
+	client.SetReservationsPager(mockPager)
+
+	commitments, err := client.GetExistingCommitments(ctx)
+	require.NoError(t, err)
+	require.Len(t, commitments, 1, "three daily rows for one reservation must collapse to one commitment (issue #73)")
+	assert.Equal(t, reservationID, commitments[0].CommitmentID)
+}
+
 func TestCacheClient_GetExistingCommitments_FilterNonRedis(t *testing.T) {
 	ctx := context.Background()
 	client := NewClient(nil, "test-subscription", "eastus")
