@@ -89,6 +89,9 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 			if duration == ThreeYearSeconds {
 				termMonths = 36
 			}
+			if aws.ToString(node.ProductDescription) == "" {
+				log.Printf("WARNING: ElastiCache reservation %s has no engine; matching any cache engine during duplicate checks", aws.ToString(node.ReservedCacheNodeId))
+			}
 
 			commitment := common.Commitment{
 				Provider:       common.ProviderAWS,

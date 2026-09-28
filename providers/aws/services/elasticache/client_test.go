@@ -1,8 +1,10 @@
 package elasticache
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"testing"
 	"time"
@@ -801,6 +803,8 @@ func TestClient_GetExistingCommitments_DedupesMatchingRecommendation(t *testing.
 
 	client := &Client{client: mockClient, region: "us-east-1"}
 	rec := common.Recommendation{
+		Provider:     common.ProviderAWS,
+		Service:      common.ServiceCache,
 		ResourceType: "cache.r6g.large",
 		Region:       "us-east-1",
 		Count:        1,
@@ -812,4 +816,25 @@ func TestClient_GetExistingCommitments_DedupesMatchingRecommendation(t *testing.
 	require.NoError(t, err)
 	assert.Empty(t, passed)
 	assert.Len(t, filtered, 1)
+}
+
+func TestClient_GetExistingCommitments_WarnsOnMissingEngine(t *testing.T) {
+	var logs bytes.Buffer
+	previous := log.Writer()
+	log.SetOutput(&logs)
+	t.Cleanup(func() { log.SetOutput(previous) })
+	for _, engine := range []*string{nil, aws.String("")} {
+		api := &MockElastiCacheClient{}
+		api.On("DescribeReservedCacheNodes", mock.Anything, mock.Anything).Return(&elasticache.DescribeReservedCacheNodesOutput{
+			ReservedCacheNodes: []types.ReservedCacheNode{{ReservedCacheNodeId: aws.String("missing-engine-ri"),
+				State: aws.String("active"), ProductDescription: engine}},
+		}, nil).Once()
+		commitments, err := (&Client{client: api, region: "us-east-1"}).GetExistingCommitments(context.Background())
+		require.NoError(t, err)
+		require.Len(t, commitments, 1)
+		assert.Empty(t, commitments[0].Engine)
+		assert.Contains(t, logs.String(), "WARNING: ElastiCache reservation missing-engine-ri has no engine")
+		logs.Reset()
+		api.AssertExpectations(t)
+	}
 }

@@ -41,6 +41,132 @@ func (f *fakeServiceClient) GetValidResourceTypes(ctx context.Context) ([]string
 	return nil, nil
 }
 
+func TestElastiCacheEngineBudgets(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name       string
+		engines    []string
+		counts     []int
+		recEngines []string
+		recCounts  []int
+		wantCounts []int
+	}{
+		{"redis covers valkey", []string{"ReDiS"}, []int{1}, []string{"VaLkEy"}, []int{1}, nil},
+		{"valkey covers redis", []string{"valkey"}, []int{1}, []string{"redis"}, []int{1}, nil},
+		{"redis not memcached", []string{"redis"}, []int{1}, []string{"memcached"}, []int{1}, []int{1}},
+		{"valkey not memcached", []string{"valkey"}, []int{1}, []string{"memcached"}, []int{1}, []int{1}},
+		{"unknown covers redis", []string{""}, []int{1}, []string{"redis"}, []int{1}, nil},
+		{"unknown covers valkey", []string{""}, []int{1}, []string{"valkey"}, []int{1}, nil},
+		{"unknown covers memcached", []string{""}, []int{1}, []string{"memcached"}, []int{1}, nil},
+		{"combined partial", []string{"redis", ""}, []int{1, 1}, []string{"valkey"}, []int{3}, []int{1}},
+		{"combined full", []string{"redis", ""}, []int{1, 1}, []string{"valkey"}, []int{2}, nil},
+		{"wildcard consumed once", []string{""}, []int{1}, []string{"redis", "memcached"}, []int{1, 1}, []int{1}},
+		{"exact before wildcard", []string{"redis", ""}, []int{1, 1}, []string{"valkey", "memcached"}, []int{1, 1}, nil},
+		{"family consumed once", []string{"redis"}, []int{1}, []string{"valkey", "redis"}, []int{1, 1}, []int{1}},
+		{"empty rec one", []string{""}, []int{1}, []string{""}, []int{3}, []int{2}},
+		{"empty rec two", []string{""}, []int{2}, []string{""}, []int{3}, []int{1}},
+		{"empty rec repeated", []string{""}, []int{2}, []string{"", ""}, []int{1, 2}, []int{1}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			client := &fakeServiceClient{}
+			for i, engine := range tt.engines {
+				client.commitments = append(client.commitments, common.Commitment{
+					Provider: common.ProviderAWS, Service: common.ServiceCache, ResourceType: "cache.r6g.large",
+					Region: "us-east-1", Engine: engine, Count: tt.counts[i], State: common.CommitmentStateActive, StartDate: time.Now(),
+				})
+			}
+			recs := make([]common.Recommendation, 0, len(tt.recEngines))
+			for i, engine := range tt.recEngines {
+				recs = append(recs, common.Recommendation{Provider: common.ProviderAWS, Service: common.ServiceElastiCache,
+					ResourceType: "cache.r6g.large", Region: "us-east-1", Count: tt.recCounts[i], Details: &common.CacheDetails{Engine: engine}})
+			}
+			passed, filtered, err := NewDuplicateChecker(0).AdjustRecommendationsForExisting(context.Background(), recs, client)
+			require.NoError(t, err)
+			require.Len(t, passed, len(tt.wantCounts))
+			for i, rec := range passed {
+				assert.Equal(t, tt.wantCounts[i], rec.Count)
+			}
+			assert.Len(t, filtered, len(recs)-len(passed))
+		})
+	}
+}
+
+func TestElastiCacheEngineScope(t *testing.T) {
+	t.Parallel()
+	for _, engine := range []string{"", "redis"} {
+		for _, other := range []struct {
+			provider common.ProviderType
+			service  common.ServiceType
+		}{
+			{common.ProviderAWS, common.ServiceMemoryDB}, {common.ProviderAWS, common.ServiceRDS},
+			{common.ProviderAzure, common.ServiceCache},
+		} {
+			for _, reverse := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/%s/reverse=%t", engine, other.provider, other.service, reverse), func(t *testing.T) {
+					t.Parallel()
+					cache := common.Recommendation{Provider: common.ProviderAWS, Service: common.ServiceCache,
+						ResourceType: "cache.r6g.large", Region: "us-east-1", Count: 2, Details: &common.CacheDetails{Engine: engine}}
+					foreign := cache
+					foreign.Provider, foreign.Service = other.provider, other.service
+					client := &fakeServiceClient{commitments: []common.Commitment{
+						{Provider: cache.Provider, Service: cache.Service, ResourceType: cache.ResourceType, Region: cache.Region,
+							Engine: engine, Count: 1, State: common.CommitmentStateActive, StartDate: time.Now()},
+						{Provider: other.provider, Service: other.service, ResourceType: cache.ResourceType, Region: cache.Region,
+							Engine: engine, Count: 2, State: common.CommitmentStateActive, StartDate: time.Now()},
+					}}
+					recs := []common.Recommendation{cache, foreign}
+					if reverse {
+						recs[0], recs[1] = recs[1], recs[0]
+					}
+					passed, filtered, err := NewDuplicateChecker(0).AdjustRecommendationsForExisting(context.Background(), recs, client)
+					require.NoError(t, err)
+					require.Len(t, passed, 1)
+					assert.Equal(t, cache.Provider, passed[0].Provider)
+					assert.Equal(t, cache.Service, passed[0].Service)
+					assert.Equal(t, 1, passed[0].Count)
+					require.Len(t, filtered, 1)
+					assert.Equal(t, foreign.Provider, filtered[0].Provider)
+					assert.Equal(t, foreign.Service, filtered[0].Service)
+				})
+			}
+		}
+	}
+}
+
+func TestElastiCacheEngineBoundaries(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name     string
+		provider common.ProviderType
+		service  common.ServiceType
+		engine   string
+		region   string
+		resource string
+	}{
+		{"different region", common.ProviderAWS, common.ServiceCache, "", "us-west-2", "cache.r6g.large"},
+		{"different resource", common.ProviderAWS, common.ServiceCache, "", "us-east-1", "cache.r6g.xlarge"},
+		{"memorydb unknown", common.ProviderAWS, common.ServiceMemoryDB, "", "us-east-1", "cache.r6g.large"},
+		{"memorydb redis", common.ProviderAWS, common.ServiceMemoryDB, "redis", "us-east-1", "cache.r6g.large"},
+		{"rds unknown", common.ProviderAWS, common.ServiceRDS, "", "us-east-1", "cache.r6g.large"},
+		{"azure unknown", common.ProviderAzure, common.ServiceCache, "", "us-east-1", "cache.r6g.large"},
+		{"azure redis", common.ProviderAzure, common.ServiceCache, "redis", "us-east-1", "cache.r6g.large"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			client := &fakeServiceClient{commitments: []common.Commitment{{Provider: tt.provider, Service: tt.service,
+				ResourceType: tt.resource, Region: tt.region, Engine: tt.engine, Count: 1,
+				State: common.CommitmentStateActive, StartDate: time.Now()}}}
+			rec := common.Recommendation{Provider: tt.provider, Service: tt.service,
+				ResourceType: "cache.r6g.large", Region: "us-east-1", Count: 1, Details: &common.CacheDetails{Engine: "valkey"}}
+			passed, filtered, err := NewDuplicateChecker(0).AdjustRecommendationsForExisting(context.Background(), []common.Recommendation{rec}, client)
+			require.NoError(t, err)
+			assert.Equal(t, []common.Recommendation{rec}, passed)
+			assert.Empty(t, filtered)
+		})
+	}
+}
+
 func TestFilterRecentCommitments_StateAndWindow(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
