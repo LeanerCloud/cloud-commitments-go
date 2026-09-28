@@ -214,6 +214,34 @@ func TestClient_GetExistingCommitments(t *testing.T) {
 			expectError: false,
 		},
 		{
+			// Queued RIs are owned purchases; the state filter must request
+			// them or the duplicate check never sees them.
+			name: "state filter includes queued instances",
+			setupMocks: func(m *MockEC2Client) {
+				m.On("DescribeReservedInstances", mock.Anything, mock.MatchedBy(func(in *ec2.DescribeReservedInstancesInput) bool {
+					return len(in.Filters) == 1 && aws.ToString(in.Filters[0].Name) == "state" &&
+						assert.ObjectsAreEqual([]string{
+							string(types.ReservedInstanceStateActive),
+							string(types.ReservedInstanceStatePaymentPending),
+							string(types.ReservedInstanceStateQueued),
+						}, in.Filters[0].Values)
+				})).
+					Return(&ec2.DescribeReservedInstancesOutput{
+						ReservedInstances: []types.ReservedInstances{
+							{
+								ReservedInstancesId: aws.String("ri-q"),
+								InstanceType:        types.InstanceTypeM5Large,
+								InstanceCount:       aws.Int32(1),
+								State:               types.ReservedInstanceStateQueued,
+								Start:               aws.Time(time.Now().Add(24 * time.Hour)),
+							},
+						},
+					}, nil).Once()
+			},
+			expectedLen: 1,
+			expectError: false,
+		},
+		{
 			name: "API error",
 			setupMocks: func(m *MockEC2Client) {
 				m.On("DescribeReservedInstances", mock.Anything, mock.Anything).

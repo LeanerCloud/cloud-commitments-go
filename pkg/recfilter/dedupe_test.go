@@ -60,6 +60,24 @@ func TestFilterRecentCommitments_StateAndWindow(t *testing.T) {
 	assert.ElementsMatch(t, []int{4, 5}, counts)
 }
 
+// A queued RI (scheduled future purchase, AWS state "queued") is already
+// owned; it must suppress the matching recommendation or the next run buys it
+// again.
+func TestAdjustRecommendationsForExisting_QueuedCommitmentCollides(t *testing.T) {
+	t.Parallel()
+	client := &fakeServiceClient{commitments: []common.Commitment{
+		{ResourceType: "m5.large", Region: "us-east-1", Count: 2, State: common.CommitmentStateQueued, StartDate: time.Now().Add(24 * time.Hour)},
+	}}
+	rec := common.Recommendation{ResourceType: "m5.large", Region: "us-east-1", Count: 2}
+
+	d := NewDuplicateChecker(DefaultDuplicateCheckLookbackHours)
+	passed, filtered, err := d.AdjustRecommendationsForExisting(context.Background(), []common.Recommendation{rec}, client)
+
+	require.NoError(t, err)
+	assert.Empty(t, passed)
+	assert.Len(t, filtered, 1)
+}
+
 func TestAdjustRecommendationsForExisting_EngineNormalizationCollides(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

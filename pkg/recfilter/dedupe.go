@@ -78,9 +78,15 @@ func (d *DuplicateChecker) filterRecentCommitments(existing []common.Commitment)
 	return recentExisting
 }
 
-// isRecentActiveCommitment checks if a commitment is active and purchased after the cutoff time.
+// isRecentActiveCommitment checks if a commitment is owned (active, paying, or
+// queued for a future start) and starts after the cutoff time.
 func isRecentActiveCommitment(c common.Commitment, cutoffTime time.Time) bool {
-	return (c.State == "active" || c.State == "payment-pending") && c.StartDate.After(cutoffTime)
+	switch c.State {
+	case common.CommitmentStateActive, common.CommitmentStatePaymentPending, common.CommitmentStateQueued:
+		return c.StartDate.After(cutoffTime)
+	default:
+		return false
+	}
 }
 
 // dedupeKey builds the duplicate-identity key shared by
