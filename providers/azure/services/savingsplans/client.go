@@ -169,6 +169,27 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 	return commitments, nil
 }
 
+// azureSavingsPlanState maps a savings plan provisioning state to the common
+// state. A state with no mapping passes through verbatim so duplicate detection
+// counts it and logs it.
+func azureSavingsPlanState(ps armbillingbenefits.ProvisioningState) common.CommitmentState {
+	switch ps {
+	case armbillingbenefits.ProvisioningStateSucceeded:
+		return common.CommitmentStateActive
+	case armbillingbenefits.ProvisioningStateCreating, armbillingbenefits.ProvisioningStateCreated,
+		armbillingbenefits.ProvisioningStatePendingBilling, armbillingbenefits.ProvisioningStateConfirmedBilling:
+		return common.CommitmentStatePaymentPending
+	case armbillingbenefits.ProvisioningStateFailed:
+		return common.CommitmentStateFailed
+	case armbillingbenefits.ProvisioningStateCancelled:
+		return common.CommitmentStateCanceled
+	case armbillingbenefits.ProvisioningStateExpired:
+		return common.CommitmentStateExpired
+	default:
+		return common.CommitmentState(ps)
+	}
+}
+
 // convertSavingsPlan maps an armbillingbenefits.SavingsPlanModel to a common.Commitment.
 func convertSavingsPlan(sp *armbillingbenefits.SavingsPlanModel, subscriptionID string) *common.Commitment {
 	if sp == nil || sp.ID == nil {
@@ -182,7 +203,7 @@ func convertSavingsPlan(sp *armbillingbenefits.SavingsPlanModel, subscriptionID 
 		CommitmentType: common.CommitmentSavingsPlan,
 		Service:        common.ServiceSavingsPlansAll,
 		Count:          1,
-		State:          "active",
+		State:          common.CommitmentStateActive,
 	}
 
 	if sp.Name != nil {
@@ -193,7 +214,7 @@ func convertSavingsPlan(sp *armbillingbenefits.SavingsPlanModel, subscriptionID 
 		props := sp.Properties
 
 		if props.ProvisioningState != nil {
-			commitment.State = string(*props.ProvisioningState)
+			commitment.State = azureSavingsPlanState(*props.ProvisioningState)
 		}
 
 		if props.EffectiveDateTime != nil {

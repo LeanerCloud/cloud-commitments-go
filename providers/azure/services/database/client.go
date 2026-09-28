@@ -288,7 +288,7 @@ func (c *Client) convertSQLReservation(detail *armconsumption.ReservationDetail)
 		CommitmentType: common.CommitmentReservedInstance,
 		Service:        common.ServiceRelationalDB,
 		Region:         c.region,
-		State:          "active",
+		State:          common.CommitmentStateActive,
 	}
 
 	if props.ReservationID != nil {

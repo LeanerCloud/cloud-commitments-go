@@ -3,6 +3,7 @@ package savingsplans
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -1540,4 +1541,27 @@ func TestEC2InstanceSP_CEProvidedOfferingIDUsedDirectly(t *testing.T) {
 	// Asserted after the call: before it, the mock has recorded nothing and this
 	// passes for any implementation, whatever the matcher count.
 	mockSP.AssertNotCalled(t, "DescribeSavingsPlansOfferings", mock.Anything, mock.Anything)
+}
+
+// A just-purchased plan sits in payment-pending (issue #142). The
+// DescribeSavingsPlans state filter must request it, or duplicate detection
+// never sees the plan and the next run buys it again.
+func TestClient_GetExistingCommitments_RequestsPaymentPending(t *testing.T) {
+	mockClient := &MockSavingsPlansClient{}
+	mockClient.On("DescribeSavingsPlans", mock.Anything, mock.MatchedBy(func(in *savingsplans.DescribeSavingsPlansInput) bool {
+		return slices.Contains(in.States, types.SavingsPlanStatePaymentPending)
+	})).Return(&savingsplans.DescribeSavingsPlansOutput{
+		SavingsPlans: []types.SavingsPlan{{
+			SavingsPlanId:   aws.String("sp-pending"),
+			SavingsPlanType: types.SavingsPlanTypeCompute,
+			State:           types.SavingsPlanStatePaymentPending,
+		}},
+	}, nil).Once()
+	t.Cleanup(func() { mockClient.AssertExpectations(t) })
+
+	client := &Client{client: mockClient, region: "us-east-1", planType: types.SavingsPlanTypeCompute}
+	result, err := client.GetExistingCommitments(context.Background())
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	assert.Equal(t, common.CommitmentStatePaymentPending, result[0].State)
 }

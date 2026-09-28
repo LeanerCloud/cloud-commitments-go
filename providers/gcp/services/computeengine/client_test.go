@@ -341,7 +341,7 @@ func TestComputeEngineClient_GetExistingCommitments_WithMock(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, commitments, 1)
 	assert.Equal(t, "commitment-1", commitments[0].CommitmentID)
-	assert.Equal(t, "active", commitments[0].State)
+	assert.Equal(t, common.CommitmentStateActive, commitments[0].State)
 	assert.Equal(t, "n1-standard-1", commitments[0].ResourceType)
 }
 
@@ -2049,5 +2049,23 @@ func TestMachineTypeFromResourcePath_SelectsOnlyMachineTypePaths(t *testing.T) {
 		got, ok := machineTypeFromResourcePath(path)
 		assert.False(t, ok, "%q does not name a machine type", path)
 		assert.Empty(t, got)
+	}
+}
+
+// GCP commitments that are owned but not yet in effect (issue #142) must map to
+// owned common states, or duplicate detection drops them and the CUD is bought
+// twice. Ended statuses map to ended states, and an unset status passes through
+// so duplicate detection counts and logs it instead of dropping it.
+func TestGCPCommitmentState(t *testing.T) {
+	cases := map[string]common.CommitmentState{
+		computepb.Commitment_ACTIVE.String():         common.CommitmentStateActive,
+		computepb.Commitment_NOT_YET_ACTIVE.String(): common.CommitmentStateQueued,
+		computepb.Commitment_CREATING.String():       common.CommitmentStatePaymentPending,
+		computepb.Commitment_EXPIRED.String():        common.CommitmentStateExpired,
+		computepb.Commitment_CANCELLED.String():      common.CommitmentStateCanceled, //nolint:misspell // SDK identifier
+		"":                                           "",
+	}
+	for status, want := range cases {
+		assert.Equal(t, want, gcpCommitmentState(status), "status %q", status)
 	}
 }

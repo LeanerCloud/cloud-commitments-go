@@ -111,7 +111,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 				Engine:         aws.ToString(instance.ProductDescription), // Capture engine for accurate duplicate checking
 				Deployment:     deployment,
 				Count:          int(aws.ToInt32(instance.DBInstanceCount)),
-				State:          state,
+				State:          common.CommitmentState(state),
 				StartDate:      aws.ToTime(instance.StartTime),
 				EndDate:        aws.ToTime(instance.StartTime).AddDate(0, termMonths, 0),
 			}

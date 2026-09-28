@@ -497,13 +497,28 @@ func (c *Client) collectCommitments(ctx context.Context, svc CommitmentsService,
 	return commitments, nil
 }
 
+// gcpCommitmentState maps a GCP commitment status to the common state. A status
+// with no mapping (unset, UNDEFINED_STATUS, or a value added after this SDK)
+// passes through lowercased so duplicate detection counts it and logs it.
+func gcpCommitmentState(raw string) common.CommitmentState {
+	switch raw {
+	case computepb.Commitment_ACTIVE.String():
+		return common.CommitmentStateActive
+	case computepb.Commitment_NOT_YET_ACTIVE.String():
+		return common.CommitmentStateQueued
+	case computepb.Commitment_CREATING.String():
+		return common.CommitmentStatePaymentPending
+	case computepb.Commitment_EXPIRED.String():
+		return common.CommitmentStateExpired
+	case computepb.Commitment_CANCELLED.String(): //nolint:misspell // SDK identifier
+		return common.CommitmentStateCanceled
+	default:
+		return common.CommitmentState(strings.ToLower(raw))
+	}
+}
+
 // convertGCPCommitmentToCommon converts a GCP commitment to common format.
 func (c *Client) convertGCPCommitmentToCommon(commitment *computepb.Commitment) common.Commitment {
-	commitmentStatus := "unknown"
-	if commitment.Status != nil {
-		commitmentStatus = strings.ToLower(*commitment.Status)
-	}
-
 	// All commitment types (GENERAL_PURPOSE, ACCELERATOR) map to CommitmentCUD
 	// for the purposes of the common layer. The if-branch checking for
 	// "GENERAL_PURPOSE" was a no-op (both arms assigned CommitmentCUD) and
@@ -517,7 +532,7 @@ func (c *Client) convertGCPCommitmentToCommon(commitment *computepb.Commitment) 
 		Service:        common.ServiceCompute,
 		Region:         c.region,
 		CommitmentID:   *commitment.Name,
-		State:          commitmentStatus,
+		State:          gcpCommitmentState(commitment.GetStatus()),
 	}
 
 	// Extract resource type from commitment resources

@@ -200,7 +200,7 @@ func (c *Client) convertSearchReservation(detail *armconsumption.ReservationDeta
 		CommitmentType: common.CommitmentReservedInstance,
 		Service:        common.ServiceSearch,
 		Region:         c.region,
-		State:          "active",
+		State:          common.CommitmentStateActive,
 	}
 
 	if props.ReservationID != nil {

@@ -298,7 +298,7 @@ func (c *Client) convertVMReservation(detail *armconsumption.ReservationDetail) 
 		CommitmentType: common.CommitmentReservedInstance,
 		Service:        common.ServiceCompute,
 		Region:         c.region,
-		State:          "active",
+		State:          common.CommitmentStateActive,
 	}
 
 	if props.ReservationID != nil {
