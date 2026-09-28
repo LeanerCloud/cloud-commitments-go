@@ -2,6 +2,7 @@ package savingsplans
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"testing"
@@ -501,9 +502,68 @@ func TestClient_PurchaseCommitment(t *testing.T) {
 	mockSP.AssertExpectations(t)
 }
 
-// TestClient_PurchaseCommitment_UpfrontUnreadableIsNil asserts that when the
-// post-purchase lookup fails, the bought plan still reports success and its
-// cost is absent (nil) rather than a fabricated 0.
+func TestClient_PurchaseCommitment_UpfrontCost(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		payment types.SavingsPlanPaymentOption
+		amount  *string
+		id      string
+		want    *float64
+	}{
+		{"no upfront omitted", types.SavingsPlanPaymentOptionNoUpfront, nil, "sp-bought", aws.Float64(0)},
+		{"no upfront empty", types.SavingsPlanPaymentOptionNoUpfront, aws.String(""), "sp-bought", aws.Float64(0)},
+		{"explicit zero", types.SavingsPlanPaymentOptionNoUpfront, aws.String("0"), "sp-bought", aws.Float64(0)},
+		{"all upfront", types.SavingsPlanPaymentOptionAllUpfront, aws.String("123.45"), "sp-bought", aws.Float64(123.45)},
+		{"partial upfront", types.SavingsPlanPaymentOptionPartialUpfront, aws.String("67.89"), "sp-bought", aws.Float64(67.89)},
+		{"all upfront absent", types.SavingsPlanPaymentOptionAllUpfront, nil, "sp-bought", nil},
+		{"partial upfront absent", types.SavingsPlanPaymentOptionPartialUpfront, nil, "sp-bought", nil},
+		{"payment absent", "", nil, "sp-bought", nil},
+		{"mismatched plan", types.SavingsPlanPaymentOptionNoUpfront, nil, "sp-other", nil},
+		{"malformed", types.SavingsPlanPaymentOptionAllUpfront, aws.String("bad"), "sp-bought", nil},
+		{"nan", types.SavingsPlanPaymentOptionAllUpfront, aws.String("NaN"), "sp-bought", nil},
+		{"positive infinity", types.SavingsPlanPaymentOptionAllUpfront, aws.String("+Inf"), "sp-bought", nil},
+		{"negative infinity", types.SavingsPlanPaymentOptionAllUpfront, aws.String("-Inf"), "sp-bought", nil},
+		{"negative", types.SavingsPlanPaymentOptionAllUpfront, aws.String("-1"), "sp-bought", nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &MockSavingsPlansClient{}
+			client := &Client{client: m, region: "us-east-1"}
+			payment := types.SavingsPlanPaymentOptionAllUpfront
+			if tt.payment != "" {
+				payment = tt.payment
+			}
+			rec := common.Recommendation{ResourceType: "Compute", Count: 3, PaymentOption: string(payment), Term: "1yr",
+				Details: &common.SavingsPlanDetails{PlanType: "Compute", HourlyCommitment: 10}}
+			m.On("DescribeSavingsPlansOfferings", mock.Anything, mock.MatchedBy(func(in *savingsplans.DescribeSavingsPlansOfferingsInput) bool {
+				return len(in.PaymentOptions) == 1 && in.PaymentOptions[0] == payment
+			})).Return(&savingsplans.DescribeSavingsPlansOfferingsOutput{
+				SearchResults: []types.SavingsPlanOffering{{OfferingId: aws.String("offer")}},
+			}, nil).Once()
+			m.On("CreateSavingsPlan", mock.Anything, mock.MatchedBy(func(in *savingsplans.CreateSavingsPlanInput) bool {
+				return aws.ToString(in.SavingsPlanOfferingId) == "offer"
+			})).Return(&savingsplans.CreateSavingsPlanOutput{SavingsPlanId: aws.String("sp-bought")}, nil).Once()
+			m.On("DescribeSavingsPlans", mock.Anything, mock.MatchedBy(func(in *savingsplans.DescribeSavingsPlansInput) bool {
+				return len(in.SavingsPlanIds) == 1 && in.SavingsPlanIds[0] == "sp-bought"
+			})).Return(&savingsplans.DescribeSavingsPlansOutput{SavingsPlans: []types.SavingsPlan{{
+				SavingsPlanId: aws.String(tt.id), PaymentOption: tt.payment, UpfrontPaymentAmount: tt.amount,
+			}}}, nil).Once()
+			result, err := client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
+			require.NoError(t, err)
+			assert.True(t, result.Success)
+			assert.Equal(t, "sp-bought", result.CommitmentID)
+			assert.Equal(t, tt.want, result.Cost)
+			payload, err := json.Marshal(result)
+			require.NoError(t, err)
+			var decoded struct {
+				Cost *float64 `json:"cost"`
+			}
+			require.NoError(t, json.Unmarshal(payload, &decoded))
+			assert.Equal(t, tt.want, decoded.Cost)
+			m.AssertExpectations(t)
+		})
+	}
+}
+
 func TestClient_PurchaseCommitment_UpfrontUnreadableIsNil(t *testing.T) {
 	mockSP := &MockSavingsPlansClient{}
 	client := &Client{client: mockSP, region: "us-east-1"}

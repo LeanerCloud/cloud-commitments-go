@@ -671,8 +671,64 @@ func TestComputeClient_PurchaseCommitment_Success(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.Equal(t, "order-vm-001", result.CommitmentID)
-	assert.Equal(t, 2000.0, *result.Cost)
+	require.NotNil(t, result.Cost)
+	assert.Zero(t, *result.Cost)
 	mockHTTP.AssertExpectations(t)
+}
+
+func TestComputeClient_PurchaseCommitment_UpfrontCost(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		payment  string
+		estimate float64
+		redrive  bool
+		wantJSON string
+	}{
+		{"monthly estimate", "monthly", 2000, false, `"cost":0`},
+		{"monthly missing", "no-upfront", 0, false, `"cost":0`},
+		{"upfront estimate", "upfront", 2000, false, `"cost":null`},
+		{"upfront missing", "all-upfront", 0, false, `"cost":null`},
+		{"monthly redrive", "monthly", 2000, true, `"cost":0`},
+		{"upfront redrive", "upfront", 2000, true, `"cost":null`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &mocks.MockHTTPClient{}
+			client := NewClientWithHTTP(&MockTokenCredential{token: "test-token"}, "test-subscription", "eastus", m)
+			mockCapacityProviderCheck(t, m)
+			opts := common.PurchaseOptions{Source: common.PurchaseSourceCLI}
+			if tt.redrive {
+				opts.IdempotencyToken = "existing-token"
+				resp := mocks.CreateMockHTTPResponse(http.StatusOK, `{"value":[{"name":"cost-order","tags":{"cudly-idempotency-token":"existing-token"},"properties":{"provisioningState":"Succeeded"}}]}`)
+				t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
+				m.On("Do", mock.MatchedBy(func(r *http.Request) bool {
+					return r.Method == http.MethodGet && r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders"
+				})).Return(resp, nil).Once()
+			} else {
+				calc := mocks.CreateMockHTTPResponse(http.StatusOK, calcPriceRespJSON("cost-order"))
+				bought := mocks.CreateMockHTTPResponse(http.StatusOK, `{}`)
+				t.Cleanup(func() { require.NoError(t, calc.Body.Close()); require.NoError(t, bought.Body.Close()) })
+				m.On("Do", mock.MatchedBy(func(r *http.Request) bool {
+					return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/calculatePrice"
+				})).Return(calc, nil).Once()
+				m.On("Do", mock.MatchedBy(func(r *http.Request) bool {
+					return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/cost-order/purchase"
+				})).Return(bought, nil).Once()
+			}
+			rec := common.Recommendation{ResourceType: "Standard_D2s_v3", Term: "1yr", Count: 3,
+				PaymentOption: tt.payment, CommitmentCost: tt.estimate}
+			result, err := client.PurchaseCommitment(context.Background(), rec, opts)
+			require.NoError(t, err)
+			assert.True(t, result.Success)
+			assert.Equal(t, "cost-order", result.CommitmentID)
+			payload, err := json.Marshal(result)
+			require.NoError(t, err)
+			assert.Contains(t, string(payload), tt.wantJSON)
+			m.AssertExpectations(t)
+			if tt.redrive {
+				m.AssertNumberOfCalls(t, "Do", 2)
+			}
+		})
+	}
 }
 
 func TestComputeClient_PurchaseCommitment_3YearTerm(t *testing.T) {

@@ -744,7 +744,8 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 
 	result.Success = true
 	result.CommitmentID = commitmentName
-	result.Cost = &rec.CommitmentCost
+	upfrontCost := 0.0 // Compute Engine CUDs are billed monthly, with no upfront charge.
+	result.Cost = &upfrontCost
 
 	return result, nil
 }
