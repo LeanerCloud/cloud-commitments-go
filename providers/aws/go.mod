@@ -3,7 +3,7 @@ module github.com/LeanerCloud/cloud-commitments-go/providers/aws
 go 1.26.6
 
 require (
-	github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20260925082912-43ab778da7ac
+	github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20260928204158-281440d4c44b
 	github.com/aws/aws-sdk-go-v2 v1.41.5
 	github.com/aws/aws-sdk-go-v2/config v1.29.12
 	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.61.0
@@ -35,5 +35,6 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
+	golang.org/x/sys v0.47.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
