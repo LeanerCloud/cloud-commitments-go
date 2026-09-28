@@ -92,6 +92,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 				Service:        common.ServiceMemoryDB,
 				Region:         c.region,
 				ResourceType:   aws.ToString(node.NodeType),
+				Engine:         ReservedNodeEngine,
 				Count:          int(node.NodeCount),
 				State:          common.CommitmentState(state),
 				StartDate:      aws.ToTime(node.StartTime),
@@ -254,6 +255,11 @@ func (c *Client) recoverAlreadyExists(ctx context.Context, token, reservationID 
 	}
 	return "", false
 }
+
+// ReservedNodeEngine is the engine recorded on MemoryDB reserved nodes and
+// recommendations. DescribeReservedNodes returns no engine field, so both sides
+// of the dedupe key use this constant.
+const ReservedNodeEngine = "redis"
 
 // maxOfferingPages is the maximum number of DescribeReservedNodesOfferings
 // pages to walk before giving up. At MaxResults=100 per page this caps the
