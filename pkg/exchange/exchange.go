@@ -16,8 +16,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
-// QuoteSummary is a small, stable summary we can log/guard on.
-type QuoteSummary struct {
+// ExchangeQuoteSummary is a small, stable summary we can log/guard on.
+//
+//nolint:revive // stutters, but cloud-commitments-platform references this type through pkg's pinned go.mod pseudo-version (not workspace-resolved under GOWORK=off); renaming here without a coordinated go.mod bump would break that build mode
+type ExchangeQuoteSummary struct {
 	IsValidExchange         bool
 	ValidationFailureReason string
 	CurrencyCode            string
@@ -186,13 +188,13 @@ func NewExchangeClientFromAPI(api EC2ExchangeAPI) *Client {
 }
 
 // GetQuote retrieves an exchange quote using the injected EC2 client.
-func (c *Client) GetQuote(ctx context.Context, req ExchangeQuoteRequest) (*QuoteSummary, error) {
+func (c *Client) GetQuote(ctx context.Context, req ExchangeQuoteRequest) (*ExchangeQuoteSummary, error) {
 	return getQuoteWithAPI(ctx, c.ec2, req)
 }
 
 // Execute performs a convertible RI exchange with a spend-cap guardrail
 // using the injected EC2 client.
-func (c *Client) Execute(ctx context.Context, req ExchangeExecuteRequest) (string, *QuoteSummary, error) {
+func (c *Client) Execute(ctx context.Context, req ExchangeExecuteRequest) (string, *ExchangeQuoteSummary, error) {
 	return executeWithAPI(ctx, c.ec2, req)
 }
 
@@ -218,7 +220,7 @@ func assertAccount(ctx context.Context, cfg sdkaws.Config, expected string) erro
 }
 
 // GetExchangeQuote retrieves an exchange quote from the EC2 API.
-func GetExchangeQuote(ctx context.Context, req ExchangeQuoteRequest) (*QuoteSummary, error) {
+func GetExchangeQuote(ctx context.Context, req ExchangeQuoteRequest) (*ExchangeQuoteSummary, error) {
 	cfg, err := loadCfg(ctx, req.Region)
 	if err != nil {
 		return nil, err
@@ -231,7 +233,7 @@ func GetExchangeQuote(ctx context.Context, req ExchangeQuoteRequest) (*QuoteSumm
 
 // getQuoteWithAPI performs the quote call using an EC2ExchangeAPI,
 // allowing ExecuteExchange to reuse the same client for both quote and accept.
-func getQuoteWithAPI(ctx context.Context, client EC2ExchangeAPI, req ExchangeQuoteRequest) (*QuoteSummary, error) {
+func getQuoteWithAPI(ctx context.Context, client EC2ExchangeAPI, req ExchangeQuoteRequest) (*ExchangeQuoteSummary, error) {
 	if len(req.ReservedIDs) == 0 {
 		return nil, fmt.Errorf("must provide at least one reserved instance ID")
 	}
@@ -250,7 +252,7 @@ func getQuoteWithAPI(ctx context.Context, client EC2ExchangeAPI, req ExchangeQuo
 		return nil, err
 	}
 
-	s := &QuoteSummary{
+	s := &ExchangeQuoteSummary{
 		IsValidExchange:         sdkaws.ToBool(out.IsValidExchange),
 		ValidationFailureReason: sdkaws.ToString(out.ValidationFailureReason),
 		CurrencyCode:            sdkaws.ToString(out.CurrencyCode),
@@ -287,7 +289,7 @@ func getQuoteWithAPI(ctx context.Context, client EC2ExchangeAPI, req ExchangeQuo
 
 // ExecuteExchange performs a convertible RI exchange with a spend-cap guardrail.
 // This is a convenience wrapper that creates its own AWS client from default config.
-func ExecuteExchange(ctx context.Context, req ExchangeExecuteRequest) (exchangeID string, quote *QuoteSummary, err error) {
+func ExecuteExchange(ctx context.Context, req ExchangeExecuteRequest) (exchangeID string, quote *ExchangeQuoteSummary, err error) {
 	if req.MaxPaymentDueUSD == nil {
 		return "", nil, fmt.Errorf("refusing to execute without max-payment-due-usd guardrail")
 	}
@@ -308,7 +310,7 @@ func ExecuteExchange(ctx context.Context, req ExchangeExecuteRequest) (exchangeI
 // more, so a zero-cost exchange parses to a non-nil zero; a nil means the
 // response had no amount at all, and a spend cap cannot be enforced against
 // an unknown amount.
-func requirePaymentDue(q *QuoteSummary) (*big.Rat, error) {
+func requirePaymentDue(q *ExchangeQuoteSummary) (*big.Rat, error) {
 	if q.PaymentDueUSD == nil {
 		return nil, fmt.Errorf("quote reported no PaymentDue; refusing to enforce the spend cap against an unknown amount")
 	}
@@ -317,7 +319,7 @@ func requirePaymentDue(q *QuoteSummary) (*big.Rat, error) {
 
 // checkInitialQuote returns an error if the quote is invalid, carries no
 // payment amount, or exceeds the spend cap.
-func checkInitialQuote(q *QuoteSummary, maxPayment *big.Rat) error {
+func checkInitialQuote(q *ExchangeQuoteSummary, maxPayment *big.Rat) error {
 	if !q.IsValidExchange {
 		return fmt.Errorf("exchange is not valid: %s", q.ValidationFailureReason)
 	}
@@ -335,7 +337,7 @@ func checkInitialQuote(q *QuoteSummary, maxPayment *big.Rat) error {
 // no payment amount, or exceeds the cap. It is called immediately before
 // AcceptReservedInstancesExchangeQuote to narrow the race window between
 // pricing changes.
-func checkReQuote(q *QuoteSummary, maxPayment *big.Rat) error {
+func checkReQuote(q *ExchangeQuoteSummary, maxPayment *big.Rat) error {
 	if !q.IsValidExchange {
 		return fmt.Errorf("exchange no longer valid at accept time: %s", q.ValidationFailureReason)
 	}
@@ -354,7 +356,7 @@ func checkReQuote(q *QuoteSummary, maxPayment *big.Rat) error {
 }
 
 // executeWithAPI performs the exchange using an injected EC2ExchangeAPI.
-func executeWithAPI(ctx context.Context, client EC2ExchangeAPI, req ExchangeExecuteRequest) (string, *QuoteSummary, error) {
+func executeWithAPI(ctx context.Context, client EC2ExchangeAPI, req ExchangeExecuteRequest) (string, *ExchangeQuoteSummary, error) {
 	if req.MaxPaymentDueUSD == nil {
 		return "", nil, fmt.Errorf("refusing to execute without max-payment-due-usd guardrail")
 	}
