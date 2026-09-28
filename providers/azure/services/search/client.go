@@ -177,7 +177,10 @@ func (c *Client) collectSearchReservations(ctx context.Context, pager Reservatio
 		}
 	}
 
-	return commitments, nil
+	// ReservationsDetails is a daily usage API: one row per reservation per
+	// usage day. Without this, a single reservation held for N days would
+	// surface as N commitments sharing one CommitmentID (issue #73).
+	return reservations.DedupeCommitmentsByID(commitments), nil
 }
 
 // convertSearchReservation converts a reservation detail to a commitment if it's a Search reservation.

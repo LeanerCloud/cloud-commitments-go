@@ -198,7 +198,10 @@ func (c *Client) collectSynapseReservations(ctx context.Context, pager Reservati
 		}
 	}
 
-	return commitments, nil
+	// ReservationsDetails is a daily usage API: one row per reservation per
+	// usage day. Without this, a single reservation held for N days would
+	// surface as N commitments sharing one CommitmentID (issue #73).
+	return reservations.DedupeCommitmentsByID(commitments), nil
 }
 
 // convertSynapseReservation converts a reservation detail to a Commitment if

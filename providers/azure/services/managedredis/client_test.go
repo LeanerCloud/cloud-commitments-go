@@ -409,6 +409,30 @@ func TestGetExistingCommitments_RedisSKUIncluded(t *testing.T) {
 	assert.Equal(t, common.ProviderAzure, commitments[0].Provider)
 }
 
+// TestGetExistingCommitments_DedupesDailyUsageRows is the regression test
+// for #73: armconsumption.ReservationsDetails is a daily usage API, one row
+// per reservation per usage day. A pager returning three rows for the same
+// ReservationID must surface as a single commitment.
+func TestGetExistingCommitments_DedupesDailyUsageRows(t *testing.T) {
+	c := NewClient(nil, "sub", "eastus")
+	resID := "res-123"
+	sku := "redis-premium-p1"
+	dailyRow := &armconsumption.ReservationDetail{
+		Properties: &armconsumption.ReservationDetailProperties{ReservationID: &resID, SKUName: &sku},
+	}
+	c.SetReservationsPager(&mockReservationsPager{
+		pages: []armconsumption.ReservationsDetailsClientListResponse{
+			{ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{
+				Value: []*armconsumption.ReservationDetail{dailyRow, dailyRow, dailyRow},
+			}},
+		},
+	})
+	commitments, err := c.GetExistingCommitments(context.Background())
+	require.NoError(t, err)
+	require.Len(t, commitments, 1, "three daily rows for one reservation must collapse to one commitment (issue #73)")
+	assert.Equal(t, resID, commitments[0].CommitmentID)
+}
+
 func TestGetExistingCommitments_NonRedisFiltered(t *testing.T) {
 	c := NewClient(nil, "sub", "eastus")
 	sqlSKU := "sql-standard-s1"
