@@ -15,6 +15,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/reservationstate"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/tagging"
 )
 
@@ -79,8 +80,8 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 
 		for i := range response.ReservedCacheNodes {
 			node := &response.ReservedCacheNodes[i]
-			state := aws.ToString(node.State)
-			if state != "active" && state != "payment-pending" {
+			state := common.CommitmentState(aws.ToString(node.State))
+			if !reservationstate.IsOwned(state) {
 				continue
 			}
 
@@ -99,7 +100,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 				ResourceType:   aws.ToString(node.CacheNodeType),
 				Engine:         aws.ToString(node.ProductDescription),
 				Count:          int(aws.ToInt32(node.CacheNodeCount)),
-				State:          common.CommitmentState(state),
+				State:          state,
 				StartDate:      aws.ToTime(node.StartTime),
 				EndDate:        aws.ToTime(node.StartTime).AddDate(0, termMonths, 0),
 			}
@@ -196,7 +197,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	return result, nil
 }
 
-// findReservationByID looks for an active or payment-pending reserved cache node
+// findReservationByID looks for a nonterminal reserved cache node
 // with the given ReservedCacheNodeId (issue #641), so a re-driven purchase can
 // short-circuit instead of buying a second node. Retired/expired nodes are
 // excluded (same state filter as GetExistingCommitments).
@@ -216,8 +217,8 @@ func (c *Client) findReservationByID(ctx context.Context, reservationID string) 
 	}
 	for i := range response.ReservedCacheNodes {
 		node := &response.ReservedCacheNodes[i]
-		state := aws.ToString(node.State)
-		if state != "active" && state != "payment-pending" {
+		state := common.CommitmentState(aws.ToString(node.State))
+		if !reservationstate.IsOwned(state) {
 			continue
 		}
 		if node.ReservedCacheNodeId != nil {

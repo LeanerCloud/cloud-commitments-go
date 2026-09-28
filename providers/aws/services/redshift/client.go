@@ -17,6 +17,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/retry"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/reservationstate"
 )
 
 // API defines the interface for Redshift operations (enables mocking).
@@ -218,10 +219,10 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	return result, nil
 }
 
-// findNodeByIdempotencyToken looks for an active or payment-pending Redshift
+// findNodeByIdempotencyToken looks for a nonterminal Redshift
 // reserved node tagged with the given idempotency token (issue #641). Redshift
 // has no tag filter on DescribeReservedNodes and no reserved-node tag-search,
-// so it lists active nodes and calls DescribeTags per node ARN to read tags
+// so it lists nonterminal nodes and calls DescribeTags per node ARN to read tags
 // client-side. Returns the node ID and true on the first match. Retired/expired
 // nodes are excluded (same state filter as GetExistingCommitments). A DescribeTags
 // error short-circuits as a lookup failure so the caller fails loud rather than
@@ -257,7 +258,7 @@ func (c *Client) findNodeByIdempotencyToken(ctx context.Context, token string) (
 	return "", false, nil
 }
 
-// scanNodesForToken checks each active/payment-pending node for the idempotency
+// scanNodesForToken checks each nonterminal node for the idempotency
 // token tag (issue #641), returning the first match. A DescribeTags error
 // short-circuits as a lookup failure.
 func (c *Client) scanNodesForToken(ctx context.Context, nodes []redshifttypes.ReservedNode, accountID, token string) (outID string, outFound bool, outErr error) {
@@ -699,7 +700,7 @@ func getTermMonthsFromDuration(duration int32) int {
 const redshiftStatePendingPayment = "pending-payment"
 
 // ownedNodeState maps a reserved node state to the common state, reporting
-// whether the node is owned (active or paying) and so must count as existing.
+// whether the node must count as existing, including unrecognized states.
 func ownedNodeState(raw *string) (common.CommitmentState, bool) {
 	switch aws.ToString(raw) {
 	case string(common.CommitmentStateActive):
@@ -707,6 +708,7 @@ func ownedNodeState(raw *string) (common.CommitmentState, bool) {
 	case redshiftStatePendingPayment, string(common.CommitmentStatePaymentPending):
 		return common.CommitmentStatePaymentPending, true
 	default:
-		return "", false
+		state := common.CommitmentState(aws.ToString(raw))
+		return state, reservationstate.IsOwned(state)
 	}
 }

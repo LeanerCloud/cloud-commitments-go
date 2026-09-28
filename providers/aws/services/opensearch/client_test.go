@@ -10,12 +10,14 @@ import (
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/recfilter"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/opensearch"
 	"github.com/aws/aws-sdk-go-v2/service/opensearch/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 // MockOpenSearchClient implements API for testing.
@@ -66,6 +68,98 @@ func (m *MockOpenSearchSTSClient) GetCallerIdentity(ctx context.Context, params 
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*sts.GetCallerIdentityOutput), args.Error(1)
+}
+
+func TestClient_ReservationStatesPreventDuplicatePurchases(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		state *string
+		owned bool
+	}{
+		{"active", aws.String("active"), true},
+		{"paying", aws.String("payment-pending"), true},
+		{"queued", aws.String("queued"), true},
+		{"unknown", aws.String("future-provider-state"), true},
+		{"missing", nil, true},
+		{"empty", aws.String(""), true},
+		{"payment_failed", aws.String("payment-failed"), false},
+		{"retired", aws.String("retired"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := osIdemRec()
+			rec.Provider, rec.Region = common.ProviderAWS, "eu-west-1"
+
+			token := common.DeriveIdempotencyToken("state-regression", 0)
+			id := common.IdempotentReservationID("opensearch-id-", token)
+			response := &opensearch.DescribeReservedInstancesOutput{ReservedInstances: []types.ReservedInstance{{
+				ReservedInstanceId: aws.String(id), State: tc.state, StartTime: aws.Time(time.Now().Add(-time.Hour)),
+				InstanceType: types.OpenSearchPartitionInstanceTypeM5XlargeSearch, InstanceCount: 1, Duration: 94608000, ReservationName: aws.String(id),
+			}}}
+			t.Run("dedupe", func(t *testing.T) {
+				m := &MockOpenSearchClient{}
+				t.Cleanup(func() { m.AssertExpectations(t) })
+				m.On("DescribeReservedInstances", mock.Anything, mock.Anything).Return(response, nil)
+				client := &Client{client: m, region: rec.Region}
+				for _, count := range []int{1, 2} {
+					rec.Count = count
+					passed, filtered, err := recfilter.NewDuplicateChecker(0).AdjustRecommendationsForExisting(context.Background(), []common.Recommendation{rec}, client)
+					require.NoError(t, err)
+					if tc.owned && count == 1 {
+						assert.Empty(t, passed, "an owned reservation must suppress the duplicate")
+						assert.Len(t, filtered, 1)
+					} else {
+						require.Len(t, passed, 1)
+						want := count
+						if tc.owned {
+							want--
+						}
+						assert.Equal(t, want, passed[0].Count)
+						assert.Empty(t, filtered)
+					}
+				}
+				listed, err := client.GetExistingCommitments(context.Background())
+				require.NoError(t, err)
+				if !tc.owned {
+					assert.Empty(t, listed)
+					return
+				}
+				require.Len(t, listed, 1)
+				wantState := common.CommitmentState(aws.ToString(tc.state))
+
+				assert.Equal(t, wantState, listed[0].State)
+				response.ReservedInstances[0].StartTime = aws.Time(time.Now().Add(-48 * time.Hour))
+				passed, filtered, err := recfilter.NewDuplicateChecker(0).AdjustRecommendationsForExisting(context.Background(), []common.Recommendation{rec}, client)
+				require.NoError(t, err)
+				require.Len(t, passed, 1)
+				assert.Equal(t, rec.Count, passed[0].Count, "old reservations stay outside the dedupe window")
+				assert.Empty(t, filtered)
+			})
+			t.Run("purchase_retry", func(t *testing.T) {
+				rec.Count = 1
+				m := &MockOpenSearchClient{}
+				t.Cleanup(func() { m.AssertExpectations(t) })
+				expectOSOffering(m)
+				response.ReservedInstances = append([]types.ReservedInstance{{
+					ReservedInstanceId: aws.String("unrelated"), ReservationName: aws.String("another-purchase"), State: tc.state,
+				}}, response.ReservedInstances...)
+				m.On("DescribeReservedInstances", mock.Anything, mock.Anything).Return(response, nil)
+				sentinel := fmt.Errorf("purchase boundary reached")
+				m.On("PurchaseReservedInstanceOffering", mock.Anything, mock.Anything).Return((*opensearch.PurchaseReservedInstanceOfferingOutput)(nil), sentinel).Maybe()
+				client := &Client{client: m, region: rec.Region}
+				result, err := client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{IdempotencyToken: token})
+				if tc.owned {
+					assert.NoError(t, err)
+					assert.True(t, result.Success)
+					assert.Equal(t, id, result.CommitmentID)
+					m.AssertNotCalled(t, "PurchaseReservedInstanceOffering", mock.Anything, mock.Anything)
+				} else {
+					assert.ErrorIs(t, err, sentinel)
+					assert.False(t, result.Success)
+					m.AssertNumberOfCalls(t, "PurchaseReservedInstanceOffering", 1)
+				}
+			})
+		})
+	}
 }
 
 func TestNewClient(t *testing.T) {
