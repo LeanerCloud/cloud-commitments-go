@@ -170,42 +170,42 @@ type EC2ExchangeAPI interface {
 	AcceptReservedInstancesExchangeQuote(ctx context.Context, params *ec2.AcceptReservedInstancesExchangeQuoteInput, optFns ...func(*ec2.Options)) (*ec2.AcceptReservedInstancesExchangeQuoteOutput, error)
 }
 
-// STSIdentityAPI defines the STS method used to verify ExpectedAccount.
-// Satisfied by *sts.Client; accept this interface to enable testing without
-// real AWS credentials.
-type STSIdentityAPI interface {
+// stsIdentityAPI defines the STS method used to verify ExpectedAccount.
+// Satisfied by *sts.Client; unexported so a Client's identity resolver can
+// only be set by construction (NewExchangeClient), never mixed and matched
+// with an unrelated EC2 client after the fact -- see Client's doc comment.
+type stsIdentityAPI interface {
 	GetCallerIdentity(ctx context.Context, params *sts.GetCallerIdentityInput, optFns ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error)
 }
 
 // Client wraps an EC2ExchangeAPI for dependency-injected exchange
 // operations. Use NewExchangeClient to construct one.
+//
+// ec2 and identity are set together at construction and never mutated
+// afterward (no setter exists): both must resolve to the same AWS account,
+// and a setter that let a caller swap one independently of the other would
+// let the account guard pass while the exchange itself ran in a different
+// account (issue #81 follow-up).
 type Client struct {
 	ec2      EC2ExchangeAPI
-	identity STSIdentityAPI
+	identity stsIdentityAPI
 }
 
-// NewExchangeClient creates a Client from an AWS config. The identity
-// resolver is derived from the same config, so ExpectedAccount is honored
-// on this Client's GetQuote/Execute methods just as it is on the
-// package-level GetExchangeQuote/ExecuteExchange functions.
+// NewExchangeClient creates a Client from an AWS config. ec2 and identity
+// are derived from the same config, so ExpectedAccount is honored on this
+// Client's GetQuote/Execute methods just as it is on the package-level
+// GetExchangeQuote/ExecuteExchange functions, and the two clients can never
+// point at different accounts.
 func NewExchangeClient(cfg sdkaws.Config) *Client {
 	return &Client{ec2: ec2.NewFromConfig(cfg), identity: sts.NewFromConfig(cfg)}
 }
 
 // NewExchangeClientFromAPI creates a Client from an existing
 // EC2ExchangeAPI implementation (useful for testing). It has no identity
-// resolver by default: a request that sets ExpectedAccount on a Client
-// built this way fails loud (see assertAccount) rather than silently
-// skipping the check, unless SetIdentity is called first (issue #81).
+// resolver: a request that sets ExpectedAccount on a Client built this way
+// fails loud (see assertAccount) rather than silently skipping the check.
 func NewExchangeClientFromAPI(api EC2ExchangeAPI) *Client {
 	return &Client{ec2: api}
-}
-
-// SetIdentity injects an STS identity resolver into a Client built via
-// NewExchangeClientFromAPI, enabling ExpectedAccount verification on the
-// dependency-injected path (issue #81).
-func (c *Client) SetIdentity(identity STSIdentityAPI) {
-	c.identity = identity
 }
 
 // GetQuote retrieves an exchange quote using the injected EC2 client.
@@ -227,14 +227,10 @@ func loadCfg(ctx context.Context, region string) (sdkaws.Config, error) {
 }
 
 // assertAccount verifies req.ExpectedAccount (when set) against the caller
-// identity reported by identity.GetCallerIdentity. A caller that sets
-// ExpectedAccount is relying on this as a guard against an irreversible
-// cross-account purchase, so a nil identity resolver with a non-empty
-// expected value fails loud rather than silently skipping the check --
-// see issue #81: the dependency-injected path (NewExchangeClientFromAPI)
-// previously ignored ExpectedAccount entirely, so a caller that set it
-// believed it had a guard and had none.
-func assertAccount(ctx context.Context, identity STSIdentityAPI, expected string) error {
+// identity reported by identity.GetCallerIdentity. A nil identity resolver
+// with a non-empty expected value fails loud rather than silently skipping
+// the check (issue #81).
+func assertAccount(ctx context.Context, identity stsIdentityAPI, expected string) error {
 	if expected == "" {
 		return nil
 	}
@@ -260,16 +256,23 @@ func GetExchangeQuote(ctx context.Context, req ExchangeQuoteRequest) (*ExchangeQ
 	return getQuoteWithAPI(ctx, ec2.NewFromConfig(cfg), sts.NewFromConfig(cfg), req)
 }
 
-// getQuoteWithAPI performs the quote call using an EC2ExchangeAPI,
-// allowing ExecuteExchange to reuse the same client for both quote and accept.
-// The account guard runs here -- the single choke point both the
-// package-level GetExchangeQuote/ExecuteExchange wrappers and the
-// dependency-injected Client.GetQuote/Client.Execute methods go through --
-// so ExpectedAccount is honored on every entry path (issue #81).
-func getQuoteWithAPI(ctx context.Context, client EC2ExchangeAPI, identity STSIdentityAPI, req ExchangeQuoteRequest) (*ExchangeQuoteSummary, error) {
+// getQuoteWithAPI is the account-guarded entry point for a single quote:
+// the choke point every caller (package-level wrappers and Client's
+// methods) goes through, so ExpectedAccount is honored everywhere (issue
+// #81). executeWithAPI calls quoteWithAPI directly instead, since it
+// already checked the account once itself.
+func getQuoteWithAPI(ctx context.Context, client EC2ExchangeAPI, identity stsIdentityAPI, req ExchangeQuoteRequest) (*ExchangeQuoteSummary, error) {
 	if err := assertAccount(ctx, identity, req.ExpectedAccount); err != nil {
 		return nil, err
 	}
+	return quoteWithAPI(ctx, client, req)
+}
+
+// quoteWithAPI performs the quote call using an EC2ExchangeAPI, without
+// checking the account guard -- callers that already verified the account
+// (executeWithAPI) use this to avoid a redundant STS round trip on the
+// pre-accept re-quote.
+func quoteWithAPI(ctx context.Context, client EC2ExchangeAPI, req ExchangeQuoteRequest) (*ExchangeQuoteSummary, error) {
 	if len(req.ReservedIDs) == 0 {
 		return nil, fmt.Errorf("must provide at least one reserved instance ID")
 	}
@@ -389,12 +392,15 @@ func checkReQuote(q *ExchangeQuoteSummary, maxPayment *big.Rat) error {
 }
 
 // executeWithAPI performs the exchange using an injected EC2ExchangeAPI.
-// The account guard is enforced via the identity resolver passed to
-// getQuoteWithAPI below (issue #81) -- executeWithAPI has no separate check
-// of its own, since its first action is always a getQuoteWithAPI call.
-func executeWithAPI(ctx context.Context, client EC2ExchangeAPI, identity STSIdentityAPI, req ExchangeExecuteRequest) (string, *ExchangeQuoteSummary, error) {
+// It checks the account guard once itself, then uses the unchecked
+// quoteWithAPI for both the initial quote and the pre-accept re-quote
+// (issue #81 follow-up: avoids two redundant STS calls per Execute).
+func executeWithAPI(ctx context.Context, client EC2ExchangeAPI, identity stsIdentityAPI, req ExchangeExecuteRequest) (string, *ExchangeQuoteSummary, error) {
 	if req.MaxPaymentDueUSD == nil {
 		return "", nil, fmt.Errorf("refusing to execute without max-payment-due-usd guardrail")
+	}
+	if err := assertAccount(ctx, identity, req.ExpectedAccount); err != nil {
+		return "", nil, err
 	}
 
 	quoteReq := ExchangeQuoteRequest{
@@ -407,7 +413,7 @@ func executeWithAPI(ctx context.Context, client EC2ExchangeAPI, identity STSIden
 		DryRun:           false,
 	}
 
-	q, err := getQuoteWithAPI(ctx, client, identity, quoteReq)
+	q, err := quoteWithAPI(ctx, client, quoteReq)
 	if err != nil {
 		return "", nil, err
 	}
@@ -420,7 +426,7 @@ func executeWithAPI(ctx context.Context, client EC2ExchangeAPI, identity STSIden
 	// pricing can change between the two calls. This second quote reduces -- but
 	// does not eliminate -- the race window. If the fresh quote now exceeds the
 	// cap, abort before the irreversible accept call.
-	freshQ, err := getQuoteWithAPI(ctx, client, identity, quoteReq)
+	freshQ, err := quoteWithAPI(ctx, client, quoteReq)
 	if err != nil {
 		return "", q, fmt.Errorf("pre-accept re-quote failed: %w", err)
 	}

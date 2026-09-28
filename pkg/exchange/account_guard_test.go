@@ -19,7 +19,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
-// fakeSTS is a minimal STSIdentityAPI stub returning a fixed account (or an
+// fakeSTS is a minimal stsIdentityAPI stub returning a fixed account (or an
 // error) so tests can drive assertAccount's comparison deterministically.
 type fakeSTS struct {
 	account string
@@ -95,8 +95,8 @@ func TestClient_Execute_ExpectedAccountWithNoIdentityFailsClosed(t *testing.T) {
 }
 
 // TestClient_GetQuote_ExpectedAccountMismatchViaInjectedIdentity verifies
-// that once an identity resolver is injected (SetIdentity), a mismatched
-// account is rejected -- the guard actually works end to end on the DI path.
+// that once an identity resolver is set, a mismatched account is rejected
+// -- the guard actually works end to end on the DI path.
 func TestClient_GetQuote_ExpectedAccountMismatchViaInjectedIdentity(t *testing.T) {
 	t.Parallel()
 
@@ -105,7 +105,7 @@ func TestClient_GetQuote_ExpectedAccountMismatchViaInjectedIdentity(t *testing.T
 		quoteErrors:  []error{nil},
 	}
 	c := NewExchangeClientFromAPI(f)
-	c.SetIdentity(&fakeSTS{account: "222222222222"})
+	c.identity = &fakeSTS{account: "222222222222"}
 
 	_, err := c.GetQuote(context.Background(), ExchangeQuoteRequest{
 		ExpectedAccount:  "111111111111",
@@ -135,7 +135,7 @@ func TestClient_GetQuote_ExpectedAccountMatchViaInjectedIdentity(t *testing.T) {
 		quoteErrors:  []error{nil},
 	}
 	c := NewExchangeClientFromAPI(f)
-	c.SetIdentity(&fakeSTS{account: "111111111111"})
+	c.identity = &fakeSTS{account: "111111111111"}
 
 	_, err := c.GetQuote(context.Background(), ExchangeQuoteRequest{
 		ExpectedAccount:  "111111111111",
