@@ -482,6 +482,64 @@ func TestComputeEngineClient_PurchaseCommitment_WithMock(t *testing.T) {
 	assert.Equal(t, 1000.0, result.Cost)
 }
 
+// TestComputeEngineClient_PurchaseCommitment_PointerDetails is the regression
+// test for #71: the purchase-execution path (internal/purchase/execution.go)
+// decodes rec.Details via common.DecodeServiceDetailsFor, which returns a
+// *ComputeDetails, not a ComputeDetails value. Pre-fix, memoryMBFromDetails
+// only type-asserted the value form, so this always failed with "MEMORY
+// resource amount absent from recommendation Details" even though the
+// pointer carried a real memory amount.
+func TestComputeEngineClient_PurchaseCommitment_PointerDetails(t *testing.T) {
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "test-project", "us-central1")
+
+	mockService := &MockCommitmentsService{
+		operation: &MockOperation{err: nil},
+	}
+	client.SetCommitmentsService(mockService)
+
+	rec := common.Recommendation{
+		ResourceType:   "n1-standard-1",
+		Term:           "1yr",
+		CommitmentCost: 1000.0,
+		Count:          5,
+		Details:        &common.ComputeDetails{MemoryGB: 20.0}, // pointer form, 5 vCPU * 4 GB
+	}
+
+	result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{})
+	require.NoError(t, err)
+	assert.True(t, result.Success)
+	assert.NotEmpty(t, result.CommitmentID)
+	assert.Equal(t, 1000.0, result.Cost)
+}
+
+// TestComputeEngineClient_PurchaseCommitment_NilPointerDetails verifies that
+// a typed-nil *ComputeDetails (the zero value for that pointer type) is
+// treated as absent memory data rather than dereferenced, still failing
+// closed instead of panicking (#71).
+func TestComputeEngineClient_PurchaseCommitment_NilPointerDetails(t *testing.T) {
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "test-project", "us-central1")
+
+	mockService := &MockCommitmentsService{
+		operation: &MockOperation{err: nil},
+	}
+	client.SetCommitmentsService(mockService)
+
+	var nilDetails *common.ComputeDetails
+	rec := common.Recommendation{
+		ResourceType:   "n1-standard-1",
+		Term:           "1yr",
+		CommitmentCost: 1000.0,
+		Count:          5,
+		Details:        nilDetails,
+	}
+
+	_, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "MEMORY resource amount absent")
+}
+
 func TestComputeEngineClient_PurchaseCommitment_EncodesSourceInDescription(t *testing.T) {
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
@@ -1315,6 +1373,41 @@ func TestGroupCommitments_UsesValidMemoryEnum(t *testing.T) {
 	}
 	assert.True(t, sawVCPU, "GroupCommitments must include a VCPU resource")
 	assert.True(t, sawMemory, "GroupCommitments must include a MEMORY resource (issue #1022)")
+}
+
+// TestGroupCommitments_UsesValidMemoryEnum_PointerDetails is the
+// GroupCommitments regression test for #71: recommendations loaded via the
+// scheduler/web execution path carry Details as *ComputeDetails, not
+// ComputeDetails. Pre-fix, memoryMBFromDetails only recognized the value
+// form, so GroupCommitments silently `continue`d past every such
+// recommendation and never grouped it.
+func TestGroupCommitments_UsesValidMemoryEnum_PointerDetails(t *testing.T) {
+	const wantMemoryGB = 24.0
+	const wantMemoryMB = int64(wantMemoryGB * 1024)
+
+	recs := []common.Recommendation{
+		{
+			Provider: common.ProviderGCP,
+			Service:  common.ServiceCompute,
+			Account:  "test-project",
+			Region:   "us-central1",
+			Term:     "1yr",
+			Count:    4,
+			Details:  &common.ComputeDetails{MemoryGB: wantMemoryGB},
+		},
+	}
+
+	groups := GroupCommitments(recs)
+	require.Len(t, groups, 1, "one project+region+term group expected; pre-fix this recommendation was silently skipped")
+
+	var sawMemory bool
+	for _, r := range groups[0].Resources {
+		if r.Type == "MEMORY" {
+			sawMemory = true
+			assert.Equal(t, wantMemoryMB, r.Amount)
+		}
+	}
+	assert.True(t, sawMemory, "GroupCommitments must include a MEMORY resource for pointer-form Details")
 }
 
 // TestGroupCommitments_SkipsRecsWithoutMemory verifies that GroupCommitments skips
