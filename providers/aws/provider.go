@@ -15,10 +15,10 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/aws/smithy-go"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
-	"github.com/LeanerCloud/CUDly/pkg/provider"
-	"github.com/LeanerCloud/CUDly/providers/aws/services/savingsplans"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/savingsplans"
 )
 
 // AWS SDK v2 credential source identifiers.
@@ -33,40 +33,40 @@ const (
 	awsSourceAssumeRoleProvider      = "AssumeRoleProvider"
 )
 
-// STSClient interface for STS operations (enables mocking)
+// STSClient interface for STS operations (enables mocking).
 type STSClient interface {
 	GetCallerIdentity(ctx context.Context, params *sts.GetCallerIdentityInput, optFns ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error)
 }
 
-// OrganizationsClient interface for Organizations operations (enables mocking)
+// OrganizationsClient interface for Organizations operations (enables mocking).
 type OrganizationsClient interface {
 	ListAccounts(ctx context.Context, params *organizations.ListAccountsInput, optFns ...func(*organizations.Options)) (*organizations.ListAccountsOutput, error)
 }
 
-// EC2Client interface for EC2 operations (enables mocking)
+// EC2Client interface for EC2 operations (enables mocking).
 type EC2Client interface {
 	DescribeRegions(ctx context.Context, params *ec2.DescribeRegionsInput, optFns ...func(*ec2.Options)) (*ec2.DescribeRegionsOutput, error)
 }
 
-// ConfigLoader interface for loading AWS config (enables mocking)
+// ConfigLoader interface for loading AWS config (enables mocking).
 type ConfigLoader interface {
 	LoadDefaultConfig(ctx context.Context, optFns ...func(*config.LoadOptions) error) (aws.Config, error)
 }
 
-// realConfigLoader implements ConfigLoader using the real AWS SDK
+// realConfigLoader implements ConfigLoader using the real AWS SDK.
 type realConfigLoader struct{}
 
 func (r *realConfigLoader) LoadDefaultConfig(ctx context.Context, optFns ...func(*config.LoadOptions) error) (aws.Config, error) {
 	return config.LoadDefaultConfig(ctx, optFns...)
 }
 
-// OrganizationsPaginator interface for Organizations pagination (enables mocking)
+// OrganizationsPaginator interface for Organizations pagination (enables mocking).
 type OrganizationsPaginator interface {
 	HasMorePages() bool
 	NextPage(ctx context.Context, optFns ...func(*organizations.Options)) (*organizations.ListAccountsOutput, error)
 }
 
-// realOrganizationsPaginator wraps the real paginator
+// realOrganizationsPaginator wraps the real paginator.
 type realOrganizationsPaginator struct {
 	paginator *organizations.ListAccountsPaginator
 }
@@ -79,8 +79,8 @@ func (r *realOrganizationsPaginator) NextPage(ctx context.Context, optFns ...fun
 	return r.paginator.NextPage(ctx, optFns...)
 }
 
-// AWSProvider implements the Provider interface for AWS
-type AWSProvider struct {
+// Provider implements the provider.Provider interface for AWS.
+type Provider struct {
 	cfg                 aws.Config
 	cfgOnce             sync.Once
 	cfgErr              error // non-nil if config loading failed
@@ -98,13 +98,13 @@ type AWSProvider struct {
 // Profile resolution order:
 //  1. config.AWSProfile (typed field, preferred)
 //  2. config.Profile (deprecated overload — kept for backwards compatibility)
-func NewAWSProvider(config *provider.ProviderConfig) (*AWSProvider, error) {
-	p := &AWSProvider{}
+func NewAWSProvider(cfg *provider.ProviderConfig) (*Provider, error) {
+	p := &Provider{}
 
-	if config != nil {
-		p.profile = resolveAWSProfile(config)
-		p.region = config.Region
-		p.credentialsProvider = config.AWSCredentialsProvider
+	if cfg != nil {
+		p.profile = resolveAWSProfile(cfg)
+		p.region = cfg.Region
+		p.credentialsProvider = cfg.AWSCredentialsProvider
 	}
 
 	return p, nil
@@ -112,46 +112,46 @@ func NewAWSProvider(config *provider.ProviderConfig) (*AWSProvider, error) {
 
 // resolveAWSProfile picks the AWS profile name from the typed field,
 // falling back to the deprecated Profile field.
-func resolveAWSProfile(config *provider.ProviderConfig) string {
-	if config.AWSProfile != "" {
-		return config.AWSProfile
+func resolveAWSProfile(cfg *provider.ProviderConfig) string {
+	if cfg.AWSProfile != "" {
+		return cfg.AWSProfile
 	}
-	return config.Profile
+	return cfg.Profile //nolint:staticcheck // SA1019: this is the one intentional read of the deprecated field, implementing its documented fallback
 }
 
-// SetConfigLoader sets the config loader (for testing)
-func (p *AWSProvider) SetConfigLoader(loader ConfigLoader) {
+// SetConfigLoader sets the config loader (for testing).
+func (p *Provider) SetConfigLoader(loader ConfigLoader) {
 	p.configLoader = loader
 }
 
-// SetSTSClient sets the STS client (for testing)
-func (p *AWSProvider) SetSTSClient(client STSClient) {
+// SetSTSClient sets the STS client (for testing).
+func (p *Provider) SetSTSClient(client STSClient) {
 	p.stsClient = client
 }
 
-// SetEC2Client sets the EC2 client (for testing)
-func (p *AWSProvider) SetEC2Client(client EC2Client) {
+// SetEC2Client sets the EC2 client (for testing).
+func (p *Provider) SetEC2Client(client EC2Client) {
 	p.ec2Client = client
 }
 
-// SetOrganizationsPaginator sets the organizations paginator (for testing)
-func (p *AWSProvider) SetOrganizationsPaginator(paginator OrganizationsPaginator) {
+// SetOrganizationsPaginator sets the organizations paginator (for testing).
+func (p *Provider) SetOrganizationsPaginator(paginator OrganizationsPaginator) {
 	p.orgPaginator = paginator
 }
 
-// Name returns the provider name
-func (p *AWSProvider) Name() string {
+// Name returns the provider name.
+func (p *Provider) Name() string {
 	return "aws"
 }
 
-// DisplayName returns the human-readable provider name
-func (p *AWSProvider) DisplayName() string {
+// DisplayName returns the human-readable provider name.
+func (p *Provider) DisplayName() string {
 	return "Amazon Web Services"
 }
 
 // IsConfigured checks if AWS credentials are available. The config is loaded at most
 // once (thread-safe via sync.Once) to avoid data races on concurrent calls.
-func (p *AWSProvider) IsConfigured() bool {
+func (p *Provider) IsConfigured() bool {
 	p.cfgOnce.Do(func() {
 		p.cfgErr = p.loadConfig()
 	})
@@ -159,7 +159,7 @@ func (p *AWSProvider) IsConfigured() bool {
 }
 
 // loadConfig loads the AWS SDK config. Called at most once via cfgOnce.
-func (p *AWSProvider) loadConfig() error {
+func (p *Provider) loadConfig() error {
 	ctx := context.Background()
 
 	var opts []func(*config.LoadOptions) error
@@ -188,8 +188,8 @@ func (p *AWSProvider) loadConfig() error {
 	return nil
 }
 
-// GetCredentials returns AWS credentials
-func (p *AWSProvider) GetCredentials() (provider.Credentials, error) {
+// GetCredentials returns AWS credentials.
+func (p *Provider) GetCredentials() (provider.Credentials, error) {
 	if !p.IsConfigured() {
 		return nil, fmt.Errorf("AWS is not configured")
 	}
@@ -220,8 +220,8 @@ func (p *AWSProvider) GetCredentials() (provider.Credentials, error) {
 	}, nil
 }
 
-// ValidateCredentials validates that AWS credentials are working
-func (p *AWSProvider) ValidateCredentials(ctx context.Context) error {
+// ValidateCredentials validates that AWS credentials are working.
+func (p *Provider) ValidateCredentials(ctx context.Context) error {
 	if !p.IsConfigured() {
 		return fmt.Errorf("AWS is not configured")
 	}
@@ -273,7 +273,7 @@ var orgListAccountsSilentErrorCodes = map[string]struct{}{
 // other mid-pagination error (throttling, network, SDK bug) is returned to
 // the caller so an incomplete list can't silently slip into the purchase
 // flow as if it were complete. See orgListAccountsSilentErrorCodes above.
-func (p *AWSProvider) appendOrgAccounts(ctx context.Context, accounts []common.Account, currentAccountID string) ([]common.Account, error) {
+func (p *Provider) appendOrgAccounts(ctx context.Context, accounts []common.Account, currentAccountID string) ([]common.Account, error) {
 	var paginator OrganizationsPaginator
 	if p.orgPaginator != nil {
 		paginator = p.orgPaginator
@@ -312,8 +312,8 @@ func (p *AWSProvider) appendOrgAccounts(ctx context.Context, accounts []common.A
 	return accounts, nil
 }
 
-// GetAccounts returns all accessible AWS accounts
-func (p *AWSProvider) GetAccounts(ctx context.Context) ([]common.Account, error) {
+// GetAccounts returns all accessible AWS accounts.
+func (p *Provider) GetAccounts(ctx context.Context) ([]common.Account, error) {
 	if !p.IsConfigured() {
 		return nil, fmt.Errorf("AWS is not configured")
 	}
@@ -344,8 +344,8 @@ func (p *AWSProvider) GetAccounts(ctx context.Context) ([]common.Account, error)
 	return p.appendOrgAccounts(ctx, accounts, *identity.Account)
 }
 
-// GetRegions returns all available AWS regions using EC2 DescribeRegions API
-func (p *AWSProvider) GetRegions(ctx context.Context) ([]common.Region, error) {
+// GetRegions returns all available AWS regions using EC2 DescribeRegions API.
+func (p *Provider) GetRegions(ctx context.Context) ([]common.Region, error) {
 	if !p.IsConfigured() {
 		return nil, fmt.Errorf("AWS is not configured")
 	}
@@ -406,7 +406,7 @@ func (p *AWSProvider) GetRegions(ctx context.Context) ([]common.Region, error) {
 // explicitly. Reading the already-set p.cfg.Region first keeps test
 // fixtures honest while still falling through to the SDK chain when no
 // caller has touched cfg.
-func (p *AWSProvider) GetDefaultRegion() string {
+func (p *Provider) GetDefaultRegion() string {
 	if p.region != "" {
 		return p.region
 	}
@@ -422,7 +422,7 @@ func (p *AWSProvider) GetDefaultRegion() string {
 // GetSupportedServices returns the list of services supported by AWS provider.
 // Savings Plans are exposed as four distinct services (one per AWS plan type)
 // so users can configure term/payment defaults per plan type via ServiceConfig.
-func (p *AWSProvider) GetSupportedServices() []common.ServiceType {
+func (p *Provider) GetSupportedServices() []common.ServiceType {
 	return []common.ServiceType{
 		common.ServiceCompute,
 		common.ServiceRelationalDB,
@@ -446,8 +446,8 @@ func (p *AWSProvider) GetSupportedServices() []common.ServiceType {
 	}
 }
 
-// GetServiceClient returns a service client for the specified service and region
-func (p *AWSProvider) GetServiceClient(ctx context.Context, service common.ServiceType, region string) (provider.ServiceClient, error) {
+// GetServiceClient returns a service client for the specified service and region.
+func (p *Provider) GetServiceClient(ctx context.Context, service common.ServiceType, region string) (provider.ServiceClient, error) {
 	if !p.IsConfigured() {
 		return nil, fmt.Errorf("AWS is not configured")
 	}
@@ -482,7 +482,7 @@ func (p *AWSProvider) GetServiceClient(ctx context.Context, service common.Servi
 		// the SP client: GetExistingCommitments returns every plan type
 		// unfiltered, and findOfferingID falls back to the
 		// recommendation's Details.PlanType (matching pre-split
-		// behaviour). New code paths use the four per-plan-type cases
+		// behavior). New code paths use the four per-plan-type cases
 		// above; this case exists so legacy data doesn't 503 the
 		// purchase pipeline.
 		return NewSavingsPlansClient(regionalCfg, ""), nil
@@ -491,8 +491,8 @@ func (p *AWSProvider) GetServiceClient(ctx context.Context, service common.Servi
 	}
 }
 
-// GetRecommendationsClient returns a recommendations client
-func (p *AWSProvider) GetRecommendationsClient(ctx context.Context) (provider.RecommendationsClient, error) {
+// GetRecommendationsClient returns a recommendations client.
+func (p *Provider) GetRecommendationsClient(ctx context.Context) (provider.RecommendationsClient, error) {
 	if !p.IsConfigured() {
 		return nil, fmt.Errorf("AWS is not configured")
 	}
@@ -500,7 +500,7 @@ func (p *AWSProvider) GetRecommendationsClient(ctx context.Context) (provider.Re
 	return NewRecommendationsClient(p.cfg), nil
 }
 
-// Register the AWS provider with the global registry
+// Register the AWS provider with the global registry.
 func init() {
 	if err := provider.RegisterProvider("aws", func(config *provider.ProviderConfig) (provider.Provider, error) {
 		return NewAWSProvider(config)

@@ -30,7 +30,7 @@
 // construct it as a value, so consumers that handle ComputeDetails must
 // keep accepting both forms. Dropping the value case would silently blank
 // every Azure VM and GCP compute row instead of failing to compile.
-package common
+package common //nolint:revive // pkg/common is the module's core domain package (Recommendation, ProviderType, ...), imported by name (common.X) throughout this repo and by consumer-mcp; renaming would break every consumer import
 
 import (
 	"bytes"

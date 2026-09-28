@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // --- helpers ---
@@ -1711,7 +1711,7 @@ func TestAllocate_AzureMerged_StableUnknown_NoteOnFlexOnly(t *testing.T) {
 // gap and the system would diverge; with netting only the first run allocates
 // and subsequent runs hold.
 //
-// To confirm the test guards the real behaviour, the second sub-test ("no
+// To confirm the test guards the real behavior, the second sub-test ("no
 // netting diverges") shows that feeding zero in-flight to every run produces
 // three allocations totalling 3x the gap -- this sub-test MUST FAIL if the L5
 // netting logic is removed from Allocate.

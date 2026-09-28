@@ -13,7 +13,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/compute/armcompute/v5"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
-	"github.com/LeanerCloud/CUDly/ci_cd_sanity_tests/pkg/sanity/report"
+	"github.com/LeanerCloud/cloud-commitments-go/ci_cd_sanity_tests/pkg/sanity/report"
 )
 
 type Options struct {

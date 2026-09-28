@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 func TestParseRDSDetails(t *testing.T) {
@@ -456,7 +456,7 @@ func TestParseEC2Details(t *testing.T) {
 			expectError: true,
 		},
 		{
-			// M5: an unrecognised tenancy value should also error.
+			// M5: an unrecognized tenancy value should also error.
 			name: "EC2 unknown tenancy errors (M5)",
 			details: &types.ReservationPurchaseRecommendationDetail{
 				InstanceDetails: &types.InstanceDetails{

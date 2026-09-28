@@ -124,7 +124,7 @@ func (c *Client) GetOnDemandSeries(ctx context.Context, region string, lookbackD
 	page := 0
 	for {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("GetOnDemandSeries: context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("GetOnDemandSeries: context canceled during pagination: %w", err)
 		}
 		page++
 		if page > maxOnDemandSeriesPages {

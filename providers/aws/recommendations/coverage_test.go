@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // mockCoverageCE extends the test mock with a configurable GetReservationCoverage
@@ -113,7 +113,7 @@ func TestGetRICoverageMap_GroupsByInstanceType(t *testing.T) {
 }
 
 // TestGetRICoverageMap_LookbackDefault confirms that a non-positive lookback
-// substitutes the 30-day default (matches GetRIUtilization's behaviour).
+// substitutes the 30-day default (matches GetRIUtilization's behavior).
 func TestGetRICoverageMap_LookbackDefault(t *testing.T) {
 	mock := &mockCoverageCE{coverageOutput: &costexplorer.GetReservationCoverageOutput{}}
 	client := NewClientWithAPI(mock, "us-east-1")
@@ -417,7 +417,7 @@ func TestNormaliseRDSEngine(t *testing.T) {
 	}
 }
 
-// TestFetchCoveragePaged_CtxCancelReturnsError asserts that a cancelled context
+// TestFetchCoveragePaged_CtxCancelReturnsError asserts that a canceled context
 // is treated as a hard stop inside the pagination loop and surfaces an error
 // rather than returning a partial/empty result silently
 // (feedback_ctx_cancel_terminal).
@@ -441,7 +441,7 @@ func TestFetchCoveragePaged_CtxCancelReturnsError(t *testing.T) {
 		func(_, _ string, _ PoolCoverage) {},
 		720,
 	)
-	require.Error(t, err, "cancelled context must surface an error from fetchCoveragePaged")
+	require.ErrorIs(t, err, context.Canceled, "canceled context must surface an error from fetchCoveragePaged")
 }
 
 // TestNormaliseDeployment locks deployment-option canonicalisation. CE

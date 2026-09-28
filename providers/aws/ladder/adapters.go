@@ -13,11 +13,11 @@ import (
 
 	cetypes "github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 
-	"github.com/LeanerCloud/CUDly/providers/aws/recommendations"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/recommendations"
 )
 
 // activeSPListAPI is the minimal interface for listing Savings Plans.
-// Only DescribeSavingsPlans is needed; the full SavingsPlansAPI from
+// Only DescribeSavingsPlans is needed; the full API from
 // providers/aws/services/savingsplans includes purchase and offering methods
 // the read-only lister does not require (interface-segregation principle).
 // Tests inject a hermetic fake implementing this narrow interface.
@@ -82,7 +82,7 @@ func (a *spListerAdapter) ListActiveSPs(ctx context.Context) ([]ActiveSP, error)
 
 	for {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("ListActiveSPs: context cancelled: %w", err)
+			return nil, fmt.Errorf("ListActiveSPs: context canceled: %w", err)
 		}
 		page++
 
@@ -121,8 +121,8 @@ func (a *spListerAdapter) ListActiveSPs(ctx context.Context) ([]ActiveSP, error)
 // global and always kept (see ListActiveSPs doc). Extracted to keep
 // ListActiveSPs under the cyclomatic complexity limit.
 func appendRegionScopedSPs(sps []ActiveSP, page []sptypes.SavingsPlan, region string) ([]ActiveSP, error) {
-	for _, sp := range page {
-		entry, err := mapActiveSP(sp)
+	for i := range page {
+		entry, err := mapActiveSP(page[i])
 		if err != nil {
 			return nil, err
 		}
@@ -235,7 +235,7 @@ func (a *onDemandSeriesAdapter) GetOnDemandSeries(ctx context.Context, region st
 // and mapping its richer SPCoverageSummary to the local SPCoverageSummary type.
 // The mapping preserves the nil-when-Days==0 contract: if CE returned no
 // coverage data the recommendations summary has Days==0 and CoveragePct==nil;
-// the adapter returns an empty local summary (CoveragePct stays nil, signalling
+// the adapter returns an empty local summary (CoveragePct stays nil, signaling
 // "not measured" to the engine rather than "0% coverage").
 type spCoverageAdapter struct {
 	client *recommendations.Client

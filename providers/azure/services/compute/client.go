@@ -20,38 +20,38 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/consumption/armconsumption"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
-	"github.com/LeanerCloud/CUDly/providers/azure/internal/httpclient"
-	"github.com/LeanerCloud/CUDly/providers/azure/internal/pricing"
-	azrecs "github.com/LeanerCloud/CUDly/providers/azure/internal/recommendations"
-	"github.com/LeanerCloud/CUDly/providers/azure/services/internal/reservations"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/httpclient"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/pricing"
+	azrecs "github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/recommendations"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
 )
 
-// RecommendationsPager defines the interface for paging through recommendations
+// RecommendationsPager defines the interface for paging through recommendations.
 type RecommendationsPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armconsumption.ReservationRecommendationsClientListResponse, error)
 }
 
-// ReservationsDetailsPager defines the interface for paging through reservation details
+// ReservationsDetailsPager defines the interface for paging through reservation details.
 type ReservationsDetailsPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armconsumption.ReservationsDetailsClientListResponse, error)
 }
 
-// ResourceSKUsPager defines the interface for paging through resource SKUs
+// ResourceSKUsPager defines the interface for paging through resource SKUs.
 type ResourceSKUsPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armcompute.ResourceSKUsClientListResponse, error)
 }
 
-// HTTPClient defines the interface for making HTTP requests
+// HTTPClient defines the interface for making HTTP requests.
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-// vmSKUEntry holds the SKU-catalogue-derived fields the converter
+// vmSKUEntry holds the SKU-catalog-derived fields the converter
 // wants for each VM SKU. Sourced from
 // armcompute.ResourceSKU.Capabilities (a name/value-pair list):
 //   - vCPUs: Capabilities[Name=="vCPUs"].Value, parsed as int.
@@ -70,7 +70,7 @@ const maxRecsPages = 10
 const maxReservationsPages = 50
 
 // maxSKUPages caps Azure ResourceSKUs pagination.
-// The SKU catalogue for a subscription can run to many pages.
+// The SKU catalog for a subscription can run to many pages.
 const maxSKUPages = 20
 
 type vmSKUEntry struct {
@@ -78,8 +78,8 @@ type vmSKUEntry struct {
 	memoryGB float64
 }
 
-// ComputeClient handles Azure VM Reserved Instances
-type ComputeClient struct {
+// Client handles Azure VM Reserved Instances.
+type Client struct {
 	cred           azcore.TokenCredential
 	subscriptionID string
 	region         string
@@ -94,7 +94,7 @@ type ComputeClient struct {
 	capacityProviderOnce sync.Once
 	capacityProviderErr  error
 
-	// Lazy SKU catalogue cache. armcompute.ResourceSKUsClient.NewListPager
+	// Lazy SKU catalog cache. armcompute.ResourceSKUsClient.NewListPager
 	// returns every SKU available to the subscription with its
 	// Capabilities (vCPUs, MemoryGB). Fetched ONCE per client lifetime;
 	// subsequent converter calls in the same GetRecommendations run hit
@@ -120,9 +120,9 @@ type ComputeClient struct {
 	doExchangeCaller        DoExchangeCallerFunc
 }
 
-// NewClient creates a new Azure Compute client
-func NewClient(cred azcore.TokenCredential, subscriptionID, region string) *ComputeClient {
-	return &ComputeClient{
+// NewClient creates a new Azure Compute client.
+func NewClient(cred azcore.TokenCredential, subscriptionID, region string) *Client {
+	return &Client{
 		cred:           cred,
 		subscriptionID: subscriptionID,
 		region:         region,
@@ -130,9 +130,9 @@ func NewClient(cred azcore.TokenCredential, subscriptionID, region string) *Comp
 	}
 }
 
-// NewClientWithHTTP creates a new Azure Compute client with a custom HTTP client (for testing)
-func NewClientWithHTTP(cred azcore.TokenCredential, subscriptionID, region string, httpClient HTTPClient) *ComputeClient {
-	return &ComputeClient{
+// NewClientWithHTTP creates a new Azure Compute client with a custom HTTP client (for testing).
+func NewClientWithHTTP(cred azcore.TokenCredential, subscriptionID, region string, httpClient HTTPClient) *Client {
+	return &Client{
 		cred:           cred,
 		subscriptionID: subscriptionID,
 		region:         region,
@@ -140,28 +140,28 @@ func NewClientWithHTTP(cred azcore.TokenCredential, subscriptionID, region strin
 	}
 }
 
-// SetRecommendationsPager sets a mock pager for recommendations (for testing)
-func (c *ComputeClient) SetRecommendationsPager(pager RecommendationsPager) {
+// SetRecommendationsPager sets a mock pager for recommendations (for testing).
+func (c *Client) SetRecommendationsPager(pager RecommendationsPager) {
 	c.recommendationsPager = pager
 }
 
-// SetReservationsPager sets a mock pager for reservations details (for testing)
-func (c *ComputeClient) SetReservationsPager(pager ReservationsDetailsPager) {
+// SetReservationsPager sets a mock pager for reservations details (for testing).
+func (c *Client) SetReservationsPager(pager ReservationsDetailsPager) {
 	c.reservationsPager = pager
 }
 
-// SetResourceSKUsPager sets a mock pager for resource SKUs (for testing)
-func (c *ComputeClient) SetResourceSKUsPager(pager ResourceSKUsPager) {
+// SetResourceSKUsPager sets a mock pager for resource SKUs (for testing).
+func (c *Client) SetResourceSKUsPager(pager ResourceSKUsPager) {
 	c.resourceSKUsPager = pager
 }
 
-// GetServiceType returns the service type
-func (c *ComputeClient) GetServiceType() common.ServiceType {
+// GetServiceType returns the service type.
+func (c *Client) GetServiceType() common.ServiceType {
 	return common.ServiceCompute
 }
 
-// GetRegion returns the region
-func (c *ComputeClient) GetRegion() string {
+// GetRegion returns the region.
+func (c *Client) GetRegion() string {
 	return c.region
 }
 
@@ -175,8 +175,8 @@ type AzureRetailPriceItem = pricing.RetailPriceItem
 // so existing call sites do not need to be updated.
 type AzureRetailPrice = pricing.Page[pricing.RetailPriceItem]
 
-// GetRecommendations gets VM RI recommendations from Azure Consumption API
-func (c *ComputeClient) GetRecommendations(ctx context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
+// GetRecommendations gets VM RI recommendations from Azure Consumption API.
+func (c *Client) GetRecommendations(ctx context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	recommendations := make([]common.Recommendation, 0)
 
 	// Use injected pager if available (for testing)
@@ -202,7 +202,7 @@ func (c *ComputeClient) GetRecommendations(ctx context.Context, _ *common.Recomm
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxRecsPages {
 			return nil, fmt.Errorf("compute: GetRecommendations pagination cap (%d pages) reached", maxRecsPages)
@@ -223,8 +223,8 @@ func (c *ComputeClient) GetRecommendations(ctx context.Context, _ *common.Recomm
 	return recommendations, nil
 }
 
-// GetExistingCommitments retrieves existing VM Reserved Instances
-func (c *ComputeClient) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
+// GetExistingCommitments retrieves existing VM Reserved Instances.
+func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	pager, err := c.createReservationsPager()
 	if err != nil {
 		log.Printf("WARNING: failed to create VM reservations pager: %v", err)
@@ -234,8 +234,8 @@ func (c *ComputeClient) GetExistingCommitments(ctx context.Context) ([]common.Co
 	return c.collectVMReservations(ctx, pager)
 }
 
-// createReservationsPager creates a pager for listing reservations
-func (c *ComputeClient) createReservationsPager() (ReservationsDetailsPager, error) {
+// createReservationsPager creates a pager for listing reservations.
+func (c *Client) createReservationsPager() (ReservationsDetailsPager, error) {
 	// Use injected pager if available (for testing)
 	if c.reservationsPager != nil {
 		return c.reservationsPager, nil
@@ -256,12 +256,12 @@ func (c *ComputeClient) createReservationsPager() (ReservationsDetailsPager, err
 // truncating the result set. A partial commitment list is unsafe for the
 // purchase flow — it could trigger duplicate purchases for reservations
 // that exist but weren't loaded. Callers must treat the error as fatal.
-func (c *ComputeClient) collectVMReservations(ctx context.Context, pager ReservationsDetailsPager) ([]common.Commitment, error) {
+func (c *Client) collectVMReservations(ctx context.Context, pager ReservationsDetailsPager) ([]common.Commitment, error) {
 	commitments := make([]common.Commitment, 0)
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxReservationsPages {
 			return nil, fmt.Errorf("compute: GetExistingCommitments pagination cap (%d pages) reached", maxReservationsPages)
@@ -281,8 +281,8 @@ func (c *ComputeClient) collectVMReservations(ctx context.Context, pager Reserva
 	return commitments, nil
 }
 
-// convertVMReservation converts a reservation detail to a commitment if it's a VM reservation
-func (c *ComputeClient) convertVMReservation(detail *armconsumption.ReservationDetail) *common.Commitment {
+// convertVMReservation converts a reservation detail to a commitment if it's a VM reservation.
+func (c *Client) convertVMReservation(detail *armconsumption.ReservationDetail) *common.Commitment {
 	if detail.Properties == nil {
 		return nil
 	}
@@ -319,7 +319,7 @@ type providerRegistrationState struct {
 // ensureCapacityProviderRegistered checks that the Microsoft.Capacity resource provider
 // is registered in the subscription. The check is performed once per client lifetime.
 // An error is logged but does not block the purchase attempt.
-func (c *ComputeClient) ensureCapacityProviderRegistered(ctx context.Context) {
+func (c *Client) ensureCapacityProviderRegistered(ctx context.Context) {
 	c.capacityProviderOnce.Do(func() {
 		c.capacityProviderErr = c.checkAndRegisterCapacityProvider(ctx)
 		if c.capacityProviderErr != nil {
@@ -329,7 +329,7 @@ func (c *ComputeClient) ensureCapacityProviderRegistered(ctx context.Context) {
 }
 
 // checkAndRegisterCapacityProvider performs the actual provider registration check.
-func (c *ComputeClient) checkAndRegisterCapacityProvider(ctx context.Context) error {
+func (c *Client) checkAndRegisterCapacityProvider(ctx context.Context) error {
 	if c.cred == nil {
 		return nil // skip in test environments without credentials
 	}
@@ -354,12 +354,12 @@ func (c *ComputeClient) checkAndRegisterCapacityProvider(ctx context.Context) er
 
 // fetchCapacityProviderState queries the ARM providers API and returns the
 // current registration state of Microsoft.Capacity.
-func (c *ComputeClient) fetchCapacityProviderState(ctx context.Context, bearerToken, apiVersion string) (providerRegistrationState, error) {
+func (c *Client) fetchCapacityProviderState(ctx context.Context, bearerToken, apiVersion string) (providerRegistrationState, error) {
 	checkURL := fmt.Sprintf(
 		"https://management.azure.com/subscriptions/%s/providers/Microsoft.Capacity?api-version=%s",
 		c.subscriptionID, apiVersion,
 	)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, checkURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, checkURL, http.NoBody)
 	if err != nil {
 		return providerRegistrationState{}, fmt.Errorf("build request: %w", err)
 	}
@@ -369,8 +369,11 @@ func (c *ComputeClient) fetchCapacityProviderState(ctx context.Context, bearerTo
 	if err != nil {
 		return providerRegistrationState{}, fmt.Errorf("check provider: %w", err)
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	resp.Body.Close() // #nosec G104 -- body fully drained by io.ReadAll before Close; transport close error does not affect correctness
+	if err != nil {
+		return providerRegistrationState{}, fmt.Errorf("read provider check response: %w", err)
+	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		// Non-2xx from the provider check (e.g. 403 permissions, 429 throttle).
@@ -388,12 +391,12 @@ func (c *ComputeClient) fetchCapacityProviderState(ctx context.Context, bearerTo
 
 // triggerCapacityProviderRegistration POSTs to the ARM register endpoint to
 // initiate Microsoft.Capacity provider registration.
-func (c *ComputeClient) triggerCapacityProviderRegistration(ctx context.Context, bearerToken, apiVersion, currentState string) error {
+func (c *Client) triggerCapacityProviderRegistration(ctx context.Context, bearerToken, apiVersion, currentState string) error {
 	registerURL := fmt.Sprintf(
 		"https://management.azure.com/subscriptions/%s/providers/Microsoft.Capacity/register?api-version=%s",
 		c.subscriptionID, apiVersion,
 	)
-	regReq, err := http.NewRequestWithContext(ctx, http.MethodPost, registerURL, nil)
+	regReq, err := http.NewRequestWithContext(ctx, http.MethodPost, registerURL, http.NoBody)
 	if err != nil {
 		return fmt.Errorf("build register request: %w", err)
 	}
@@ -403,8 +406,11 @@ func (c *ComputeClient) triggerCapacityProviderRegistration(ctx context.Context,
 	if err != nil {
 		return fmt.Errorf("register provider: %w", err)
 	}
-	regBody, _ := io.ReadAll(regResp.Body)
+	regBody, err := io.ReadAll(regResp.Body)
 	regResp.Body.Close() // #nosec G104 -- body fully drained by io.ReadAll before Close; transport close error does not affect correctness
+	if err != nil {
+		return fmt.Errorf("read register-provider response: %w", err)
+	}
 	if regResp.StatusCode < 200 || regResp.StatusCode >= 300 {
 		return fmt.Errorf("register Microsoft.Capacity provider returned HTTP %d: %s", regResp.StatusCode, string(regBody))
 	}
@@ -422,7 +428,7 @@ func (c *ComputeClient) triggerCapacityProviderRegistration(ctx context.Context,
 // reservations.ApplyPurchaseTags so the resulting reservation is identifiable
 // in the portal AND a re-driven purchase can find it via tag lookup before
 // buying a duplicate (issue #721).
-func (c *ComputeClient) buildReservationBody(rec common.Recommendation, billingPlan armreservations.ReservationBillingPlan, source, idempotencyToken string) ([]byte, error) {
+func (c *Client) buildReservationBody(rec common.Recommendation, billingPlan armreservations.ReservationBillingPlan, source, idempotencyToken string) ([]byte, error) {
 	termYears, err := reservations.ParseTermYears(rec.Term)
 	if err != nil {
 		return nil, err
@@ -468,7 +474,7 @@ func (c *ComputeClient) buildReservationBody(rec common.Recommendation, billingP
 // body carries the cudly-idempotency-token tag derived from opts.IdempotencyToken,
 // and a re-drive lists existing reservation orders and short-circuits when an
 // order already carries the same tag (issue #721).
-func (c *ComputeClient) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
+func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
 	result := common.PurchaseResult{
 		Recommendation: rec,
 		DryRun:         false,
@@ -531,8 +537,8 @@ func (c *ComputeClient) PurchaseCommitment(ctx context.Context, rec common.Recom
 	return result, nil
 }
 
-// ValidateOffering validates that a VM SKU exists
-func (c *ComputeClient) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
+// ValidateOffering validates that a VM SKU exists.
+func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
 	validSKUs, err := c.GetValidResourceTypes(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get valid SKUs: %w", err)
@@ -548,20 +554,20 @@ func (c *ComputeClient) ValidateOffering(ctx context.Context, rec common.Recomme
 	return fmt.Errorf("invalid Azure VM SKU: %s", rec.ResourceType)
 }
 
-// GetOfferingDetails retrieves VM RI offering details from Azure Retail Prices API
-func (c *ComputeClient) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
+// GetOfferingDetails retrieves VM RI offering details from Azure Retail Prices API.
+func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	termYears, err := reservations.ParseTermYears(rec.Term)
 	if err != nil {
 		return nil, fmt.Errorf("invalid term: %w", err)
 	}
 
-	pricing, err := c.getVMPricing(ctx, rec.ResourceType, c.region, termYears)
+	vmPricing, err := c.getVMPricing(ctx, rec.ResourceType, c.region, termYears)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pricing: %w", err)
 	}
 
 	var upfrontCost, recurringCost float64
-	totalCost := pricing.ReservationPrice
+	totalCost := vmPricing.ReservationPrice
 
 	switch rec.PaymentOption {
 	case "all-upfront", "upfront":
@@ -571,7 +577,7 @@ func (c *ComputeClient) GetOfferingDetails(ctx context.Context, rec common.Recom
 		upfrontCost = 0
 		recurringCost = totalCost / (float64(termYears) * 12)
 	default:
-		// Fail loud on an unrecognised payment option rather than silently
+		// Fail loud on an unrecognized payment option rather than silently
 		// billing it as all-upfront (owner policy: no silent fallbacks on
 		// money-affecting fields).
 		return nil, fmt.Errorf("unsupported payment option for Azure VM offering details: %q", rec.PaymentOption)
@@ -585,13 +591,13 @@ func (c *ComputeClient) GetOfferingDetails(ctx context.Context, rec common.Recom
 		UpfrontCost:         upfrontCost,
 		RecurringCost:       recurringCost,
 		TotalCost:           totalCost,
-		EffectiveHourlyRate: pricing.HourlyRate,
-		Currency:            pricing.Currency,
+		EffectiveHourlyRate: vmPricing.HourlyRate,
+		Currency:            vmPricing.Currency,
 	}, nil
 }
 
-// GetValidResourceTypes returns valid VM sizes from Azure Compute API
-func (c *ComputeClient) GetValidResourceTypes(ctx context.Context) ([]string, error) {
+// GetValidResourceTypes returns valid VM sizes from Azure Compute API.
+func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	pager, err := c.createResourceSKUsPager()
 	if err != nil {
 		return nil, err
@@ -609,8 +615,8 @@ func (c *ComputeClient) GetValidResourceTypes(ctx context.Context) ([]string, er
 	return vmSizes, nil
 }
 
-// createResourceSKUsPager creates a pager for listing resource SKUs
-func (c *ComputeClient) createResourceSKUsPager() (ResourceSKUsPager, error) {
+// createResourceSKUsPager creates a pager for listing resource SKUs.
+func (c *Client) createResourceSKUsPager() (ResourceSKUsPager, error) {
 	// Use injected pager if available (for testing)
 	if c.resourceSKUsPager != nil {
 		return c.resourceSKUsPager, nil
@@ -624,13 +630,13 @@ func (c *ComputeClient) createResourceSKUsPager() (ResourceSKUsPager, error) {
 	return client.NewListPager(&armcompute.ResourceSKUsClientListOptions{Filter: nil}), nil
 }
 
-// collectVMSizesFromSKUs collects VM sizes from the resource SKUs pager
-func (c *ComputeClient) collectVMSizesFromSKUs(ctx context.Context, pager ResourceSKUsPager) ([]string, error) {
+// collectVMSizesFromSKUs collects VM sizes from the resource SKUs pager.
+func (c *Client) collectVMSizesFromSKUs(ctx context.Context, pager ResourceSKUsPager) ([]string, error) {
 	vmSizes := make([]string, 0)
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxSKUPages {
 			return nil, fmt.Errorf("compute: GetValidResourceTypes pagination cap (%d pages) reached", maxSKUPages)
@@ -650,8 +656,8 @@ func (c *ComputeClient) collectVMSizesFromSKUs(ctx context.Context, pager Resour
 	return vmSizes, nil
 }
 
-// extractVMSizeIfValid extracts the VM size name if it's a valid VM in the region
-func (c *ComputeClient) extractVMSizeIfValid(sku *armcompute.ResourceSKU) string {
+// extractVMSizeIfValid extracts the VM size name if it's a valid VM in the region.
+func (c *Client) extractVMSizeIfValid(sku *armcompute.ResourceSKU) string {
 	if sku.Name == nil || sku.ResourceType == nil || *sku.ResourceType != "virtualMachines" {
 		return ""
 	}
@@ -663,8 +669,8 @@ func (c *ComputeClient) extractVMSizeIfValid(sku *armcompute.ResourceSKU) string
 	return *sku.Name
 }
 
-// isAvailableInRegion checks if a SKU is available in the specified region
-func (c *ComputeClient) isAvailableInRegion(sku *armcompute.ResourceSKU, region string) bool {
+// isAvailableInRegion checks if a SKU is available in the specified region.
+func (c *Client) isAvailableInRegion(sku *armcompute.ResourceSKU, region string) bool {
 	if sku.Locations == nil {
 		return false
 	}
@@ -678,7 +684,7 @@ func (c *ComputeClient) isAvailableInRegion(sku *armcompute.ResourceSKU, region 
 	return false
 }
 
-// VMPricing contains VM pricing information
+// VMPricing contains VM pricing information.
 type VMPricing struct {
 	HourlyRate        float64
 	ReservationPrice  float64
@@ -687,8 +693,8 @@ type VMPricing struct {
 	SavingsPercentage float64
 }
 
-// getVMPricing gets real VM pricing from Azure Retail Prices API
-func (c *ComputeClient) getVMPricing(ctx context.Context, vmSize, region string, termYears int) (*VMPricing, error) {
+// getVMPricing gets real VM pricing from Azure Retail Prices API.
+func (c *Client) getVMPricing(ctx context.Context, vmSize, region string, termYears int) (*VMPricing, error) {
 	filter := fmt.Sprintf("serviceName eq 'Virtual Machines' and armRegionName eq '%s' and armSkuName eq '%s'",
 		region, vmSize)
 
@@ -738,7 +744,7 @@ func (c *ComputeClient) getVMPricing(ctx context.Context, vmSize, region string,
 // page, so any SKU/term/region combination that landed on page 2+
 // produced a "no on-demand pricing found" error or a wrong price
 // estimate.
-func (c *ComputeClient) fetchAzurePricing(ctx context.Context, filter string) (*AzureRetailPrice, error) {
+func (c *Client) fetchAzurePricing(ctx context.Context, filter string) (*AzureRetailPrice, error) {
 	params := url.Values{}
 	params.Add("$filter", filter)
 	params.Add("api-version", "2023-01-01-preview")
@@ -761,12 +767,13 @@ func azureTermString(termYears int) string {
 	return fmt.Sprintf("%d Years", termYears)
 }
 
-// extractVMPricing extracts on-demand and reservation pricing from price items
+// extractVMPricing extracts on-demand and reservation pricing from price items.
 func extractVMPricing(items []AzureRetailPriceItem, termYears int) (onDemand, reservation float64, currency string) {
 	currency = "USD"
 	termStr := azureTermString(termYears)
 
-	for _, item := range items {
+	for i := range items {
+		item := &items[i]
 		if item.CurrencyCode != "" {
 			currency = item.CurrencyCode
 		}
@@ -790,11 +797,11 @@ func extractVMPricing(items []AzureRetailPriceItem, termYears int) (onDemand, re
 // converters share the same type-assertion + nil-guard ladder.
 //
 // Details.VCPU and Details.MemoryGB are enriched from a lazily-cached
-// armcompute.ResourceSKUsClient catalogue (cachedSKULookup). The
-// catalogue is fetched ONCE per client lifetime; converter calls in
+// armcompute.ResourceSKUsClient catalog (cachedSKULookup). The
+// catalog is fetched ONCE per client lifetime; converter calls in
 // the same GetRecommendations run share the in-memory map (the N+1
 // invariant pinned by TestComputeClient_CachedSKULookup_FetchedOnce).
-// On catalogue-fetch failure or cache miss, both fields stay at 0
+// On catalog-fetch failure or cache miss, both fields stay at 0
 // (the omitempty JSON tags hide them from API payloads) and the
 // conversion still succeeds — matches the graceful-degradation
 // contract from cache/cosmosdb/database in PR #81.
@@ -802,7 +809,7 @@ func extractVMPricing(items []AzureRetailPriceItem, termYears int) (onDemand, re
 // Platform / Tenancy / Scope still require additional Azure data
 // sources (consumption usage records, dedicated-host inventory) and
 // remain unpopulated — out of scope for this issue.
-func (c *ComputeClient) convertAzureVMRecommendation(ctx context.Context, azureRec armconsumption.ReservationRecommendationClassification) *common.Recommendation {
+func (c *Client) convertAzureVMRecommendation(ctx context.Context, azureRec armconsumption.ReservationRecommendationClassification) *common.Recommendation {
 	f := azrecs.Extract(azureRec)
 	if f == nil {
 		return nil
@@ -837,13 +844,13 @@ func (c *ComputeClient) convertAzureVMRecommendation(ctx context.Context, azureR
 	}
 }
 
-// cachedSKULookup returns the SKU catalogue entry for skuName, fetching
-// the catalogue lazily on first call. The catalogue is fetched ONCE per
+// cachedSKULookup returns the SKU catalog entry for skuName, fetching
+// the catalog lazily on first call. The catalog is fetched ONCE per
 // client lifetime via armcompute.ResourceSKUsClient.NewListPager;
 // subsequent calls are O(1) map lookups. ok=false on cache miss OR
-// catalogue-fetch failure — the caller falls back to VCPU=0 / MemoryGB=0
+// catalog-fetch failure — the caller falls back to VCPU=0 / MemoryGB=0
 // rather than failing the whole conversion.
-func (c *ComputeClient) cachedSKULookup(ctx context.Context, skuName string) (vmSKUEntry, bool) {
+func (c *Client) cachedSKULookup(ctx context.Context, skuName string) (vmSKUEntry, bool) {
 	c.skuCacheOnce.Do(func() {
 		c.skuCacheMap = c.fetchSKUCatalogue(ctx)
 	})
@@ -868,25 +875,25 @@ func (c *ComputeClient) cachedSKULookup(ctx context.Context, skuName string) (vm
 // back to the empty-fields path. Errors and cancellation are logged WARN
 // once; context.Canceled/DeadlineExceeded are treated as terminal
 // (feedback_ctx_cancel_terminal.md).
-func (c *ComputeClient) fetchSKUCatalogue(ctx context.Context) map[string]vmSKUEntry {
+func (c *Client) fetchSKUCatalogue(ctx context.Context) map[string]vmSKUEntry {
 	pager, err := c.createResourceSKUsPager()
 	if err != nil {
-		logging.Warnf("azure compute: SKU catalogue pager create failed for region %s: %v — Details.VCPU/MemoryGB left at 0", c.region, err)
+		logging.Warnf("azure compute: SKU catalog pager create failed for region %s: %v — Details.VCPU/MemoryGB left at 0", c.region, err)
 		return nil
 	}
 	out := make(map[string]vmSKUEntry)
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			logging.Warnf("azure compute: SKU catalogue fetch cancelled for region %s after %d pages: %v; partial cache discarded", c.region, pageIdx, err)
+			logging.Warnf("azure compute: SKU catalog fetch canceled for region %s after %d pages: %v; partial cache discarded", c.region, pageIdx, err)
 			return nil
 		}
 		if pageIdx >= maxSKUPages {
-			logging.Warnf("azure compute: SKU catalogue pagination cap (%d pages) reached for region %s; partial cache (%d entries) used", maxSKUPages, c.region, len(out))
+			logging.Warnf("azure compute: SKU catalog pagination cap (%d pages) reached for region %s; partial cache (%d entries) used", maxSKUPages, c.region, len(out))
 			break
 		}
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			logging.Warnf("azure compute: SKU catalogue page fetch failed for region %s: %v; partial cache (%d entries) discarded, Details.VCPU/MemoryGB left at 0", c.region, err, len(out))
+			logging.Warnf("azure compute: SKU catalog page fetch failed for region %s: %v; partial cache (%d entries) discarded, Details.VCPU/MemoryGB left at 0", c.region, err, len(out))
 			return nil
 		}
 		c.populateVMSKUMapFromPage(out, page.Value)
@@ -903,7 +910,7 @@ func (c *ComputeClient) fetchSKUCatalogue(ctx context.Context) map[string]vmSKUE
 // under the cyclomatic-complexity threshold enforced by the
 // pre-commit hook (matches the cache/database extraction pattern from
 // PR #81).
-func (c *ComputeClient) populateVMSKUMapFromPage(out map[string]vmSKUEntry, skus []*armcompute.ResourceSKU) {
+func (c *Client) populateVMSKUMapFromPage(out map[string]vmSKUEntry, skus []*armcompute.ResourceSKU) {
 	for _, sku := range skus {
 		if sku == nil || sku.Name == nil {
 			continue
@@ -931,9 +938,7 @@ func (c *ComputeClient) populateVMSKUMapFromPage(out map[string]vmSKUEntry, skus
 // Extracted out of fetchSKUCatalogue to keep that function under the
 // cyclomatic-complexity threshold enforced by the pre-commit hook
 // (matches the cache/database extraction pattern from PR #81).
-func extractVMSKUCapabilities(sku *armcompute.ResourceSKU) (int, float64) {
-	var vCPUs int
-	var memoryGB float64
+func extractVMSKUCapabilities(sku *armcompute.ResourceSKU) (vCPUs int, memoryGB float64) {
 	for _, cb := range sku.Capabilities {
 		if cb == nil || cb.Name == nil || cb.Value == nil {
 			continue

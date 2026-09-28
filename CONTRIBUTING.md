@@ -1,6 +1,7 @@
-# Contributing to CUDly
+# Contributing to cloud-commitments-go
 
-Thank you for your interest in contributing to CUDly! This document provides guidelines and instructions for contributing.
+Thank you for contributing to the shared Go libraries. The intended public
+destination is `LeanerCloud/cloud-commitments-go`, which is not published yet.
 
 ## Code of Conduct
 
@@ -12,10 +13,10 @@ By participating in this project, you agree to maintain a respectful and inclusi
 
 1. **Search existing issues** - Check if the bug has already been reported
 2. **Create a detailed report** including:
-   - CUDly version (`./cudly --version`)
+   - component/module and commit
    - Go version (`go version`)
    - Operating system and architecture
-   - Cloud provider and service affected
+   - cloud provider and service affected, if applicable
    - Steps to reproduce
    - Expected vs actual behavior
    - Relevant logs (with sensitive data removed)
@@ -48,102 +49,49 @@ By participating in this project, you agree to maintain a respectful and inclusi
 
 ### Prerequisites
 
-- Go 1.26.6 or later (the floor set by the `go` directive in `go.mod`)
-- AWS/Azure/GCP credentials for integration testing
+- Go 1.26.6 or later, as declared by the module files
+- Cloud credentials only when intentionally running a cloud-backed sanity binary
 - Git
 
 ### Getting Started
 
 ```bash
-# Clone your fork
-git clone https://github.com/YOUR_USERNAME/CUDly.git
-cd CUDly
-
-# Add upstream remote
-git remote add upstream https://github.com/LeanerCloud/CUDly.git
-
-# Install dependencies
-go mod download
-
-# Build the project
-go build -o cudly cmd/*.go
-
-# Run tests
-go test ./...
+# Intended destination (not yet published):
+# https://github.com/LeanerCloud/cloud-commitments-go
+# Work from one checkout with its committed go.work.
+make build
+make test-unit
 ```
 
-### Go workspace and worktrees (gopls setup)
+### Workspace and standalone verification
 
-The repo ships a `go.work` that lists every module in this repository (the
-root module, `pkg`, the three provider modules, and `tests/e2e`). This is
-enough for standard clones. When you are working across multiple git worktrees
-simultaneously, gopls needs each worktree's module added to the workspace or it
-flags every file in the sibling trees with `BrokenImport` / `undefined: <Type>`.
+The committed `go.work` lists the five modules in this checkout: `pkg`, the
+three providers, and `ci_cd_sanity_tests`. Use that workspace for local
+development. Do not add other checkouts or duplicate module paths to it.
 
-**Do not edit the committed `go.work`** for local paths -- they vary per
-developer and per session.
-
-Instead, create a `go.work.local` next to `go.work` (it is gitignored): start
-from a copy of the committed `go.work` and append your active worktrees:
-
-```go
-// go.work.local -- gitignored, developer-local
-// Keep this `go` line at or above the modules' own directive, otherwise the
-// workspace is rejected. Copy it from the committed go.work.
-go 1.26.6
-
-use (
-    .
-    ./pkg
-    ./providers/aws
-    ./providers/azure
-    ./providers/gcp
-    ./tests/e2e
-    ../.worktrees/CUDly/fix-516
-    ../.worktrees/CUDly/feat-something
-)
-```
-
-Then point gopls at it by setting `GOWORK` before launching your editor, or by
-symlinking it over `go.work` temporarily:
+Verify modules in this checkout without the workspace using their own
+directories and `GOWORK=off`:
 
 ```bash
-# Option A: set GOWORK in your shell profile or editor launcher
-export GOWORK="$PWD/go.work.local"
-
-# Option B: create go.work.local and let gopls auto-discover it
-# (gopls respects GOWORK when set; otherwise it walks up for go.work)
+(cd pkg && GOWORK=off go test -race -short ./...)
+(cd providers/aws && GOWORK=off go test -race -short ./...)
 ```
 
-After adding or removing a worktree, update `go.work.local` to match:
-
-```bash
-# Quick regeneration from git worktree list (space-safe: keeps full paths,
-# adds one -use entry per worktree; skips the main checkout on line 1)
-git worktree list --porcelain | sed -n 's/^worktree //p' | tail -n +2 |
-  while IFS= read -r wt; do go work edit -use "$wt"; done
-```
-
-The committed `go.work` (listing only this repository's own modules) keeps
-`go build ./...` and CI clean for everyone without requiring any local setup.
+Repeat for `providers/azure` and `providers/gcp`; their committed relative
+replacements resolve the local `pkg` module. After publication, repeat the
+same checks against released versions with `GOWORK=off` and no local
+replacement to validate external consumers. The sanity module contains
+explicitly cloud-backed diagnostics; unit tests do not require cloud
+credentials, but those binaries must not be invoked as ordinary local
+verification.
 
 ### Running Tests
 
 ```bash
-# Run all tests
-go test ./...
+make test-unit
 
-# Run tests with coverage
-go test -cover ./...
-
-# Run tests for a specific package
-go test ./providers/aws/...
-
-# Run tests with verbose output
-go test -v ./...
-
-# Run a specific test
-go test -run TestFunctionName ./path/to/package
+# Module-local race test, with the workspace disabled
+(cd pkg && GOWORK=off go test -race -short ./...)
 ```
 
 ### Test Coverage Goals
@@ -154,8 +102,7 @@ We aim to maintain the following minimum test coverage:
 |---------|-----------------|
 | Service clients | 80% |
 | Provider implementations | 70% |
-| Common/shared packages | 80% |
-| CLI/cmd | 60% |
+| Shared packages | 80% |
 
 ## Coding Standards
 
@@ -200,8 +147,7 @@ We aim to maintain the following minimum test coverage:
 ## Project Structure
 
 ```text
-CUDly/
-├── cmd/                      # CLI entry point
+cloud-commitments-go/
 ├── pkg/                      # Shared packages
 │   ├── common/              # Cloud-agnostic types
 │   └── provider/            # Provider abstraction
@@ -211,7 +157,7 @@ CUDly/
 │   │   └── internal/        # Internal packages
 │   ├── azure/               # Azure provider
 │   └── gcp/                 # GCP provider
-└── internal/                # Private packages
+└── ci_cd_sanity_tests/       # Cloud-backed diagnostic module
 ```
 
 ### Adding a New Service
@@ -396,8 +342,9 @@ We welcome contributions in these areas:
 ### Medium Priority
 
 - Enhanced reporting and analytics
-- Terraform/CloudFormation integration
-- Web UI dashboard
+- Terraform/CloudFormation integration and web UI dashboard work belong in the
+  `cloud-commitments-platform` component; this repository should expose only
+  the shared APIs those callers need.
 - Performance optimizations
 
 ### Documentation

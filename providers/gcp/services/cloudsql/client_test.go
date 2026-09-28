@@ -13,10 +13,10 @@ import (
 	"google.golang.org/api/sqladmin/v1"
 	"google.golang.org/genproto/googleapis/type/money"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
-// MockSQLAdminService mocks the SQLAdminService interface
+// MockSQLAdminService mocks the SQLAdminService interface.
 type MockSQLAdminService struct {
 	instances    *sqladmin.InstancesListResponse
 	tiers        *sqladmin.TiersListResponse
@@ -47,7 +47,7 @@ func (m *MockSQLAdminService) ListTiers(projectID string) (*sqladmin.TiersListRe
 	return m.tiers, nil
 }
 
-// MockBillingService mocks the BillingService interface
+// MockBillingService mocks the BillingService interface.
 type MockBillingService struct {
 	skus *cloudbilling.ListSkusResponse
 	err  error
@@ -60,7 +60,7 @@ func (m *MockBillingService) ListSKUs(serviceID string) (*cloudbilling.ListSkusR
 	return m.skus, nil
 }
 
-// MockRecommenderIterator mocks the RecommenderIterator interface
+// MockRecommenderIterator mocks the RecommenderIterator interface.
 type MockRecommenderIterator struct {
 	recommendations []*recommenderpb.Recommendation
 	index           int
@@ -79,7 +79,7 @@ func (m *MockRecommenderIterator) Next() (*recommenderpb.Recommendation, error) 
 	return rec, nil
 }
 
-// MockRecommenderClient mocks the RecommenderClient interface
+// MockRecommenderClient mocks the RecommenderClient interface.
 type MockRecommenderClient struct {
 	iterator RecommenderIterator
 	closed   bool

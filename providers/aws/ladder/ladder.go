@@ -4,8 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/ladder"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/ladder"
 )
 
 // DefaultHorizonDays is the number of days ahead used to classify a

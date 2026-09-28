@@ -55,16 +55,16 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // ParseTermYears maps a term string to an integer year count.
 // Returns an error for any value outside the explicit allowlist so that
 // callers fail closed rather than silently coercing to a 1-year purchase.
-// Recognised forms: "", "1", "1yr", "1y" -> 1; "3", "3yr", "3y" -> 3.
+// Recognized forms: "", "1", "1yr", "1y" -> 1; "3", "3yr", "3y" -> 3.
 // This is the canonical parser; service clients that previously used a local
 // literal comparison (rec.Term == "3yr" || rec.Term == "3") should call this
-// instead to get consistent error reporting on unrecognised terms.
+// instead to get consistent error reporting on unrecognized terms.
 func ParseTermYears(term string) (int, error) {
 	switch strings.ToLower(strings.TrimSpace(term)) {
 	case "", "1", "1yr", "1y":
@@ -400,8 +400,11 @@ func doCalculatePrice(ctx context.Context, httpClient HTTPClient, calcURL string
 	if err != nil {
 		return "", fmt.Errorf("calculatePrice HTTP call: %w", err)
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	resp.Body.Close() // #nosec G104 -- body fully drained by io.ReadAll before Close; transport close error does not affect correctness
+	if err != nil {
+		return "", fmt.Errorf("read calculatePrice response: %w", err)
+	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", fmt.Errorf("calculatePrice failed with status %d: %s", resp.StatusCode, string(body))
@@ -429,7 +432,7 @@ type reservationOrdersListResponse struct {
 		// Tags carries any tags stamped on the order at purchase time.
 		Tags map[string]string `json:"tags"`
 		// Properties.ProvisioningState lets us skip terminal-failed orders so a
-		// cancelled/failed reservation with the same idempotency tag does not
+		// canceled/failed reservation with the same idempotency tag does not
 		// suppress a legitimate fresh purchase. Anything outside the
 		// suppressing-failure set is treated as a duplicate that should
 		// short-circuit (mirrors the AWS pattern of including in-flight states,
@@ -443,13 +446,13 @@ type reservationOrdersListResponse struct {
 
 // reservationOrderTerminalFailedStates enumerates the provisioning states for
 // which an existing reservation order MUST NOT suppress a fresh purchase.
-// A cancelled/failed/expired order with a matching idempotency tag was
+// A canceled/failed/expired order with a matching idempotency tag was
 // either rolled back or aged out; the recommendation is still owed and the
 // re-drive must be allowed through.
 var reservationOrderTerminalFailedStates = map[string]struct{}{
-	"Cancelled": {},
-	"Failed":    {},
-	"Expired":   {},
+	string(armreservations.ProvisioningStateCancelled): {},
+	"Failed":  {},
+	"Expired": {},
 }
 
 // FindReservationOrderByIdempotencyToken lists reservation orders visible to
@@ -464,10 +467,10 @@ var reservationOrderTerminalFailedStates = map[string]struct{}{
 // hundreds), so the full walk is cheap and runs only on purchase paths where
 // an idempotency token is supplied (i.e. never on the CLI legacy path).
 //
-// Terminal-failed orders (Cancelled, Failed, Expired) are skipped so they do
+// Terminal-failed orders (canceled, failed, expired) are skipped so they do
 // not suppress a legitimate fresh purchase of the same recommendation -- this
 // mirrors the EC2 dedupe guard's state filter (active + payment-pending only).
-func FindReservationOrderByIdempotencyToken(ctx context.Context, httpClient HTTPClient, bearerToken, idempotencyToken string) (string, bool, error) {
+func FindReservationOrderByIdempotencyToken(ctx context.Context, httpClient HTTPClient, bearerToken, idempotencyToken string) (resultOrderID string, resultFound bool, resultErr error) {
 	if idempotencyToken == "" {
 		return "", false, nil
 	}
@@ -492,7 +495,7 @@ func FindReservationOrderByIdempotencyToken(ctx context.Context, httpClient HTTP
 // FindReservationOrderByIdempotencyToken so the outer pagination loop stays
 // under the gocyclo:10 threshold.
 func fetchReservationOrdersPage(ctx context.Context, httpClient HTTPClient, pageURL, bearerToken string) (*reservationOrdersListResponse, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pageURL, http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("build list reservation orders request: %w", err)
 	}
@@ -503,8 +506,11 @@ func fetchReservationOrdersPage(ctx context.Context, httpClient HTTPClient, page
 	if err != nil {
 		return nil, fmt.Errorf("list reservation orders HTTP call: %w", err)
 	}
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	resp.Body.Close() // #nosec G104 -- body fully drained by io.ReadAll before Close; transport close error does not affect correctness
+	if err != nil {
+		return nil, fmt.Errorf("read list reservation orders response: %w", err)
+	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, fmt.Errorf("list reservation orders failed with status %d: %s", resp.StatusCode, string(body))
@@ -518,7 +524,7 @@ func fetchReservationOrdersPage(ctx context.Context, httpClient HTTPClient, page
 }
 
 // matchReservationOrderInPage scans one decoded page for an order tagged with
-// the idempotency token. Terminal-failed (Cancelled/Failed/Expired) orders
+// the idempotency token. Terminal-failed (canceled/failed/expired) orders
 // are skipped so they do not suppress a legitimate fresh purchase. Extracted
 // from FindReservationOrderByIdempotencyToken to keep the function under the
 // gocyclo:10 threshold enforced by the pre-commit hook.
@@ -542,7 +548,7 @@ func matchReservationOrderInPage(page *reservationOrdersListResponse, idempotenc
 // DoPurchaseTwoStep that every Azure service executor should use. Flow:
 //
 //  1. If idempotencyToken is empty, fall straight through to DoPurchaseTwoStep
-//     (preserves the CLI path's pre-issue-721 behaviour, which has no owning
+//     (preserves the CLI path's pre-issue-721 behavior, which has no owning
 //     execution and so no token to dedupe on).
 //  2. Otherwise, look for an existing reservation order already tagged with
 //     the token. If found, short-circuit and return its order ID -- this is a
@@ -579,7 +585,7 @@ func DoIdempotentPurchaseTwoStep(ctx context.Context, httpClient HTTPClient, cal
 
 // doPurchase calls the purchase endpoint with the given body.
 // Returns nil on 200/201/202; on 400 "Session timed out" returns an error
-// that IsSessionTimeout recognises. All other non-2xx responses are returned
+// that IsSessionTimeout recognizes. All other non-2xx responses are returned
 // as errors verbatim.
 func doPurchase(ctx context.Context, httpClient HTTPClient, purchaseURL string, bodyBytes []byte, bearerToken string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, purchaseURL, bytes.NewReader(bodyBytes))

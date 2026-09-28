@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/LeanerCloud/CUDly/providers/azure/services/compute"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/compute"
 )
 
 // --- mock pager helpers ---
@@ -102,7 +102,7 @@ const vmID1 = "/providers/Microsoft.Capacity/reservationOrders/order-1111/reserv
 const vmID2 = "/providers/Microsoft.Capacity/reservationOrders/order-2222/reservations/res-bbbb"
 const sqlID = "/providers/Microsoft.Capacity/reservationOrders/order-3333/reservations/res-cccc"
 
-func newClient() *compute.ComputeClient {
+func newClient() *compute.Client {
 	// nil credential is fine -- tests inject a pager so no real API call
 	// is ever made.
 	return compute.NewClient(nil, "test-sub", "eastus")

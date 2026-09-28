@@ -15,8 +15,8 @@ import (
 	"google.golang.org/genproto/googleapis/type/money"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/scorer"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/scorer"
 )
 
 // MockCommitmentsService mocks the CommitmentsService interface.
@@ -937,7 +937,7 @@ func TestComputeEngineClient_GetRecommendations_CtxCancelReturnsError(t *testing
 	client.SetRecommenderClient(&infiniteRecommenderClient{})
 
 	_, err = client.GetRecommendations(ctx, &common.RecommendationParams{})
-	require.Error(t, err, "cancelled context must surface an error, not a partial result set")
+	require.ErrorIs(t, err, context.Canceled, "canceled context must surface an error, not a partial result set")
 }
 
 // TestComputeEngineClient_GetRecommendations_PageCapFires asserts that the

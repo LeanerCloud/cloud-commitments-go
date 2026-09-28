@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/pkg/scorer"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/scorer"
 	"github.com/spf13/pflag"
 	"gopkg.in/yaml.v3"
 )
@@ -47,10 +47,7 @@ func Load(path string, flags *pflag.FlagSet) (Config, error) {
 	cfg := defaults()
 
 	// --- Layer 2: YAML file ---
-	filePath, explicit, err := resolveFilePath(path)
-	if err != nil {
-		return Config{}, err
-	}
+	filePath, explicit := resolveFilePath(path)
 	if filePath != "" {
 		if err := applyYAML(&cfg, filePath, explicit); err != nil {
 			return Config{}, err
@@ -76,15 +73,15 @@ func Load(path string, flags *pflag.FlagSet) (Config, error) {
 }
 
 // resolveFilePath determines which config file to load.
-// Returns (path, explicit, error). explicit=true means missing file is an error.
-func resolveFilePath(argPath string) (string, bool, error) {
+// Returns (path, explicit). explicit=true means missing file is an error.
+func resolveFilePath(argPath string) (path string, explicit bool) {
 	if argPath != "" {
-		return argPath, true, nil
+		return argPath, true
 	}
 	if env := os.Getenv("CUDLY_CONFIG"); env != "" {
-		return env, true, nil
+		return env, true
 	}
-	return "./cudly.yaml", false, nil
+	return "./cudly.yaml", false
 }
 
 // applyYAML reads the YAML file at path and merges it into cfg.
@@ -342,19 +339,31 @@ func applyFlagsScorer(cfg *Config, flags *pflag.FlagSet) error {
 // applyFlagsOther merges remaining CLI flags into cfg.
 func applyFlagsOther(cfg *Config, flags *pflag.FlagSet) error {
 	if flags.Changed("yes") {
-		v, _ := flags.GetBool("yes")
+		v, err := flags.GetBool("yes")
+		if err != nil {
+			return fmt.Errorf("--yes: %w", err)
+		}
 		cfg.AutoApprove = v
 	}
 	if flags.Changed("audit-log") {
-		v, _ := flags.GetString("audit-log")
+		v, err := flags.GetString("audit-log")
+		if err != nil {
+			return fmt.Errorf("--audit-log: %w", err)
+		}
 		cfg.AuditLog = v
 	}
 	if flags.Changed("profile") {
-		v, _ := flags.GetString("profile")
+		v, err := flags.GetString("profile")
+		if err != nil {
+			return fmt.Errorf("--profile: %w", err)
+		}
 		cfg.AWS.Profile = v
 	}
 	if flags.Changed("idempotency-window") {
-		v, _ := flags.GetString("idempotency-window")
+		v, err := flags.GetString("idempotency-window")
+		if err != nil {
+			return fmt.Errorf("--idempotency-window: %w", err)
+		}
 		d, err := time.ParseDuration(v)
 		if err != nil {
 			return fmt.Errorf("--idempotency-window: %w", err)

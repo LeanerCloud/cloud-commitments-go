@@ -6,13 +6,16 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 )
 
 // ExchangeRecord is a lightweight record type for the auto exchange logic.
+//
 // It mirrors config.RIExchangeRecord but lives in pkg/exchange to avoid
 // cross-module imports (pkg/ is a separate Go module from internal/).
+//
+//nolint:revive // stutters, but cloud-commitments-platform references this type through pkg's pinned go.mod pseudo-version (not workspace-resolved under GOWORK=off); renaming here without a coordinated go.mod bump would break that build mode
 type ExchangeRecord struct {
 	ID                 string
 	AccountID          string
@@ -61,7 +64,9 @@ type RIExchangeStore interface {
 	FailRIExchange(ctx context.Context, id string, errorMsg string) error
 }
 
-// ExchangeClientInterface abstracts the ExchangeClient for testability.
+// ExchangeClientInterface abstracts the Client for testability.
+//
+//nolint:revive // stutters, but cloud-commitments-platform references this type through pkg's pinned go.mod pseudo-version (not workspace-resolved under GOWORK=off); renaming here without a coordinated go.mod bump would break that build mode
 type ExchangeClientInterface interface {
 	GetQuote(ctx context.Context, req ExchangeQuoteRequest) (*ExchangeQuoteSummary, error)
 	Execute(ctx context.Context, req ExchangeExecuteRequest) (string, *ExchangeQuoteSummary, error)
@@ -126,6 +131,8 @@ type AutoExchangeResult struct {
 }
 
 // ExchangeOutcome captures the result of a single exchange attempt.
+//
+//nolint:revive // stutters, but providers/aws/ladder references this type through pkg's pinned go.mod pseudo-version (not workspace-resolved under GOWORK=off); renaming here without a coordinated go.mod bump would break that build mode
 type ExchangeOutcome struct {
 	RecordID           string
 	ApprovalToken      string
@@ -162,18 +169,18 @@ func RunAutoExchange(ctx context.Context, params RunAutoExchangeParams) (*AutoEx
 	// the standalone task does not wipe out ladder-linked pendings and vice versa.
 	// Race condition note: if a user clicks approve at 5h59m while this new run
 	// fires and cancels pending records, the TransitionRIExchangeStatus atomic
-	// WHERE clause prevents the exchange from executing (record already cancelled
+	// WHERE clause prevents the exchange from executing (record already canceled
 	// → returns nil → handler returns 409).
 	if !params.DryRun {
 		origin := common.ExchangeOriginStandalone
 		if params.LadderRunID != nil {
 			origin = common.ExchangeOriginLadder
 		}
-		cancelled, err := params.Store.CancelPendingExchangesByOrigin(ctx, origin)
+		canceled, err := params.Store.CancelPendingExchangesByOrigin(ctx, origin)
 		if err != nil {
 			logging.Warnf("failed to cancel pending exchanges: %v", err)
-		} else if cancelled > 0 {
-			logging.Infof("cancelled %d stale pending exchange records (origin=%s)", cancelled, origin)
+		} else if canceled > 0 {
+			logging.Infof("canceled %d stale pending exchange records (origin=%s)", canceled, origin)
 		}
 	}
 
@@ -182,7 +189,8 @@ func RunAutoExchange(ctx context.Context, params RunAutoExchangeParams) (*AutoEx
 	if err != nil {
 		logging.Warnf("failed to check stale processing exchanges: %v", err)
 	}
-	for _, s := range stale {
+	for i := range stale {
+		s := &stale[i]
 		logging.Warnf("stale processing exchange: record_id=%s account_id=%s source_ri_ids=%v updated_at=%s",
 			s.ID, s.AccountID, s.SourceRIIDs, s.UpdatedAt.Format(time.RFC3339))
 	}
@@ -198,9 +206,10 @@ func RunAutoExchange(ctx context.Context, params RunAutoExchangeParams) (*AutoEx
 
 	perExchangeCap := new(big.Rat).SetFloat64(params.Config.MaxPaymentPerExchangeUSD)
 
-	for _, rec := range recs {
-		if processRecommendation(ctx, params, rec, perExchangeCap, result) {
-			// H4: processAutoExchange signalled halt because a ledger write failed
+	for i := range recs {
+		rec := &recs[i]
+		if processRecommendation(ctx, params, *rec, perExchangeCap, result) {
+			// H4: processAutoExchange signaled halt because a ledger write failed
 			// after money moved. Stop processing further recommendations so
 			// subsequent exchanges don't bypass the daily cap.
 			break
@@ -594,21 +603,21 @@ func processAutoExchange(ctx context.Context, params RunAutoExchangeParams, rec 
 	return outcome, false
 }
 
-// ExchangeMode constrains the originating code path of an exchange record so
+// Mode constrains the originating code path of an exchange record so
 // `saveFailedRecord` (and any future caller) can't silently leak a typo into
 // `ExchangeRecord.Mode`. The storage field stays `string` for serialization
 // stability — this is a call-site discipline, not a schema change.
-type ExchangeMode string
+type Mode string
 
 const (
-	ExchangeModeAuto   ExchangeMode = "auto"
-	ExchangeModeManual ExchangeMode = "manual"
+	ExchangeModeAuto   Mode = "auto"
+	ExchangeModeManual Mode = "manual"
 )
 
 // saveFailedRecord persists a failed exchange attempt for DB audit.
 // `mode` distinguishes auto-mode failures from manual-mode failures so
 // downstream filters/UI can split the two.
-func saveFailedRecord(ctx context.Context, params RunAutoExchangeParams, rec ReshapeRecommendation, offeringID, paymentDueStr, errMsg string, mode ExchangeMode) {
+func saveFailedRecord(ctx context.Context, params RunAutoExchangeParams, rec ReshapeRecommendation, offeringID, paymentDueStr, errMsg string, mode Mode) {
 	record := &ExchangeRecord{
 		AccountID:          params.AccountID,
 		Region:             params.Region,

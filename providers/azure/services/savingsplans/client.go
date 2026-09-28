@@ -12,9 +12,9 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/billingbenefits/armbillingbenefits"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/providers/azure/internal/httpclient"
-	"github.com/LeanerCloud/CUDly/providers/azure/internal/pricing"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/httpclient"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/pricing"
 )
 
 // SavingsPlanOrderAliasAPI defines operations on SavingsPlanOrderAlias (enables mocking).
@@ -268,12 +268,12 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	if c.orderAliasClient != nil {
 		aliasClient = c.orderAliasClient
 	} else {
-		real, err := armbillingbenefits.NewSavingsPlanOrderAliasClient(c.cred, nil)
-		if err != nil {
-			result.Error = fmt.Errorf("failed to create order alias client: %w", err)
+		client, clientErr := armbillingbenefits.NewSavingsPlanOrderAliasClient(c.cred, nil)
+		if clientErr != nil {
+			result.Error = fmt.Errorf("failed to create order alias client: %w", clientErr)
 			return result, result.Error
 		}
-		aliasClient = &realOrderAliasClient{client: real}
+		aliasClient = &realOrderAliasClient{client: client}
 	}
 
 	// Derive a deterministic alias name from the idempotency token when present
@@ -366,11 +366,11 @@ func (c *Client) getRPValidateClient() (RPValidateAPI, error) {
 	if c.rpValidateClient != nil {
 		return c.rpValidateClient, nil
 	}
-	real, err := armbillingbenefits.NewRPClient(c.cred, nil)
+	client, err := armbillingbenefits.NewRPClient(c.cred, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create RP client: %w", err)
 	}
-	return real, nil
+	return client, nil
 }
 
 // checkValidateResponse returns an error if any benefit in the response is invalid.
@@ -467,9 +467,9 @@ func (c *Client) fetchOnDemandRate(ctx context.Context, planType string) (float6
 		return 0, fmt.Errorf("failed to fetch on-demand rate for plan type %s: %w", planType, err)
 	}
 
-	for _, item := range items {
-		if item.RetailPrice > 0 {
-			return item.RetailPrice, nil
+	for i := range items {
+		if items[i].RetailPrice > 0 {
+			return items[i].RetailPrice, nil
 		}
 	}
 

@@ -4,6 +4,7 @@ package mocks
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -40,7 +41,7 @@ func (p *MockReservationsSummariesPager) NextPage(ctx context.Context) (armconsu
 	}, nil
 }
 
-// MockRecommendationsPager mocks the recommendations pager
+// MockRecommendationsPager mocks the recommendations pager.
 type MockRecommendationsPager struct {
 	mock.Mock
 	Results   []armconsumption.ReservationRecommendationClassification
@@ -48,7 +49,7 @@ type MockRecommendationsPager struct {
 	pageCount int
 }
 
-// More returns whether there are more pages
+// More returns whether there are more pages.
 func (p *MockRecommendationsPager) More() bool {
 	if p.pageCount == 0 {
 		return p.HasMore
@@ -56,7 +57,7 @@ func (p *MockRecommendationsPager) More() bool {
 	return false
 }
 
-// NextPage returns the next page of results
+// NextPage returns the next page of results.
 func (p *MockRecommendationsPager) NextPage(ctx context.Context) (armconsumption.ReservationRecommendationsClientListResponse, error) {
 	p.pageCount++
 	return armconsumption.ReservationRecommendationsClientListResponse{
@@ -66,7 +67,7 @@ func (p *MockRecommendationsPager) NextPage(ctx context.Context) (armconsumption
 	}, nil
 }
 
-// MockReservationsDetailsPager mocks the reservations details pager
+// MockReservationsDetailsPager mocks the reservations details pager.
 type MockReservationsDetailsPager struct {
 	mock.Mock
 	Results   []*armconsumption.ReservationDetail
@@ -74,7 +75,7 @@ type MockReservationsDetailsPager struct {
 	pageCount int
 }
 
-// More returns whether there are more pages
+// More returns whether there are more pages.
 func (p *MockReservationsDetailsPager) More() bool {
 	if p.pageCount == 0 {
 		return p.HasMore
@@ -82,7 +83,7 @@ func (p *MockReservationsDetailsPager) More() bool {
 	return false
 }
 
-// NextPage returns the next page of results
+// NextPage returns the next page of results.
 func (p *MockReservationsDetailsPager) NextPage(ctx context.Context) (armconsumption.ReservationsDetailsClientListResponse, error) {
 	p.pageCount++
 	return armconsumption.ReservationsDetailsClientListResponse{
@@ -92,7 +93,7 @@ func (p *MockReservationsDetailsPager) NextPage(ctx context.Context) (armconsump
 	}, nil
 }
 
-// MockResourceSKUsPager mocks the resource SKUs pager
+// MockResourceSKUsPager mocks the resource SKUs pager.
 type MockResourceSKUsPager struct {
 	mock.Mock
 	Results   []*armcompute.ResourceSKU
@@ -100,7 +101,7 @@ type MockResourceSKUsPager struct {
 	pageCount int
 }
 
-// More returns whether there are more pages
+// More returns whether there are more pages.
 func (p *MockResourceSKUsPager) More() bool {
 	if p.pageCount == 0 {
 		return p.HasMore
@@ -108,7 +109,7 @@ func (p *MockResourceSKUsPager) More() bool {
 	return false
 }
 
-// NextPage returns the next page of results
+// NextPage returns the next page of results.
 func (p *MockResourceSKUsPager) NextPage(ctx context.Context) (armcompute.ResourceSKUsClientListResponse, error) {
 	p.pageCount++
 	return armcompute.ResourceSKUsClientListResponse{
@@ -118,23 +119,27 @@ func (p *MockResourceSKUsPager) NextPage(ctx context.Context) (armcompute.Resour
 	}, nil
 }
 
-// MockHTTPClient mocks an HTTP client
+// MockHTTPClient mocks an HTTP client.
 type MockHTTPClient struct {
 	mock.Mock
 	ResponseBody string
 	StatusCode   int
 }
 
-// Do performs the mock HTTP request
+// Do performs the mock HTTP request.
 func (m *MockHTTPClient) Do(req *http.Request) (*http.Response, error) {
 	args := m.Called(req)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
-	return args.Get(0).(*http.Response), args.Error(1)
+	resp, ok := args.Get(0).(*http.Response)
+	if !ok {
+		panic(fmt.Sprintf("MockHTTPClient.Do: expected *http.Response, got %T", args.Get(0)))
+	}
+	return resp, args.Error(1)
 }
 
-// CreateMockHTTPResponse creates a mock HTTP response
+// CreateMockHTTPResponse creates a mock HTTP response.
 func CreateMockHTTPResponse(statusCode int, body string) *http.Response {
 	return &http.Response{
 		StatusCode: statusCode,
@@ -145,32 +150,32 @@ func CreateMockHTTPResponse(statusCode int, body string) *http.Response {
 
 // Helper functions
 
-// StringPtr returns a pointer to a string
+// StringPtr returns a pointer to a string.
 func StringPtr(s string) *string {
 	return &s
 }
 
-// Float64Ptr returns a pointer to a float64
+// Float64Ptr returns a pointer to a float64.
 func Float64Ptr(f float64) *float64 {
 	return &f
 }
 
-// Int32Ptr returns a pointer to an int32
+// Int32Ptr returns a pointer to an int32.
 func Int32Ptr(i int32) *int32 {
 	return &i
 }
 
-// Int64Ptr returns a pointer to an int64
+// Int64Ptr returns a pointer to an int64.
 func Int64Ptr(i int64) *int64 {
 	return &i
 }
 
-// BoolPtr returns a pointer to a bool
+// BoolPtr returns a pointer to a bool.
 func BoolPtr(b bool) *bool {
 	return &b
 }
 
-// CreateSampleResourceSKUs creates sample resource SKUs for testing
+// CreateSampleResourceSKUs creates sample resource SKUs for testing.
 func CreateSampleResourceSKUs(region string) []*armcompute.ResourceSKU {
 	resourceType := "virtualMachines"
 	return []*armcompute.ResourceSKU{
@@ -192,7 +197,7 @@ func CreateSampleResourceSKUs(region string) []*armcompute.ResourceSKU {
 	}
 }
 
-// CreateSampleReservationDetails creates sample reservation details for testing
+// CreateSampleReservationDetails creates sample reservation details for testing.
 func CreateSampleReservationDetails(subscriptionID, region string) []*armconsumption.ReservationDetail {
 	skuName := "VirtualMachines/Standard_D2s_v3"
 	reservationID := "reservation-123"
@@ -248,7 +253,7 @@ func CreateSampleVMPricingResponse() string {
 	}`
 }
 
-// CreateSampleSQLPricingResponse creates a sample SQL pricing response for testing
+// CreateSampleSQLPricingResponse creates a sample SQL pricing response for testing.
 func CreateSampleSQLPricingResponse() string {
 	return `{
 		"Items": [
@@ -273,7 +278,7 @@ func CreateSampleSQLPricingResponse() string {
 	}`
 }
 
-// CreateSampleRedisPricingResponse creates a sample Redis pricing response for testing
+// CreateSampleRedisPricingResponse creates a sample Redis pricing response for testing.
 func CreateSampleRedisPricingResponse() string {
 	return `{
 		"Items": [

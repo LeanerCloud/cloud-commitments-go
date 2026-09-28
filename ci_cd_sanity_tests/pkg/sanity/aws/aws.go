@@ -13,7 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/rds"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 
-	"github.com/LeanerCloud/CUDly/ci_cd_sanity_tests/pkg/sanity/report"
+	"github.com/LeanerCloud/cloud-commitments-go/ci_cd_sanity_tests/pkg/sanity/report"
 )
 
 // Options controls which AWS region to target and optional safety assertions

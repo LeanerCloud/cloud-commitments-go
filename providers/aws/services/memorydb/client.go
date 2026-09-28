@@ -13,21 +13,21 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/memorydb"
 	"github.com/aws/aws-sdk-go-v2/service/memorydb/types"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/providers/aws/internal/purchasecfg"
-	"github.com/LeanerCloud/CUDly/providers/aws/internal/tagging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/tagging"
 )
 
-// MemoryDBAPI defines the interface for MemoryDB operations (enables mocking)
-type MemoryDBAPI interface {
+// API defines the interface for MemoryDB operations (enables mocking).
+type API interface {
 	PurchaseReservedNodesOffering(ctx context.Context, params *memorydb.PurchaseReservedNodesOfferingInput, optFns ...func(*memorydb.Options)) (*memorydb.PurchaseReservedNodesOfferingOutput, error)
 	DescribeReservedNodesOfferings(ctx context.Context, params *memorydb.DescribeReservedNodesOfferingsInput, optFns ...func(*memorydb.Options)) (*memorydb.DescribeReservedNodesOfferingsOutput, error)
 	DescribeReservedNodes(ctx context.Context, params *memorydb.DescribeReservedNodesInput, optFns ...func(*memorydb.Options)) (*memorydb.DescribeReservedNodesOutput, error)
 }
 
-// Client handles AWS MemoryDB Reserved Nodes
+// Client handles AWS MemoryDB Reserved Nodes.
 type Client struct {
-	client MemoryDBAPI
+	client API
 	region string
 }
 
@@ -41,27 +41,27 @@ func NewClient(cfg aws.Config) *Client {
 	}
 }
 
-// SetMemoryDBAPI sets a custom MemoryDB API client (for testing)
-func (c *Client) SetMemoryDBAPI(api MemoryDBAPI) {
+// SetMemoryDBAPI sets a custom MemoryDB API client (for testing).
+func (c *Client) SetMemoryDBAPI(api API) {
 	c.client = api
 }
 
-// GetServiceType returns the service type
+// GetServiceType returns the service type.
 func (c *Client) GetServiceType() common.ServiceType {
 	return common.ServiceCache
 }
 
-// GetRegion returns the region
+// GetRegion returns the region.
 func (c *Client) GetRegion() string {
 	return c.region
 }
 
-// GetRecommendations returns empty as MemoryDB uses centralized Cost Explorer recommendations
+// GetRecommendations returns empty as MemoryDB uses centralized Cost Explorer recommendations.
 func (c *Client) GetRecommendations(_ context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	return []common.Recommendation{}, nil
 }
 
-// GetExistingCommitments retrieves existing MemoryDB Reserved Nodes
+// GetExistingCommitments retrieves existing MemoryDB Reserved Nodes.
 func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	commitments := make([]common.Commitment, 0)
 	var nextToken *string
@@ -110,7 +110,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 	return commitments, nil
 }
 
-// PurchaseCommitment purchases a MemoryDB Reserved Node
+// PurchaseCommitment purchases a MemoryDB Reserved Node.
 func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
 	result := common.PurchaseResult{
 		Recommendation: rec,
@@ -190,7 +190,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 // node with the given ReservationId (issue #641), so a re-driven purchase can
 // short-circuit instead of buying a second node. Retired/expired nodes are
 // excluded (same state filter as GetExistingCommitments).
-func (c *Client) findReservationByID(ctx context.Context, reservationID string) (string, bool, error) {
+func (c *Client) findReservationByID(ctx context.Context, reservationID string) (reservedID string, found bool, err error) {
 	response, err := c.client.DescribeReservedNodes(ctx, &memorydb.DescribeReservedNodesInput{
 		ReservationId: aws.String(reservationID),
 	})
@@ -220,7 +220,7 @@ func (c *Client) findReservationByID(ctx context.Context, reservationID string) 
 // reports (existingID, true, nil) if a reserved node already exists under
 // reservationID, ("", false, nil) for a first-time purchase, or a fail-loud
 // error on lookup failure. With an empty token it is a no-op.
-func (c *Client) idempotencyGuard(ctx context.Context, token, reservationID string) (string, bool, error) {
+func (c *Client) idempotencyGuard(ctx context.Context, token, reservationID string) (existingID string, found bool, err error) {
 	if token == "" {
 		return "", false, nil
 	}
@@ -353,18 +353,22 @@ func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation, 
 //
 // Pulled out of findOfferingID to keep that function under the cyclomatic limit.
 func scanMemoryDBOfferingPage(offerings []types.ReservedNodesOffering, wantOfferingType string, rec common.Recommendation, tag string, page int, t0 time.Time) (string, error) {
-	for _, o := range offerings {
-		got := aws.ToString(o.OfferingType)
-		if got != wantOfferingType {
-			return "", fmt.Errorf("MemoryDB offering %s has payment option %q, want %q (rec: %s %s) -- API filter mismatch",
-				aws.ToString(o.ReservedNodesOfferingId), got, wantOfferingType,
-				rec.ResourceType, rec.PaymentOption)
-		}
-		log.Printf("purchase[%s]: MemoryDB findOfferingID found match on page %d after %s total",
-			tag, page, time.Since(t0))
-		return aws.ToString(o.ReservedNodesOfferingId), nil
+	if len(offerings) == 0 {
+		return "", nil
 	}
-	return "", nil
+	// The DescribeReservedNodesOfferings call already filters server-side by
+	// offering type, so only the first result is examined; a mismatch here
+	// indicates an AWS API-side anomaly worth a hard error, not a scan target.
+	o := &offerings[0]
+	got := aws.ToString(o.OfferingType)
+	if got != wantOfferingType {
+		return "", fmt.Errorf("MemoryDB offering %s has payment option %q, want %q (rec: %s %s) -- API filter mismatch",
+			aws.ToString(o.ReservedNodesOfferingId), got, wantOfferingType,
+			rec.ResourceType, rec.PaymentOption)
+	}
+	log.Printf("purchase[%s]: MemoryDB findOfferingID found match on page %d after %s total",
+		tag, page, time.Since(t0))
+	return aws.ToString(o.ReservedNodesOfferingId), nil
 }
 
 // isLastMemoryDBPage reports whether a NextToken indicates the terminal page.
@@ -395,13 +399,13 @@ func (c *Client) getDurationStringForAPI(term string) (string, error) {
 	}
 }
 
-// ValidateOffering checks if an offering exists without purchasing
+// ValidateOffering checks if an offering exists without purchasing.
 func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
 	_, err := c.findOfferingID(ctx, rec, "")
 	return err
 }
 
-// GetOfferingDetails retrieves offering details
+// GetOfferingDetails retrieves offering details.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	offeringID, err := c.findOfferingID(ctx, rec, "")
 	if err != nil {
@@ -444,7 +448,7 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	return details, nil
 }
 
-// GetValidResourceTypes returns valid MemoryDB node types by querying the API
+// GetValidResourceTypes returns valid MemoryDB node types by querying the API.
 func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	nodeTypesMap := make(map[string]bool)
 	var nextToken *string
@@ -494,7 +498,7 @@ func (c *Client) createPurchaseTags(rec common.Recommendation, source string) []
 	return out
 }
 
-// getTermMonthsFromDuration converts duration in seconds to months
+// getTermMonthsFromDuration converts duration in seconds to months.
 func getTermMonthsFromDuration(duration int32) int {
 	offeringMonths := duration / 2592000
 	if offeringMonths >= 30 {

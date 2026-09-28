@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // Logf is an injected logging sink. Package recfilter never logs through a

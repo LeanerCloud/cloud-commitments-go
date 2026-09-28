@@ -1,4 +1,4 @@
-package common
+package common //nolint:revive // pkg/common is the module's core domain package (Recommendation, ProviderType, ...), imported by name (common.X) throughout this repo and by consumer-mcp; renaming would break every consumer import
 
 import (
 	"testing"
@@ -105,7 +105,7 @@ func TestSavingsPlansPlanTypes(t *testing.T) {
 		ServiceSavingsPlansDatabase,
 	}, got)
 
-	// Every returned slug must be recognised as a Savings Plan.
+	// Every returned slug must be recognized as a Savings Plan.
 	for _, st := range got {
 		assert.Truef(t, IsSavingsPlan(st), "IsSavingsPlan(%q) should be true", st)
 	}

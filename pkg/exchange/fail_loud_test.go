@@ -324,7 +324,7 @@ func TestValidateTargets_LegacyNegativeCountErrors(t *testing.T) {
 }
 
 // TestGetQuote_ZeroCountRejected (L2):
-// GetQuote via ExchangeClient must reject a zero-count target before calling AWS.
+// GetQuote via Client must reject a zero-count target before calling AWS.
 func TestGetQuote_ZeroCountRejected(t *testing.T) {
 	t.Parallel()
 

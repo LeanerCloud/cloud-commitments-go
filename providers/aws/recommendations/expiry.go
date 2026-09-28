@@ -3,7 +3,7 @@ package recommendations
 import (
 	"time"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // AdjustExistingCoverageForExpiringCommitments reduces each rec's
@@ -45,14 +45,15 @@ func AdjustExistingCoverageForExpiringCommitments(
 // coverage are counted (queued / retired RIs aren't covering demand now).
 func expiringCountsByPool(commitments []common.Commitment, cutoff time.Time) map[string]int {
 	out := make(map[string]int)
-	for _, c := range commitments {
-		if !commitmentIsActive(c) {
+	for i := range commitments {
+		c := &commitments[i]
+		if !commitmentIsActive(*c) {
 			continue
 		}
 		if c.EndDate.IsZero() || c.EndDate.After(cutoff) {
 			continue
 		}
-		key := commitmentPoolKey(c)
+		key := commitmentPoolKey(*c)
 		if key == "" {
 			continue
 		}

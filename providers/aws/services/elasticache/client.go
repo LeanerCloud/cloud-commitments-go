@@ -13,21 +13,21 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/elasticache"
 	"github.com/aws/aws-sdk-go-v2/service/elasticache/types"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/providers/aws/internal/purchasecfg"
-	"github.com/LeanerCloud/CUDly/providers/aws/internal/tagging"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/tagging"
 )
 
-// ElastiCacheAPI defines the interface for ElastiCache operations (enables mocking)
-type ElastiCacheAPI interface {
+// API defines the interface for ElastiCache operations (enables mocking).
+type API interface {
 	DescribeReservedCacheNodesOfferings(ctx context.Context, params *elasticache.DescribeReservedCacheNodesOfferingsInput, optFns ...func(*elasticache.Options)) (*elasticache.DescribeReservedCacheNodesOfferingsOutput, error)
 	PurchaseReservedCacheNodesOffering(ctx context.Context, params *elasticache.PurchaseReservedCacheNodesOfferingInput, optFns ...func(*elasticache.Options)) (*elasticache.PurchaseReservedCacheNodesOfferingOutput, error)
 	DescribeReservedCacheNodes(ctx context.Context, params *elasticache.DescribeReservedCacheNodesInput, optFns ...func(*elasticache.Options)) (*elasticache.DescribeReservedCacheNodesOutput, error)
 }
 
-// Client handles AWS ElastiCache Reserved Cache Nodes
+// Client handles AWS ElastiCache Reserved Cache Nodes.
 type Client struct {
-	client ElastiCacheAPI
+	client API
 	region string
 }
 
@@ -41,27 +41,27 @@ func NewClient(cfg aws.Config) *Client {
 	}
 }
 
-// SetElastiCacheAPI sets a custom ElastiCache API client (for testing)
-func (c *Client) SetElastiCacheAPI(api ElastiCacheAPI) {
+// SetElastiCacheAPI sets a custom ElastiCache API client (for testing).
+func (c *Client) SetElastiCacheAPI(api API) {
 	c.client = api
 }
 
-// GetServiceType returns the service type
+// GetServiceType returns the service type.
 func (c *Client) GetServiceType() common.ServiceType {
 	return common.ServiceCache
 }
 
-// GetRegion returns the region
+// GetRegion returns the region.
 func (c *Client) GetRegion() string {
 	return c.region
 }
 
-// GetRecommendations returns empty as ElastiCache uses centralized Cost Explorer recommendations
+// GetRecommendations returns empty as ElastiCache uses centralized Cost Explorer recommendations.
 func (c *Client) GetRecommendations(_ context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	return []common.Recommendation{}, nil
 }
 
-// GetExistingCommitments retrieves existing ElastiCache Reserved Cache Nodes
+// GetExistingCommitments retrieves existing ElastiCache Reserved Cache Nodes.
 func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	commitments := make([]common.Commitment, 0)
 	var marker *string
@@ -77,7 +77,8 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 			return nil, fmt.Errorf("failed to describe reserved cache nodes: %w", err)
 		}
 
-		for _, node := range response.ReservedCacheNodes {
+		for i := range response.ReservedCacheNodes {
+			node := &response.ReservedCacheNodes[i]
 			state := aws.ToString(node.State)
 			if state != "active" && state != "payment-pending" {
 				continue
@@ -114,7 +115,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 	return commitments, nil
 }
 
-// PurchaseCommitment purchases an ElastiCache Reserved Cache Node
+// PurchaseCommitment purchases an ElastiCache Reserved Cache Node.
 func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
 	result := common.PurchaseResult{
 		Recommendation: rec,
@@ -196,7 +197,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 // with the given ReservedCacheNodeId (issue #641), so a re-driven purchase can
 // short-circuit instead of buying a second node. Retired/expired nodes are
 // excluded (same state filter as GetExistingCommitments).
-func (c *Client) findReservationByID(ctx context.Context, reservationID string) (string, bool, error) {
+func (c *Client) findReservationByID(ctx context.Context, reservationID string) (reservedID string, found bool, err error) {
 	response, err := c.client.DescribeReservedCacheNodes(ctx, &elasticache.DescribeReservedCacheNodesInput{
 		ReservedCacheNodeId: aws.String(reservationID),
 	})
@@ -210,7 +211,8 @@ func (c *Client) findReservationByID(ctx context.Context, reservationID string) 
 		}
 		return "", false, fmt.Errorf("failed to describe reserved cache nodes for idempotency check: %w", err)
 	}
-	for _, node := range response.ReservedCacheNodes {
+	for i := range response.ReservedCacheNodes {
+		node := &response.ReservedCacheNodes[i]
 		state := aws.ToString(node.State)
 		if state != "active" && state != "payment-pending" {
 			continue
@@ -226,7 +228,7 @@ func (c *Client) findReservationByID(ctx context.Context, reservationID string) 
 // reports (existingID, true, nil) if a reservation already exists under
 // reservationID, ("", false, nil) for a first-time purchase, or a fail-loud
 // error on lookup failure. With an empty token it is a no-op.
-func (c *Client) idempotencyGuard(ctx context.Context, token, reservationID string) (string, bool, error) {
+func (c *Client) idempotencyGuard(ctx context.Context, token, reservationID string) (existingID string, found bool, err error) {
 	if token == "" {
 		return "", false, nil
 	}
@@ -344,25 +346,29 @@ func (c *Client) paginateElastiCacheOfferings(ctx context.Context, rec common.Re
 // scanElastiCacheOfferingPage finds a matching offering in a single page of results.
 // Returns ("", nil) when no match is found on the page so the caller can continue paginating.
 func scanElastiCacheOfferingPage(offerings []types.ReservedCacheNodesOffering, rec common.Recommendation, wantType string) (string, error) {
-	for _, o := range offerings {
-		got := aws.ToString(o.OfferingType)
-		if got != wantType {
-			return "", fmt.Errorf("ElastiCache offering %s has payment option %q, want %q (rec: %s %s) -- API filter mismatch",
-				aws.ToString(o.ReservedCacheNodesOfferingId), got, wantType,
-				rec.ResourceType, rec.PaymentOption)
-		}
-		return aws.ToString(o.ReservedCacheNodesOfferingId), nil
+	if len(offerings) == 0 {
+		return "", nil
 	}
-	return "", nil
+	// The DescribeReservedCacheNodesOfferings call already filters server-side
+	// by offering type, so only the first result is examined; a mismatch here
+	// indicates an AWS API-side anomaly worth a hard error, not a scan target.
+	o := &offerings[0]
+	got := aws.ToString(o.OfferingType)
+	if got != wantType {
+		return "", fmt.Errorf("ElastiCache offering %s has payment option %q, want %q (rec: %s %s) -- API filter mismatch",
+			aws.ToString(o.ReservedCacheNodesOfferingId), got, wantType,
+			rec.ResourceType, rec.PaymentOption)
+	}
+	return aws.ToString(o.ReservedCacheNodesOfferingId), nil
 }
 
-// ValidateOffering checks if an offering exists without purchasing
+// ValidateOffering checks if an offering exists without purchasing.
 func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
 	_, err := c.findOfferingID(ctx, rec, "")
 	return err
 }
 
-// GetOfferingDetails retrieves offering details
+// GetOfferingDetails retrieves offering details.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	offeringID, err := c.findOfferingID(ctx, rec, "")
 	if err != nil {
@@ -397,7 +403,7 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	return details, nil
 }
 
-// GetValidResourceTypes returns valid ElastiCache node types
+// GetValidResourceTypes returns valid ElastiCache node types.
 func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	instanceTypesMap := make(map[string]bool)
 	var marker *string
@@ -434,7 +440,7 @@ func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	return instanceTypes, nil
 }
 
-// Duration constants for RI term calculations
+// Duration constants for RI term calculations.
 const (
 	OneYearSeconds   = 31536000 // 365 days in seconds
 	ThreeYearSeconds = 94608000 // 3 * 365 days in seconds

@@ -13,8 +13,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/concurrency"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
 )
 
 // getSavingsPlansRecommendations fetches Savings Plans recommendations.
@@ -172,8 +172,9 @@ func (c *Client) parseSavingsPlansRecommendations(
 ) []common.Recommendation {
 	var recommendations []common.Recommendation
 
-	for _, detail := range spRec.SavingsPlansPurchaseRecommendationDetails {
-		rec, err := c.parseSavingsPlanDetail(&detail, params, planType)
+	for i := range spRec.SavingsPlansPurchaseRecommendationDetails {
+		detail := &spRec.SavingsPlansPurchaseRecommendationDetails[i]
+		rec, err := c.parseSavingsPlanDetail(detail, params, planType)
 		if err != nil {
 			// present-but-unparseable money field: drop this recommendation
 			// rather than forwarding a corrupt $0 to the scheduler/frontend.
@@ -271,7 +272,7 @@ func extractEC2SPFields(planType types.SupportedSavingsPlansType, detail *types.
 
 // spPlanTypeDisplayString converts a SupportedSavingsPlansType to a
 // human-readable plan-type label used in SavingsPlanDetails.PlanType.
-// Returns the raw SDK string for unrecognised types (forward-compat).
+// Returns the raw SDK string for unrecognized types (forward-compat).
 func spPlanTypeDisplayString(pt types.SupportedSavingsPlansType) string {
 	switch pt {
 	case types.SupportedSavingsPlansTypeComputeSp:

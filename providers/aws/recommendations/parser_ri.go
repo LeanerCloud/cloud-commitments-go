@@ -11,16 +11,18 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
-// parseRecommendations converts AWS recommendations to common.Recommendation format
+// parseRecommendations converts AWS recommendations to common.Recommendation format.
 func (c *Client) parseRecommendations(ctx context.Context, awsRecs []types.ReservationPurchaseRecommendation, params common.RecommendationParams) ([]common.Recommendation, error) {
 	var recommendations []common.Recommendation
 
-	for _, awsRec := range awsRecs {
-		for i, details := range awsRec.RecommendationDetails {
-			rec, err := c.parseRecommendationDetail(ctx, &details, params)
+	for r := range awsRecs {
+		awsRec := &awsRecs[r]
+		for i := range awsRec.RecommendationDetails {
+			details := &awsRec.RecommendationDetails[i]
+			rec, err := c.parseRecommendationDetail(ctx, details, params)
 			if err != nil {
 				// log (stderr), never fmt.Print (stdout): this package is
 				// linked into cmd/cudly-mcp, whose stdio transport owns
@@ -40,7 +42,7 @@ func (c *Client) parseRecommendations(ctx context.Context, awsRecs []types.Reser
 	return recommendations, nil
 }
 
-// parseRecommendationDetail converts a single AWS recommendation detail
+// parseRecommendationDetail converts a single AWS recommendation detail.
 func (c *Client) parseRecommendationDetail(ctx context.Context, details *types.ReservationPurchaseRecommendationDetail, params common.RecommendationParams) (*common.Recommendation, error) {
 	rec := &common.Recommendation{
 		Provider:       common.ProviderAWS,
@@ -109,7 +111,7 @@ func (c *Client) parseRIUtilizationSignals(rec *common.Recommendation, details *
 		"AverageUtilization ("+ctx+")", details.AverageUtilization)
 }
 
-// parseRecommendedQuantity extracts the recommended quantity from details
+// parseRecommendedQuantity extracts the recommended quantity from details.
 func (c *Client) parseRecommendedQuantity(details *types.ReservationPurchaseRecommendationDetail) (int, error) {
 	if details.RecommendedNumberOfInstancesToPurchase == nil {
 		return 0, fmt.Errorf("recommended quantity not found")
@@ -144,16 +146,16 @@ func (c *Client) parseRecommendedQuantity(details *types.ReservationPurchaseReco
 // recommended quantity, which AWS CE sizes for ~100% coverage of the account's
 // historical on-demand demand. This is the 100%-coverage baseline the dashboard
 // scaling in summarizeRecommendationsWithCoverage depends on (issue #215 audit).
-func (c *Client) parseCostInformation(details *types.ReservationPurchaseRecommendationDetail) (float64, float64, error) {
+func (c *Client) parseCostInformation(details *types.ReservationPurchaseRecommendationDetail) (estimatedSavings, savingsPercent float64, err error) {
 	// Route through parseOptionalFloat so a present-but-non-finite CE money value
 	// (NaN/Inf parse to a nil error under strconv.ParseFloat) is rejected the same
 	// way as on the SP path, keeping this parser and the SP parser at genuine
 	// parity. A nil pointer yields (0, nil).
-	estimatedSavings, err := parseOptionalFloat("EstimatedMonthlySavingsAmount", details.EstimatedMonthlySavingsAmount)
+	estimatedSavings, err = parseOptionalFloat("EstimatedMonthlySavingsAmount", details.EstimatedMonthlySavingsAmount)
 	if err != nil {
 		return 0, 0, err
 	}
-	savingsPercent, err := parseOptionalFloat("EstimatedMonthlySavingsPercentage", details.EstimatedMonthlySavingsPercentage)
+	savingsPercent, err = parseOptionalFloat("EstimatedMonthlySavingsPercentage", details.EstimatedMonthlySavingsPercentage)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -201,10 +203,10 @@ func (c *Client) parseAWSCostDetails(rec *common.Recommendation, details *types.
 	return nil
 }
 
-// serviceParserFunc defines the signature for service-specific parsers
+// serviceParserFunc defines the signature for service-specific parsers.
 type serviceParserFunc func(context.Context, *common.Recommendation, *types.ReservationPurchaseRecommendationDetail) error
 
-// parseServiceSpecificDetails routes to the appropriate service parser
+// parseServiceSpecificDetails routes to the appropriate service parser.
 func (c *Client) parseServiceSpecificDetails(ctx context.Context, rec *common.Recommendation, details *types.ReservationPurchaseRecommendationDetail, service common.ServiceType) error {
 	// Map of service types to their parser functions
 	serviceParsers := map[common.ServiceType]serviceParserFunc{

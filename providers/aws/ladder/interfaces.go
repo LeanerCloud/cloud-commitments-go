@@ -12,10 +12,10 @@ import (
 	cetypes "github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	sptypes "github.com/aws/aws-sdk-go-v2/service/savingsplans/types"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/exchange"
-	"github.com/LeanerCloud/CUDly/providers/aws/recommendations"
-	ec2svc "github.com/LeanerCloud/CUDly/providers/aws/services/ec2"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/exchange"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/recommendations"
+	ec2svc "github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/ec2"
 )
 
 // Savings Plan plan-type identifiers, derived from the AWS SDK enum so this
@@ -207,7 +207,7 @@ type spPurchaser interface {
 // makes exchange.RunAutoExchange scope its pending-cancellation to the ladder
 // origin (ladder_run_id IS NOT NULL); a nil ladderRunID keeps the standalone
 // origin. Passing them here prevents a future runner from defaulting
-// ladderRunID to nil and silently cancelling the standalone task's pendings
+// ladderRunID to nil and silently canceling the standalone task's pendings
 // (gap G10 / issue #1348).
 type exchangeRunner interface {
 	RunAutoExchange(ctx context.Context, cfg exchange.RIExchangeConfig, ladderRunID *string, dryRun bool) (*exchange.AutoExchangeResult, error)

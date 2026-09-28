@@ -6,10 +6,10 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
-// getServiceStringForCostExplorer converts service type to Cost Explorer service string
+// getServiceStringForCostExplorer converts service type to Cost Explorer service string.
 func getServiceStringForCostExplorer(service common.ServiceType) string {
 	switch service {
 	case common.ServiceRDS, common.ServiceRelationalDB:
@@ -37,7 +37,7 @@ func getServiceStringForCostExplorer(service common.ServiceType) string {
 // (owned by #865/#1075). New callers must use convertPaymentOptionE and
 // propagate the error. See open-questions/fix-aws-converters.md OQ-1.
 func convertPaymentOption(option string) types.PaymentOption {
-	v, _ := convertPaymentOptionE(option)
+	v, _ := convertPaymentOptionE(option) //nolint:errcheck // intentional: documented deprecated silent-fallback shim for the legacy caller in client.go, tracked in open-questions/fix-aws-converters.md OQ-1 (#865/#1075); changing this now would alter that legacy path's behavior
 	return v
 }
 
@@ -79,7 +79,7 @@ func convertTermInYearsE(term string) (types.TermInYears, error) {
 // (owned by #865/#1075). New callers must use convertTermInYearsE and
 // propagate the error. See open-questions/fix-aws-converters.md OQ-1.
 func convertTermInYears(term string) types.TermInYears {
-	v, _ := convertTermInYearsE(term)
+	v, _ := convertTermInYearsE(term) //nolint:errcheck // intentional: documented deprecated silent-fallback shim, see convertPaymentOption above (OQ-1, #865/#1075)
 	return v
 }
 
@@ -107,7 +107,7 @@ func convertLookbackPeriodE(period string) (types.LookbackPeriodInDays, error) {
 // (owned by #865/#1075). New callers must use convertLookbackPeriodE and
 // propagate the error. See open-questions/fix-aws-converters.md OQ-1.
 func convertLookbackPeriod(period string) types.LookbackPeriodInDays {
-	v, _ := convertLookbackPeriodE(period)
+	v, _ := convertLookbackPeriodE(period) //nolint:errcheck // intentional: documented deprecated silent-fallback shim, see convertPaymentOption above (OQ-1, #865/#1075)
 	return v
 }
 
@@ -130,7 +130,7 @@ func convertSavingsPlansLookbackPeriod(period string) (types.LookbackPeriodInDay
 	return convertLookbackPeriodE(period)
 }
 
-// normalizeRegionName converts AWS region display names to region codes
+// normalizeRegionName converts AWS region display names to region codes.
 func normalizeRegionName(region string) string {
 	// AWS Cost Explorer sometimes returns region names like "US East (N. Virginia)"
 	// Convert these to standard region codes

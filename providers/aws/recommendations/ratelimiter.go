@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// throttleErrorCodes contains AWS API error codes that indicate throttling
+// throttleErrorCodes contains AWS API error codes that indicate throttling.
 var throttleErrorCodes = map[string]struct{}{
 	"Throttling":                             {},
 	"ThrottlingException":                    {},
@@ -25,7 +25,7 @@ var throttleErrorCodes = map[string]struct{}{
 	"EC2ThrottledException":                  {},
 }
 
-// RateLimiter provides rate limiting with exponential backoff
+// RateLimiter provides rate limiting with exponential backoff.
 type RateLimiter struct {
 	// Base delay between requests
 	baseDelay time.Duration
@@ -37,7 +37,7 @@ type RateLimiter struct {
 	maxRetries int
 }
 
-// NewRateLimiter creates a new rate limiter with default settings
+// NewRateLimiter creates a new rate limiter with default settings.
 func NewRateLimiter() *RateLimiter {
 	return &RateLimiter{
 		baseDelay:  1 * time.Second,
@@ -47,7 +47,7 @@ func NewRateLimiter() *RateLimiter {
 	}
 }
 
-// NewRateLimiterWithOptions creates a rate limiter with custom settings
+// NewRateLimiterWithOptions creates a rate limiter with custom settings.
 func NewRateLimiterWithOptions(baseDelay, maxDelay time.Duration, maxRetries int) *RateLimiter {
 	return &RateLimiter{
 		baseDelay:  baseDelay,
@@ -64,7 +64,7 @@ func (r *RateLimiter) newOperation() *RateLimiter {
 	return NewRateLimiterWithOptions(r.baseDelay, r.maxDelay, r.maxRetries)
 }
 
-// Wait implements exponential backoff delay
+// Wait implements exponential backoff delay.
 func (r *RateLimiter) Wait(ctx context.Context) error {
 	if r.retryCount == 0 {
 		// No delay for first attempt
@@ -121,7 +121,7 @@ func (r *RateLimiter) ShouldRetry(err error) bool {
 	return false
 }
 
-// isThrottleError checks if an error is an AWS throttling error
+// isThrottleError checks if an error is an AWS throttling error.
 func isThrottleError(err error) bool {
 	// Check for AWS API errors that implement ErrorCode()
 	type errorCoder interface {
@@ -140,12 +140,12 @@ func isThrottleError(err error) bool {
 		strings.Contains(errMsg, "TooManyRequests")
 }
 
-// Reset resets the retry counter
+// Reset resets the retry counter.
 func (r *RateLimiter) Reset() {
 	r.retryCount = 0
 }
 
-// GetRetryCount returns the current retry count
+// GetRetryCount returns the current retry count.
 func (r *RateLimiter) GetRetryCount() int {
 	return r.retryCount
 }

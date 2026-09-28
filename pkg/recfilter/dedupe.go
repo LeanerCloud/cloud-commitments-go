@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/provider"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
 )
 
 // DefaultDuplicateCheckLookbackHours is the default lookback period for checking recent purchases.

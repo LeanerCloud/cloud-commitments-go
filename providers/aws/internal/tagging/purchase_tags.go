@@ -14,7 +14,7 @@ package tagging
 import (
 	"time"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // Pair is a single tag key/value independent of any AWS SDK type.

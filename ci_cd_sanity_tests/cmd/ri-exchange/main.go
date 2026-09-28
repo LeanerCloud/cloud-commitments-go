@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/pkg/exchange"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/exchange"
 )
 
 // Output is the JSON-serialized result written to disk after a quote or

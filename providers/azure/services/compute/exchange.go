@@ -93,7 +93,7 @@ type ExchangeableReservationPager interface {
 
 // SetExchangeablePager injects a mock pager for unit tests. Tests call
 // this instead of providing real Azure credentials.
-func (c *ComputeClient) SetExchangeablePager(p ExchangeableReservationPager) {
+func (c *Client) SetExchangeablePager(p ExchangeableReservationPager) {
 	c.exchangeablePager = p
 }
 
@@ -109,7 +109,7 @@ func (c *ComputeClient) SetExchangeablePager(p ExchangeableReservationPager) {
 // which span subscriptions.
 //
 // Returns an empty non-nil slice when no eligible reservations are found.
-func (c *ComputeClient) ListExchangeableReservations(ctx context.Context) ([]ExchangeableReservation, error) {
+func (c *Client) ListExchangeableReservations(ctx context.Context) ([]ExchangeableReservation, error) {
 	pager, err := c.createExchangeablePager()
 	if err != nil {
 		return nil, fmt.Errorf("compute: list exchangeable reservations: create pager: %w", err)
@@ -120,7 +120,7 @@ func (c *ComputeClient) ListExchangeableReservations(ctx context.Context) ([]Exc
 // createExchangeablePager returns an injected mock pager when one has
 // been set via SetExchangeablePager, or constructs a real
 // armreservations.ReservationClient pager otherwise.
-func (c *ComputeClient) createExchangeablePager() (ExchangeableReservationPager, error) {
+func (c *Client) createExchangeablePager() (ExchangeableReservationPager, error) {
 	if c.exchangeablePager != nil {
 		return c.exchangeablePager, nil
 	}
@@ -135,14 +135,14 @@ func (c *ComputeClient) createExchangeablePager() (ExchangeableReservationPager,
 // eligibility filter. Any pagination error is returned immediately
 // (partial results are unsafe -- a missing reservation could lead to a
 // duplicate exchange attempt upstream).
-func (c *ComputeClient) collectExchangeableReservations(ctx context.Context, pager ExchangeableReservationPager) ([]ExchangeableReservation, error) {
+func (c *Client) collectExchangeableReservations(ctx context.Context, pager ExchangeableReservationPager) ([]ExchangeableReservation, error) {
 	result := make([]ExchangeableReservation, 0)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("compute: list exchangeable reservations: page: %w", err)
 		}
-		for _, item := range page.ListResult.Value {
+		for _, item := range page.Value {
 			r := convertToExchangeableReservation(item)
 			if r != nil {
 				result = append(result, *r)
@@ -172,32 +172,47 @@ func isExchangeEligible(item *armreservations.ReservationResponse) bool {
 	return props.InstanceFlexibility != nil && *props.InstanceFlexibility == armreservations.InstanceFlexibilityOn
 }
 
+// reservationFields holds the optional pointer fields read off a
+// ReservationResponse and its Properties, each defaulted to its zero value
+// when the source pointer is nil. Grouped into a struct (rather than 7
+// positional returns) per gocritic's tooManyResultsChecker.
+type reservationFields struct {
+	id          string
+	sku         string
+	region      string
+	term        string
+	displayName string
+	quantity    int32
+	expiryDate  time.Time
+}
+
 // extractReservationFields reads the optional pointer fields from item and its
 // Properties, returning safe zero values for any nil pointers.
-func extractReservationFields(item *armreservations.ReservationResponse) (id, sku, region, term, displayName string, quantity int32, expiryDate time.Time) {
+func extractReservationFields(item *armreservations.ReservationResponse) reservationFields {
 	props := item.Properties // guaranteed non-nil by isExchangeEligible
+	var f reservationFields
 	if item.ID != nil {
-		id = *item.ID
+		f.id = *item.ID
 	}
 	if item.SKU != nil && item.SKU.Name != nil {
-		sku = *item.SKU.Name
+		f.sku = *item.SKU.Name
 	}
 	if item.Location != nil {
-		region = *item.Location
+		f.region = *item.Location
 	}
 	if props.Quantity != nil {
-		quantity = *props.Quantity
+		f.quantity = *props.Quantity
 	}
 	if props.Term != nil {
-		term = string(*props.Term)
+		f.term = string(*props.Term)
 	}
 	if props.ExpiryDate != nil {
-		expiryDate = *props.ExpiryDate
+		f.expiryDate = *props.ExpiryDate
 	}
 	if props.DisplayName != nil {
-		displayName = *props.DisplayName
+		f.displayName = *props.DisplayName
 	}
-	return
+	return f
 }
 
 // convertToExchangeableReservation converts a single armreservations item
@@ -207,33 +222,29 @@ func convertToExchangeableReservation(item *armreservations.ReservationResponse)
 	if !isExchangeEligible(item) {
 		return nil
 	}
-	id, sku, region, term, displayName, quantity, expiryDate := extractReservationFields(item)
-	orderID := parseReservationOrderID(id)
+	f := extractReservationFields(item)
+	orderID := parseReservationOrderID(f.id)
 	// parseReservationOrderID returns "" for IDs that do not contain the expected
 	// "/reservationOrders/" segment (malformed or unexpected format). Reservations
 	// with an empty order ID are still returned here so the caller can include them
 	// in the inventory view, but callers MUST filter out empty-order-ID entries
 	// before initiating an exchange operation -- the Azure exchange API requires a
 	// non-empty reservationOrderId.
-	// Read directly rather than through extractReservationFields, which
-	// already returns the maximum number of positional results that stays
-	// readable. Absent stays "" so callers can distinguish "Azure did not
-	// report an owner" from any real scope.
 	var billingScopeID string
 	if item.Properties.BillingScopeID != nil {
 		billingScopeID = *item.Properties.BillingScopeID
 	}
 	return &ExchangeableReservation{
 		ReservationOrderID:  orderID,
-		ReservationID:       id,
+		ReservationID:       f.id,
 		BillingScopeID:      billingScopeID,
-		SKU:                 sku,
-		Quantity:            quantity,
-		Region:              region,
-		Term:                term,
-		ExpiryDate:          expiryDate,
+		SKU:                 f.sku,
+		Quantity:            f.quantity,
+		Region:              f.region,
+		Term:                f.term,
+		ExpiryDate:          f.expiryDate,
 		InstanceFlexibility: string(armreservations.InstanceFlexibilityOn),
-		DisplayName:         displayName,
+		DisplayName:         f.displayName,
 	}
 }
 

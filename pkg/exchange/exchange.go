@@ -17,6 +17,8 @@ import (
 )
 
 // ExchangeQuoteSummary is a small, stable summary we can log/guard on.
+//
+//nolint:revive // stutters, but cloud-commitments-platform references this type through pkg's pinned go.mod pseudo-version (not workspace-resolved under GOWORK=off); renaming here without a coordinated go.mod bump would break that build mode
 type ExchangeQuoteSummary struct {
 	IsValidExchange         bool
 	ValidationFailureReason string
@@ -61,6 +63,8 @@ type TargetConfig struct {
 }
 
 // ExchangeQuoteRequest holds parameters for requesting an exchange quote.
+//
+//nolint:revive // stutters, but ci_cd_sanity_tests references this type through pkg's pinned go.mod pseudo-version (not workspace-resolved under GOWORK=off); renaming here without a coordinated go.mod bump would break that build mode
 type ExchangeQuoteRequest struct {
 	Region          string
 	ExpectedAccount string // optional safety check
@@ -83,6 +87,8 @@ type ExchangeQuoteRequest struct {
 }
 
 // ExchangeExecuteRequest holds parameters for executing an exchange.
+//
+//nolint:revive // stutters, but ci_cd_sanity_tests references this type through pkg's pinned go.mod pseudo-version (not workspace-resolved under GOWORK=off); renaming here without a coordinated go.mod bump would break that build mode
 type ExchangeExecuteRequest struct {
 	Region          string
 	ExpectedAccount string // optional safety check
@@ -164,31 +170,31 @@ type EC2ExchangeAPI interface {
 	AcceptReservedInstancesExchangeQuote(ctx context.Context, params *ec2.AcceptReservedInstancesExchangeQuoteInput, optFns ...func(*ec2.Options)) (*ec2.AcceptReservedInstancesExchangeQuoteOutput, error)
 }
 
-// ExchangeClient wraps an EC2ExchangeAPI for dependency-injected exchange
+// Client wraps an EC2ExchangeAPI for dependency-injected exchange
 // operations. Use NewExchangeClient to construct one.
-type ExchangeClient struct {
+type Client struct {
 	ec2 EC2ExchangeAPI
 }
 
-// NewExchangeClient creates an ExchangeClient from an AWS config.
-func NewExchangeClient(cfg sdkaws.Config) *ExchangeClient {
-	return &ExchangeClient{ec2: ec2.NewFromConfig(cfg)}
+// NewExchangeClient creates a Client from an AWS config.
+func NewExchangeClient(cfg sdkaws.Config) *Client {
+	return &Client{ec2: ec2.NewFromConfig(cfg)}
 }
 
-// NewExchangeClientFromAPI creates an ExchangeClient from an existing
+// NewExchangeClientFromAPI creates a Client from an existing
 // EC2ExchangeAPI implementation (useful for testing).
-func NewExchangeClientFromAPI(api EC2ExchangeAPI) *ExchangeClient {
-	return &ExchangeClient{ec2: api}
+func NewExchangeClientFromAPI(api EC2ExchangeAPI) *Client {
+	return &Client{ec2: api}
 }
 
 // GetQuote retrieves an exchange quote using the injected EC2 client.
-func (c *ExchangeClient) GetQuote(ctx context.Context, req ExchangeQuoteRequest) (*ExchangeQuoteSummary, error) {
+func (c *Client) GetQuote(ctx context.Context, req ExchangeQuoteRequest) (*ExchangeQuoteSummary, error) {
 	return getQuoteWithAPI(ctx, c.ec2, req)
 }
 
 // Execute performs a convertible RI exchange with a spend-cap guardrail
 // using the injected EC2 client.
-func (c *ExchangeClient) Execute(ctx context.Context, req ExchangeExecuteRequest) (string, *ExchangeQuoteSummary, error) {
+func (c *Client) Execute(ctx context.Context, req ExchangeExecuteRequest) (string, *ExchangeQuoteSummary, error) {
 	return executeWithAPI(ctx, c.ec2, req)
 }
 
@@ -369,8 +375,8 @@ func executeWithAPI(ctx context.Context, client EC2ExchangeAPI, req ExchangeExec
 	if err != nil {
 		return "", nil, err
 	}
-	if err := checkInitialQuote(q, req.MaxPaymentDueUSD); err != nil {
-		return "", q, err
+	if checkErr := checkInitialQuote(q, req.MaxPaymentDueUSD); checkErr != nil {
+		return "", q, checkErr
 	}
 
 	// Re-quote immediately before accepting to narrow the window between quote and
@@ -382,8 +388,8 @@ func executeWithAPI(ctx context.Context, client EC2ExchangeAPI, req ExchangeExec
 	if err != nil {
 		return "", q, fmt.Errorf("pre-accept re-quote failed: %w", err)
 	}
-	if err := checkReQuote(freshQ, req.MaxPaymentDueUSD); err != nil {
-		return "", freshQ, err
+	if checkErr := checkReQuote(freshQ, req.MaxPaymentDueUSD); checkErr != nil {
+		return "", freshQ, checkErr
 	}
 
 	out, err := client.AcceptReservedInstancesExchangeQuote(ctx, &ec2.AcceptReservedInstancesExchangeQuoteInput{

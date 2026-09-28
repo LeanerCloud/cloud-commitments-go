@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"cloud.google.com/go/compute/apiv1"
+	compute "cloud.google.com/go/compute/apiv1"
 	"cloud.google.com/go/compute/apiv1/computepb"
-	"cloud.google.com/go/recommender/apiv1"
+	recommender "cloud.google.com/go/recommender/apiv1"
 	"cloud.google.com/go/recommender/apiv1/recommenderpb"
 	gax "github.com/googleapis/gax-go/v2"
 	"google.golang.org/api/cloudbilling/v1"
@@ -22,8 +22,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/retry"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/retry"
 )
 
 // maxRecsPages caps GCP Recommender API iteration to avoid burning a Lambda
@@ -206,52 +206,52 @@ func termYearsFromTerm(term string) int {
 	}
 }
 
-// CommitmentsService interface for commitments operations (enables mocking)
+// CommitmentsService interface for commitments operations (enables mocking).
 type CommitmentsService interface {
 	List(ctx context.Context, req *computepb.ListRegionCommitmentsRequest) CommitmentsIterator
 	Insert(ctx context.Context, req *computepb.InsertRegionCommitmentRequest) (CommitmentsOperation, error)
 	Close() error
 }
 
-// CommitmentsIterator interface for commitments iteration (enables mocking)
+// CommitmentsIterator interface for commitments iteration (enables mocking).
 type CommitmentsIterator interface {
 	Next() (*computepb.Commitment, error)
 }
 
-// CommitmentsOperation interface for commitment operations (enables mocking)
+// CommitmentsOperation interface for commitment operations (enables mocking).
 type CommitmentsOperation interface {
 	Wait(ctx context.Context, opts ...gax.CallOption) error
 }
 
-// MachineTypesService interface for machine types operations (enables mocking)
+// MachineTypesService interface for machine types operations (enables mocking).
 type MachineTypesService interface {
 	List(ctx context.Context, req *computepb.ListMachineTypesRequest) MachineTypesIterator
 	Close() error
 }
 
-// MachineTypesIterator interface for machine types iteration (enables mocking)
+// MachineTypesIterator interface for machine types iteration (enables mocking).
 type MachineTypesIterator interface {
 	Next() (*computepb.MachineType, error)
 }
 
-// BillingService interface for billing operations (enables mocking)
+// BillingService interface for billing operations (enables mocking).
 type BillingService interface {
 	ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error)
 }
 
-// RecommenderIterator interface for recommender iteration (enables mocking)
+// RecommenderIterator interface for recommender iteration (enables mocking).
 type RecommenderIterator interface {
 	Next() (*recommenderpb.Recommendation, error)
 }
 
-// RecommenderClient interface for recommender operations (enables mocking)
+// RecommenderClient interface for recommender operations (enables mocking).
 type RecommenderClient interface {
 	ListRecommendations(ctx context.Context, req *recommenderpb.ListRecommendationsRequest) RecommenderIterator
 	Close() error
 }
 
-// ComputeEngineClient handles GCP Compute Engine Committed Use Discounts
-type ComputeEngineClient struct {
+// Client handles GCP Compute Engine Committed Use Discounts.
+type Client struct {
 	ctx                 context.Context
 	projectID           string
 	region              string
@@ -262,9 +262,9 @@ type ComputeEngineClient struct {
 	recommenderClient   RecommenderClient
 }
 
-// NewClient creates a new GCP Compute Engine client
-func NewClient(ctx context.Context, projectID, region string, opts ...option.ClientOption) (*ComputeEngineClient, error) {
-	return &ComputeEngineClient{
+// NewClient creates a new GCP Compute Engine client.
+func NewClient(ctx context.Context, projectID, region string, opts ...option.ClientOption) (*Client, error) {
+	return &Client{
 		ctx:        ctx,
 		projectID:  projectID,
 		region:     region,
@@ -272,27 +272,27 @@ func NewClient(ctx context.Context, projectID, region string, opts ...option.Cli
 	}, nil
 }
 
-// SetCommitmentsService sets the commitments service (for testing)
-func (c *ComputeEngineClient) SetCommitmentsService(svc CommitmentsService) {
+// SetCommitmentsService sets the commitments service (for testing).
+func (c *Client) SetCommitmentsService(svc CommitmentsService) {
 	c.commitmentsService = svc
 }
 
-// SetMachineTypesService sets the machine types service (for testing)
-func (c *ComputeEngineClient) SetMachineTypesService(svc MachineTypesService) {
+// SetMachineTypesService sets the machine types service (for testing).
+func (c *Client) SetMachineTypesService(svc MachineTypesService) {
 	c.machineTypesService = svc
 }
 
-// SetBillingService sets the billing service (for testing)
-func (c *ComputeEngineClient) SetBillingService(svc BillingService) {
+// SetBillingService sets the billing service (for testing).
+func (c *Client) SetBillingService(svc BillingService) {
 	c.billingService = svc
 }
 
-// SetRecommenderClient sets the recommender client (for testing)
-func (c *ComputeEngineClient) SetRecommenderClient(client RecommenderClient) {
+// SetRecommenderClient sets the recommender client (for testing).
+func (c *Client) SetRecommenderClient(client RecommenderClient) {
 	c.recommenderClient = client
 }
 
-// realCommitmentsService wraps the real compute.RegionCommitmentsClient
+// realCommitmentsService wraps the real compute.RegionCommitmentsClient.
 type realCommitmentsService struct {
 	client *compute.RegionCommitmentsClient
 }
@@ -309,7 +309,7 @@ func (r *realCommitmentsService) Close() error {
 	return r.client.Close()
 }
 
-// realMachineTypesService wraps the real compute.MachineTypesClient
+// realMachineTypesService wraps the real compute.MachineTypesClient.
 type realMachineTypesService struct {
 	client *compute.MachineTypesClient
 }
@@ -322,7 +322,7 @@ func (r *realMachineTypesService) Close() error {
 	return r.client.Close()
 }
 
-// realBillingService wraps the real cloudbilling.APIService
+// realBillingService wraps the real cloudbilling.APIService.
 type realBillingService struct {
 	service *cloudbilling.APIService
 }
@@ -331,7 +331,7 @@ func (r *realBillingService) ListSKUs(serviceID string) (*cloudbilling.ListSkusR
 	return r.service.Services.Skus.List(serviceID).Do()
 }
 
-// realRecommenderIterator wraps the real recommender iterator
+// realRecommenderIterator wraps the real recommender iterator.
 type realRecommenderIterator struct {
 	it *recommender.RecommendationIterator
 }
@@ -340,7 +340,7 @@ func (r *realRecommenderIterator) Next() (*recommenderpb.Recommendation, error) 
 	return r.it.Next()
 }
 
-// realRecommenderClient wraps the real recommender client
+// realRecommenderClient wraps the real recommender client.
 type realRecommenderClient struct {
 	client *recommender.Client
 }
@@ -353,19 +353,19 @@ func (r *realRecommenderClient) Close() error {
 	return r.client.Close()
 }
 
-// GetServiceType returns the service type
-func (c *ComputeEngineClient) GetServiceType() common.ServiceType {
+// GetServiceType returns the service type.
+func (c *Client) GetServiceType() common.ServiceType {
 	return common.ServiceCompute
 }
 
-// GetRegion returns the region
-func (c *ComputeEngineClient) GetRegion() string {
+// GetRegion returns the region.
+func (c *Client) GetRegion() string {
 	return c.region
 }
 
 // resolveRecommenderClient returns the injected client (for testing) or creates
 // a new one from the stored options.
-func (c *ComputeEngineClient) resolveRecommenderClient(ctx context.Context) (RecommenderClient, error) {
+func (c *Client) resolveRecommenderClient(ctx context.Context) (RecommenderClient, error) {
 	if c.recommenderClient != nil {
 		return c.recommenderClient, nil
 	}
@@ -376,8 +376,8 @@ func (c *ComputeEngineClient) resolveRecommenderClient(ctx context.Context) (Rec
 	return &realRecommenderClient{client: client}, nil
 }
 
-// GetRecommendations gets CUD recommendations from GCP Recommender API
-func (c *ComputeEngineClient) GetRecommendations(ctx context.Context, p *common.RecommendationParams) ([]common.Recommendation, error) {
+// GetRecommendations gets CUD recommendations from GCP Recommender API.
+func (c *Client) GetRecommendations(ctx context.Context, p *common.RecommendationParams) ([]common.Recommendation, error) {
 	if p == nil {
 		return nil, fmt.Errorf("params cannot be nil")
 	}
@@ -401,13 +401,13 @@ func (c *ComputeEngineClient) GetRecommendations(ctx context.Context, p *common.
 	it := recClient.ListRecommendations(ctx, req)
 	for pageIdx := 0; ; pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxRecsPages {
 			return nil, fmt.Errorf("computeengine: GetRecommendations iteration cap (%d items) reached", maxRecsPages)
 		}
 		rec, err := it.Next()
-		if err == iterator.Done {
+		if errors.Is(err, iterator.Done) {
 			break
 		}
 		if err != nil {
@@ -435,8 +435,8 @@ func (c *ComputeEngineClient) GetRecommendations(ctx context.Context, p *common.
 	return recommendations, nil
 }
 
-// GetExistingCommitments retrieves existing Compute Engine CUDs
-func (c *ComputeEngineClient) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
+// GetExistingCommitments retrieves existing Compute Engine CUDs.
+func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	svc, err := c.createCommitmentsService(ctx)
 	if err != nil {
 		return nil, err
@@ -451,8 +451,8 @@ func (c *ComputeEngineClient) GetExistingCommitments(ctx context.Context) ([]com
 	return c.collectCommitments(ctx, svc, req)
 }
 
-// createCommitmentsService creates a commitments service client
-func (c *ComputeEngineClient) createCommitmentsService(ctx context.Context) (CommitmentsService, error) {
+// createCommitmentsService creates a commitments service client.
+func (c *Client) createCommitmentsService(ctx context.Context) (CommitmentsService, error) {
 	// Use injected service if available (for testing)
 	if c.commitmentsService != nil {
 		return c.commitmentsService, nil
@@ -466,20 +466,20 @@ func (c *ComputeEngineClient) createCommitmentsService(ctx context.Context) (Com
 	return &realCommitmentsService{client: client}, nil
 }
 
-// collectCommitments iterates through commitments and converts them to common format
-func (c *ComputeEngineClient) collectCommitments(ctx context.Context, svc CommitmentsService, req *computepb.ListRegionCommitmentsRequest) ([]common.Commitment, error) {
+// collectCommitments iterates through commitments and converts them to common format.
+func (c *Client) collectCommitments(ctx context.Context, svc CommitmentsService, req *computepb.ListRegionCommitmentsRequest) ([]common.Commitment, error) {
 	commitments := make([]common.Commitment, 0)
 
 	it := svc.List(ctx, req)
 	for pageIdx := 0; ; pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxCommitmentsPages {
 			return nil, fmt.Errorf("computeengine: GetExistingCommitments iteration cap (%d items) reached", maxCommitmentsPages)
 		}
 		commitment, err := it.Next()
-		if err == iterator.Done {
+		if errors.Is(err, iterator.Done) {
 			break
 		}
 		if err != nil {
@@ -497,11 +497,11 @@ func (c *ComputeEngineClient) collectCommitments(ctx context.Context, svc Commit
 	return commitments, nil
 }
 
-// convertGCPCommitmentToCommon converts a GCP commitment to common format
-func (c *ComputeEngineClient) convertGCPCommitmentToCommon(commitment *computepb.Commitment) common.Commitment {
-	status := "unknown"
+// convertGCPCommitmentToCommon converts a GCP commitment to common format.
+func (c *Client) convertGCPCommitmentToCommon(commitment *computepb.Commitment) common.Commitment {
+	commitmentStatus := "unknown"
 	if commitment.Status != nil {
-		status = strings.ToLower(*commitment.Status)
+		commitmentStatus = strings.ToLower(*commitment.Status)
 	}
 
 	// All commitment types (GENERAL_PURPOSE, ACCELERATOR) map to CommitmentCUD
@@ -517,7 +517,7 @@ func (c *ComputeEngineClient) convertGCPCommitmentToCommon(commitment *computepb
 		Service:        common.ServiceCompute,
 		Region:         c.region,
 		CommitmentID:   *commitment.Name,
-		State:          status,
+		State:          commitmentStatus,
 	}
 
 	// Extract resource type from commitment resources
@@ -561,7 +561,8 @@ func GroupCommitments(recs []common.Recommendation) []CommitmentRequest {
 	}
 	groups := make(map[key]*agg)
 
-	for _, rec := range recs {
+	for i := range recs {
+		rec := &recs[i]
 		if rec.Service != common.ServiceCompute || rec.Provider != common.ProviderGCP {
 			continue
 		}
@@ -570,7 +571,7 @@ func GroupCommitments(recs []common.Recommendation) []CommitmentRequest {
 			log.Printf("GroupCommitments: skipping recommendation with unrecognized term %q: %v", rec.Term, err)
 			continue
 		}
-		recMemMB, err := memoryMBFromDetails(rec)
+		recMemMB, err := memoryMBFromDetails(*rec)
 		if err != nil {
 			log.Printf("GroupCommitments: skipping recommendation missing memory amount: %v", err)
 			continue
@@ -665,8 +666,8 @@ func unwrapNonSentinel(err error) error {
 	return nil
 }
 
-// PurchaseCommitment purchases a Compute Engine CUD
-func (c *ComputeEngineClient) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
+// PurchaseCommitment purchases a Compute Engine CUD.
+func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
 	result := common.PurchaseResult{
 		Recommendation: rec,
 		DryRun:         false,
@@ -755,7 +756,7 @@ func (c *ComputeEngineClient) PurchaseCommitment(ctx context.Context, rec common
 // An empty token preserves the prior non-idempotent timestamp-based name (the
 // CLI path, which has no owning execution). The token is masked in logs via
 // common.MaskToken and never logged verbatim.
-func (c *ComputeEngineClient) buildInsertRequest(rec common.Recommendation, opts common.PurchaseOptions) (*computepb.InsertRegionCommitmentRequest, string, error) {
+func (c *Client) buildInsertRequest(rec common.Recommendation, opts common.PurchaseOptions) (*computepb.InsertRegionCommitmentRequest, string, error) {
 	if rec.Count <= 0 {
 		return nil, "", fmt.Errorf("buildInsertRequest: rec.Count must be > 0 (got %d); a zero-vCPU commitment is invalid (issue #1022)", rec.Count)
 	}
@@ -835,8 +836,8 @@ func (c *ComputeEngineClient) buildInsertRequest(rec common.Recommendation, opts
 	return insertReq, commitmentName, nil
 }
 
-// ValidateOffering validates that a machine type exists
-func (c *ComputeEngineClient) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
+// ValidateOffering validates that a machine type exists.
+func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
 	validTypes, err := c.GetValidResourceTypes(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get valid machine types: %w", err)
@@ -851,8 +852,8 @@ func (c *ComputeEngineClient) ValidateOffering(ctx context.Context, rec common.R
 	return fmt.Errorf("invalid GCP machine type: %s", rec.ResourceType)
 }
 
-// GetOfferingDetails retrieves CUD offering details from GCP Billing API
-func (c *ComputeEngineClient) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
+// GetOfferingDetails retrieves CUD offering details from GCP Billing API.
+func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	termYears := 1
 	if rec.Term == "3yr" || rec.Term == "3" {
 		termYears = 3
@@ -890,8 +891,8 @@ func (c *ComputeEngineClient) GetOfferingDetails(ctx context.Context, rec common
 	}, nil
 }
 
-// GetValidResourceTypes returns valid machine types from GCP Compute API
-func (c *ComputeEngineClient) GetValidResourceTypes(ctx context.Context) ([]string, error) {
+// GetValidResourceTypes returns valid machine types from GCP Compute API.
+func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	// Use injected service if available (for testing)
 	var svc MachineTypesService
 	if c.machineTypesService != nil {
@@ -915,13 +916,13 @@ func (c *ComputeEngineClient) GetValidResourceTypes(ctx context.Context) ([]stri
 
 	for itemIdx := 0; ; itemIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if itemIdx >= maxMachineTypeItems {
 			return nil, fmt.Errorf("computeengine: GetValidResourceTypes iteration cap (%d items) reached", maxMachineTypeItems)
 		}
 		machineType, err := it.Next()
-		if err == iterator.Done {
+		if errors.Is(err, iterator.Done) {
 			break
 		}
 		if err != nil {
@@ -940,7 +941,7 @@ func (c *ComputeEngineClient) GetValidResourceTypes(ctx context.Context) ([]stri
 	return machineTypes, nil
 }
 
-// ComputePricing contains pricing information for Compute Engine
+// ComputePricing contains pricing information for Compute Engine.
 type ComputePricing struct {
 	HourlyRate        float64
 	CommitmentPrice   float64
@@ -952,7 +953,7 @@ type ComputePricing struct {
 // getComputePricing gets pricing from GCP Cloud Billing Catalog API.
 // It returns an error when commitment pricing is absent from the catalog rather
 // than fabricating a price from a hardcoded discount factor (issue #1020).
-func (c *ComputeEngineClient) getComputePricing(ctx context.Context, machineType, region string, termYears int) (*ComputePricing, error) {
+func (c *Client) getComputePricing(ctx context.Context, machineType, region string, termYears int) (*ComputePricing, error) {
 	svc, err := c.getOrCreateBillingService(ctx)
 	if err != nil {
 		return nil, err
@@ -983,8 +984,8 @@ func (c *ComputeEngineClient) getComputePricing(ctx context.Context, machineType
 	}, nil
 }
 
-// getOrCreateBillingService returns the billing service, creating it if needed
-func (c *ComputeEngineClient) getOrCreateBillingService(ctx context.Context) (BillingService, error) {
+// getOrCreateBillingService returns the billing service, creating it if needed.
+func (c *Client) getOrCreateBillingService(ctx context.Context) (BillingService, error) {
 	if c.billingService != nil {
 		return c.billingService, nil
 	}
@@ -997,7 +998,7 @@ func (c *ComputeEngineClient) getOrCreateBillingService(ctx context.Context) (Bi
 	return &realBillingService{service: service}, nil
 }
 
-// extractComputePricingFromSKUs extracts on-demand and commitment pricing from SKU list
+// extractComputePricingFromSKUs extracts on-demand and commitment pricing from SKU list.
 func extractComputePricingFromSKUs(skus []*cloudbilling.Sku, machineType, region string) (onDemand, commitment float64, currency string) {
 	currency = "USD"
 
@@ -1025,8 +1026,8 @@ func extractComputePricingFromSKUs(skus []*cloudbilling.Sku, machineType, region
 	return onDemand, commitment, currency
 }
 
-// extractComputePriceFromSKU extracts the unit price from a SKU
-func extractComputePriceFromSKU(sku *cloudbilling.Sku) (float64, string) {
+// extractComputePriceFromSKU extracts the unit price from a SKU.
+func extractComputePriceFromSKU(sku *cloudbilling.Sku) (price float64, currency string) {
 	if len(sku.PricingInfo) == 0 {
 		return 0, ""
 	}
@@ -1041,17 +1042,17 @@ func extractComputePriceFromSKU(sku *cloudbilling.Sku) (float64, string) {
 		return 0, ""
 	}
 
-	price := float64(rate.UnitPrice.Units) + float64(rate.UnitPrice.Nanos)/1e9
+	price = float64(rate.UnitPrice.Units) + float64(rate.UnitPrice.Nanos)/1e9
 	return price, rate.UnitPrice.CurrencyCode
 }
 
-// calculateComputeSavingsPercentage calculates the savings percentage
+// calculateComputeSavingsPercentage calculates the savings percentage.
 func calculateComputeSavingsPercentage(onDemandPrice, hoursInTerm, commitmentPrice float64) float64 {
 	onDemandTotal := onDemandPrice * hoursInTerm
 	return ((onDemandTotal - commitmentPrice) / onDemandTotal) * 100
 }
 
-// skuMatchesMachineType checks if a SKU matches the machine type and region
+// skuMatchesMachineType checks if a SKU matches the machine type and region.
 func skuMatchesMachineType(sku *cloudbilling.Sku, machineType, region string) bool {
 	// Check if the SKU description contains the machine type
 	if !strings.Contains(strings.ToLower(sku.Description), strings.ToLower(machineType)) {
@@ -1078,7 +1079,7 @@ func skuMatchesMachineType(sku *cloudbilling.Sku, machineType, region string) bo
 // EstimatedSavings from the Recommender payload is the authoritative savings signal.
 // Returns nil when the params.Term is unrecognized so the caller skips an
 // unroutable recommendation rather than queuing a purchase with an invalid plan.
-func (c *ComputeEngineClient) convertGCPRecommendation(ctx context.Context, gcpRec *recommenderpb.Recommendation, params common.RecommendationParams) *common.Recommendation {
+func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommenderpb.Recommendation, params common.RecommendationParams) *common.Recommendation {
 	// GCP CUDs are billed monthly with no upfront option; force "monthly"
 	// unconditionally and log any non-monthly input so scheduler
 	// misconfiguration is visible. Supersedes the monthly stamp introduced
@@ -1150,7 +1151,7 @@ func (c *ComputeEngineClient) convertGCPRecommendation(ctx context.Context, gcpR
 // the gocyclo gate. A missing or invalid pricing entry is logged but does not
 // discard the recommendation -- the Recommender-derived EstimatedSavings is
 // still the authoritative savings signal (issue #1022 C2).
-func (c *ComputeEngineClient) enrichRecWithPricing(ctx context.Context, rec *common.Recommendation) {
+func (c *Client) enrichRecWithPricing(ctx context.Context, rec *common.Recommendation) {
 	if rec.ResourceType == "" {
 		return
 	}
@@ -1237,7 +1238,7 @@ func machineTypeFromResourcePath(resource string) (string, bool) {
 	return machineType, true
 }
 
-// extractCostImpactFromRecommendation extracts the cost impact from a GCP recommendation
+// extractCostImpactFromRecommendation extracts the cost impact from a GCP recommendation.
 func extractCostImpactFromRecommendation(gcpRec *recommenderpb.Recommendation, rec *common.Recommendation) {
 	if gcpRec.PrimaryImpact == nil {
 		return
@@ -1422,7 +1423,7 @@ func idempotentCommitmentName(token string) string {
 	return "cud-" + t
 }
 
-// Helper functions
+// Helper functions.
 func stringPtr(s string) *string {
 	return &s
 }

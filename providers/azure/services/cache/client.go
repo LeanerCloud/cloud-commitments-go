@@ -18,12 +18,12 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/redis/armredis/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/logging"
-	"github.com/LeanerCloud/CUDly/providers/azure/internal/httpclient"
-	"github.com/LeanerCloud/CUDly/providers/azure/internal/pricing"
-	azrecs "github.com/LeanerCloud/CUDly/providers/azure/internal/recommendations"
-	"github.com/LeanerCloud/CUDly/providers/azure/services/internal/reservations"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/httpclient"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/pricing"
+	azrecs "github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/recommendations"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
 )
 
 // maxRecsPages caps Consumption API recommendation pagination.
@@ -35,7 +35,7 @@ const maxReservationsPages = 50
 // maxCachesPages caps Redis cache list pagination.
 const maxCachesPages = 20
 
-// redisSKUEntry holds the SKU-catalogue-derived fields the converter
+// redisSKUEntry holds the SKU-catalog-derived fields the converter
 // wants for each Redis SKU. Sourced from the cache's Properties:
 //   - shardCount: Properties.ShardCount (Premium-tier clustered caches).
 //
@@ -45,31 +45,31 @@ type redisSKUEntry struct {
 	shardCount int
 }
 
-// HTTPClient interface for HTTP operations (enables mocking)
+// HTTPClient interface for HTTP operations (enables mocking).
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-// RecommendationsPager interface for recommendations pager (enables mocking)
+// RecommendationsPager interface for recommendations pager (enables mocking).
 type RecommendationsPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armconsumption.ReservationRecommendationsClientListResponse, error)
 }
 
-// ReservationsDetailsPager interface for reservations details pager (enables mocking)
+// ReservationsDetailsPager interface for reservations details pager (enables mocking).
 type ReservationsDetailsPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armconsumption.ReservationsDetailsClientListResponse, error)
 }
 
-// RedisCachesPager interface for Redis caches pager (enables mocking)
+// RedisCachesPager interface for Redis caches pager (enables mocking).
 type RedisCachesPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armredis.ClientListBySubscriptionResponse, error)
 }
 
-// CacheClient handles Azure Cache for Redis Reserved Capacity
-type CacheClient struct {
+// Client handles Azure Cache for Redis Reserved Capacity.
+type Client struct {
 	cred                 azcore.TokenCredential
 	subscriptionID       string
 	region               string
@@ -78,7 +78,7 @@ type CacheClient struct {
 	reservationsPager    ReservationsDetailsPager
 	redisCachesPager     RedisCachesPager
 
-	// Lazy SKU catalogue cache. armredis exposes no per-region "list all
+	// Lazy SKU catalog cache. armredis exposes no per-region "list all
 	// possible SKUs" surface, so we derive shard counts from the existing
 	// caches in the subscription (NewListBySubscriptionPager). Fetched
 	// ONCE per client lifetime; subsequent converter calls in the same
@@ -89,9 +89,9 @@ type CacheClient struct {
 	skuCacheMap  map[string]redisSKUEntry
 }
 
-// NewClient creates a new Azure Cache client
-func NewClient(cred azcore.TokenCredential, subscriptionID, region string) *CacheClient {
-	return &CacheClient{
+// NewClient creates a new Azure Cache client.
+func NewClient(cred azcore.TokenCredential, subscriptionID, region string) *Client {
+	return &Client{
 		cred:           cred,
 		subscriptionID: subscriptionID,
 		region:         region,
@@ -99,9 +99,9 @@ func NewClient(cred azcore.TokenCredential, subscriptionID, region string) *Cach
 	}
 }
 
-// NewClientWithHTTP creates a new Azure Cache client with a custom HTTP client (for testing)
-func NewClientWithHTTP(cred azcore.TokenCredential, subscriptionID, region string, httpClient HTTPClient) *CacheClient {
-	return &CacheClient{
+// NewClientWithHTTP creates a new Azure Cache client with a custom HTTP client (for testing).
+func NewClientWithHTTP(cred azcore.TokenCredential, subscriptionID, region string, httpClient HTTPClient) *Client {
+	return &Client{
 		cred:           cred,
 		subscriptionID: subscriptionID,
 		region:         region,
@@ -109,36 +109,36 @@ func NewClientWithHTTP(cred azcore.TokenCredential, subscriptionID, region strin
 	}
 }
 
-// SetRecommendationsPager sets the recommendations pager (for testing)
-func (c *CacheClient) SetRecommendationsPager(pager RecommendationsPager) {
+// SetRecommendationsPager sets the recommendations pager (for testing).
+func (c *Client) SetRecommendationsPager(pager RecommendationsPager) {
 	c.recommendationsPager = pager
 }
 
-// SetReservationsPager sets the reservations pager (for testing)
-func (c *CacheClient) SetReservationsPager(pager ReservationsDetailsPager) {
+// SetReservationsPager sets the reservations pager (for testing).
+func (c *Client) SetReservationsPager(pager ReservationsDetailsPager) {
 	c.reservationsPager = pager
 }
 
-// SetRedisCachesPager sets the Redis caches pager (for testing)
-func (c *CacheClient) SetRedisCachesPager(pager RedisCachesPager) {
+// SetRedisCachesPager sets the Redis caches pager (for testing).
+func (c *Client) SetRedisCachesPager(pager RedisCachesPager) {
 	c.redisCachesPager = pager
 }
 
-// GetServiceType returns the service type
-func (c *CacheClient) GetServiceType() common.ServiceType {
+// GetServiceType returns the service type.
+func (c *Client) GetServiceType() common.ServiceType {
 	return common.ServiceCache
 }
 
-// GetRegion returns the region
-func (c *CacheClient) GetRegion() string {
+// GetRegion returns the region.
+func (c *Client) GetRegion() string {
 	return c.region
 }
 
 // AzureRetailPrice is the response envelope for the Azure Retail Prices API.
 type AzureRetailPrice = pricing.Page[pricing.RetailPriceItem]
 
-// GetRecommendations gets Redis Cache reservation recommendations from Azure Consumption API
-func (c *CacheClient) GetRecommendations(ctx context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
+// GetRecommendations gets Redis Cache reservation recommendations from Azure Consumption API.
+func (c *Client) GetRecommendations(ctx context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	recommendations := make([]common.Recommendation, 0)
 
 	// Use injected pager if available (for testing)
@@ -160,7 +160,7 @@ func (c *CacheClient) GetRecommendations(ctx context.Context, _ *common.Recommen
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxRecsPages {
 			return nil, fmt.Errorf("cache: GetRecommendations pagination cap (%d pages) reached", maxRecsPages)
@@ -181,8 +181,8 @@ func (c *CacheClient) GetRecommendations(ctx context.Context, _ *common.Recommen
 	return recommendations, nil
 }
 
-// GetExistingCommitments retrieves existing Redis Cache reserved capacity
-func (c *CacheClient) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
+// GetExistingCommitments retrieves existing Redis Cache reserved capacity.
+func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	pager, err := c.createReservationsPager()
 	if err != nil {
 		log.Printf("WARNING: failed to create Redis reservations pager: %v", err)
@@ -192,8 +192,8 @@ func (c *CacheClient) GetExistingCommitments(ctx context.Context) ([]common.Comm
 	return c.collectRedisReservations(ctx, pager)
 }
 
-// createReservationsPager creates a pager for listing reservations
-func (c *CacheClient) createReservationsPager() (ReservationsDetailsPager, error) {
+// createReservationsPager creates a pager for listing reservations.
+func (c *Client) createReservationsPager() (ReservationsDetailsPager, error) {
 	// Use injected pager if available (for testing)
 	if c.reservationsPager != nil {
 		return c.reservationsPager, nil
@@ -211,12 +211,12 @@ func (c *CacheClient) createReservationsPager() (ReservationsDetailsPager, error
 // collectRedisReservations collects Redis reservations from the pager.
 // Returns an error on first pagination failure so callers can't silently act
 // on a partial list — see the compute client for the full rationale.
-func (c *CacheClient) collectRedisReservations(ctx context.Context, pager ReservationsDetailsPager) ([]common.Commitment, error) {
+func (c *Client) collectRedisReservations(ctx context.Context, pager ReservationsDetailsPager) ([]common.Commitment, error) {
 	commitments := make([]common.Commitment, 0)
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context cancelled during pagination: %w", err)
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
 		if pageIdx >= maxReservationsPages {
 			return nil, fmt.Errorf("cache: GetExistingCommitments pagination cap (%d pages) reached", maxReservationsPages)
@@ -236,8 +236,8 @@ func (c *CacheClient) collectRedisReservations(ctx context.Context, pager Reserv
 	return commitments, nil
 }
 
-// convertRedisReservation converts a reservation detail to a commitment if it's a Redis reservation
-func (c *CacheClient) convertRedisReservation(detail *armconsumption.ReservationDetail) *common.Commitment {
+// convertRedisReservation converts a reservation detail to a commitment if it's a Redis reservation.
+func (c *Client) convertRedisReservation(detail *armconsumption.ReservationDetail) *common.Commitment {
 	if detail.Properties == nil {
 		return nil
 	}
@@ -269,7 +269,7 @@ func (c *CacheClient) convertRedisReservation(detail *armconsumption.Reservation
 
 // PurchaseCommitment purchases Redis Cache reserved capacity using the two-step
 // calculatePrice->purchase flow required by Azure's Reservations API (issue #677).
-func (c *CacheClient) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
+func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
 	result := common.PurchaseResult{
 		Recommendation: rec,
 		DryRun:         false,
@@ -354,8 +354,8 @@ func (c *CacheClient) PurchaseCommitment(ctx context.Context, rec common.Recomme
 	return result, nil
 }
 
-// ValidateOffering validates that a Redis Cache SKU exists
-func (c *CacheClient) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
+// ValidateOffering validates that a Redis Cache SKU exists.
+func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
 	validSKUs, err := c.GetValidResourceTypes(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get valid SKUs: %w", err)
@@ -371,20 +371,20 @@ func (c *CacheClient) ValidateOffering(ctx context.Context, rec common.Recommend
 	return fmt.Errorf("invalid Azure Redis Cache SKU: %s", rec.ResourceType)
 }
 
-// GetOfferingDetails retrieves Redis Cache reservation offering details from Azure Retail Prices API
-func (c *CacheClient) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
+// GetOfferingDetails retrieves Redis Cache reservation offering details from Azure Retail Prices API.
+func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	termYears, err := reservations.ParseTermYears(rec.Term)
 	if err != nil {
 		return nil, fmt.Errorf("invalid term: %w", err)
 	}
 
-	pricing, err := c.getRedisPricing(ctx, rec.ResourceType, c.region, termYears)
+	redisPricing, err := c.getRedisPricing(ctx, rec.ResourceType, c.region, termYears)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pricing: %w", err)
 	}
 
 	var upfrontCost, recurringCost float64
-	totalCost := pricing.ReservationPrice
+	totalCost := redisPricing.ReservationPrice
 
 	switch rec.PaymentOption {
 	case "all-upfront", "upfront":
@@ -394,7 +394,7 @@ func (c *CacheClient) GetOfferingDetails(ctx context.Context, rec common.Recomme
 		upfrontCost = 0
 		recurringCost = totalCost / (float64(termYears) * 12)
 	default:
-		// Fail loud on an unrecognised payment option rather than silently
+		// Fail loud on an unrecognized payment option rather than silently
 		// billing it as all-upfront (owner policy: no silent fallbacks on
 		// money-affecting fields).
 		return nil, fmt.Errorf("unsupported payment option for Azure Cache for Redis offering details: %q", rec.PaymentOption)
@@ -408,13 +408,13 @@ func (c *CacheClient) GetOfferingDetails(ctx context.Context, rec common.Recomme
 		UpfrontCost:         upfrontCost,
 		RecurringCost:       recurringCost,
 		TotalCost:           totalCost,
-		EffectiveHourlyRate: pricing.HourlyRate,
-		Currency:            pricing.Currency,
+		EffectiveHourlyRate: redisPricing.HourlyRate,
+		Currency:            redisPricing.Currency,
 	}, nil
 }
 
-// GetValidResourceTypes returns valid Redis Cache SKUs from Azure API
-func (c *CacheClient) GetValidResourceTypes(ctx context.Context) ([]string, error) {
+// GetValidResourceTypes returns valid Redis Cache SKUs from Azure API.
+func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	pager, err := c.createRedisCachesPager()
 	if err != nil {
 		// Fall back to common SKUs if we can't create client
@@ -435,8 +435,8 @@ func (c *CacheClient) GetValidResourceTypes(ctx context.Context) ([]string, erro
 	return c.getCommonSKUs(), nil
 }
 
-// createRedisCachesPager creates a pager for listing Redis caches
-func (c *CacheClient) createRedisCachesPager() (RedisCachesPager, error) {
+// createRedisCachesPager creates a pager for listing Redis caches.
+func (c *Client) createRedisCachesPager() (RedisCachesPager, error) {
 	// Use injected pager if available (for testing)
 	if c.redisCachesPager != nil {
 		return c.redisCachesPager, nil
@@ -453,12 +453,12 @@ func (c *CacheClient) createRedisCachesPager() (RedisCachesPager, error) {
 // collectSKUsFromCaches collects SKUs from existing Redis caches.
 // Returns (nil, err) on context cancellation so callers can propagate the error
 // instead of silently using a partial result set.
-func (c *CacheClient) collectSKUsFromCaches(ctx context.Context, pager RedisCachesPager) (map[string]bool, error) {
+func (c *Client) collectSKUsFromCaches(ctx context.Context, pager RedisCachesPager) (map[string]bool, error) {
 	skuSet := make(map[string]bool)
 
 	for pageIdx := 0; pager.More(); pageIdx++ {
 		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("cache: GetValidResourceTypes context cancelled after %d pages: %w", pageIdx, err)
+			return nil, fmt.Errorf("cache: GetValidResourceTypes context canceled after %d pages: %w", pageIdx, err)
 		}
 		if pageIdx >= maxCachesPages {
 			log.Printf("WARNING: cache: GetValidResourceTypes pagination cap (%d pages) reached", maxCachesPages)
@@ -480,7 +480,7 @@ func (c *CacheClient) collectSKUsFromCaches(ctx context.Context, pager RedisCach
 	return skuSet, nil
 }
 
-// extractSKUFromCache extracts the full SKU name from a cache resource
+// extractSKUFromCache extracts the full SKU name from a cache resource.
 func extractSKUFromCache(cache *armredis.ResourceInfo) string {
 	if cache.Properties == nil || cache.Properties.SKU == nil {
 		return ""
@@ -499,7 +499,7 @@ func extractSKUFromCache(cache *armredis.ResourceInfo) string {
 	return fmt.Sprintf("%s_%s%d", skuName, family, capacity)
 }
 
-// convertSKUSetToSlice converts a map of SKUs to a sorted slice
+// convertSKUSetToSlice converts a map of SKUs to a sorted slice.
 func convertSKUSetToSlice(skuSet map[string]bool) []string {
 	skus := make([]string, 0, len(skuSet))
 	for sku := range skuSet {
@@ -508,8 +508,8 @@ func convertSKUSetToSlice(skuSet map[string]bool) []string {
 	return skus
 }
 
-// getCommonSKUs returns common Redis Cache SKUs
-func (c *CacheClient) getCommonSKUs() []string {
+// getCommonSKUs returns common Redis Cache SKUs.
+func (c *Client) getCommonSKUs() []string {
 	return []string{
 		// Basic tier
 		"Basic_C0", "Basic_C1", "Basic_C2", "Basic_C3", "Basic_C4", "Basic_C5", "Basic_C6",
@@ -520,7 +520,7 @@ func (c *CacheClient) getCommonSKUs() []string {
 	}
 }
 
-// RedisPricing contains pricing information for Redis Cache
+// RedisPricing contains pricing information for Redis Cache.
 type RedisPricing struct {
 	HourlyRate        float64
 	ReservationPrice  float64
@@ -529,8 +529,8 @@ type RedisPricing struct {
 	SavingsPercentage float64
 }
 
-// getRedisPricing gets real pricing from Azure Retail Prices API
-func (c *CacheClient) getRedisPricing(ctx context.Context, sku, region string, termYears int) (*RedisPricing, error) {
+// getRedisPricing gets real pricing from Azure Retail Prices API.
+func (c *Client) getRedisPricing(ctx context.Context, sku, region string, termYears int) (*RedisPricing, error) {
 	priceData, err := c.fetchAzurePricing(ctx, "Azure Cache for Redis", sku, region)
 	if err != nil {
 		return nil, err
@@ -569,7 +569,7 @@ func (c *CacheClient) getRedisPricing(ctx context.Context, sku, region string, t
 // fetchAzurePricing fetches pricing data from Azure Retail Prices API,
 // following NextPageLink until exhausted; hitting the shared page cap is an error.
 // Delegates pagination to pricing.FetchAll.
-func (c *CacheClient) fetchAzurePricing(ctx context.Context, serviceName, sku, region string) (*AzureRetailPrice, error) {
+func (c *Client) fetchAzurePricing(ctx context.Context, serviceName, sku, region string) (*AzureRetailPrice, error) {
 	filter := fmt.Sprintf("serviceName eq '%s' and armRegionName eq '%s' and contains(armSkuName, '%s')",
 		serviceName, region, sku)
 
@@ -595,12 +595,13 @@ func azureTermString(termYears int) string {
 	return fmt.Sprintf("%d Years", termYears)
 }
 
-// extractRedisPricing extracts on-demand and reservation pricing from price items
+// extractRedisPricing extracts on-demand and reservation pricing from price items.
 func extractRedisPricing(items []pricing.RetailPriceItem, termYears int) (onDemand, reservation float64, currency string) {
 	currency = "USD"
 	termStr := azureTermString(termYears)
 
-	for _, item := range items {
+	for i := range items {
+		item := &items[i]
 		if item.CurrencyCode != "" {
 			currency = item.CurrencyCode
 		}
@@ -620,12 +621,12 @@ func extractRedisPricing(items []pricing.RetailPriceItem, termYears int) (onDema
 // SDK-to-struct ladder. Returns nil when the SDK payload is unusable.
 //
 // Details populated by parsing the SKU string into Engine ("redis") and
-// NodeType, then enriched from the lazily-cached armredis catalogue
-// (cachedSKULookup). Shards is sourced from the catalogue when an
+// NodeType, then enriched from the lazily-cached armredis catalog
+// (cachedSKULookup). Shards is sourced from the catalog when an
 // existing cache in the subscription matches the recommendation's
 // Premium-tier SKU; otherwise stays 0 (zero means "unknown", not
 // "definitely zero shards" — see the redisSKUEntry godoc).
-func (c *CacheClient) convertAzureRedisRecommendation(ctx context.Context, azureRec armconsumption.ReservationRecommendationClassification) *common.Recommendation {
+func (c *Client) convertAzureRedisRecommendation(ctx context.Context, azureRec armconsumption.ReservationRecommendationClassification) *common.Recommendation {
 	f := azrecs.Extract(azureRec)
 	if f == nil {
 		return nil
@@ -656,19 +657,19 @@ func (c *CacheClient) convertAzureRedisRecommendation(ctx context.Context, azure
 	}
 }
 
-// cachedSKULookup returns the SKU catalogue entry for skuName, fetching
-// the catalogue lazily on first call. The catalogue is fetched ONCE per
+// cachedSKULookup returns the SKU catalog entry for skuName, fetching
+// the catalog lazily on first call. The catalog is fetched ONCE per
 // client lifetime via armredis.Client.NewListBySubscriptionPager;
 // subsequent calls are O(1) map lookups. ok=false on cache miss OR
-// catalogue-fetch failure — the caller falls back to Shards=0 rather
+// catalog-fetch failure — the caller falls back to Shards=0 rather
 // than failing the whole conversion.
 //
 // Why source from existing caches: armredis exposes no "list all
-// possible SKUs" endpoint. The catalogue surface that does exist
+// possible SKUs" endpoint. The catalog surface that does exist
 // (existing cache instances in the subscription) gives us authoritative
 // shard counts for the SKUs the customer actually uses, which is the
 // set the recommendation engine recommends from anyway.
-func (c *CacheClient) cachedSKULookup(ctx context.Context, skuName string) (redisSKUEntry, bool) {
+func (c *Client) cachedSKULookup(ctx context.Context, skuName string) (redisSKUEntry, bool) {
 	c.skuCacheOnce.Do(func() {
 		c.skuCacheMap = c.fetchSKUCatalogue(ctx)
 	})
@@ -687,17 +688,17 @@ func (c *CacheClient) cachedSKULookup(ctx context.Context, skuName string) (redi
 // Returns nil on error so the sync.Once-gated cache field stays nil and
 // cachedSKULookup falls back to the empty-Details path. The fetch error
 // is logged WARN once.
-func (c *CacheClient) fetchSKUCatalogue(ctx context.Context) map[string]redisSKUEntry {
+func (c *Client) fetchSKUCatalogue(ctx context.Context) map[string]redisSKUEntry {
 	pager, err := c.createRedisCachesPager()
 	if err != nil {
-		logging.Warnf("azure cache: SKU catalogue pager create failed for region %s: %v — Details.Shards left at 0", c.region, err)
+		logging.Warnf("azure cache: SKU catalog pager create failed for region %s: %v — Details.Shards left at 0", c.region, err)
 		return nil
 	}
 	out := make(map[string]redisSKUEntry)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			logging.Warnf("azure cache: SKU catalogue page fetch failed for region %s: %v — partial cache (%d entries) discarded, Details.Shards left at 0", c.region, err, len(out))
+			logging.Warnf("azure cache: SKU catalog page fetch failed for region %s: %v — partial cache (%d entries) discarded, Details.Shards left at 0", c.region, err, len(out))
 			return nil
 		}
 		for _, cache := range page.Value {

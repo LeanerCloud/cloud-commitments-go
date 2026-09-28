@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // mockExchangeStore implements RIExchangeStore for testing.
@@ -588,7 +588,7 @@ func TestRunAutoExchange_DryRun_ManualMode_ZeroMutations(t *testing.T) {
 	result, err := RunAutoExchange(context.Background(), params)
 	require.NoError(t, err)
 
-	// Outcome must be simulated — no real token, no record ID.
+	// ExchangeOutcome must be simulated — no real token, no record ID.
 	require.Len(t, result.Pending, 1)
 	assert.True(t, result.Pending[0].Simulated, "outcome must be tagged Simulated in dry-run")
 	assert.Empty(t, result.Pending[0].ApprovalToken, "no live approval token must be generated in dry-run")

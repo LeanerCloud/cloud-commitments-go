@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/opensearch"
 	"github.com/aws/aws-sdk-go-v2/service/opensearch/types"
@@ -1111,7 +1111,7 @@ func TestPurchaseCommitment_TagFailure_StructuredLog(t *testing.T) {
 }
 
 // TestFindOfferingID_CtxCancelledBeforePage asserts that findOfferingID returns
-// context.Canceled immediately when the context is already cancelled before the
+// context.Canceled immediately when the context is already canceled before the
 // first pagination iteration, without calling the AWS API (issue #515).
 func TestFindOfferingID_CtxCancelledBeforePage(t *testing.T) {
 	mockOS := &MockOpenSearchClient{}

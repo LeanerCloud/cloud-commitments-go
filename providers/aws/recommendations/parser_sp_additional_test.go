@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 func TestParseSavingsPlanDetail(t *testing.T) {
@@ -218,7 +218,7 @@ func TestParseSavingsPlansRecommendations_Empty(t *testing.T) {
 	assert.Empty(t, recs)
 }
 
-// Mock CostExplorerAPI for testing getSavingsPlansRecommendations
+// Mock CostExplorerAPI for testing getSavingsPlansRecommendations.
 type mockCostExplorerForSP struct {
 	responses map[types.SupportedSavingsPlansType]*costexplorer.GetSavingsPlansPurchaseRecommendationOutput
 	errors    map[types.SupportedSavingsPlansType]error

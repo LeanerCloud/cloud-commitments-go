@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -45,9 +45,9 @@ func TestFilterRecentCommitments_StateAndWindow(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
 	commitments := []common.Commitment{
-		{ResourceType: "db.t3.small", Region: "us-east-1", Engine: "mysql", Count: 1, State: "active", StartDate: now.Add(-25 * time.Hour)},   // too old
-		{ResourceType: "db.t3.small", Region: "us-east-1", Engine: "mysql", Count: 2, State: "retired", StartDate: now.Add(-1 * time.Hour)},   // wrong state
-		{ResourceType: "db.t3.small", Region: "us-east-1", Engine: "mysql", Count: 3, State: "cancelled", StartDate: now.Add(-1 * time.Hour)}, // wrong state
+		{ResourceType: "db.t3.small", Region: "us-east-1", Engine: "mysql", Count: 1, State: "active", StartDate: now.Add(-25 * time.Hour)},  // too old
+		{ResourceType: "db.t3.small", Region: "us-east-1", Engine: "mysql", Count: 2, State: "retired", StartDate: now.Add(-1 * time.Hour)},  // wrong state
+		{ResourceType: "db.t3.small", Region: "us-east-1", Engine: "mysql", Count: 3, State: "canceled", StartDate: now.Add(-1 * time.Hour)}, // wrong state
 		{ResourceType: "db.t3.small", Region: "us-east-1", Engine: "mysql", Count: 4, State: "payment-pending", StartDate: now.Add(-1 * time.Hour)},
 		{ResourceType: "db.t3.small", Region: "us-east-1", Engine: "mysql", Count: 5, State: "active", StartDate: now.Add(-1 * time.Hour)},
 	}

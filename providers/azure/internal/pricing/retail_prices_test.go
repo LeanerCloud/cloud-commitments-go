@@ -22,12 +22,22 @@ type fakeItem struct {
 
 // fakeHTTPClient is a scripted HTTP client — Do returns a fixed response
 // or error per URL. Keeping the fake inside this file avoids depending on
-// testify/mock for a simple behaviour contract.
+// testify/mock for a simple behavior contract.
 type fakeHTTPClient struct {
 	responses map[string]*http.Response
 	errors    map[string]error
 	calls     []*http.Request
 	beforeDo  func(*http.Request)
+}
+
+type closeTrackingBody struct {
+	io.ReadCloser
+	closeCount int
+}
+
+func (b *closeTrackingBody) Close() error {
+	b.closeCount++
+	return b.ReadCloser.Close()
 }
 
 func newFakeHTTPClient() *fakeHTTPClient {
@@ -63,16 +73,20 @@ func okJSONResponse(body string) *http.Response {
 // scriptPageChain scripts n pages at https://prices.example/page<letter>,
 // each holding one item named after its letter and linking to the next;
 // the last page has an empty NextPageLink.
-func scriptPageChain(client *fakeHTTPClient, n int) {
+func scriptPageChain(t *testing.T, client *fakeHTTPClient, n int) {
 	for i := 0; i < n; i++ {
 		url := "https://prices.example/page" + string(rune('a'+i))
 		next := ""
 		if i < n-1 {
 			next = "https://prices.example/page" + string(rune('a'+i+1))
 		}
-		client.responses[url] = okJSONResponse(
+		resp := okJSONResponse(
 			`{"Items":[{"name":"` + string(rune('a'+i)) + `"}],"NextPageLink":"` + next + `"}`,
 		)
+		t.Cleanup(func() {
+			require.NoError(t, resp.Body.Close())
+		})
+		client.responses[url] = resp
 	}
 }
 
@@ -81,12 +95,21 @@ func scriptPageChain(client *fakeHTTPClient, n int) {
 // merged into the returned slice in order.
 func TestFetchAll_MergesPages(t *testing.T) {
 	client := newFakeHTTPClient()
-	client.responses["https://prices.example/page1"] = okJSONResponse(
+	resp1 := okJSONResponse(
 		`{"Items":[{"name":"a"}],"NextPageLink":"https://prices.example/page2"}`,
 	)
-	client.responses["https://prices.example/page2"] = okJSONResponse(
+	t.Cleanup(func() {
+		require.NoError(t, resp1.Body.Close())
+	})
+	client.responses["https://prices.example/page1"] = resp1
+
+	resp2 := okJSONResponse(
 		`{"Items":[{"name":"b"},{"name":"c"}],"NextPageLink":""}`,
 	)
+	t.Cleanup(func() {
+		require.NoError(t, resp2.Body.Close())
+	})
+	client.responses["https://prices.example/page2"] = resp2
 
 	items, err := FetchAll[fakeItem](context.Background(), client, "https://prices.example/page1", DefaultPageTimeout, DefaultMaxPages)
 	require.NoError(t, err)
@@ -101,9 +124,13 @@ func TestFetchAll_MergesPages(t *testing.T) {
 // it. Without the seen-URL set the walker would loop forever.
 func TestFetchAll_RejectsSelfReferentialNextPageLink(t *testing.T) {
 	client := newFakeHTTPClient()
-	client.responses["https://prices.example/loop"] = okJSONResponse(
+	resp := okJSONResponse(
 		`{"Items":[],"NextPageLink":"https://prices.example/loop"}`,
 	)
+	t.Cleanup(func() {
+		require.NoError(t, resp.Body.Close())
+	})
+	client.responses["https://prices.example/loop"] = resp
 
 	_, err := FetchAll[fakeItem](context.Background(), client, "https://prices.example/loop", DefaultPageTimeout, DefaultMaxPages)
 	require.Error(t, err)
@@ -116,7 +143,7 @@ func TestFetchAll_RejectsSelfReferentialNextPageLink(t *testing.T) {
 // fetching at the cap.
 func TestFetchAll_ErrorsWhenCapReachedWithPagesRemaining(t *testing.T) {
 	client := newFakeHTTPClient()
-	scriptPageChain(client, 10)
+	scriptPageChain(t, client, 10)
 
 	items, err := FetchAll[fakeItem](context.Background(), client, "https://prices.example/pagea", DefaultPageTimeout, 3)
 	require.Error(t, err)
@@ -131,7 +158,7 @@ func TestFetchAll_ErrorsWhenCapReachedWithPagesRemaining(t *testing.T) {
 // complete and must not be reported as truncated.
 func TestFetchAll_ExactlyMaxPagesSucceeds(t *testing.T) {
 	client := newFakeHTTPClient()
-	scriptPageChain(client, 3)
+	scriptPageChain(t, client, 3)
 
 	items, err := FetchAll[fakeItem](context.Background(), client, "https://prices.example/pagea", DefaultPageTimeout, 3)
 	require.NoError(t, err)
@@ -146,9 +173,13 @@ func TestFetchAll_ExactlyMaxPagesSucceeds(t *testing.T) {
 // a deadline, and a page failure does NOT cancel the outer ctx.
 func TestFetchAll_PerPageTimeout(t *testing.T) {
 	client := newFakeHTTPClient()
-	client.responses["https://prices.example/page1"] = okJSONResponse(
+	resp := okJSONResponse(
 		`{"Items":[{"name":"a"}],"NextPageLink":"https://prices.example/page2"}`,
 	)
+	t.Cleanup(func() {
+		require.NoError(t, resp.Body.Close())
+	})
+	client.responses["https://prices.example/page1"] = resp
 	client.errors["https://prices.example/page2"] = context.DeadlineExceeded
 
 	client.beforeDo = func(req *http.Request) {
@@ -166,7 +197,7 @@ func TestFetchAll_PerPageTimeout(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "page 1")
 	assert.Contains(t, err.Error(), "timeout")
-	assert.NoError(t, outerCtx.Err(), "outer ctx must not be cancelled by a per-page timeout")
+	assert.NoError(t, outerCtx.Err(), "outer ctx must not be canceled by a per-page timeout")
 }
 
 // TestFetchAll_RejectsNonOKStatus covers the HTTP-error path: any non-200
@@ -193,4 +224,73 @@ func TestFetchAll_ZeroMaxPages(t *testing.T) {
 	_, err := FetchAll[fakeItem](context.Background(), client, "https://prices.example/page1", DefaultPageTimeout, 0)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "maxPages must be > 0")
+}
+
+func TestFetchAll_ClosesResponses(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+		body       string
+		wantError  string
+	}{
+		{
+			name:       "success 200",
+			statusCode: http.StatusOK,
+			body:       `{"Items":[{"name":"a"}],"NextPageLink":""}`,
+		},
+		{
+			name:       "non-200",
+			statusCode: http.StatusInternalServerError,
+			body:       `{"error":"boom"}`,
+			wantError:  "status 500",
+		},
+		{
+			name:       "malformed JSON 200",
+			statusCode: http.StatusOK,
+			body:       `{`,
+			wantError:  "failed to decode pricing response",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := newFakeHTTPClient()
+			resp := okJSONResponse(tt.body)
+			t.Cleanup(func() {
+				require.NoError(t, resp.Body.Close())
+			})
+			resp.StatusCode = tt.statusCode
+			trackedBody := &closeTrackingBody{ReadCloser: resp.Body}
+			resp.Body = trackedBody
+			client.responses["https://prices.example/page1"] = resp
+
+			items, err := FetchAll[fakeItem](context.Background(), client, "https://prices.example/page1", DefaultPageTimeout, DefaultMaxPages)
+			assert.Equal(t, 1, trackedBody.closeCount, "FetchAll must close the response exactly once before fixture cleanup")
+			if tt.wantError != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantError)
+				assert.Nil(t, items)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, items, 1)
+			assert.Equal(t, "a", items[0].Name)
+		})
+	}
+}
+
+func TestOKJSONResponse_CallerOwnedCleanupClosesUnusedFixture(t *testing.T) {
+	var trackedBody *closeTrackingBody
+	t.Run("unused response is open until subtest cleanup", func(t *testing.T) {
+		resp := okJSONResponse(`{"Items":[]}`)
+		t.Cleanup(func() {
+			require.NoError(t, resp.Body.Close())
+		})
+		trackedBody = &closeTrackingBody{ReadCloser: resp.Body}
+		resp.Body = trackedBody
+		assert.Equal(t, 0, trackedBody.closeCount)
+	})
+
+	require.NotNil(t, trackedBody)
+	assert.Equal(t, 1, trackedBody.closeCount)
 }

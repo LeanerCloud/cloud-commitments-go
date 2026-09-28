@@ -9,11 +9,11 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // accountsCacheSFKeyPrefix prefixes the singleflight.Group key this cache
-// uses. There is exactly one cached value per AzureProvider (the org-wide
+// uses. There is exactly one cached value per Provider (the org-wide
 // subscription list), so the key only has to distinguish cache generations --
 // see accountsSFKey.
 const accountsCacheSFKeyPrefix = "accounts-gen-"
@@ -41,7 +41,7 @@ const azureSubscriptionIDEnv = "AZURE_SUBSCRIPTION_ID"
 // usable credential is present (mirrors GetAccounts, its only production
 // caller alongside GetServiceClient/GetRecommendationsClient which check
 // IsConfigured() themselves before resolving accounts).
-func (p *AzureProvider) getOrFetchAccounts(ctx context.Context) ([]common.Account, error) {
+func (p *Provider) getOrFetchAccounts(ctx context.Context) ([]common.Account, error) {
 	if cached := p.readCachedAccounts(); cached != nil {
 		return cached, nil
 	}
@@ -69,14 +69,14 @@ func (p *AzureProvider) getOrFetchAccounts(ctx context.Context) ([]common.Accoun
 }
 
 // isContextError reports whether err was produced by a context being
-// cancelled or timing out.
+// canceled or timing out.
 func isContextError(err error) bool {
 	return errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 // readCachedAccounts returns an independent clone of the cached subscription
 // list, or nil when the cache has not been populated yet.
-func (p *AzureProvider) readCachedAccounts() []common.Account {
+func (p *Provider) readCachedAccounts() []common.Account {
 	p.accountsMu.RLock()
 	defer p.accountsMu.RUnlock()
 	if p.cachedAccounts == nil {
@@ -99,7 +99,7 @@ func accountsSFKey(gen uint64) string {
 // fetchAccountsShared collapses concurrent cold-cache callers onto a single
 // in-flight ARM subscriptions.List and returns the SHARED (un-cloned) slice.
 // Callers must clone before handing the result outside the package.
-func (p *AzureProvider) fetchAccountsShared(ctx context.Context) ([]common.Account, error) {
+func (p *Provider) fetchAccountsShared(ctx context.Context) ([]common.Account, error) {
 	p.accountsMu.RLock()
 	gen := p.accountsGen
 	p.accountsMu.RUnlock()
@@ -158,14 +158,14 @@ func cloneAccounts(accounts []common.Account) []common.Account {
 // InvalidateAccountsCache clears the cached subscription list so the next
 // getOrFetchAccounts call re-fetches from the ARM subscriptions API. Exposed
 // for tests that need to assert cache-miss behavior; production callers
-// currently rely on the cache living for the lifetime of the AzureProvider
+// currently rely on the cache living for the lifetime of the Provider
 // instance (one instance is constructed per collection/purchase run).
 //
 // Bumping accountsGen is what makes this safe against a concurrent in-flight
 // fetch: the generation both invalidates that fetch's right to publish its
 // result and moves later callers onto a fresh singleflight key, so no caller
 // can be served a snapshot taken before this call returned.
-func (p *AzureProvider) InvalidateAccountsCache() {
+func (p *Provider) InvalidateAccountsCache() {
 	p.accountsMu.Lock()
 	defer p.accountsMu.Unlock()
 	p.invalidateAccountsCacheLocked()
@@ -179,7 +179,7 @@ func (p *AzureProvider) InvalidateAccountsCache() {
 // so they cannot call InvalidateAccountsCache while holding the lock, and
 // releasing it between the two steps would reopen the window where an
 // in-flight fetch sees the new credential against the old cache generation.
-func (p *AzureProvider) invalidateAccountsCacheLocked() {
+func (p *Provider) invalidateAccountsCacheLocked() {
 	p.cachedAccounts = nil
 	p.accountsGen++
 }
@@ -195,7 +195,7 @@ func (p *AzureProvider) invalidateAccountsCacheLocked() {
 // the singleflight, so a SetCredential/SetSubscriptionsClient from another
 // goroutine would otherwise be an unsynchronized read -- and, worse, could
 // pair the old client with the new credential mid-fetch.
-func (p *AzureProvider) fetchAccounts(ctx context.Context) ([]common.Account, error) {
+func (p *Provider) fetchAccounts(ctx context.Context) ([]common.Account, error) {
 	// Use injected client if available (for testing)
 	cred, subClient := p.credentialAndSubscriptionsClient()
 	if subClient == nil {
@@ -243,7 +243,7 @@ func (p *AzureProvider) fetchAccounts(ctx context.Context) ([]common.Account, er
 //  1. explicitSubID (from ProviderConfig.AzureSubscriptionID / Profile).
 //  2. AZURE_SUBSCRIPTION_ID environment variable.
 //  3. When exactly one subscription is visible, mark it default (mirrors AWS
-//     behaviour where the STS-identified account is always the default).
+//     behavior where the STS-identified account is always the default).
 func resolveDefaultSubscription(accounts []common.Account, explicitSubID string) {
 	if len(accounts) == 0 {
 		return

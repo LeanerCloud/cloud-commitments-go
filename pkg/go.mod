@@ -1,4 +1,4 @@
-module github.com/LeanerCloud/CUDly/pkg
+module github.com/LeanerCloud/cloud-commitments-go/pkg
 
 go 1.26.6
 

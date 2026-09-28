@@ -19,12 +19,12 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	azpricing "github.com/LeanerCloud/CUDly/providers/azure/internal/pricing"
-	"github.com/LeanerCloud/CUDly/providers/azure/mocks"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	azpricing "github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/pricing"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/mocks"
 )
 
-// MockRecommendationsPager mocks the RecommendationsPager interface
+// MockRecommendationsPager mocks the RecommendationsPager interface.
 type MockRecommendationsPager struct {
 	mock.Mock
 	pages []armconsumption.ReservationRecommendationsClientListResponse
@@ -44,7 +44,7 @@ func (m *MockRecommendationsPager) NextPage(ctx context.Context) (armconsumption
 	return page, nil
 }
 
-// MockReservationsDetailsPager mocks the ReservationsDetailsPager interface
+// MockReservationsDetailsPager mocks the ReservationsDetailsPager interface.
 type MockReservationsDetailsPager struct {
 	pages []armconsumption.ReservationsDetailsClientListResponse
 	index int
@@ -67,7 +67,7 @@ func (m *MockReservationsDetailsPager) NextPage(ctx context.Context) (armconsump
 	return page, nil
 }
 
-// MockRedisCachesPager mocks the RedisCachesPager interface
+// MockRedisCachesPager mocks the RedisCachesPager interface.
 type MockRedisCachesPager struct {
 	pages []armredis.ClientListBySubscriptionResponse
 	index int
@@ -90,7 +90,7 @@ func (m *MockRedisCachesPager) NextPage(ctx context.Context) (armredis.ClientLis
 	return page, nil
 }
 
-// MockHTTPClient mocks HTTP client for testing
+// MockHTTPClient mocks HTTP client for testing.
 type MockHTTPClient struct {
 	mock.Mock
 }
@@ -277,8 +277,11 @@ func TestCacheClient_GetOfferingDetails_WithMock(t *testing.T) {
 	mockHTTP := &MockHTTPClient{}
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
 
-	mockHTTP.On("Do", mock.Anything).Return(
-		createMockHTTPResponse(http.StatusOK, createSampleRedisPricingResponse()),
+	response1 := createMockHTTPResponse(http.StatusOK, createSampleRedisPricingResponse())
+	t.Cleanup(func() {
+		require.NoError(t, response1.Body.Close())
+	})
+	mockHTTP.On("Do", mock.Anything).Return(response1,
 		nil,
 	)
 
@@ -301,8 +304,11 @@ func TestCacheClient_GetOfferingDetails_3YearTerm(t *testing.T) {
 	mockHTTP := &MockHTTPClient{}
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
 
-	mockHTTP.On("Do", mock.Anything).Return(
-		createMockHTTPResponse(http.StatusOK, createSampleRedisPricingResponse()),
+	response2 := createMockHTTPResponse(http.StatusOK, createSampleRedisPricingResponse())
+	t.Cleanup(func() {
+		require.NoError(t, response2.Body.Close())
+	})
+	mockHTTP.On("Do", mock.Anything).Return(response2,
 		nil,
 	)
 
@@ -324,8 +330,11 @@ func TestCacheClient_GetOfferingDetails_NoUpfront(t *testing.T) {
 	mockHTTP := &MockHTTPClient{}
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
 
-	mockHTTP.On("Do", mock.Anything).Return(
-		createMockHTTPResponse(http.StatusOK, createSampleRedisPricingResponse()),
+	response3 := createMockHTTPResponse(http.StatusOK, createSampleRedisPricingResponse())
+	t.Cleanup(func() {
+		require.NoError(t, response3.Body.Close())
+	})
+	mockHTTP.On("Do", mock.Anything).Return(response3,
 		nil,
 	)
 
@@ -347,8 +356,11 @@ func TestCacheClient_GetOfferingDetails_APIError(t *testing.T) {
 	mockHTTP := &MockHTTPClient{}
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
 
-	mockHTTP.On("Do", mock.Anything).Return(
-		createMockHTTPResponse(http.StatusInternalServerError, "Internal Server Error"),
+	response4 := createMockHTTPResponse(http.StatusInternalServerError, "Internal Server Error")
+	t.Cleanup(func() {
+		require.NoError(t, response4.Body.Close())
+	})
+	mockHTTP.On("Do", mock.Anything).Return(response4,
 		nil,
 	)
 
@@ -368,8 +380,11 @@ func TestCacheClient_GetOfferingDetails_NoPricing(t *testing.T) {
 	mockHTTP := &MockHTTPClient{}
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
 
-	mockHTTP.On("Do", mock.Anything).Return(
-		createMockHTTPResponse(http.StatusOK, `{"Items": []}`),
+	response5 := createMockHTTPResponse(http.StatusOK, `{"Items": []}`)
+	t.Cleanup(func() {
+		require.NoError(t, response5.Body.Close())
+	})
+	mockHTTP.On("Do", mock.Anything).Return(response5,
 		nil,
 	)
 
@@ -408,7 +423,11 @@ func TestCacheClient_GetOfferingDetails_NoReservationPricing(t *testing.T) {
 
 	mockHTTP := &MockHTTPClient{}
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
-	mockHTTP.On("Do", mock.Anything).Return(createMockHTTPResponse(http.StatusOK, onDemandOnly), nil)
+	response6 := createMockHTTPResponse(http.StatusOK, onDemandOnly)
+	t.Cleanup(func() {
+		require.NoError(t, response6.Body.Close())
+	})
+	mockHTTP.On("Do", mock.Anything).Return(response6, nil)
 
 	rec := common.Recommendation{
 		ResourceType:  "Premium_P1",
@@ -426,7 +445,7 @@ func TestCacheClient_GetExistingCommitments_Empty(t *testing.T) {
 
 	// Mock pager returns no pages — the empty-subscription case, distinct
 	// from the pager-error case below. Previously this test used a nil
-	// pager and relied on silent error-swallowing; that behaviour was
+	// pager and relied on silent error-swallowing; that behavior was
 	// unsafe and has been replaced with error propagation, so the test
 	// now uses an explicit empty mock.
 	client.SetReservationsPager(&MockReservationsDetailsPager{})
@@ -808,7 +827,7 @@ func TestCacheClient_ConvertAzureRedisRecommendation_NilGuards(t *testing.T) {
 
 // TestCacheClient_ConvertAzureRedisRecommendation_PopulatesAllFields asserts
 // the converter forwards every helper-extracted field + applies the
-// Cache-service-specific constants. An empty SKU catalogue (no caches in
+// Cache-service-specific constants. An empty SKU catalog (no caches in
 // the subscription) is the "no signal" baseline — Shards stays 0.
 func TestCacheClient_ConvertAzureRedisRecommendation_PopulatesAllFields(t *testing.T) {
 	client := NewClient(nil, "test-subscription", "eastus")
@@ -850,7 +869,7 @@ func TestCacheClient_ConvertAzureRedisRecommendation_PopulatesAllFields(t *testi
 }
 
 // TestCacheClient_ConvertAzureRedisRecommendation_PopulatesShardsFromSKUCache
-// asserts the new batched-SKU-catalogue lookup populates CacheDetails.Shards
+// asserts the new batched-SKU-catalog lookup populates CacheDetails.Shards
 // when the subscription has a Premium-tier clustered cache with the same
 // SKU as the recommendation. Single ListBySubscription call per client
 // lifetime feeds many converter calls; this test pins the contract.
@@ -896,11 +915,11 @@ func TestCacheClient_ConvertAzureRedisRecommendation_PopulatesShardsFromSKUCache
 	require.True(t, ok)
 	assert.Equal(t, "redis", details.Engine)
 	assert.Equal(t, "Premium_P3", details.NodeType)
-	assert.Equal(t, 5, details.Shards, "Shards must be enriched from the cached SKU catalogue")
+	assert.Equal(t, 5, details.Shards, "Shards must be enriched from the cached SKU catalog")
 }
 
 // TestCacheClient_ConvertAzureRedisRecommendation_PagerErrorFallsBack
-// asserts that a SKU-catalogue fetch failure does NOT fail the
+// asserts that a SKU-catalog fetch failure does NOT fail the
 // conversion — Shards just stays at 0 and the rest of Details is
 // populated from the recommendation payload as before. This is the
 // graceful-degradation contract the issue asks for.
@@ -917,17 +936,17 @@ func TestCacheClient_ConvertAzureRedisRecommendation_PagerErrorFallsBack(t *test
 		mocks.WithNormalizedSize("Premium_P3"),
 	)
 	out := client.convertAzureRedisRecommendation(context.Background(), rec)
-	require.NotNil(t, out, "conversion must NOT fail on catalogue-fetch error")
+	require.NotNil(t, out, "conversion must NOT fail on catalog-fetch error")
 	details, ok := out.Details.(*common.CacheDetails)
 	require.True(t, ok)
 	assert.Equal(t, "redis", details.Engine)
 	assert.Equal(t, "Premium_P3", details.NodeType)
-	assert.Equal(t, 0, details.Shards, "Shards left at 0 when catalogue fetch fails")
+	assert.Equal(t, 0, details.Shards, "Shards left at 0 when catalog fetch fails")
 }
 
 // TestCacheClient_CachedSKULookup_FetchedOnce pins the perf invariant:
 // many converter calls in the same GetRecommendations run trigger
-// exactly ONE catalogue fetch. The mock pager counts pages served; the
+// exactly ONE catalog fetch. The mock pager counts pages served; the
 // assertion verifies the count stays at 1 after multiple lookups.
 func TestCacheClient_CachedSKULookup_FetchedOnce(t *testing.T) {
 	client := NewClient(nil, "test-subscription", "eastus")
@@ -962,13 +981,13 @@ func TestCacheClient_CachedSKULookup_FetchedOnce(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		_, _ = client.cachedSKULookup(context.Background(), "Premium_P1")
 	}
-	assert.Equal(t, 1, mockPager.index, "catalogue must be fetched ONCE regardless of lookup count")
+	assert.Equal(t, 1, mockPager.index, "catalog must be fetched ONCE regardless of lookup count")
 }
 
-// Test the to package is properly imported (used in tests)
+// Test the to package is properly imported (used in tests).
 var _ = to.Ptr("test")
 
-// MockTokenCredential for testing PurchaseCommitment
+// MockTokenCredential for testing PurchaseCommitment.
 type MockTokenCredential struct {
 	token string
 	err   error
@@ -995,12 +1014,20 @@ func TestCacheClient_PurchaseCommitment_Success(t *testing.T) {
 	mockCred := &MockTokenCredential{token: "test-token"}
 	client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
+	calculateResp7 := createMockHTTPResponse(http.StatusOK, calcPriceRespJSON("cache-order-001"))
+	t.Cleanup(func() {
+		require.NoError(t, calculateResp7.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/calculatePrice"
-	})).Return(createMockHTTPResponse(http.StatusOK, calcPriceRespJSON("cache-order-001")), nil).Once()
+	})).Return(calculateResp7, nil).Once()
+	purchaseResp8 := createMockHTTPResponse(http.StatusOK, `{}`)
+	t.Cleanup(func() {
+		require.NoError(t, purchaseResp8.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/cache-order-001/purchase"
-	})).Return(createMockHTTPResponse(http.StatusOK, `{}`), nil).Once()
+	})).Return(purchaseResp8, nil).Once()
 
 	rec := common.Recommendation{
 		ResourceType:   "Premium_P1",
@@ -1024,12 +1051,20 @@ func TestCacheClient_PurchaseCommitment_3YearTerm(t *testing.T) {
 	mockCred := &MockTokenCredential{token: "test-token"}
 	client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
+	calculateResp9 := createMockHTTPResponse(http.StatusOK, calcPriceRespJSON("cache-order-3yr"))
+	t.Cleanup(func() {
+		require.NoError(t, calculateResp9.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/calculatePrice"
-	})).Return(createMockHTTPResponse(http.StatusOK, calcPriceRespJSON("cache-order-3yr")), nil).Once()
+	})).Return(calculateResp9, nil).Once()
+	purchaseResp10 := createMockHTTPResponse(http.StatusCreated, `{}`)
+	t.Cleanup(func() {
+		require.NoError(t, purchaseResp10.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/cache-order-3yr/purchase"
-	})).Return(createMockHTTPResponse(http.StatusCreated, `{}`), nil).Once()
+	})).Return(purchaseResp10, nil).Once()
 
 	rec := common.Recommendation{
 		ResourceType:   "Premium_P1",
@@ -1052,12 +1087,20 @@ func TestCacheClient_PurchaseCommitment_Accepted(t *testing.T) {
 	mockCred := &MockTokenCredential{token: "test-token"}
 	client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
+	calculateResp11 := createMockHTTPResponse(http.StatusOK, calcPriceRespJSON("cache-order-202"))
+	t.Cleanup(func() {
+		require.NoError(t, calculateResp11.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/calculatePrice"
-	})).Return(createMockHTTPResponse(http.StatusOK, calcPriceRespJSON("cache-order-202")), nil).Once()
+	})).Return(calculateResp11, nil).Once()
+	purchaseResp12 := createMockHTTPResponse(http.StatusAccepted, `{}`)
+	t.Cleanup(func() {
+		require.NoError(t, purchaseResp12.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/cache-order-202/purchase"
-	})).Return(createMockHTTPResponse(http.StatusAccepted, `{}`), nil).Once()
+	})).Return(purchaseResp12, nil).Once()
 
 	rec := common.Recommendation{
 		ResourceType:   "Premium_P1",
@@ -1121,12 +1164,20 @@ func TestCacheClient_PurchaseCommitment_BadStatus(t *testing.T) {
 	mockCred := &MockTokenCredential{token: "test-token"}
 	client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
+	calculateResp13 := createMockHTTPResponse(http.StatusOK, calcPriceRespJSON("cache-order-bad"))
+	t.Cleanup(func() {
+		require.NoError(t, calculateResp13.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/calculatePrice"
-	})).Return(createMockHTTPResponse(http.StatusOK, calcPriceRespJSON("cache-order-bad")), nil).Once()
+	})).Return(calculateResp13, nil).Once()
+	purchaseResp14 := createMockHTTPResponse(http.StatusBadRequest, `{"error": "invalid request"}`)
+	t.Cleanup(func() {
+		require.NoError(t, purchaseResp14.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/cache-order-bad/purchase"
-	})).Return(createMockHTTPResponse(http.StatusBadRequest, `{"error": "invalid request"}`), nil).Once()
+	})).Return(purchaseResp14, nil).Once()
 
 	rec := common.Recommendation{
 		ResourceType:  "Premium_P1",
@@ -1158,6 +1209,10 @@ func TestCacheClient_PurchaseCommitment_TagInjection(t *testing.T) {
 	client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
 	var capturedBody []byte
+	calculateResp15 := createMockHTTPResponse(http.StatusOK, calcPriceRespJSON(orderID))
+	t.Cleanup(func() {
+		require.NoError(t, calculateResp15.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		if r.URL.Path != "/providers/Microsoft.Capacity/calculatePrice" {
 			return false
@@ -1165,10 +1220,14 @@ func TestCacheClient_PurchaseCommitment_TagInjection(t *testing.T) {
 		capturedBody, _ = io.ReadAll(r.Body)
 		r.Body = io.NopCloser(bytes.NewReader(capturedBody))
 		return true
-	})).Return(createMockHTTPResponse(http.StatusOK, calcPriceRespJSON(orderID)), nil).Once()
+	})).Return(calculateResp15, nil).Once()
+	purchaseResp16 := createMockHTTPResponse(http.StatusOK, `{}`)
+	t.Cleanup(func() {
+		require.NoError(t, purchaseResp16.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/"+orderID+"/purchase"
-	})).Return(createMockHTTPResponse(http.StatusOK, `{}`), nil).Once()
+	})).Return(purchaseResp16, nil).Once()
 
 	rec := common.Recommendation{ResourceType: "Premium_P1", Term: "1yr", Count: 1, CommitmentCost: 1000.0, PaymentOption: "no-upfront"}
 	result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{Source: source})
@@ -1222,6 +1281,10 @@ func TestCacheClient_PurchaseCommitment_BillingPlan(t *testing.T) {
 
 			const orderID = "cache-billingplan-test"
 			var capturedBody []byte
+			calculateResp17 := createMockHTTPResponse(http.StatusOK, calcPriceRespJSON(orderID))
+			t.Cleanup(func() {
+				require.NoError(t, calculateResp17.Body.Close())
+			})
 			mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 				if r.URL.Path != "/providers/Microsoft.Capacity/calculatePrice" {
 					return false
@@ -1229,10 +1292,14 @@ func TestCacheClient_PurchaseCommitment_BillingPlan(t *testing.T) {
 				capturedBody, _ = io.ReadAll(r.Body)
 				r.Body = io.NopCloser(bytes.NewReader(capturedBody))
 				return true
-			})).Return(createMockHTTPResponse(http.StatusOK, calcPriceRespJSON(orderID)), nil).Once()
+			})).Return(calculateResp17, nil).Once()
+			purchaseResp18 := createMockHTTPResponse(http.StatusOK, `{}`)
+			t.Cleanup(func() {
+				require.NoError(t, purchaseResp18.Body.Close())
+			})
 			mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 				return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/"+orderID+"/purchase"
-			})).Return(createMockHTTPResponse(http.StatusOK, `{}`), nil).Once()
+			})).Return(purchaseResp18, nil).Once()
 
 			result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
 			require.NoError(t, err)
@@ -1280,6 +1347,10 @@ func TestCacheClient_PurchaseCommitment_DisplayNameConformsToAzureAllowlist(t *t
 
 	const orderID = "azure-cache-displayname"
 	var capturedDisplayName string
+	calculateResp19 := createMockHTTPResponse(http.StatusOK, calcPriceRespJSON(orderID))
+	t.Cleanup(func() {
+		require.NoError(t, calculateResp19.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		if r.Method != http.MethodPost || r.URL.Path != "/providers/Microsoft.Capacity/calculatePrice" {
 			return false
@@ -1298,11 +1369,15 @@ func TestCacheClient_PurchaseCommitment_DisplayNameConformsToAzureAllowlist(t *t
 			}
 		}
 		return true
-	})).Return(createMockHTTPResponse(http.StatusOK, calcPriceRespJSON(orderID)), nil).Once()
+	})).Return(calculateResp19, nil).Once()
+	purchaseResp20 := createMockHTTPResponse(http.StatusOK, `{}`)
+	t.Cleanup(func() {
+		require.NoError(t, purchaseResp20.Body.Close())
+	})
 	mockHTTP.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.Method == http.MethodPost &&
 			r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/"+orderID+"/purchase"
-	})).Return(createMockHTTPResponse(http.StatusOK, `{}`), nil).Once()
+	})).Return(purchaseResp20, nil).Once()
 
 	rec := common.Recommendation{
 		ResourceType:   "Premium_P1",
@@ -1331,7 +1406,7 @@ func (p *infiniteRedisCachesPager) NextPage(_ context.Context) (armredis.ClientL
 }
 
 // TestCacheClient_GetValidResourceTypes_CtxCancelReturnsError asserts that a
-// cancelled context is treated as a hard stop and surfaces an error rather than
+// canceled context is treated as a hard stop and surfaces an error rather than
 // returning a silent partial result (feedback_ctx_cancel_terminal).
 func TestCacheClient_GetValidResourceTypes_CtxCancelReturnsError(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1341,7 +1416,7 @@ func TestCacheClient_GetValidResourceTypes_CtxCancelReturnsError(t *testing.T) {
 	client.SetRedisCachesPager(&infiniteRedisCachesPager{})
 
 	_, err := client.GetValidResourceTypes(ctx)
-	require.Error(t, err, "cancelled context must produce an error, not a silent partial result")
+	require.ErrorIs(t, err, context.Canceled, "canceled context must produce an error, not a silent partial result")
 }
 
 // TestCacheClient_GetValidResourceTypes_PageCapReturnsError asserts that the
@@ -1360,7 +1435,7 @@ func TestCacheClient_GetValidResourceTypes_PageCapFires(t *testing.T) {
 }
 
 // TestExtractRedisPricing_SingularOneYear verifies that extractRedisPricing
-// correctly recognises the "1 Year" singular form returned by the Azure Retail
+// correctly recognizes the "1 Year" singular form returned by the Azure Retail
 // Prices API for 1-year reservation terms. Before the fix, the extractor used
 // "%d Years" unconditionally, so the 1-year reservation line was silently
 // skipped and reservationPrice remained 0, causing a false "no reservation

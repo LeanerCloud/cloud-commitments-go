@@ -114,3 +114,18 @@ func TestGetRIUtilization_EmptyRegionOmitsRegionFilter(t *testing.T) {
 	assert.Equal(t, types.DimensionService, mock.lastFilter.Dimensions.Key)
 	assert.Equal(t, []string{ec2ComputeService}, mock.lastFilter.Dimensions.Values)
 }
+
+func TestGetRIUtilization_ContextCanceled(t *testing.T) {
+	mock := &mockUtilizationCE{
+		utilizationOutput: &costexplorer.GetReservationUtilizationOutput{},
+	}
+	client := NewClientWithAPI(mock, "us-east-1")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	got, err := client.GetRIUtilization(ctx, 30, "us-east-1")
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Nil(t, got)
+	assert.Zero(t, mock.calls)
+}

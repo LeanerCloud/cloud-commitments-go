@@ -1,4 +1,4 @@
-package common
+package common //nolint:revive // pkg/common is the module's core domain package (Recommendation, ProviderType, ...), imported by name (common.X) throughout this repo and by consumer-mcp; renaming would break every consumer import
 
 // Matches returns true if a Commitment covers the same resource type as a Recommendation.
 // Match criteria: Provider, Region, Service, ResourceType, and normalized engine.

@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LeanerCloud/CUDly/pkg/common"
-	"github.com/LeanerCloud/CUDly/pkg/scorer"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/scorer"
 	"github.com/stretchr/testify/assert"
 )
 
