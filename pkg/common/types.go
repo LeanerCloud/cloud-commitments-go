@@ -413,6 +413,15 @@ func NormalizeSource(s string) (string, error) {
 	}
 }
 
+// Commitment.State values that count as an owned commitment for duplicate
+// detection. They match the AWS RI and Savings Plans state enums; queued is a
+// scheduled future purchase and must count, or it gets bought a second time.
+const (
+	CommitmentStateActive         = "active"
+	CommitmentStatePaymentPending = "payment-pending"
+	CommitmentStateQueued         = "queued"
+)
+
 // Commitment represents an existing commitment (RI/SP/CUD/etc).
 //
 // Deployment is RDS-specific (Multi-AZ vs Single-AZ); it stays empty for

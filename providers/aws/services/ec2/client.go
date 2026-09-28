@@ -71,15 +71,20 @@ func (c *Client) GetRecommendations(_ context.Context, _ *common.RecommendationP
 	return []common.Recommendation{}, nil
 }
 
-// GetExistingCommitments retrieves existing EC2 Reserved Instances.
+// GetExistingCommitments retrieves existing EC2 Reserved Instances, including
+// queued ones (scheduled future purchases) so the duplicate check sees them.
 func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	commitments := make([]common.Commitment, 0)
 
 	input := &ec2.DescribeReservedInstancesInput{
 		Filters: []types.Filter{
 			{
-				Name:   aws.String("state"),
-				Values: []string{"active", "payment-pending"},
+				Name: aws.String("state"),
+				Values: []string{
+					string(types.ReservedInstanceStateActive),
+					string(types.ReservedInstanceStatePaymentPending),
+					string(types.ReservedInstanceStateQueued),
+				},
 			},
 		},
 	}
