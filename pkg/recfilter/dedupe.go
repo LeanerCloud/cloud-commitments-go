@@ -116,13 +116,29 @@ func dedupeKey(resourceType, region, engine, deployment string) string {
 	return fmt.Sprintf("%s|%s|%s|%s", resourceType, region, engine, deployment)
 }
 
+const unknownElastiCacheEngine = "elasticache:*"
+
+func dedupeEngine(providerType common.ProviderType, service common.ServiceType, engine string) (string, bool) {
+	engine = common.NormalizeEngineName(engine)
+	if providerType != common.ProviderAWS || (service != common.ServiceCache && service != common.ServiceElastiCache) {
+		return engine, false
+	}
+	switch engine {
+	case "":
+		return unknownElastiCacheEngine, true
+	case "valkey":
+		engine = "redis"
+	}
+	return "elasticache:" + engine, true
+}
+
 // buildExistingCommitmentsMap builds a map of commitments by resource type, region, engine, and deployment.
 func buildExistingCommitmentsMap(commitments []common.Commitment, logf Logf) map[string]int {
 	existingMap := make(map[string]int)
 
 	for _rvc := range commitments {
 		c := commitments[_rvc]
-		normalizedEngine := common.NormalizeEngineName(c.Engine)
+		normalizedEngine, _ := dedupeEngine(c.Provider, c.Service, c.Engine)
 		normalizedDeployment := common.NormalizeDeploymentName(c.Deployment)
 		key := dedupeKey(c.ResourceType, c.Region, normalizedEngine, normalizedDeployment)
 		existingMap[key] += c.Count
@@ -154,25 +170,33 @@ func adjustRecommendationsAgainstExisting(recs []common.Recommendation, existing
 
 // adjustSingleRecommendation adjusts a single recommendation based on existing commitments.
 func adjustSingleRecommendation(rec common.Recommendation, existingMap map[string]int, logf Logf) common.Recommendation {
-	engine := common.EngineFromDetails(rec.Details)
+	if rec.Count <= 0 {
+		return common.Recommendation{Count: 0}
+	}
+	engine, isElastiCache := dedupeEngine(rec.Provider, rec.Service, common.EngineFromDetails(rec.Details))
 	deployment := common.NormalizeDeploymentName(common.DeploymentFromDetails(rec.Details))
 	key := dedupeKey(rec.ResourceType, rec.Region, engine, deployment)
-	existingCount := existingMap[key]
+	keys := []string{key}
+	if isElastiCache && engine != unknownElastiCacheEngine {
+		keys = append(keys, dedupeKey(rec.ResourceType, rec.Region, unknownElastiCacheEngine, deployment))
+	}
+	remaining := rec.Count
+	for _, candidate := range keys {
+		if available := existingMap[candidate]; available > 0 {
+			used := min(available, remaining)
+			remaining -= used
+			existingMap[candidate] -= used
+		}
+	}
 
-	if existingCount >= rec.Count {
-		// All of this recommendation is covered by recent RIs.
-		// Return a zero-value Recommendation (Count=0) as a sentinel; the caller
-		// (adjustRecommendationsAgainstExisting) filters out recommendations with Count <= 0.
-		logf.printf("    [DuplicateChecker] SKIP %s: recent %d >= recommended %d", key, existingCount, rec.Count)
-		existingMap[key] -= rec.Count
+	if remaining <= 0 {
+		logf.printf("    [DuplicateChecker] SKIP %s: recent commitments cover recommended %d", key, rec.Count)
 		return common.Recommendation{Count: 0}
 	}
 
-	// Partial or no coverage by recent RIs
 	adjusted := rec
-	if existingCount > 0 {
-		adjusted.Count = rec.Count - existingCount
-		existingMap[key] = 0
+	if remaining < rec.Count {
+		adjusted.Count = remaining
 		logf.printf("    [DuplicateChecker] PARTIAL %s: adjusted count from %d to %d", key, rec.Count, adjusted.Count)
 	}
 

@@ -1086,38 +1086,3 @@ func TestFindOfferingID_InvalidTerm_ErrorsBeforeAPICall(t *testing.T) {
 	}
 	mockMDB.AssertNotCalled(t, "DescribeReservedNodesOfferings", mock.Anything, mock.Anything)
 }
-
-// Regression for cloud-commitments-go#66: the commitment must carry the same
-// engine as the recommendation, or the dedupe key never matches and a node
-// bought minutes ago is recommended and bought again.
-func TestClient_GetExistingCommitments_DedupesMatchingRecommendation(t *testing.T) {
-	mockClient := &MockMemoryDBClient{}
-	t.Cleanup(func() { mockClient.AssertExpectations(t) })
-	mockClient.On("DescribeReservedNodes", mock.Anything, mock.Anything).
-		Return(&memorydb.DescribeReservedNodesOutput{
-			ReservedNodes: []types.ReservedNode{{
-				ReservationId: aws.String("rn-new"),
-				NodeType:      aws.String("db.r6gd.xlarge"),
-				NodeCount:     1,
-				State:         aws.String("active"),
-				Duration:      31536000,
-				StartTime:     aws.Time(time.Now().Add(-time.Hour)),
-			}},
-		}, nil).Once()
-
-	client := &Client{client: mockClient, region: "us-east-1"}
-	// The literal mirrors what parseMemoryDBDetails emits, so this fails if
-	// either side drifts from ReservedNodeEngine.
-	rec := common.Recommendation{
-		ResourceType: "db.r6gd.xlarge",
-		Region:       "us-east-1",
-		Count:        1,
-		Details:      &common.CacheDetails{Engine: "redis", NodeType: "db.r6gd.xlarge"},
-	}
-
-	passed, filtered, err := recfilter.NewDuplicateChecker(0).
-		AdjustRecommendationsForExisting(context.Background(), []common.Recommendation{rec}, client)
-	require.NoError(t, err)
-	assert.Empty(t, passed)
-	assert.Len(t, filtered, 1)
-}

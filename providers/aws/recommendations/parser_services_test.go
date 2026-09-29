@@ -3,14 +3,86 @@ package recommendations
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
+	ecSDK "github.com/aws/aws-sdk-go-v2/service/elasticache"
+	ecTypes "github.com/aws/aws-sdk-go-v2/service/elasticache/types"
+	mdbSDK "github.com/aws/aws-sdk-go-v2/service/memorydb"
+	mdbTypes "github.com/aws/aws-sdk-go-v2/service/memorydb/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/recfilter"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/elasticache"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/memorydb"
 )
+
+type cacheReservationAPI struct {
+	elasticache.API
+	engine *string
+}
+
+func (a *cacheReservationAPI) DescribeReservedCacheNodes(context.Context, *ecSDK.DescribeReservedCacheNodesInput, ...func(*ecSDK.Options)) (*ecSDK.DescribeReservedCacheNodesOutput, error) {
+	return &ecSDK.DescribeReservedCacheNodesOutput{ReservedCacheNodes: []ecTypes.ReservedCacheNode{{
+		ReservedCacheNodeId: aws.String("ri-new"), CacheNodeType: aws.String("cache.r6g.large"),
+		CacheNodeCount: aws.Int32(1), ProductDescription: a.engine, State: aws.String("active"),
+		Duration: aws.Int32(31536000), StartTime: aws.Time(time.Now().Add(-time.Hour)),
+	}}}, nil
+}
+
+func TestParsedElastiCacheRecommendationDedupesSDKReservation(t *testing.T) {
+	t.Parallel()
+	for _, service := range []common.ServiceType{common.ServiceCache, common.ServiceElastiCache} {
+		for _, engine := range []*string{nil, aws.String(""), aws.String("redis")} {
+			t.Run(string(service)+"/"+aws.ToString(engine), func(t *testing.T) {
+				t.Parallel()
+				rec := common.Recommendation{Provider: common.ProviderAWS, Service: service, Count: 1}
+				err := (&Client{}).parseElastiCacheDetails(context.Background(), &rec, &types.ReservationPurchaseRecommendationDetail{
+					InstanceDetails: &types.InstanceDetails{ElastiCacheInstanceDetails: &types.ElastiCacheInstanceDetails{
+						NodeType: aws.String("cache.r6g.large"), Region: aws.String("us-east-1"), ProductDescription: aws.String("Valkey"),
+					}},
+				})
+				require.NoError(t, err)
+				client := elasticache.NewClient(aws.Config{Region: "us-east-1"})
+				client.SetElastiCacheAPI(&cacheReservationAPI{engine: engine})
+				passed, filtered, err := recfilter.NewDuplicateChecker(0).AdjustRecommendationsForExisting(context.Background(), []common.Recommendation{rec}, client)
+				require.NoError(t, err)
+				assert.Empty(t, passed)
+				assert.Len(t, filtered, 1)
+				assert.Equal(t, "Valkey", rec.Details.(*common.CacheDetails).Engine)
+			})
+		}
+	}
+}
+
+type memoryDBReservationAPI struct{ memorydb.API }
+
+func (*memoryDBReservationAPI) DescribeReservedNodes(context.Context, *mdbSDK.DescribeReservedNodesInput, ...func(*mdbSDK.Options)) (*mdbSDK.DescribeReservedNodesOutput, error) {
+	return &mdbSDK.DescribeReservedNodesOutput{ReservedNodes: []mdbTypes.ReservedNode{{
+		ReservationId: aws.String("rn-new"), NodeType: aws.String("db.r6gd.xlarge"), NodeCount: 1,
+		State: aws.String("active"), Duration: 31536000, StartTime: aws.Time(time.Now().Add(-time.Hour)),
+	}}}, nil
+}
+
+func TestParsedMemoryDBRecommendationDedupesSDKReservation(t *testing.T) {
+	t.Parallel()
+	rec := common.Recommendation{Provider: common.ProviderAWS, Service: common.ServiceMemoryDB, Count: 1}
+	err := (&Client{}).parseMemoryDBDetails(context.Background(), &rec, &types.ReservationPurchaseRecommendationDetail{
+		InstanceDetails: &types.InstanceDetails{MemoryDBInstanceDetails: &types.MemoryDBInstanceDetails{
+			NodeType: aws.String("db.r6gd.xlarge"), Region: aws.String("us-east-1"),
+		}},
+	})
+	require.NoError(t, err)
+	client := memorydb.NewClient(aws.Config{Region: "us-east-1"})
+	client.SetMemoryDBAPI(&memoryDBReservationAPI{})
+	passed, filtered, err := recfilter.NewDuplicateChecker(0).AdjustRecommendationsForExisting(context.Background(), []common.Recommendation{rec}, client)
+	require.NoError(t, err)
+	assert.Empty(t, passed)
+	assert.Len(t, filtered, 1)
+}
 
 func TestParseRDSDetails(t *testing.T) {
 	client := &Client{}
