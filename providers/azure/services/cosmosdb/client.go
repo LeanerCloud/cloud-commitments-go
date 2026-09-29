@@ -187,8 +187,7 @@ func (c *Client) GetRecommendations(ctx context.Context, _ *common.Recommendatio
 func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	pager, err := c.createReservationsPager()
 	if err != nil {
-		log.Printf("WARNING: failed to create Cosmos DB reservations pager: %v", err)
-		return []common.Commitment{}, nil
+		return nil, fmt.Errorf("cosmosdb: create reservations pager: %w", err)
 	}
 
 	return c.collectCosmosReservations(ctx, pager)
