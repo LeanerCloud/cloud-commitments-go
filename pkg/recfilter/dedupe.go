@@ -12,6 +12,10 @@ import (
 // DefaultDuplicateCheckLookbackHours is the default lookback period for checking recent purchases.
 const DefaultDuplicateCheckLookbackHours = 24
 
+type recentCommitmentFilter interface {
+	FilterRecommendationsForRecentCommitments(recs []common.Recommendation, existing []common.Commitment) (passed, filtered []common.Recommendation, err error)
+}
+
 // DuplicateChecker checks for existing commitments to avoid duplicates.
 type DuplicateChecker struct {
 	LookbackHours int // How many hours to look back for recent purchases
@@ -49,6 +53,12 @@ func (d *DuplicateChecker) AdjustRecommendationsForExisting(ctx context.Context,
 
 	if len(recentExisting) == 0 {
 		return recs, nil, nil
+	}
+
+	if filter, ok := client.(recentCommitmentFilter); ok {
+		passed, filtered, err = filter.FilterRecommendationsForRecentCommitments(recs, recentExisting)
+		d.Logf.printf("    [DuplicateChecker] Provider filtered %d recommendations against recent commitments", len(filtered))
+		return passed, filtered, err
 	}
 
 	existingMap := buildExistingCommitmentsMap(recentExisting, d.Logf)
