@@ -185,8 +185,7 @@ func (c *Client) GetRecommendations(ctx context.Context, _ *common.Recommendatio
 func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	pager, err := c.createReservationsPager()
 	if err != nil {
-		log.Printf("WARNING: failed to create Redis reservations pager: %v", err)
-		return []common.Commitment{}, nil
+		return nil, fmt.Errorf("cache: create reservations pager: %w", err)
 	}
 
 	return c.collectRedisReservations(ctx, pager)

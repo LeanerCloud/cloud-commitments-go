@@ -2,6 +2,11 @@ package recommendations
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -14,11 +19,111 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
-// buildDailyOutput constructs a GetReservationCoverageOutput that has one
-// CoverageByTime entry per day in the last usageHistoryLookbackDays window,
-// each reporting 100% coverage for instType. Used to exercise the happy path
-// without hitting AWS.
-func buildDailyOutput(instType string) *costexplorer.GetReservationCoverageOutput {
+func TestAttachDailyUsageHistory_SDKDailyCoverage(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		mode string
+		want []float64
+	}{
+		{name: "paginated daily totals", want: []float64{10, 0, 30, 0, 0, 0, 70}},
+		{name: "no data", mode: "empty"},
+		{name: "missing total", mode: "missing"},
+		{name: "service error", mode: "error"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var calls atomic.Int32
+			var firstWindow *types.DateInterval
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				call := calls.Add(1)
+				var input costexplorer.GetReservationCoverageInput
+				if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+					t.Errorf("decode request: %v", err)
+					http.Error(w, "invalid JSON", http.StatusBadRequest)
+					return
+				}
+				valid := assert.Equal(t, "AWSInsightsIndexService.GetReservationCoverage", r.Header.Get("X-Amz-Target"))
+				valid = assert.Equal(t, types.GranularityDaily, input.Granularity) && valid
+				valid = assert.Empty(t, input.GroupBy) && valid
+				valid = assert.Equal(t, []string{"Hour"}, input.Metrics) && valid
+				valid = assert.Equal(t, &types.Expression{And: []types.Expression{
+					{Dimensions: &types.DimensionValues{Key: types.DimensionService, Values: []string{"Amazon Elastic Compute Cloud - Compute"}}},
+					{Dimensions: &types.DimensionValues{Key: types.DimensionRegion, Values: []string{"us-east-1"}}},
+					{Dimensions: &types.DimensionValues{Key: types.DimensionInstanceType, Values: []string{"m5.xlarge"}}},
+				}}, input.Filter) && valid
+				if !valid || input.TimePeriod == nil {
+					http.Error(w, `{"__type":"ValidationException","message":"invalid coverage request"}`, http.StatusBadRequest)
+					return
+				}
+				if call == 1 {
+					firstWindow = input.TimePeriod
+					assert.Empty(t, aws.ToString(input.NextPageToken))
+				} else {
+					assert.Equal(t, firstWindow, input.TimePeriod)
+					assert.Equal(t, "page2", aws.ToString(input.NextPageToken))
+				}
+				start, err := time.Parse("2006-01-02", aws.ToString(input.TimePeriod.Start))
+				if !assert.NoError(t, err) {
+					http.Error(w, "invalid date", http.StatusBadRequest)
+					return
+				}
+				assert.Equal(t, start.AddDate(0, 0, usageHistoryLookbackDays).Format("2006-01-02"), aws.ToString(input.TimePeriod.End))
+				w.Header().Set("Content-Type", "application/x-amz-json-1.1")
+				if tc.mode == "error" {
+					w.WriteHeader(http.StatusBadRequest)
+					_, _ = w.Write([]byte(`{"__type":"DataUnavailableException","message":"no coverage available"}`))
+					return
+				}
+				periods := []types.CoverageByTime{}
+				var token *string
+				if tc.mode != "empty" {
+					days := []int{6, 0}
+					if call == 1 && tc.mode == "" {
+						token = aws.String("page2")
+					} else if call == 2 {
+						days = []int{2}
+					}
+					for _, day := range days {
+						period := types.CoverageByTime{TimePeriod: &types.DateInterval{
+							Start: aws.String(start.AddDate(0, 0, day).Format("2006-01-02")),
+							End:   aws.String(start.AddDate(0, 0, day+1).Format("2006-01-02")),
+						}}
+						if tc.mode != "missing" {
+							period.Total = &types.Coverage{CoverageHours: &types.CoverageHours{
+								CoverageHoursPercentage: aws.String(fmt.Sprint((day + 1) * 10)),
+							}}
+						}
+						periods = append(periods, period)
+					}
+				}
+				assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+					"CoveragesByTime": periods, "NextPageToken": token,
+					"Total": &types.Coverage{CoverageHours: &types.CoverageHours{CoverageHoursPercentage: aws.String("99")}},
+				}))
+			}))
+			defer server.Close()
+			sdk := costexplorer.New(costexplorer.Options{
+				Region: "us-east-1", BaseEndpoint: aws.String(server.URL),
+				Credentials: aws.AnonymousCredentials{}, HTTPClient: server.Client(),
+			})
+			client := NewClientWithAPI(sdk, "us-east-1")
+			rec := common.Recommendation{Service: common.ServiceEC2, Region: "us-east-1", ResourceType: "m5.xlarge"}
+			recs := []common.Recommendation{rec, rec}
+			client.AttachDailyUsageHistory(context.Background(), recs)
+			for _, r := range recs {
+				assert.Equal(t, tc.want, r.UsageHistory)
+			}
+			wantCalls := int32(1)
+			if tc.mode == "" {
+				wantCalls = 2
+			}
+			assert.Equal(t, wantCalls, calls.Load())
+		})
+	}
+}
+
+func buildDailyOutput() *costexplorer.GetReservationCoverageOutput {
 	now := time.Now().UTC()
 	start := now.AddDate(0, 0, -usageHistoryLookbackDays)
 	periods := make([]types.CoverageByTime, 0, usageHistoryLookbackDays)
@@ -29,16 +134,9 @@ func buildDailyOutput(instType string) *costexplorer.GetReservationCoverageOutpu
 				Start: aws.String(day.Format("2006-01-02")),
 				End:   aws.String(day.AddDate(0, 0, 1).Format("2006-01-02")),
 			},
-			Groups: []types.ReservationCoverageGroup{
-				{
-					Attributes: map[string]string{
-						"instanceType": instType,
-					},
-					Coverage: &types.Coverage{
-						CoverageHours: &types.CoverageHours{
-							CoverageHoursPercentage: aws.String("80.0"),
-						},
-					},
+			Total: &types.Coverage{
+				CoverageHours: &types.CoverageHours{
+					CoverageHoursPercentage: aws.String("80.0"),
 				},
 			},
 		})
@@ -51,7 +149,7 @@ func buildDailyOutput(instType string) *costexplorer.GetReservationCoverageOutpu
 // when CE reports coverage for every day.
 func TestGetDailyUsagePcts_ReturnsNDailyPoints(t *testing.T) {
 	mock := &mockCoverageCE{
-		coverageOutput: buildDailyOutput("m5.large"),
+		coverageOutput: buildDailyOutput(),
 	}
 
 	client := NewClientWithAPI(mock, "us-east-1")
@@ -102,7 +200,7 @@ func TestGetDailyUsagePcts_EmptyInputsReturnNil(t *testing.T) {
 // coverage percentages returned by CE.
 func TestAttachDailyUsageHistory_PopulatesUsageHistory(t *testing.T) {
 	mock := &mockCoverageCE{
-		coverageOutput: buildDailyOutput("m5.xlarge"),
+		coverageOutput: buildDailyOutput(),
 	}
 
 	client := NewClientWithAPI(mock, "us-east-1")

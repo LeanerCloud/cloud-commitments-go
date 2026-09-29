@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -217,8 +216,7 @@ func (c *Client) GetRecommendations(ctx context.Context, _ *common.Recommendatio
 func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	pager, err := c.createReservationsPager()
 	if err != nil {
-		log.Printf("WARNING: failed to create SQL reservations pager: %v", err)
-		return []common.Commitment{}, nil
+		return nil, fmt.Errorf("database: create reservations pager: %w", err)
 	}
 
 	return c.collectSQLReservations(ctx, pager)
