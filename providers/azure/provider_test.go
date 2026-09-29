@@ -10,7 +10,9 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/consumption/armconsumption"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -436,6 +438,37 @@ func TestAzureProvider_GetServiceClient_AllServiceTypes(t *testing.T) {
 			client, err := p.GetServiceClient(context.Background(), tc.service, "eastus")
 			require.NoError(t, err)
 			require.NotNil(t, client)
+		})
+	}
+}
+
+func TestAzureClients_GetExistingCommitments_PagerConstructionError(t *testing.T) {
+	// Keep this test sequential: the SDK reads this process-wide configuration.
+	originalCloud := cloud.AzurePublic
+	t.Cleanup(func() { cloud.AzurePublic = originalCloud })
+	cloud.AzurePublic = cloud.Configuration{}
+
+	_, sdkErr := armconsumption.NewReservationsDetailsClient(nil, nil)
+	require.Error(t, sdkErr)
+	require.Contains(t, sdkErr.Error(), "missing Azure Resource Manager configuration")
+
+	for _, tc := range []struct {
+		name   string
+		client provider.ServiceClient
+	}{
+		{"cache", NewCacheClient(nil, "test-subscription", "eastus")},
+		{"cosmosdb", NewCosmosDBClient(nil, "test-subscription", "eastus")},
+		{"database", NewDatabaseClient(nil, "test-subscription", "eastus")},
+		{"search", NewSearchClient(nil, "test-subscription", "eastus")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			commitments, err := tc.client.GetExistingCommitments(context.Background())
+			require.Error(t, err)
+			assert.Nil(t, commitments)
+			assert.Contains(t, err.Error(), tc.name+": create reservations pager")
+			cause := errors.Unwrap(err)
+			require.NotNil(t, cause)
+			assert.Equal(t, sdkErr.Error(), cause.Error())
 		})
 	}
 }

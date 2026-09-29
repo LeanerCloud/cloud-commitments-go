@@ -129,8 +129,7 @@ func (c *Client) GetRecommendations(_ context.Context, _ *common.RecommendationP
 func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	pager, err := c.createReservationsPager()
 	if err != nil {
-		log.Printf("WARNING: failed to create Search reservations pager: %v", err)
-		return []common.Commitment{}, nil
+		return nil, fmt.Errorf("search: create reservations pager: %w", err)
 	}
 
 	return c.collectSearchReservations(ctx, pager)
