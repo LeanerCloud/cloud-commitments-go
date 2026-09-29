@@ -390,8 +390,8 @@ func (c *Client) GetRecommendations(ctx context.Context, p *common.Recommendatio
 	}
 	defer recClient.Close()
 
-	// Recommender ID for GCP CUD recommendations
-	parent := fmt.Sprintf("projects/%s/locations/%s/recommenders/google.billing.CostInsight.commitmentRecommender",
+	// Resource-based Compute Engine commitments use the project-scoped recommender.
+	parent := fmt.Sprintf("projects/%s/locations/%s/recommenders/google.compute.commitment.UsageCommitmentRecommender",
 		c.projectID, c.region)
 
 	req := &recommenderpb.ListRecommendationsRequest{
