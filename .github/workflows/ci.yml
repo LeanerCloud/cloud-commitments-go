@@ -291,6 +291,21 @@ jobs:
       - name: Build all modules
         run: make build
 
+      - name: Verify standalone provider modules
+        env:
+          GOWORK: 'off'
+        run: |
+          set -euo pipefail
+          for mod in providers/aws providers/azure providers/gcp; do
+            echo "==> standalone verification in $mod"
+            (
+              cd "$mod"
+              go build -mod=readonly ./...
+              go test -mod=readonly -race -short -count=1 ./...
+              go mod tidy -diff
+            )
+          done
+
       - name: Generate coverage report
         working-directory: pkg
         run: |
