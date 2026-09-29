@@ -486,11 +486,10 @@ func (c *Client) collectCommitments(ctx context.Context, svc CommitmentsService,
 			return nil, fmt.Errorf("failed to list commitments: %w", err)
 		}
 
-		if commitment.Name == nil {
-			continue
+		com, err := c.convertGCPCommitmentToCommon(commitment)
+		if err != nil {
+			return nil, err
 		}
-
-		com := c.convertGCPCommitmentToCommon(commitment)
 		commitments = append(commitments, com)
 	}
 
@@ -518,32 +517,33 @@ func gcpCommitmentState(raw string) common.CommitmentState {
 }
 
 // convertGCPCommitmentToCommon converts a GCP commitment to common format.
-func (c *Client) convertGCPCommitmentToCommon(commitment *computepb.Commitment) common.Commitment {
-	// All commitment types (GENERAL_PURPOSE, ACCELERATOR) map to CommitmentCUD
-	// for the purposes of the common layer. The if-branch checking for
-	// "GENERAL_PURPOSE" was a no-op (both arms assigned CommitmentCUD) and
-	// is removed (10-L1).
-	commitmentType := common.CommitmentCUD
-
-	com := common.Commitment{
+func (c *Client) convertGCPCommitmentToCommon(commitment *computepb.Commitment) (common.Commitment, error) {
+	if commitment.GetName() == "" {
+		return common.Commitment{}, fmt.Errorf("computeengine: commitment has no name")
+	}
+	start, err := time.Parse(time.RFC3339, commitment.GetStartTimestamp())
+	if err != nil {
+		return common.Commitment{}, fmt.Errorf("computeengine: commitment %q start timestamp: %w", commitment.GetName(), err)
+	}
+	if value, ok := computepb.Commitment_Type_value[commitment.GetType()]; !ok || value == int32(computepb.Commitment_UNDEFINED_TYPE) {
+		return common.Commitment{}, fmt.Errorf("computeengine: commitment %q has unknown type %q", commitment.GetName(), commitment.GetType())
+	}
+	count, err := commitmentVCPUCount(commitment.GetResources())
+	if err != nil {
+		return common.Commitment{}, fmt.Errorf("computeengine: commitment %q: %w", commitment.GetName(), err)
+	}
+	return common.Commitment{
 		Provider:       common.ProviderGCP,
 		Account:        c.projectID,
-		CommitmentType: commitmentType,
+		CommitmentType: common.CommitmentCUD,
 		Service:        common.ServiceCompute,
 		Region:         c.region,
 		CommitmentID:   *commitment.Name,
 		State:          gcpCommitmentState(commitment.GetStatus()),
-	}
-
-	// Extract resource type from commitment resources
-	if len(commitment.Resources) > 0 {
-		resource := commitment.Resources[0]
-		if resource.Type != nil {
-			com.ResourceType = *resource.Type
-		}
-	}
-
-	return com
+		ResourceType:   commitment.GetType(),
+		Count:          count,
+		StartDate:      start,
+	}, nil
 }
 
 // ResourceCommitment represents a single resource within a GCP commitment.
@@ -744,7 +744,8 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 
 	result.Success = true
 	result.CommitmentID = commitmentName
-	result.Cost = &rec.CommitmentCost
+	upfrontCost := 0.0 // Compute Engine CUDs are billed monthly, with no upfront charge.
+	result.Cost = &upfrontCost
 
 	return result, nil
 }

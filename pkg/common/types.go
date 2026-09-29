@@ -336,8 +336,8 @@ type PurchaseResult struct {
 	Success        bool           `json:"success"`
 	CommitmentID   string         `json:"commitment_id,omitempty"`
 	Error          error          `json:"error,omitempty"`
-	// Cost is the total charged for the whole purchase (unit price x count),
-	// nil when the provider did not report it. Never 0 as a stand-in for unknown.
+	// Cost is the total upfront charge for the whole purchase (unit price x count).
+	// Nil means unknown; a non-nil zero means no upfront charge.
 	Cost      *float64  `json:"cost"`
 	DryRun    bool      `json:"dry_run"`
 	Timestamp time.Time `json:"timestamp"`

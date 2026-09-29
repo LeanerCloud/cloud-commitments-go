@@ -167,6 +167,36 @@ func TestElastiCacheEngineBoundaries(t *testing.T) {
 	}
 }
 
+type customDedupeClient struct {
+	fakeServiceClient
+	filterErr error
+	seen      []common.Commitment
+}
+
+func (c *customDedupeClient) FilterRecommendationsForRecentCommitments(recs []common.Recommendation, existing []common.Commitment) ([]common.Recommendation, []common.Recommendation, error) {
+	c.seen = existing
+	return recs, nil, c.filterErr
+}
+
+func TestProviderDedupeDoesNotFallThrough(t *testing.T) {
+	for _, filterErr := range []error{nil, errors.New("provider inventory unusable")} {
+		c := &customDedupeClient{
+			fakeServiceClient: fakeServiceClient{commitments: []common.Commitment{
+				{ResourceType: "matching-size", Region: "region", Count: 10, State: common.CommitmentStateActive, StartDate: time.Now()},
+				{ResourceType: "old-size", State: common.CommitmentStateActive, StartDate: time.Now().Add(-48 * time.Hour)},
+			}},
+			filterErr: filterErr,
+		}
+		recs := []common.Recommendation{{ResourceType: "matching-size", Region: "region", Count: 5}}
+		passed, filtered, err := NewDuplicateChecker(24).AdjustRecommendationsForExisting(context.Background(), recs, c)
+		assert.ErrorIs(t, err, filterErr)
+		assert.Equal(t, recs, passed)
+		assert.Empty(t, filtered)
+		require.Len(t, c.seen, 1)
+		assert.Equal(t, "matching-size", c.seen[0].ResourceType)
+	}
+}
+
 func TestFilterRecentCommitments_StateAndWindow(t *testing.T) {
 	t.Parallel()
 	now := time.Now()

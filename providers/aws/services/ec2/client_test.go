@@ -3,6 +3,7 @@ package ec2
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -443,6 +444,49 @@ func TestClient_PurchaseCommitment(t *testing.T) {
 	require.NotNil(t, result.Cost, "EC2 RI purchase must record its upfront cost, not leave it unset")
 	assert.Equal(t, 200.0, *result.Cost, "total upfront is the offering FixedPrice x purchased count")
 	mockEC2.AssertExpectations(t)
+}
+
+func TestClient_PurchaseCommitment_UpfrontCost(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		price *float32
+		count int
+		want  *float64
+	}{
+		{"unknown", nil, 3, nil},
+		{"zero", aws.Float32(0), 3, aws.Float64(0)},
+		{"cents", aws.Float32(12.34), 3, aws.Float64(37.02)},
+		{"large quantity", aws.Float32(12.34), 20000, aws.Float64(246800)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m := &MockEC2Client{}
+			client := &Client{client: m, region: "us-east-1"}
+			rec := common.Recommendation{ResourceType: "t3.micro", Count: tt.count, PaymentOption: "partial-upfront", Term: "3yr",
+				Details: &common.ComputeDetails{Platform: "Linux/UNIX", Tenancy: "default", Scope: "Region"}}
+			m.On("DescribeReservedInstancesOfferings", mock.Anything, mock.Anything).Return(&ec2.DescribeReservedInstancesOfferingsOutput{
+				ReservedInstancesOfferings: []types.ReservedInstancesOffering{{ReservedInstancesOfferingId: aws.String("offer"),
+					InstanceType: types.InstanceTypeT3Micro, Duration: aws.Int64(94608000), OfferingType: types.OfferingTypeValuesPartialUpfront,
+					ProductDescription: types.RIProductDescriptionLinuxUnix, InstanceTenancy: types.TenancyDefault, FixedPrice: tt.price}},
+			}, nil).Once()
+			m.On("PurchaseReservedInstancesOffering", mock.Anything, mock.MatchedBy(func(in *ec2.PurchaseReservedInstancesOfferingInput) bool {
+				return int(aws.ToInt32(in.InstanceCount)) == tt.count
+			})).Return(&ec2.PurchaseReservedInstancesOfferingOutput{ReservedInstancesId: aws.String("ri-bought")}, nil).Once()
+			m.On("CreateTags", mock.Anything, mock.Anything).Return(&ec2.CreateTagsOutput{}, nil).Once()
+			result, err := client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
+			require.NoError(t, err)
+			assert.True(t, result.Success)
+			assert.Equal(t, "ri-bought", result.CommitmentID)
+			assert.Equal(t, tt.want, result.Cost)
+			payload, err := json.Marshal(result)
+			require.NoError(t, err)
+			var decoded struct {
+				Cost *float64 `json:"cost"`
+			}
+			require.NoError(t, json.Unmarshal(payload, &decoded))
+			assert.Equal(t, tt.want, decoded.Cost)
+			m.AssertExpectations(t)
+		})
+	}
 }
 
 func TestClient_PurchaseCommitment_StampsPurchaseAutomationTag(t *testing.T) {

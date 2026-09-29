@@ -137,6 +137,16 @@ func BillingPlanForPaymentOption(paymentOption string) (armreservations.Reservat
 	}
 }
 
+// UpfrontCostForBillingPlan excludes recurring installments; the purchase flow
+// returns no authoritative charge for upfront orders, including re-drives.
+func UpfrontCostForBillingPlan(billingPlan armreservations.ReservationBillingPlan) *float64 {
+	if billingPlan == armreservations.ReservationBillingPlanMonthly {
+		zero := 0.0
+		return &zero
+	}
+	return nil
+}
+
 // apiVersion is the GA api-version for the Microsoft.Capacity Reservations API.
 // Pinned to 2022-11-01 — the last stable version before Azure introduced the
 // calculatePrice requirement for new SKU families.

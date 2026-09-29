@@ -2,6 +2,7 @@ package computeengine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -317,32 +318,20 @@ func TestComputeEngineClient_GetExistingCommitments_WithMock(t *testing.T) {
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
-	name := "commitment-1"
-	status := "ACTIVE"
-	commitmentType := "GENERAL_PURPOSE"
-	resourceType := "n1-standard-1"
-
 	mockService := &MockCommitmentsService{
-		commitments: []*computepb.Commitment{
-			{
-				Name:   &name,
-				Status: &status,
-				Type:   &commitmentType,
-				Resources: []*computepb.ResourceCommitment{
-					{Type: &resourceType},
-				},
-			},
-		},
-		operation: &MockOperation{},
+		commitments: []*computepb.Commitment{recentCUD()},
+		operation:   &MockOperation{},
 	}
 	client.SetCommitmentsService(mockService)
 
 	commitments, err := client.GetExistingCommitments(ctx)
 	require.NoError(t, err)
 	require.Len(t, commitments, 1)
-	assert.Equal(t, "commitment-1", commitments[0].CommitmentID)
+	assert.Equal(t, "recent-cud", commitments[0].CommitmentID)
 	assert.Equal(t, common.CommitmentStateActive, commitments[0].State)
-	assert.Equal(t, "n1-standard-1", commitments[0].ResourceType)
+	assert.Equal(t, "GENERAL_PURPOSE_N2", commitments[0].ResourceType)
+	assert.Equal(t, 16, commitments[0].Count)
+	assert.False(t, commitments[0].StartDate.IsZero())
 }
 
 func TestComputeEngineClient_GetExistingCommitments_Error(t *testing.T) {
@@ -365,13 +354,13 @@ func TestComputeEngineClient_GetExistingCommitments_NilName(t *testing.T) {
 
 	mockService := &MockCommitmentsService{
 		commitments: []*computepb.Commitment{
-			{Name: nil}, // Should be skipped
+			{Name: nil},
 		},
 	}
 	client.SetCommitmentsService(mockService)
 
 	commitments, err := client.GetExistingCommitments(ctx)
-	require.NoError(t, err)
+	require.Error(t, err)
 	assert.Empty(t, commitments)
 }
 
@@ -479,7 +468,8 @@ func TestComputeEngineClient_PurchaseCommitment_WithMock(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.NotEmpty(t, result.CommitmentID)
-	assert.Equal(t, 1000.0, *result.Cost)
+	require.NotNil(t, result.Cost)
+	assert.Zero(t, *result.Cost)
 }
 
 // TestComputeEngineClient_PurchaseCommitment_PointerDetails is the regression
@@ -510,7 +500,45 @@ func TestComputeEngineClient_PurchaseCommitment_PointerDetails(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.NotEmpty(t, result.CommitmentID)
-	assert.Equal(t, 1000.0, *result.Cost)
+	require.NotNil(t, result.Cost)
+	assert.Zero(t, *result.Cost)
+}
+
+func TestComputeEngineClient_PurchaseCommitment_UpfrontCost(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		estimate  float64
+		insertErr error
+		waitErr   error
+	}{
+		{name: "positive estimate", estimate: 1000},
+		{name: "missing estimate"},
+		{name: "insert failed", insertErr: errors.New("insert failed")},
+		{name: "wait failed", waitErr: errors.New("wait failed")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := NewClient(context.Background(), "test-project", "us-central1")
+			require.NoError(t, err)
+			client.SetCommitmentsService(&MockCommitmentsService{insertErr: tt.insertErr, operation: &MockOperation{err: tt.waitErr}})
+			rec := common.Recommendation{ResourceType: "n1-standard-1", Term: "1yr", CommitmentCost: tt.estimate,
+				Count: 5, Details: &common.ComputeDetails{MemoryGB: 20}}
+			result, err := client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
+			if tt.insertErr != nil || tt.waitErr != nil {
+				require.Error(t, err)
+				assert.False(t, result.Success)
+				assert.Nil(t, result.Cost)
+				return
+			}
+			require.NoError(t, err)
+			assert.True(t, result.Success)
+			assert.NotEmpty(t, result.CommitmentID)
+			require.NotNil(t, result.Cost)
+			assert.Zero(t, *result.Cost)
+			payload, err := json.Marshal(result)
+			require.NoError(t, err)
+			assert.Contains(t, string(payload), `"cost":0`)
+		})
+	}
 }
 
 // TestComputeEngineClient_PurchaseCommitment_NilPointerDetails verifies that

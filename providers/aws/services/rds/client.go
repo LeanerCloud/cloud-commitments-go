@@ -17,6 +17,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/reservationstate"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/tagging"
 )
 
@@ -81,8 +82,8 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 
 		for i := range response.ReservedDBInstances {
 			instance := &response.ReservedDBInstances[i]
-			state := aws.ToString(instance.State)
-			if state != "active" && state != "payment-pending" {
+			state := common.CommitmentState(aws.ToString(instance.State))
+			if !reservationstate.IsOwned(state) {
 				continue
 			}
 
@@ -111,7 +112,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 				Engine:         aws.ToString(instance.ProductDescription), // Capture engine for accurate duplicate checking
 				Deployment:     deployment,
 				Count:          int(aws.ToInt32(instance.DBInstanceCount)),
-				State:          common.CommitmentState(state),
+				State:          state,
 				StartDate:      aws.ToTime(instance.StartTime),
 				EndDate:        aws.ToTime(instance.StartTime).AddDate(0, termMonths, 0),
 			}
@@ -260,7 +261,7 @@ func (c *Client) recoverAlreadyExists(ctx context.Context, token, reservationID 
 	return "", false
 }
 
-// findReservationByID looks for an active or payment-pending RDS reserved DB
+// findReservationByID looks for a nonterminal RDS reserved DB
 // instance with the given ReservedDBInstanceId (issue #641). It returns the
 // reservation ID and true when such a reservation exists, so a re-driven
 // purchase can short-circuit. Retired/expired reservations are excluded (same
@@ -282,8 +283,8 @@ func (c *Client) findReservationByID(ctx context.Context, reservationID string) 
 	}
 	for i := range response.ReservedDBInstances {
 		ri := &response.ReservedDBInstances[i]
-		state := aws.ToString(ri.State)
-		if state != "active" && state != "payment-pending" {
+		state := common.CommitmentState(aws.ToString(ri.State))
+		if !reservationstate.IsOwned(state) {
 			continue
 		}
 		if ri.ReservedDBInstanceId != nil {

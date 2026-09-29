@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"sort"
 	"strconv"
 	"time"
@@ -284,9 +285,17 @@ func (c *Client) upfrontPaymentAmount(ctx context.Context, savingsPlanID string)
 		if aws.ToString(sp.SavingsPlanId) != savingsPlanID {
 			continue
 		}
+		if aws.ToString(sp.UpfrontPaymentAmount) == "" && sp.PaymentOption == types.SavingsPlanPaymentOptionNoUpfront {
+			zero := 0.0
+			return &zero
+		}
 		amount, err := strconv.ParseFloat(aws.ToString(sp.UpfrontPaymentAmount), 64)
 		if err != nil {
 			log.Printf("WARNING: Savings Plan %s has unparseable upfront amount %q (cost unrecorded): %v", savingsPlanID, aws.ToString(sp.UpfrontPaymentAmount), err)
+			return nil
+		}
+		if math.IsNaN(amount) || math.IsInf(amount, 0) || amount < 0 {
+			log.Printf("WARNING: Savings Plan %s has invalid upfront amount %q (cost unrecorded)", savingsPlanID, aws.ToString(sp.UpfrontPaymentAmount))
 			return nil
 		}
 		return &amount
