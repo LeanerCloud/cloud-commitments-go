@@ -3,7 +3,6 @@ package recommendations
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -33,7 +32,7 @@ const usageHistoryLookbackDays = 7
 //
 // serviceFilter is the canonical CE SERVICE dimension value (e.g.
 // "Amazon Elastic Compute Cloud - Compute"). The resourceType is matched
-// against the INSTANCE_TYPE dimension so we only pick up coverage for the
+// by the INSTANCE_TYPE dimension so we only pick up coverage for the
 // exact SKU the recommendation targets.
 func (c *Client) GetDailyUsagePcts(ctx context.Context, serviceFilter, resourceType, region string) ([]float64, error) {
 	if serviceFilter == "" || resourceType == "" || region == "" {
@@ -83,14 +82,8 @@ func (c *Client) fetchDailyCoverage(ctx context.Context, serviceFilter, resource
 			End:   aws.String(end.Format("2006-01-02")),
 		},
 		Granularity: types.GranularityDaily,
-		GroupBy: []types.GroupDefinition{
-			{
-				Type: types.GroupDefinitionTypeDimension,
-				Key:  aws.String(string(types.DimensionInstanceType)),
-			},
-		},
-		Filter:  dailyUsageFilter(serviceFilter, region),
-		Metrics: []string{"Hour"},
+		Filter:      dailyUsageFilter(serviceFilter, resourceType, region),
+		Metrics:     []string{"Hour"},
 	}
 
 	anyData := false
@@ -101,7 +94,7 @@ func (c *Client) fetchDailyCoverage(ctx context.Context, serviceFilter, resource
 		if err != nil {
 			return false, fmt.Errorf("failed to get daily coverage for %s/%s/%s: %w", serviceFilter, resourceType, region, err)
 		}
-		if applyPeriodsToDayMap(result.CoveragesByTime, resourceType, dayPct) {
+		if applyPeriodsToDayMap(result.CoveragesByTime, dayPct) {
 			anyData = true
 		}
 		if result.NextPageToken == nil || *result.NextPageToken == "" {
@@ -112,28 +105,19 @@ func (c *Client) fetchDailyCoverage(ctx context.Context, serviceFilter, resource
 	return anyData, nil
 }
 
-// applyPeriodsToDayMap writes CE coverage percentages from periods into dayPct,
-// matching only the given resourceType. Reports whether any data was written.
-func applyPeriodsToDayMap(periods []types.CoverageByTime, resourceType string, dayPct map[string]float64) bool {
+func applyPeriodsToDayMap(periods []types.CoverageByTime, dayPct map[string]float64) bool {
 	anyData := false
 	for _, period := range periods {
 		if period.TimePeriod == nil || period.TimePeriod.Start == nil {
 			continue
 		}
 		day := aws.ToString(period.TimePeriod.Start)
-		for _, group := range period.Groups {
-			instType := extractInstanceTypeAttr(group.Attributes)
-			if !strings.EqualFold(instType, resourceType) {
-				continue
-			}
-			if group.Coverage == nil || group.Coverage.CoverageHours == nil ||
-				group.Coverage.CoverageHours.CoverageHoursPercentage == nil {
-				continue
-			}
-			pct := parseFloat(aws.ToString(group.Coverage.CoverageHours.CoverageHoursPercentage))
-			dayPct[day] = pct
-			anyData = true
+		if period.Total == nil || period.Total.CoverageHours == nil ||
+			period.Total.CoverageHours.CoverageHoursPercentage == nil {
+			continue
 		}
+		dayPct[day] = parseFloat(aws.ToString(period.Total.CoverageHours.CoverageHoursPercentage))
+		anyData = true
 	}
 	return anyData
 }
@@ -193,31 +177,10 @@ func (c *Client) AttachDailyUsageHistory(ctx context.Context, recs []common.Reco
 	}
 }
 
-// dailyUsageFilter builds a CE filter that scopes GetReservationCoverage to
-// a single (service, region) tuple for the daily-sparkline fetch.
-func dailyUsageFilter(serviceFilter, region string) *types.Expression {
-	return &types.Expression{
-		And: []types.Expression{
-			{Dimensions: &types.DimensionValues{
-				Key:    types.DimensionService,
-				Values: []string{serviceFilter},
-			}},
-			{Dimensions: &types.DimensionValues{
-				Key:    types.DimensionRegion,
-				Values: []string{region},
-			}},
-		},
-	}
-}
-
-// extractInstanceTypeAttr extracts the INSTANCE_TYPE value from CE's
-// Attributes map. CE encodes the key in camelCase ("instanceType"); we
-// lower-case both sides to match extractGroupAttributes in coverage.go.
-func extractInstanceTypeAttr(attrs map[string]string) string {
-	for k, v := range attrs {
-		if strings.ToLower(strings.ReplaceAll(k, "_", "")) == "instancetype" {
-			return v
-		}
-	}
-	return ""
+func dailyUsageFilter(serviceFilter, resourceType, region string) *types.Expression {
+	filter := serviceRegionFilter(serviceFilter, region)
+	filter.And = append(filter.And, types.Expression{Dimensions: &types.DimensionValues{
+		Key: types.DimensionInstanceType, Values: []string{resourceType},
+	}})
+	return filter
 }
