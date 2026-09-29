@@ -3,7 +3,7 @@ module github.com/LeanerCloud/cloud-commitments-go/providers/aws
 go 1.26.6
 
 require (
-	github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20260928204158-281440d4c44b
+	github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20260929105827-b3b4cb5e3d80
 	github.com/aws/aws-sdk-go-v2 v1.41.5
 	github.com/aws/aws-sdk-go-v2/config v1.29.12
 	github.com/aws/aws-sdk-go-v2/service/costexplorer v1.61.0
