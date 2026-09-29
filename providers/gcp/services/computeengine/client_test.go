@@ -2,6 +2,7 @@ package computeengine
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -467,7 +468,8 @@ func TestComputeEngineClient_PurchaseCommitment_WithMock(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.NotEmpty(t, result.CommitmentID)
-	assert.Equal(t, 1000.0, *result.Cost)
+	require.NotNil(t, result.Cost)
+	assert.Zero(t, *result.Cost)
 }
 
 // TestComputeEngineClient_PurchaseCommitment_PointerDetails is the regression
@@ -498,7 +500,45 @@ func TestComputeEngineClient_PurchaseCommitment_PointerDetails(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.NotEmpty(t, result.CommitmentID)
-	assert.Equal(t, 1000.0, *result.Cost)
+	require.NotNil(t, result.Cost)
+	assert.Zero(t, *result.Cost)
+}
+
+func TestComputeEngineClient_PurchaseCommitment_UpfrontCost(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		estimate  float64
+		insertErr error
+		waitErr   error
+	}{
+		{name: "positive estimate", estimate: 1000},
+		{name: "missing estimate"},
+		{name: "insert failed", insertErr: errors.New("insert failed")},
+		{name: "wait failed", waitErr: errors.New("wait failed")},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := NewClient(context.Background(), "test-project", "us-central1")
+			require.NoError(t, err)
+			client.SetCommitmentsService(&MockCommitmentsService{insertErr: tt.insertErr, operation: &MockOperation{err: tt.waitErr}})
+			rec := common.Recommendation{ResourceType: "n1-standard-1", Term: "1yr", CommitmentCost: tt.estimate,
+				Count: 5, Details: &common.ComputeDetails{MemoryGB: 20}}
+			result, err := client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
+			if tt.insertErr != nil || tt.waitErr != nil {
+				require.Error(t, err)
+				assert.False(t, result.Success)
+				assert.Nil(t, result.Cost)
+				return
+			}
+			require.NoError(t, err)
+			assert.True(t, result.Success)
+			assert.NotEmpty(t, result.CommitmentID)
+			require.NotNil(t, result.Cost)
+			assert.Zero(t, *result.Cost)
+			payload, err := json.Marshal(result)
+			require.NoError(t, err)
+			assert.Contains(t, string(payload), `"cost":0`)
+		})
+	}
 }
 
 // TestComputeEngineClient_PurchaseCommitment_NilPointerDetails verifies that

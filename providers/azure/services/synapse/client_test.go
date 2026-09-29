@@ -540,7 +540,8 @@ func TestPurchaseCommitment_success(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.Equal(t, "syn-order-001", result.CommitmentID)
-	assert.InDelta(t, 5000.0, *result.Cost, 0.01)
+	require.NotNil(t, result.Cost)
+	assert.Zero(t, *result.Cost)
 }
 
 func TestPurchaseCommitment_3yrTerm(t *testing.T) {
@@ -911,6 +912,12 @@ func TestPurchaseCommitment_billingPlan(t *testing.T) {
 			props, ok := body["properties"].(map[string]interface{})
 			require.True(t, ok, "properties map missing from reservation body")
 			assert.Equal(t, tc.wantPlan, props["billingPlan"])
+			if tc.wantPlan == "Monthly" {
+				require.NotNil(t, result.Cost)
+				assert.Zero(t, *result.Cost)
+			} else {
+				assert.Nil(t, result.Cost)
+			}
 		})
 	}
 }

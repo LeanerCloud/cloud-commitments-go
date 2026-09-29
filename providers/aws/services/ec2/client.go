@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -176,7 +177,8 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		// The purchase response carries no price; the offering's FixedPrice is per
 		// instance, so the total upfront is FixedPrice x the purchased count.
 		if offering.FixedPrice != nil {
-			total := float64(aws.ToFloat32(offering.FixedPrice)) * float64(rec.Count)
+			unitCents := math.Round(float64(*offering.FixedPrice) * 100)
+			total := unitCents * float64(rec.Count) / 100
 			result.Cost = &total
 		}
 	} else {

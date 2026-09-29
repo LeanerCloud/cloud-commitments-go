@@ -1,10 +1,34 @@
 package common //nolint:revive // pkg/common is the module's core domain package (Recommendation, ProviderType, ...), imported by name (common.X) throughout this repo and by consumer-mcp; renaming would break every consumer import
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+func TestPurchaseResult_CostJSON(t *testing.T) {
+	zero, positive := 0.0, 12.34
+	for _, tt := range []struct {
+		name string
+		cost *float64
+		json string
+	}{
+		{"unknown", nil, `"cost":null`},
+		{"zero", &zero, `"cost":0`},
+		{"positive", &positive, `"cost":12.34`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			payload, err := json.Marshal(PurchaseResult{Cost: tt.cost})
+			require.NoError(t, err)
+			assert.Contains(t, string(payload), tt.json)
+			var decoded PurchaseResult
+			require.NoError(t, json.Unmarshal(payload, &decoded))
+			assert.Equal(t, tt.cost, decoded.Cost)
+		})
+	}
+}
 
 func TestProviderType_String(t *testing.T) {
 	t.Parallel()

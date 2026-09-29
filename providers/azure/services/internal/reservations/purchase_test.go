@@ -16,6 +16,25 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
+func TestUpfrontCostForBillingPlan(t *testing.T) {
+	for _, plan := range []armreservations.ReservationBillingPlan{
+		armreservations.ReservationBillingPlanMonthly,
+		armreservations.ReservationBillingPlanUpfront,
+		"",
+		"unknown",
+	} {
+		t.Run(string(plan), func(t *testing.T) {
+			cost := UpfrontCostForBillingPlan(plan)
+			if plan == armreservations.ReservationBillingPlanMonthly {
+				require.NotNil(t, cost)
+				assert.Zero(t, *cost)
+			} else {
+				assert.Nil(t, cost)
+			}
+		})
+	}
+}
+
 // mockHTTPClient implements HTTPClient for tests.
 type mockHTTPClient struct{ mock.Mock }
 
