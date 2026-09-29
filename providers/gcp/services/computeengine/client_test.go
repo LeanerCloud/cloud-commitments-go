@@ -318,32 +318,20 @@ func TestComputeEngineClient_GetExistingCommitments_WithMock(t *testing.T) {
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
-	name := "commitment-1"
-	status := "ACTIVE"
-	commitmentType := "GENERAL_PURPOSE"
-	resourceType := "n1-standard-1"
-
 	mockService := &MockCommitmentsService{
-		commitments: []*computepb.Commitment{
-			{
-				Name:   &name,
-				Status: &status,
-				Type:   &commitmentType,
-				Resources: []*computepb.ResourceCommitment{
-					{Type: &resourceType},
-				},
-			},
-		},
-		operation: &MockOperation{},
+		commitments: []*computepb.Commitment{recentCUD()},
+		operation:   &MockOperation{},
 	}
 	client.SetCommitmentsService(mockService)
 
 	commitments, err := client.GetExistingCommitments(ctx)
 	require.NoError(t, err)
 	require.Len(t, commitments, 1)
-	assert.Equal(t, "commitment-1", commitments[0].CommitmentID)
+	assert.Equal(t, "recent-cud", commitments[0].CommitmentID)
 	assert.Equal(t, common.CommitmentStateActive, commitments[0].State)
-	assert.Equal(t, "n1-standard-1", commitments[0].ResourceType)
+	assert.Equal(t, "GENERAL_PURPOSE_N2", commitments[0].ResourceType)
+	assert.Equal(t, 16, commitments[0].Count)
+	assert.False(t, commitments[0].StartDate.IsZero())
 }
 
 func TestComputeEngineClient_GetExistingCommitments_Error(t *testing.T) {
@@ -366,13 +354,13 @@ func TestComputeEngineClient_GetExistingCommitments_NilName(t *testing.T) {
 
 	mockService := &MockCommitmentsService{
 		commitments: []*computepb.Commitment{
-			{Name: nil}, // Should be skipped
+			{Name: nil},
 		},
 	}
 	client.SetCommitmentsService(mockService)
 
 	commitments, err := client.GetExistingCommitments(ctx)
-	require.NoError(t, err)
+	require.Error(t, err)
 	assert.Empty(t, commitments)
 }
 
