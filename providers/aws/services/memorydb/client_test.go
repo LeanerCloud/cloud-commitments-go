@@ -46,6 +46,95 @@ func (m *MockMemoryDBClient) DescribeReservedNodes(ctx context.Context, params *
 	return args.Get(0).(*memorydb.DescribeReservedNodesOutput), args.Error(1)
 }
 
+func TestClient_ReservationStatesPreventDuplicatePurchases(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		state *string
+		owned bool
+	}{
+		{"active", aws.String("active"), true},
+		{"paying", aws.String("payment-pending"), true},
+		{"queued", aws.String("queued"), true},
+		{"unknown", aws.String("future-provider-state"), true},
+		{"missing", nil, true},
+		{"empty", aws.String(""), true},
+		{"payment_failed", aws.String("payment-failed"), false},
+		{"retired", aws.String("retired"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := mdbIdemRec()
+			rec.Provider, rec.Region = common.ProviderAWS, "eu-west-1"
+			rec.Service = common.ServiceMemoryDB
+			token := common.DeriveIdempotencyToken("state-regression", 0)
+			id := common.IdempotentReservationID("memorydb-id-", token)
+			response := &memorydb.DescribeReservedNodesOutput{ReservedNodes: []types.ReservedNode{{
+				ReservationId: aws.String(id), State: tc.state, StartTime: aws.Time(time.Now().Add(-time.Hour)),
+				NodeType: aws.String(rec.ResourceType), NodeCount: 1, Duration: 31536000,
+			}}}
+			t.Run("dedupe", func(t *testing.T) {
+				m := &MockMemoryDBClient{}
+				t.Cleanup(func() { m.AssertExpectations(t) })
+				m.On("DescribeReservedNodes", mock.Anything, mock.Anything).Return(response, nil)
+				client := &Client{client: m, region: rec.Region}
+				for _, count := range []int{1, 2} {
+					rec.Count = count
+					passed, filtered, err := recfilter.NewDuplicateChecker(0).AdjustRecommendationsForExisting(context.Background(), []common.Recommendation{rec}, client)
+					require.NoError(t, err)
+					if tc.owned && count == 1 {
+						assert.Empty(t, passed, "an owned reservation must suppress the duplicate")
+						assert.Len(t, filtered, 1)
+					} else {
+						require.Len(t, passed, 1)
+						want := count
+						if tc.owned {
+							want--
+						}
+						assert.Equal(t, want, passed[0].Count)
+						assert.Empty(t, filtered)
+					}
+				}
+				listed, err := client.GetExistingCommitments(context.Background())
+				require.NoError(t, err)
+				if !tc.owned {
+					assert.Empty(t, listed)
+					return
+				}
+				require.Len(t, listed, 1)
+				wantState := common.CommitmentState(aws.ToString(tc.state))
+
+				assert.Equal(t, wantState, listed[0].State)
+				response.ReservedNodes[0].StartTime = aws.Time(time.Now().Add(-48 * time.Hour))
+				passed, filtered, err := recfilter.NewDuplicateChecker(0).AdjustRecommendationsForExisting(context.Background(), []common.Recommendation{rec}, client)
+				require.NoError(t, err)
+				require.Len(t, passed, 1)
+				assert.Equal(t, rec.Count, passed[0].Count, "old reservations stay outside the dedupe window")
+				assert.Empty(t, filtered)
+			})
+			t.Run("purchase_retry", func(t *testing.T) {
+				rec.Count = 1
+				m := &MockMemoryDBClient{}
+				t.Cleanup(func() { m.AssertExpectations(t) })
+				expectMDBOffering(m)
+				m.On("DescribeReservedNodes", mock.Anything, mock.Anything).Return(response, nil)
+				sentinel := fmt.Errorf("purchase boundary reached")
+				m.On("PurchaseReservedNodesOffering", mock.Anything, mock.Anything).Return((*memorydb.PurchaseReservedNodesOfferingOutput)(nil), sentinel).Maybe()
+				client := &Client{client: m, region: rec.Region}
+				result, err := client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{IdempotencyToken: token})
+				if tc.owned {
+					assert.NoError(t, err)
+					assert.True(t, result.Success)
+					assert.Equal(t, id, result.CommitmentID)
+					m.AssertNotCalled(t, "PurchaseReservedNodesOffering", mock.Anything, mock.Anything)
+				} else {
+					assert.ErrorIs(t, err, sentinel)
+					assert.False(t, result.Success)
+					m.AssertNumberOfCalls(t, "PurchaseReservedNodesOffering", 1)
+				}
+			})
+		})
+	}
+}
+
 func TestNewClient(t *testing.T) {
 	cfg := aws.Config{
 		Region: "us-east-1",

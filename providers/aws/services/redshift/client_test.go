@@ -3,10 +3,12 @@ package redshift
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/recfilter"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/redshift"
 	"github.com/aws/aws-sdk-go-v2/service/redshift/types"
@@ -72,6 +74,109 @@ func (m *MockRedshiftSTSClient) GetCallerIdentity(ctx context.Context, params *s
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*sts.GetCallerIdentityOutput), args.Error(1)
+}
+
+func TestClient_ReservationStatesPreventDuplicatePurchases(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		state *string
+		owned bool
+	}{
+		{"active", aws.String("active"), true},
+		{"paying", aws.String("payment-pending"), true},
+		{"queued", aws.String("queued"), true},
+		{"unknown", aws.String("future-provider-state"), true},
+		{"missing", nil, true},
+		{"empty", aws.String(""), true},
+		{"payment_failed", aws.String("payment-failed"), false},
+		{"retired", aws.String("retired"), false},
+		{"pending_payment", aws.String("pending-payment"), true},
+		{"exchanging", aws.String("exchanging"), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := rsIdemRec()
+			rec.Provider, rec.Region = common.ProviderAWS, "eu-west-1"
+
+			token := common.DeriveIdempotencyToken("state-regression", 0)
+			id := common.IdempotentReservationID("redshift-id-", token)
+			response := &redshift.DescribeReservedNodesOutput{ReservedNodes: []types.ReservedNode{{
+				ReservedNodeId: aws.String(id), State: tc.state, StartTime: aws.Time(time.Now().Add(-time.Hour)),
+				NodeType: aws.String(rec.ResourceType), NodeCount: aws.Int32(1), Duration: aws.Int32(31536000),
+			}}}
+			t.Run("dedupe", func(t *testing.T) {
+				m := &MockRedshiftClient{}
+				t.Cleanup(func() { m.AssertExpectations(t) })
+				m.On("DescribeReservedNodes", mock.Anything, mock.Anything).Return(response, nil)
+				client := &Client{client: m, region: rec.Region}
+				for _, count := range []int{1, 2} {
+					rec.Count = count
+					passed, filtered, err := recfilter.NewDuplicateChecker(0).AdjustRecommendationsForExisting(context.Background(), []common.Recommendation{rec}, client)
+					require.NoError(t, err)
+					if tc.owned && count == 1 {
+						assert.Empty(t, passed, "an owned reservation must suppress the duplicate")
+						assert.Len(t, filtered, 1)
+					} else {
+						require.Len(t, passed, 1)
+						want := count
+						if tc.owned {
+							want--
+						}
+						assert.Equal(t, want, passed[0].Count)
+						assert.Empty(t, filtered)
+					}
+				}
+				listed, err := client.GetExistingCommitments(context.Background())
+				require.NoError(t, err)
+				if !tc.owned {
+					assert.Empty(t, listed)
+					return
+				}
+				require.Len(t, listed, 1)
+				wantState := common.CommitmentState(aws.ToString(tc.state))
+				if wantState == "pending-payment" {
+					wantState = common.CommitmentStatePaymentPending
+				}
+				assert.Equal(t, wantState, listed[0].State)
+				response.ReservedNodes[0].StartTime = aws.Time(time.Now().Add(-48 * time.Hour))
+				passed, filtered, err := recfilter.NewDuplicateChecker(0).AdjustRecommendationsForExisting(context.Background(), []common.Recommendation{rec}, client)
+				require.NoError(t, err)
+				require.Len(t, passed, 1)
+				assert.Equal(t, rec.Count, passed[0].Count, "old reservations stay outside the dedupe window")
+				assert.Empty(t, filtered)
+			})
+			t.Run("purchase_retry", func(t *testing.T) {
+				rec.Count = 1
+				m := &MockRedshiftClient{}
+				t.Cleanup(func() { m.AssertExpectations(t) })
+				expectRSOffering(m)
+				response.ReservedNodes = append([]types.ReservedNode{{ReservedNodeId: aws.String("unrelated"), State: tc.state}}, response.ReservedNodes...)
+				m.On("DescribeReservedNodes", mock.Anything, mock.Anything).Return(response, nil)
+				sentinel := fmt.Errorf("purchase boundary reached")
+				m.On("PurchaseReservedNodeOffering", mock.Anything, mock.Anything).Return((*redshift.PurchaseReservedNodeOfferingOutput)(nil), sentinel).Maybe()
+				m.On("DescribeTags", mock.Anything, mock.MatchedBy(func(in *redshift.DescribeTagsInput) bool {
+					return strings.HasSuffix(aws.ToString(in.ResourceName), ":reservednode:unrelated")
+				})).Return(&redshift.DescribeTagsOutput{}, nil).Maybe()
+				m.On("DescribeTags", mock.Anything, mock.MatchedBy(func(in *redshift.DescribeTagsInput) bool {
+					return strings.HasSuffix(aws.ToString(in.ResourceName), ":reservednode:"+id)
+				})).Return(&redshift.DescribeTagsOutput{TaggedResources: []types.TaggedResource{{
+					Tag: &types.Tag{Key: aws.String(common.IdempotencyTagKey), Value: aws.String(token)},
+				}}}, nil).Maybe()
+				client := rsClientWithAccount(m)
+				result, err := client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{IdempotencyToken: token})
+				if tc.owned {
+					assert.NoError(t, err)
+					assert.True(t, result.Success)
+					assert.Equal(t, id, result.CommitmentID)
+					m.AssertNotCalled(t, "PurchaseReservedNodeOffering", mock.Anything, mock.Anything)
+				} else {
+					assert.ErrorIs(t, err, sentinel)
+					assert.False(t, result.Success)
+					m.AssertNumberOfCalls(t, "PurchaseReservedNodeOffering", 1)
+					m.AssertNotCalled(t, "DescribeTags", mock.Anything, mock.Anything)
+				}
+			})
+		})
+	}
 }
 
 func TestNewClient(t *testing.T) {

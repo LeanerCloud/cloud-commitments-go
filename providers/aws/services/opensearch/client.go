@@ -18,6 +18,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/retry"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/reservationstate"
 )
 
 // API defines the interface for OpenSearch operations (enables mocking).
@@ -98,8 +99,8 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 
 		for i := range response.ReservedInstances {
 			ri := &response.ReservedInstances[i]
-			state := aws.ToString(ri.State)
-			if state != "active" && state != "payment-pending" {
+			state := common.CommitmentState(aws.ToString(ri.State))
+			if !reservationstate.IsOwned(state) {
 				continue
 			}
 
@@ -113,7 +114,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 				Region:         c.region,
 				ResourceType:   string(ri.InstanceType),
 				Count:          int(ri.InstanceCount),
-				State:          common.CommitmentState(state),
+				State:          state,
 				StartDate:      aws.ToTime(ri.StartTime),
 				EndDate:        aws.ToTime(ri.StartTime).AddDate(0, termMonths, 0),
 			}
@@ -234,7 +235,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	return result, nil
 }
 
-// findReservationByName looks for an active or payment-pending OpenSearch
+// findReservationByName looks for a nonterminal OpenSearch
 // reserved instance whose ReservationName matches the given name (issue #641),
 // so a re-driven purchase can short-circuit. DescribeReservedInstances has no
 // name filter, so it pages through all reservations and matches client-side.
@@ -255,8 +256,8 @@ func (c *Client) findReservationByName(ctx context.Context, name string) (reserv
 			if aws.ToString(ri.ReservationName) != name {
 				continue
 			}
-			state := aws.ToString(ri.State)
-			if state != "active" && state != "payment-pending" {
+			state := common.CommitmentState(aws.ToString(ri.State))
+			if !reservationstate.IsOwned(state) {
 				continue
 			}
 			if ri.ReservedInstanceId != nil {
