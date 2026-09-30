@@ -23,6 +23,9 @@ import (
 // stalled or unexpectedly large result set.
 const maxRecsPages = 20
 
+// Match the annual-average convention used for term totals, not calendar-month lengths.
+const averageHoursPerMonth = 8760.0 / 12
+
 // StorageService interface for storage operations (enables mocking).
 type StorageService interface {
 	Buckets(ctx context.Context, projectID string) BucketIterator
@@ -320,7 +323,10 @@ func (c *Client) getStoragePricing(ctx context.Context, storageClass, region str
 		return nil, fmt.Errorf("failed to list SKUs: %w", err)
 	}
 
-	onDemandPrice, commitmentPrice, currency := extractStoragePricingFromSKUs(skus.Skus, storageClass, region)
+	onDemandPrice, commitmentPrice, currency, err := extractStoragePricingFromSKUs(skus.Skus, storageClass, region)
+	if err != nil {
+		return nil, err
+	}
 	if onDemandPrice == 0 {
 		return nil, fmt.Errorf("no pricing found for Cloud Storage class %s", storageClass)
 	}
@@ -329,9 +335,6 @@ func (c *Client) getStoragePricing(ctx context.Context, storageClass, region str
 	}
 
 	hoursInTerm := 8760.0 * float64(termYears)
-	// Scale the per-unit commitment price to a term total so it is on the
-	// same basis as onDemandPrice * hoursInTerm. Without this, the savings
-	// percentage would be nearly 100% (per-unit price vs term total).
 	commitmentPriceTerm := commitmentPrice * hoursInTerm
 	savingsPercentage := calculateStorageSavingsPercentage(onDemandPrice, hoursInTerm, commitmentPriceTerm)
 
@@ -359,7 +362,7 @@ func (c *Client) getOrCreateBillingService(ctx context.Context) (BillingService,
 }
 
 // extractStoragePricingFromSKUs extracts on-demand and commitment pricing from SKU list.
-func extractStoragePricingFromSKUs(skus []*cloudbilling.Sku, storageClass, region string) (onDemand, commitment float64, currency string) {
+func extractStoragePricingFromSKUs(skus []*cloudbilling.Sku, storageClass, region string) (onDemand, commitment float64, currency string, err error) {
 	currency = "USD"
 
 	for _, sku := range skus {
@@ -367,7 +370,10 @@ func extractStoragePricingFromSKUs(skus []*cloudbilling.Sku, storageClass, regio
 			continue
 		}
 
-		price, curr := extractStoragePriceFromSKU(sku)
+		price, curr, err := extractStoragePriceFromSKU(sku)
+		if err != nil {
+			return 0, 0, "", err
+		}
 		if price == 0 {
 			continue
 		}
@@ -383,27 +389,34 @@ func extractStoragePricingFromSKUs(skus []*cloudbilling.Sku, storageClass, regio
 		}
 	}
 
-	return onDemand, commitment, currency
+	return onDemand, commitment, currency, nil
 }
 
-// extractStoragePriceFromSKU extracts the unit price from a SKU.
-func extractStoragePriceFromSKU(sku *cloudbilling.Sku) (price float64, currency string) {
+// extractStoragePriceFromSKU returns a per-GiB-hour rate regardless of the catalog unit.
+func extractStoragePriceFromSKU(sku *cloudbilling.Sku) (price float64, currency string, err error) {
 	if len(sku.PricingInfo) == 0 {
-		return 0, ""
+		return 0, "", nil
 	}
 
 	pricingInfo := sku.PricingInfo[0]
 	if pricingInfo.PricingExpression == nil || len(pricingInfo.PricingExpression.TieredRates) == 0 {
-		return 0, ""
+		return 0, "", nil
 	}
 
 	rate := pricingInfo.PricingExpression.TieredRates[0]
 	if rate.UnitPrice == nil {
-		return 0, ""
+		return 0, "", nil
 	}
 
 	price = float64(rate.UnitPrice.Units) + float64(rate.UnitPrice.Nanos)/1e9
-	return price, rate.UnitPrice.CurrencyCode
+	switch unit := pricingInfo.PricingExpression.UsageUnit; unit {
+	case "GiBy.mo":
+		price /= averageHoursPerMonth
+	case "GiBy.h":
+	default:
+		return 0, "", fmt.Errorf("unsupported Cloud Storage usage unit %q for SKU %q (%s)", unit, sku.SkuId, sku.Description)
+	}
+	return price, rate.UnitPrice.CurrencyCode, nil
 }
 
 // calculateStorageSavingsPercentage calculates the savings percentage.

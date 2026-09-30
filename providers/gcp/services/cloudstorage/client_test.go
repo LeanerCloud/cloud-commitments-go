@@ -2,7 +2,12 @@ package cloudstorage
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"cloud.google.com/go/recommender/apiv1/recommenderpb"
@@ -11,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/cloudbilling/v1"
 	"google.golang.org/api/iterator"
+	"google.golang.org/api/option"
 	"google.golang.org/genproto/googleapis/type/money"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -429,6 +435,7 @@ func storageMockSkus(storageClass string, onDemandNanos, commitmentNanos int64) 
 			PricingInfo: []*cloudbilling.PricingInfo{
 				{
 					PricingExpression: &cloudbilling.PricingExpression{
+						UsageUnit: "GiBy.mo",
 						TieredRates: []*cloudbilling.TierRate{
 							{
 								UnitPrice: &cloudbilling.Money{
@@ -448,6 +455,7 @@ func storageMockSkus(storageClass string, onDemandNanos, commitmentNanos int64) 
 			PricingInfo: []*cloudbilling.PricingInfo{
 				{
 					PricingExpression: &cloudbilling.PricingExpression{
+						UsageUnit: "GiBy.mo",
 						TieredRates: []*cloudbilling.TierRate{
 							{
 								UnitPrice: &cloudbilling.Money{
@@ -660,65 +668,16 @@ func TestCloudStorageClient_ConvertGCPRecommendation_NilPrimaryImpact(t *testing
 func TestCloudStorageClient_GetStoragePricing_WithCommitmentPrice(t *testing.T) {
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	mockService := &MockBillingService{
-		skus: &cloudbilling.ListSkusResponse{
-			Skus: []*cloudbilling.Sku{
-				{
-					Description:    "Standard Storage in us-central1",
-					ServiceRegions: []string{"us-central1"},
-					PricingInfo: []*cloudbilling.PricingInfo{
-						{
-							PricingExpression: &cloudbilling.PricingExpression{
-								TieredRates: []*cloudbilling.TierRate{
-									{
-										UnitPrice: &cloudbilling.Money{
-											Units:        0,
-											Nanos:        26000000,
-											CurrencyCode: "USD",
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-				{
-					Description:    "Standard Storage Commitment in us-central1",
-					ServiceRegions: []string{"us-central1"},
-					PricingInfo: []*cloudbilling.PricingInfo{
-						{
-							PricingExpression: &cloudbilling.PricingExpression{
-								TieredRates: []*cloudbilling.TierRate{
-									{
-										UnitPrice: &cloudbilling.Money{
-											Units:        0,
-											Nanos:        20000000,
-											CurrencyCode: "USD",
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	client.SetBillingService(mockService)
-
+	client.SetBillingService(&MockBillingService{skus: &cloudbilling.ListSkusResponse{
+		Skus: storageMockSkus("STANDARD", 26000000, 20000000),
+	}})
 	pricing, err := client.getStoragePricing(ctx, "STANDARD", "us-central1", 1)
 	require.NoError(t, err)
 	assert.Equal(t, "USD", pricing.Currency)
-	assert.Greater(t, pricing.OnDemandPrice, float64(0))
-	// CommitmentPrice is the term total (per-unit SKU price * hoursInTerm).
-	// onDemand unit = 0.026, commitment unit = 0.020, hoursInTerm = 8760.
-	assert.InDelta(t, 0.02*8760, pricing.CommitmentPrice, 0.01)
-	// HourlyRate is the per-unit commitment price (not divided by hoursInTerm).
-	assert.InDelta(t, 0.02, pricing.HourlyRate, 0.0001)
-	// SavingsPercentage should be positive and less than 100.
-	assert.Greater(t, pricing.SavingsPercentage, float64(0))
-	assert.Less(t, pricing.SavingsPercentage, float64(100))
+	assert.InDelta(t, 0.24, pricing.CommitmentPrice, 1e-12)
+	assert.InDelta(t, 0.312, pricing.OnDemandPrice, 1e-12)
+	assert.InDelta(t, 0.02/730, pricing.HourlyRate, 1e-12)
+	assert.InDelta(t, 100.0*6/26, pricing.SavingsPercentage, 1e-10)
 }
 
 func TestCloudStorageClient_GetStoragePricing_3Year(t *testing.T) {
@@ -770,86 +729,6 @@ func TestCloudStorageConvertGCPRecommendation_PropagatesTermFromParams(t *testin
 	}
 }
 
-// TestGetStoragePricing_CommitmentPriceIsTermTotal is a regression test for the
-// unit-mismatch bug where commitmentPrice (per-unit from SKU) was passed
-// directly to calculateStorageSavingsPercentage which expects a term total,
-// producing a ~99.99% savings percentage. After the fix, CommitmentPrice must
-// equal unitRate * hoursInTerm and SavingsPercentage must be realistic.
-//
-// This test FAILS on the pre-fix code where CommitmentPrice == 0.02 (per-unit).
-func TestGetStoragePricing_CommitmentPriceIsTermTotal(t *testing.T) {
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	// onDemand = $0.026/unit, commitment = $0.020/unit
-	// hoursInTerm (1yr) = 8760
-	// Expected: CommitmentPrice = 0.020*8760 = 175.2, OnDemandPrice = 0.026*8760 = 227.76
-	// Expected savings ~= (227.76-175.2)/227.76*100 ~= 23%
-	mockService := &MockBillingService{
-		skus: &cloudbilling.ListSkusResponse{
-			Skus: []*cloudbilling.Sku{
-				{
-					Description:    "Standard Storage in us-central1",
-					ServiceRegions: []string{"us-central1"},
-					PricingInfo: []*cloudbilling.PricingInfo{
-						{
-							PricingExpression: &cloudbilling.PricingExpression{
-								TieredRates: []*cloudbilling.TierRate{
-									{
-										UnitPrice: &cloudbilling.Money{
-											Units:        0,
-											Nanos:        26000000, // $0.026/unit
-											CurrencyCode: "USD",
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-				{
-					Description:    "Standard Storage Commitment in us-central1",
-					ServiceRegions: []string{"us-central1"},
-					PricingInfo: []*cloudbilling.PricingInfo{
-						{
-							PricingExpression: &cloudbilling.PricingExpression{
-								TieredRates: []*cloudbilling.TierRate{
-									{
-										UnitPrice: &cloudbilling.Money{
-											Units:        0,
-											Nanos:        20000000, // $0.020/unit
-											CurrencyCode: "USD",
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	client.SetBillingService(mockService)
-
-	pricing, err := client.getStoragePricing(ctx, "STANDARD", "us-central1", 1)
-	require.NoError(t, err)
-
-	const hoursInYear = 8760.0
-	// CommitmentPrice must be a term total, not the raw per-unit SKU rate.
-	assert.InDelta(t, 0.02*hoursInYear, pricing.CommitmentPrice, 0.01,
-		"CommitmentPrice must be commitment SKU unit rate * hoursInTerm")
-	// HourlyRate must be the per-unit commitment rate.
-	assert.InDelta(t, 0.02, pricing.HourlyRate, 0.0001,
-		"HourlyRate must be the per-unit commitment SKU rate")
-	// OnDemandPrice stays a term total.
-	assert.InDelta(t, 0.026*hoursInYear, pricing.OnDemandPrice, 0.01)
-	// SavingsPercentage must be ~23%, not ~99.99%.
-	assert.Greater(t, pricing.SavingsPercentage, float64(1),
-		"SavingsPercentage must not be ~99.99% (unit-mismatch bug)")
-	assert.Less(t, pricing.SavingsPercentage, float64(60),
-		"SavingsPercentage must be a realistic storage commitment discount")
-}
-
 func TestSkuMatchesStorageClass_CaseInsensitive(t *testing.T) {
 	sku := &cloudbilling.Sku{
 		Description:    "STANDARD Storage in Americas",
@@ -877,6 +756,7 @@ func TestCloudStorageClient_ConvertGCPRecommendation_PopulatesRecurringMonthlyCo
 					PricingInfo: []*cloudbilling.PricingInfo{
 						{
 							PricingExpression: &cloudbilling.PricingExpression{
+								UsageUnit: "GiBy.mo",
 								TieredRates: []*cloudbilling.TierRate{
 									{
 										UnitPrice: &cloudbilling.Money{
@@ -898,6 +778,7 @@ func TestCloudStorageClient_ConvertGCPRecommendation_PopulatesRecurringMonthlyCo
 					PricingInfo: []*cloudbilling.PricingInfo{
 						{
 							PricingExpression: &cloudbilling.PricingExpression{
+								UsageUnit: "GiBy.mo",
 								TieredRates: []*cloudbilling.TierRate{
 									{
 										UnitPrice: &cloudbilling.Money{
@@ -976,4 +857,129 @@ func TestCloudStorageClient_ConvertGCPRecommendation_BillingFailure_RecurringMon
 	rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
 	require.NotNil(t, rec)
 	assert.Nil(t, rec.RecurringMonthlyCost, "RecurringMonthlyCost must remain nil when billing lookup fails")
+}
+
+func TestStoragePricingUnits_PublicConsumers(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		onDemandUnit   string
+		commitmentUnit string
+		onDemandNanos  int64
+		commitNanos    int64
+		monthlyDemand  float64
+		monthlyCommit  float64
+	}{
+		{"monthly", "GiBy.mo", "GiBy.mo", 26000000, 20000000, 0.026, 0.020},
+		{"hourly", "GiBy.h", "GiBy.h", 26000, 20000, 0.01898, 0.0146},
+		{"monthly-demand", "GiBy.mo", "GiBy.h", 26000000, 20000, 0.026, 0.0146},
+		{"hourly-demand", "GiBy.h", "GiBy.mo", 40000, 20000000, 0.0292, 0.020},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			skus := storageMockSkus("STANDARD", tc.onDemandNanos, tc.commitNanos)
+			skus[0].PricingInfo[0].PricingExpression.UsageUnit = tc.onDemandUnit
+			skus[1].PricingInfo[0].PricingExpression.UsageUnit = tc.commitmentUnit
+			skus[0].PricingInfo[0].PricingExpression.DisplayQuantity = 1000
+			unrelated := storageMockSkus("NEARLINE", 26000000, 20000000)[0]
+			unrelated.PricingInfo[0].PricingExpression.UsageUnit = "unknown"
+			skus = append(skus, unrelated)
+			client := storageCatalogClient(t, skus)
+			for _, term := range []struct {
+				label  string
+				months float64
+			}{{"1yr", 12}, {"3yr", 36}} {
+				t.Run(term.label, func(t *testing.T) {
+					recs, err := client.GetRecommendations(t.Context(), &common.RecommendationParams{Term: term.label})
+					require.NoError(t, err)
+					require.Len(t, recs, 1)
+					rec := recs[0]
+					assert.InDelta(t, tc.monthlyCommit*term.months, rec.CommitmentCost, 1e-12)
+					assert.InDelta(t, tc.monthlyDemand*term.months, rec.OnDemandCost, 1e-12)
+					require.NotNil(t, rec.RecurringMonthlyCost)
+					assert.InDelta(t, tc.monthlyCommit, *rec.RecurringMonthlyCost, 1e-12)
+					assert.InDelta(t, (tc.monthlyDemand-tc.monthlyCommit)/tc.monthlyDemand*100, rec.SavingsPercentage, 1e-10)
+					assert.InDelta(t, tc.monthlyCommit*term.months/(tc.monthlyDemand-tc.monthlyCommit), rec.BreakEvenMonths, 1e-10)
+					for _, payment := range []string{"monthly", "all-upfront"} {
+						rec.PaymentOption = payment
+						details, err := client.GetOfferingDetails(t.Context(), rec)
+						require.NoError(t, err)
+						assert.InDelta(t, tc.monthlyCommit*term.months, details.TotalCost, 1e-12)
+						assert.InDelta(t, tc.monthlyCommit/730, details.EffectiveHourlyRate, 1e-12)
+						if payment == "monthly" {
+							assert.Zero(t, details.UpfrontCost)
+							assert.InDelta(t, tc.monthlyCommit, details.RecurringCost, 1e-12)
+						} else {
+							assert.InDelta(t, details.TotalCost, details.UpfrontCost, 1e-12)
+							assert.Zero(t, details.RecurringCost)
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestStoragePricingUnits_InvalidPublicConsumers(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		unit string
+		sku  int
+	}{
+		{"empty-demand", "", 0},
+		{"empty-commitment", "", 1},
+		{"unknown-demand", "GiBy.d", 0},
+		{"unknown-commitment", "GiBy", 1},
+		{"no-commitment", "", -1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			skus := storageMockSkus("STANDARD", 26000000, 20000000)
+			wantError := "no commitment pricing found"
+			if tc.sku < 0 {
+				skus = skus[:1]
+			} else {
+				skus[tc.sku].PricingInfo[0].PricingExpression.UsageUnit = tc.unit
+				wantError = "unsupported Cloud Storage usage unit"
+			}
+			client := storageCatalogClient(t, skus)
+			details, err := client.GetOfferingDetails(t.Context(), common.Recommendation{ResourceType: "STANDARD", Term: "1yr"})
+			require.ErrorContains(t, err, wantError)
+			assert.Nil(t, details)
+			recs, err := client.GetRecommendations(t.Context(), &common.RecommendationParams{})
+			require.NoError(t, err)
+			require.Len(t, recs, 1)
+			assert.Zero(t, recs[0].CommitmentCost)
+			assert.Zero(t, recs[0].OnDemandCost)
+			assert.Zero(t, recs[0].SavingsPercentage)
+			assert.Zero(t, recs[0].BreakEvenMonths)
+			assert.Nil(t, recs[0].RecurringMonthlyCost)
+		})
+	}
+}
+
+func storageCatalogClient(t *testing.T, skus []*cloudbilling.Sku) *Client {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/v1/services/95FF-2EF5-5EA1/skus", r.URL.Path)
+		assert.Equal(t, http.MethodGet, r.Method)
+		w.Header().Set("Content-Type", "application/json")
+		assert.NoError(t, json.NewEncoder(w).Encode(&cloudbilling.ListSkusResponse{Skus: skus}))
+	}))
+	t.Cleanup(server.Close)
+	transport := &http.Transport{DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+		if address != server.Listener.Addr().String() {
+			return nil, fmt.Errorf("unexpected catalog address %q", address)
+		}
+		return (&net.Dialer{}).DialContext(ctx, network, address)
+	}}
+	t.Cleanup(transport.CloseIdleConnections)
+	client, err := NewClient(t.Context(), "test-project", "us-central1", option.WithEndpoint(server.URL),
+		option.WithHTTPClient(&http.Client{Transport: transport}), option.WithoutAuthentication())
+	require.NoError(t, err)
+	// The synthetic commitment SKU and STANDARD suffix exercise the pricing path, not a live GCS commitment.
+	client.SetRecommenderClient(&MockRecommenderClient{recommendations: []*recommenderpb.Recommendation{{
+		StateInfo: &recommenderpb.RecommendationStateInfo{State: recommenderpb.RecommendationStateInfo_ACTIVE},
+		Content: &recommenderpb.RecommendationContent{OperationGroups: []*recommenderpb.OperationGroup{{
+			Operations: []*recommenderpb.Operation{{Resource: "projects/test-project/buckets/STANDARD"}},
+		}}},
+	}}})
+	return client
 }
