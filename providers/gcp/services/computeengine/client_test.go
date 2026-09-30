@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
+	"strconv"
 	"testing"
 
 	"cloud.google.com/go/compute/apiv1/computepb"
@@ -977,7 +979,8 @@ func TestComputeEngineClient_ConvertGCPRecommendation(t *testing.T) {
 		},
 	}
 
-	rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
+	rec, err := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
+	require.NoError(t, err)
 	require.NotNil(t, rec)
 	assert.Equal(t, common.ProviderGCP, rec.Provider)
 	assert.Equal(t, common.ServiceCompute, rec.Service)
@@ -1037,19 +1040,7 @@ func TestComputeEngineClient_GetRecommendations_PageCapFires(t *testing.T) {
 	require.Error(t, err, "page cap must surface an error when the iterator never terminates")
 }
 
-// realisticCUDRecommendation builds a realistic GCP Commitment Recommender payload
-// for a 4-vCPU n1-standard-4 commitment in us-central1. The operation groups have
-// three ops:
-//  1. A machine-type op whose resource path ends in the machine type (n1-standard-4) --
-//     used by extractResourceTypeFromRecommendation to set rec.ResourceType.
-//  2. A VCPU commitment resource op whose numeric Value is the VCPU count --
-//     used by extractVCPUCountFromRecommendation to set rec.Count = 4.
-//  3. A MEMORY commitment resource op whose numeric Value is 6144 MB --
-//     used by extractMemoryMBFromRecommendation to set rec.Details.MemoryGB = 6.
-//     Using 6144 MB (1536 MB/vCPU) intentionally tests a non-4096-ratio case to
-//     confirm the value is read from the payload rather than computed from a ratio.
-//
-// This mirrors the GCP CUD Recommender format (issue #1022 C1 + memory fix).
+// Synthetic fixture for conversion and insert tests; not a captured service response.
 func realisticCUDRecommendation() *recommenderpb.Recommendation {
 	vcpuVal, _ := structpb.NewValue(4.0)
 	memVal, _ := structpb.NewValue(6144.0) // 6144 MB = 6 GB; ratio is 1536 MB/vCPU, NOT 4096
@@ -1083,13 +1074,12 @@ func realisticCUDRecommendation() *recommenderpb.Recommendation {
 				{
 					Operations: []*recommenderpb.Operation{
 						{
-							// VCPU op: carries the vCPU count as a numeric value.
-							// extractVCPUCountFromRecommendation reads this and sets rec.Count = 4.
 							Action:       "add",
 							ResourceType: "compute.googleapis.com/Commitment",
 							Resource:     "//compute.googleapis.com/projects/test/regions/us-central1/commitments/cud-001",
 							Path:         "/resources/0/amount",
 							PathValue:    &recommenderpb.Operation_Value{Value: vcpuVal},
+							PathFilters:  map[string]*structpb.Value{"/resources/0/type": structpb.NewStringValue("VCPU")},
 						},
 						{
 							// MEMORY op: carries the memory amount in MB as a numeric value.
@@ -1176,7 +1166,8 @@ func TestConverterToInsert_CountNonZero_VCPUAmountSet(t *testing.T) {
 	client.SetBillingService(mockBillingWithCommitment())
 
 	gcpRec := realisticCUDRecommendation() // 4 vCPU, 6144 MB (from payload)
-	rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
+	rec, err := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
+	require.NoError(t, err)
 	require.NotNil(t, rec)
 
 	// C1: Count must be > 0 so that buildInsertRequest produces non-zero VCPU Amount.
@@ -1230,7 +1221,8 @@ func TestConverterFillsPricingForScorer(t *testing.T) {
 	client.SetBillingService(mockBillingWithCommitment())
 
 	gcpRec := realisticCUDRecommendation()
-	rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
+	rec, err := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
+	require.NoError(t, err)
 	require.NotNil(t, rec)
 
 	// C2: SavingsPercentage must be > 0 so a MinSavingsPct filter doesn't silently drop the rec.
@@ -1338,7 +1330,8 @@ func TestConvertGCPRecommendation_EmptyParamsDefaultsToMonthly(t *testing.T) {
 	}
 
 	// Empty params: no caller-supplied PaymentOption.
-	rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
+	rec, err := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
+	require.NoError(t, err)
 	require.NotNil(t, rec)
 	assert.Equal(t, "monthly", rec.PaymentOption,
 		"GCP CUDs have no upfront option; empty PaymentOption must default to \"monthly\" (10-M5)")
@@ -1353,7 +1346,8 @@ func TestConvertGCPRecommendation_ParamPaymentOptionRespected(t *testing.T) {
 	gcpRec := &recommenderpb.Recommendation{Name: "test-rec"}
 	params := common.RecommendationParams{PaymentOption: "monthly"}
 
-	rec := client.convertGCPRecommendation(ctx, gcpRec, params)
+	rec, err := client.convertGCPRecommendation(ctx, gcpRec, params)
+	require.NoError(t, err)
 	require.NotNil(t, rec)
 	assert.Equal(t, "monthly", rec.PaymentOption)
 }
@@ -1473,11 +1467,100 @@ func TestConvertGCPRecommendation_NonMonthlyPaymentOptionForcedToMonthly(t *test
 
 	for _, input := range []string{"upfront", "all-upfront", "UPFRONT", "partial-upfront"} {
 		params := common.RecommendationParams{PaymentOption: input}
-		rec := client.convertGCPRecommendation(ctx, gcpRec, params)
+		rec, err := client.convertGCPRecommendation(ctx, gcpRec, params)
+		require.NoError(t, err)
 		require.NotNil(t, rec)
 		assert.Equal(t, "monthly", rec.PaymentOption,
 			"GCP CUDs are monthly-only; input %q must be forced to \"monthly\"", input)
 	}
+}
+
+func TestVCPURecommendationRequiresExplicitResourceIdentity(t *testing.T) {
+	cases := []struct {
+		name    string
+		change  func(*recommenderpb.Operation)
+		want    int
+		wantErr bool
+	}{
+		{name: "indexed cpu", want: 4},
+		{name: "wildcard cpu", want: 4, change: func(op *recommenderpb.Operation) {
+			op.Path = "/resources/*/amount"
+			op.PathFilters = map[string]*structpb.Value{"/resources/*/type": structpb.NewStringValue("VCPU")}
+		}},
+		{name: "mixed case replace", want: 4, change: func(op *recommenderpb.Operation) { op.Action = "RePlAcE" }},
+		{name: "string cpu", want: 4, change: func(op *recommenderpb.Operation) {
+			op.PathValue = &recommenderpb.Operation_Value{Value: structpb.NewStringValue("4")}
+		}},
+		{name: "missing filter", wantErr: true, change: func(op *recommenderpb.Operation) { op.PathFilters = nil }},
+		{name: "wrong selector", wantErr: true, change: func(op *recommenderpb.Operation) { op.Path = "/resources/1/amount" }},
+		{name: "invalid selector", wantErr: true, change: func(op *recommenderpb.Operation) { op.Path = "/resources/cpu/amount" }},
+		{name: "unknown type", wantErr: true, change: func(op *recommenderpb.Operation) {
+			op.PathFilters["/resources/0/type"] = structpb.NewStringValue("UNKNOWN")
+		}},
+		{name: "numeric type", wantErr: true, change: func(op *recommenderpb.Operation) { op.PathFilters["/resources/0/type"] = structpb.NewNumberValue(4) }},
+		{name: "accelerator only", wantErr: true, change: func(op *recommenderpb.Operation) {
+			op.PathFilters["/resources/0/type"] = structpb.NewStringValue("ACCELERATOR")
+		}},
+		{name: "SSD only", wantErr: true, change: func(op *recommenderpb.Operation) {
+			op.PathFilters["/resources/0/type"] = structpb.NewStringValue("LOCAL_SSD")
+		}},
+		{name: "memory only", wantErr: true, change: func(op *recommenderpb.Operation) {
+			op.PathFilters["/resources/0/type"] = structpb.NewStringValue("MEMORY")
+		}},
+		{name: "resource substring", change: func(op *recommenderpb.Operation) { op.ResourceType = "unrelated/Commitment" }},
+		{name: "path substring", change: func(op *recommenderpb.Operation) { op.Path = "/resources/0/amountOther" }},
+		{name: "test precondition", change: func(op *recommenderpb.Operation) { op.Action = "test" }},
+		{name: "remove", change: func(op *recommenderpb.Operation) { op.Action = "remove" }},
+		{name: "copy", change: func(op *recommenderpb.Operation) { op.Action = "copy" }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			op := &recommenderpb.Operation{
+				Action: "ADD", ResourceType: "compute.googleapis.com/Commitment",
+				Path: "/resources/0/amount", PathFilters: map[string]*structpb.Value{"/resources/0/type": structpb.NewStringValue("VCPU")},
+				PathValue: &recommenderpb.Operation_Value{Value: structpb.NewNumberValue(4)},
+			}
+			if tc.change != nil {
+				tc.change(op)
+			}
+			input := &recommenderpb.Recommendation{Content: &recommenderpb.RecommendationContent{
+				OperationGroups: []*recommenderpb.OperationGroup{{Operations: []*recommenderpb.Operation{op}}},
+				Overview:        &structpb.Struct{Fields: map[string]*structpb.Value{"numericValue": structpb.NewNumberValue(999)}},
+			}}
+			rec, err := (&Client{}).convertGCPRecommendation(context.Background(), input, common.RecommendationParams{})
+			if tc.wantErr {
+				require.ErrorContains(t, err, "VCPU")
+				assert.Nil(t, rec)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, rec)
+			assert.Equal(t, tc.want, rec.Count)
+		})
+	}
+	input := commitmentOnlyCUDRecommendation()
+	group := input.Content.OperationGroups[0]
+	group.Operations = append(group.Operations, group.Operations[0])
+	rec, err := (&Client{}).convertGCPRecommendation(context.Background(), input, common.RecommendationParams{})
+	require.ErrorContains(t, err, "multiple VCPU")
+	assert.Nil(t, rec)
+}
+
+func TestRecommendationVCPUAmountRejectsInvalidQuantities(t *testing.T) {
+	for _, value := range []*structpb.Value{
+		nil, structpb.NewNullValue(), structpb.NewBoolValue(true), structpb.NewStructValue(&structpb.Struct{}),
+		structpb.NewListValue(&structpb.ListValue{}), structpb.NewNumberValue(0), structpb.NewNumberValue(-1),
+		structpb.NewNumberValue(1.5), structpb.NewNumberValue(math.NaN()), structpb.NewNumberValue(math.Inf(1)),
+		structpb.NewNumberValue(math.Inf(-1)), structpb.NewNumberValue(1 << 53), structpb.NewNumberValue(float64(math.MaxInt)),
+		structpb.NewStringValue(""), structpb.NewStringValue("0"), structpb.NewStringValue("-1"),
+		structpb.NewStringValue("1.5"), structpb.NewStringValue("1e3"), structpb.NewStringValue("9223372036854775808"),
+	} {
+		_, err := recommendationVCPUAmount(value)
+		require.Error(t, err, "value %v", value)
+	}
+	count, err := recommendationVCPUAmount(structpb.NewStringValue(strconv.FormatInt(int64(math.MaxInt), 10)))
+	require.NoError(t, err)
+	assert.Equal(t, math.MaxInt, count)
 }
 
 // TestIsMemoryAmountOp_MatchesBothSpellings asserts that the inbound Recommender
@@ -1596,18 +1679,21 @@ func TestConvertGCPRecommendation_PropagatesParamsTerm(t *testing.T) {
 	gcpRec := &recommenderpb.Recommendation{Name: "test-rec"}
 
 	// 3yr must be propagated.
-	rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{Term: "3yr"})
+	rec, err := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{Term: "3yr"})
+	require.NoError(t, err)
 	require.NotNil(t, rec)
 	assert.Equal(t, "3yr", rec.Term,
 		"params.Term=3yr must be propagated to rec.Term (H-3 fix); pre-fix code hardcoded 1yr")
 
 	// 1yr explicit must be propagated.
-	rec = client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{Term: "1yr"})
+	rec, err = client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{Term: "1yr"})
+	require.NoError(t, err)
 	require.NotNil(t, rec)
 	assert.Equal(t, "1yr", rec.Term)
 
 	// Empty term must default to "1yr".
-	rec = client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
+	rec, err = client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
+	require.NoError(t, err)
 	require.NotNil(t, rec)
 	assert.Equal(t, "1yr", rec.Term,
 		"empty params.Term must default to 1yr")
@@ -1625,7 +1711,8 @@ func TestConvertGCPRecommendation_RejectsUnknownTerm(t *testing.T) {
 
 	gcpRec := &recommenderpb.Recommendation{Name: "test-rec"}
 
-	rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{Term: "5yr"})
+	rec, err := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{Term: "5yr"})
+	require.NoError(t, err)
 	assert.Nil(t, rec,
 		"convertGCPRecommendation must return nil for unrecognized term (not silently default to 12 months)")
 }
@@ -1980,6 +2067,7 @@ func commitmentOnlyCUDRecommendation() *recommenderpb.Recommendation {
 							Resource:     commitmentResource,
 							Path:         "/resources/0/amount",
 							PathValue:    &recommenderpb.Operation_Value{Value: vcpuVal},
+							PathFilters:  map[string]*structpb.Value{"/resources/0/type": structpb.NewStringValue("VCPU")},
 						},
 						{
 							Action:       "add",
@@ -2029,7 +2117,8 @@ func TestPurchaseCommitment_CommitmentOnlyRecommendationRefuses(t *testing.T) {
 	client, err := NewClient(ctx, "test-project", "us-central1")
 	require.NoError(t, err)
 
-	converted := client.convertGCPRecommendation(ctx, commitmentOnlyCUDRecommendation(), common.RecommendationParams{Term: "1yr"})
+	converted, err := client.convertGCPRecommendation(ctx, commitmentOnlyCUDRecommendation(), common.RecommendationParams{Term: "1yr"})
+	require.NoError(t, err)
 	require.NotNil(t, converted, "the recommendation stays visible; only the purchase is refused")
 	require.Empty(t, converted.ResourceType,
 		"a commitment-only payload must not yield a machine type (issue #1538)")

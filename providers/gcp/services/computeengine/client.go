@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -399,16 +401,13 @@ func (c *Client) GetRecommendations(ctx context.Context, p *common.Recommendatio
 	}
 
 	it := recClient.ListRecommendations(ctx, req)
-	for pageIdx := 0; ; pageIdx++ {
+	for pageIdx := 0; pageIdx < maxRecsPages; pageIdx++ {
 		if err := ctx.Err(); err != nil {
 			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
-		if pageIdx >= maxRecsPages {
-			return nil, fmt.Errorf("computeengine: GetRecommendations iteration cap (%d items) reached", maxRecsPages)
-		}
 		rec, err := it.Next()
 		if errors.Is(err, iterator.Done) {
-			break
+			return recommendations, nil
 		}
 		if err != nil {
 			// Iterator errors (quota, auth, transient 5xx) must propagate so
@@ -426,13 +425,16 @@ func (c *Client) GetRecommendations(ctx context.Context, p *common.Recommendatio
 			continue
 		}
 
-		converted := c.convertGCPRecommendation(ctx, rec, params)
+		converted, err := c.convertGCPRecommendation(ctx, rec, params)
+		if err != nil {
+			return nil, fmt.Errorf("computeengine: recommendation %q: %w", rec.GetName(), err)
+		}
 		if converted != nil {
 			recommendations = append(recommendations, *converted)
 		}
 	}
 
-	return recommendations, nil
+	return nil, fmt.Errorf("computeengine: GetRecommendations iteration cap (%d items) reached", maxRecsPages)
 }
 
 // GetExistingCommitments retrieves existing Compute Engine CUDs.
@@ -1095,7 +1097,7 @@ func skuMatchesMachineType(sku *cloudbilling.Sku, machineType, region string) bo
 // EstimatedSavings from the Recommender payload is the authoritative savings signal.
 // Returns nil when the params.Term is unrecognized so the caller skips an
 // unroutable recommendation rather than queuing a purchase with an invalid plan.
-func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommenderpb.Recommendation, params common.RecommendationParams) *common.Recommendation {
+func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommenderpb.Recommendation, params common.RecommendationParams) (*common.Recommendation, error) {
 	// GCP CUDs are billed monthly with no upfront option; force "monthly"
 	// unconditionally and log any non-monthly input so scheduler
 	// misconfiguration is visible. Supersedes the monthly stamp introduced
@@ -1114,7 +1116,7 @@ func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommend
 	}
 	if _, err := termPlan(term); err != nil {
 		log.Printf("computeengine: skipping recommendation with unrecognized term %q: %v", term, err)
-		return nil
+		return nil, nil
 	}
 
 	rec := &common.Recommendation{
@@ -1140,7 +1142,11 @@ func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommend
 	}
 
 	extractCostImpactFromRecommendation(gcpRec, rec)
-	extractVCPUCountFromRecommendation(gcpRec, rec)
+	count, err := vcpuCountFromOperationGroups(gcpRec.GetContent())
+	if err != nil {
+		return nil, err
+	}
+	rec.Count = count
 	extractMemoryMBFromRecommendation(gcpRec, rec)
 
 	c.enrichRecWithPricing(ctx, rec)
@@ -1158,7 +1164,7 @@ func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommend
 		rec.RecurringMonthlyCost = &monthly
 	}
 
-	return rec
+	return rec, nil
 }
 
 // enrichRecWithPricing fills CommitmentCost, OnDemandCost, SavingsPercentage,
@@ -1277,12 +1283,7 @@ func extractCostImpactFromRecommendation(gcpRec *recommenderpb.Recommendation, r
 	}
 }
 
-// isMemoryAmountOp returns true when op's path_filters indicate a memory
-// resource type. Used by extractVCPUCountFromRecommendation to skip the memory
-// sibling of the VCPU operation in a GCP commitment resource operation group.
-// Matches both "MEMORY" (the canonical ResourceCommitment.Type enum member) and
-// the legacy "MEMORY_MB" spelling, since the Recommender's path_filter encoding
-// is not contractually documented (issue #1022).
+// Retain the legacy MEMORY_MB spelling accepted by existing memory fixtures.
 func isMemoryAmountOp(op *recommenderpb.Operation) bool {
 	for filterKey, filterVal := range op.GetPathFilters() {
 		if !strings.Contains(strings.ToLower(filterKey), "type") {
@@ -1297,63 +1298,93 @@ func isMemoryAmountOp(op *recommenderpb.Operation) bool {
 	return false
 }
 
-// vcpuCountFromOperationGroups walks the commitment operation groups and
-// returns the VCPU count encoded in the operation's numeric value, or 0 if
-// none is found. Extracted from extractVCPUCountFromRecommendation to keep
-// cyclomatic complexity in check.
-func vcpuCountFromOperationGroups(content *recommenderpb.RecommendationContent) int {
-	for _, opGroup := range content.GetOperationGroups() {
-		for _, op := range opGroup.GetOperations() {
-			if !strings.Contains(strings.ToLower(op.GetResourceType()), "commitment") {
+func vcpuCountFromOperationGroups(content *recommenderpb.RecommendationContent) (int, error) {
+	count, amounts := 0, false
+	for _, group := range content.GetOperationGroups() {
+		for _, op := range group.GetOperations() {
+			kind, err := recommendationAmountType(op)
+			if err != nil {
+				return 0, fmt.Errorf("VCPU extraction: %w", err)
+			}
+			if kind == "" {
 				continue
 			}
-			if !strings.Contains(strings.ToLower(op.GetPath()), "amount") {
+			amounts = true
+			if kind != computepb.ResourceCommitment_VCPU.String() {
 				continue
 			}
-			if isMemoryAmountOp(op) {
-				continue
+			if count != 0 {
+				return 0, fmt.Errorf("multiple VCPU amounts in recommendation")
 			}
-			if v := op.GetValue(); v != nil {
-				if nv, ok := v.GetKind().(*structpb.Value_NumberValue); ok && nv.NumberValue > 0 {
-					return int(nv.NumberValue)
-				}
+			count, err = recommendationVCPUAmount(op.GetValue())
+			if err != nil {
+				return 0, err
 			}
 		}
 	}
-	return 0
+	if amounts && count == 0 {
+		return 0, fmt.Errorf("recommendation resource amounts contain no VCPU")
+	}
+	return count, nil
 }
 
-// extractVCPUCountFromRecommendation extracts the recommended vCPU count from a
-// GCP Commitment Recommender response (issue #1022 C1).
-//
-// The Recommender encodes the commitment resource amounts in two places:
-//   - Operation.Value: a structpb.Value whose numeric value is the amount, with
-//     Operation.Path indicating the resource type (e.g. "/resources/0/amount").
-//     Operations with ResourceType "compute.googleapis.com/Commitment" and a path
-//     containing "amount" carry the VCPU count; the sibling MEMORY amount is
-//     extracted by extractMemoryMBFromRecommendation.
-//   - RecommendationContent.Overview: a JSON struct with a "numericValue" field.
-//
-// We prefer the operation-value path because it is structured and unambiguous.
-// If no VCPU operation is found we fall back to the overview's numericValue.
-func extractVCPUCountFromRecommendation(gcpRec *recommenderpb.Recommendation, rec *common.Recommendation) {
-	if gcpRec.Content == nil {
-		return
+func recommendationAmountType(op *recommenderpb.Operation) (string, error) {
+	if op.GetResourceType() != "compute.googleapis.com/Commitment" {
+		return "", nil
 	}
-
-	if count := vcpuCountFromOperationGroups(gcpRec.Content); count > 0 {
-		rec.Count = count
-		return
+	switch {
+	case strings.EqualFold(op.GetAction(), "add"), strings.EqualFold(op.GetAction(), "replace"):
+	default:
+		return "", nil
 	}
-
-	// Fallback: overview numericValue (used by older recommender versions).
-	if gcpRec.Content.GetOverview() != nil {
-		if nv := gcpRec.Content.GetOverview().GetFields()["numericValue"]; nv != nil {
-			if count := nv.GetNumberValue(); count > 0 {
-				rec.Count = int(count)
-			}
+	selector, ok := strings.CutPrefix(op.GetPath(), "/resources/")
+	if !ok {
+		return "", nil
+	}
+	selector, ok = strings.CutSuffix(selector, "/amount")
+	if !ok {
+		return "", nil
+	}
+	if selector != "*" {
+		index, err := strconv.ParseUint(selector, 10, 64)
+		if err != nil || strconv.FormatUint(index, 10) != selector {
+			return "", fmt.Errorf("invalid resource selector %q", selector)
 		}
 	}
+	kind := op.GetPathFilters()["/resources/"+selector+"/type"].GetStringValue()
+	switch {
+	case strings.EqualFold(kind, computepb.ResourceCommitment_MEMORY.String()), strings.EqualFold(kind, "MEMORY_MB"):
+		return computepb.ResourceCommitment_MEMORY.String(), nil
+	case kind == computepb.ResourceCommitment_VCPU.String(), kind == computepb.ResourceCommitment_ACCELERATOR.String(), kind == computepb.ResourceCommitment_LOCAL_SSD.String():
+		return kind, nil
+	default:
+		return "", fmt.Errorf("unknown or absent commitment resource type %q for %s", kind, op.GetPath())
+	}
+}
+
+func recommendationVCPUAmount(value *structpb.Value) (int, error) {
+	var amount int64
+	switch v := value.GetKind().(type) {
+	case *structpb.Value_StringValue:
+		parsed, err := strconv.ParseInt(v.StringValue, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid VCPU amount %q: %w", v.StringValue, err)
+		}
+		amount = parsed
+	case *structpb.Value_NumberValue:
+		// Larger JSON numbers may have lost integer precision before reaching this parser.
+		const maxExactInteger = 1<<53 - 1
+		if math.IsNaN(v.NumberValue) || v.NumberValue <= 0 || v.NumberValue > maxExactInteger || math.Trunc(v.NumberValue) != v.NumberValue {
+			return 0, fmt.Errorf("VCPU amount must be a positive exact integer")
+		}
+		amount = int64(v.NumberValue)
+	default:
+		return 0, fmt.Errorf("VCPU amount must be a decimal string or number")
+	}
+	if amount <= 0 || amount > math.MaxInt {
+		return 0, fmt.Errorf("VCPU amount must be positive and fit int")
+	}
+	return int(amount), nil
 }
 
 // memoryMBFromOperationGroups walks the commitment operation groups and returns

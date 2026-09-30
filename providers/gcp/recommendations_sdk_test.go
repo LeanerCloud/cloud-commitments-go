@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
@@ -39,14 +40,31 @@ func TestComputeRecommendationsThroughSDK(t *testing.T) {
 	const central = "projects/recommendation-project/locations/us-central1/recommenders/google.compute.commitment.UsageCommitmentRecommender"
 	const west = "projects/recommendation-project/locations/europe-west1/recommenders/google.compute.commitment.UsageCommitmentRecommender"
 	cases := []struct {
-		name    string
-		empty   bool
-		failure map[string]bool
+		name       string
+		empty      bool
+		failure    map[string]bool
+		resources  []string
+		stringVCPU bool
+		invalid    bool
 	}{
 		{name: "regional recommendations and pagination"},
 		{name: "empty success", empty: true},
 		{name: "all regions denied", failure: map[string]bool{central: true, west: true}},
 		{name: "partial regional success", failure: map[string]bool{west: true}},
+		{name: "accelerator memory cpu", resources: []string{"ACCELERATOR", "MEMORY", "VCPU"}},
+		{name: "accelerator cpu memory", resources: []string{"ACCELERATOR", "VCPU", "MEMORY"}},
+		{name: "memory accelerator cpu", resources: []string{"MEMORY", "ACCELERATOR", "VCPU"}},
+		{name: "memory cpu accelerator", resources: []string{"MEMORY", "VCPU", "ACCELERATOR"}},
+		{name: "cpu accelerator memory", resources: []string{"VCPU", "ACCELERATOR", "MEMORY"}},
+		{name: "cpu memory accelerator", resources: []string{"VCPU", "MEMORY", "ACCELERATOR"}},
+		{name: "local SSD before cpu", resources: []string{"LOCAL_SSD", "VCPU", "MEMORY"}},
+		{name: "local SSD after cpu", resources: []string{"VCPU", "MEMORY", "LOCAL_SSD"}},
+		{name: "string cpu", resources: []string{"ACCELERATOR", "VCPU", "MEMORY"}, stringVCPU: true},
+		{name: "lowercase memory", resources: []string{"memory", "VCPU"}},
+		{name: "legacy lowercase memory", resources: []string{"memory_mb", "VCPU"}},
+		{name: "unknown resource", resources: []string{"UNKNOWN", "VCPU", "MEMORY"}, invalid: true},
+		{name: "unknown after cpu", resources: []string{"VCPU", "MEMORY", "UNKNOWN"}, invalid: true},
+		{name: "missing cpu with overview", resources: []string{"ACCELERATOR", "MEMORY"}, invalid: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -72,6 +90,13 @@ func TestComputeRecommendationsThroughSDK(t *testing.T) {
 			listener := bufconn.Listen(1024 * 1024)
 			defer listener.Close()
 			server := grpc.NewServer()
+			recommendation := func(savings int64, state recommenderpb.RecommendationStateInfo_State, region string) *recommenderpb.Recommendation {
+				rec := sdkCostRecommendation(savings, state)
+				if tc.resources != nil {
+					rec.Content = sdkResourceAmounts(tc.resources, tc.stringVCPU, region)
+				}
+				return rec
+			}
 			recommenderpb.RegisterRecommenderServer(server, &recommendationSDKServer{
 				list: func(ctx context.Context, req *recommenderpb.ListRecommendationsRequest) (*recommenderpb.ListRecommendationsResponse, error) {
 					mu.Lock()
@@ -89,19 +114,19 @@ func TestComputeRecommendationsThroughSDK(t *testing.T) {
 						return &recommenderpb.ListRecommendationsResponse{}, nil
 					}
 					if req.GetParent() == west {
-						return &recommenderpb.ListRecommendationsResponse{Recommendations: []*recommenderpb.Recommendation{sdkCostRecommendation(30, recommenderpb.RecommendationStateInfo_ACTIVE)}}, nil
+						return &recommenderpb.ListRecommendationsResponse{Recommendations: []*recommenderpb.Recommendation{recommendation(30, recommenderpb.RecommendationStateInfo_ACTIVE, "europe-west1")}}, nil
 					}
 					switch req.GetPageToken() {
 					case "":
 						return &recommenderpb.ListRecommendationsResponse{
 							Recommendations: []*recommenderpb.Recommendation{
-								sdkCostRecommendation(10, recommenderpb.RecommendationStateInfo_ACTIVE),
-								sdkCostRecommendation(999, recommenderpb.RecommendationStateInfo_DISMISSED),
+								recommendation(10, recommenderpb.RecommendationStateInfo_ACTIVE, "us-central1"),
+								recommendation(999, recommenderpb.RecommendationStateInfo_DISMISSED, "us-central1"),
 							},
 							NextPageToken: "second-page",
 						}, nil
 					case "second-page":
-						return &recommenderpb.ListRecommendationsResponse{Recommendations: []*recommenderpb.Recommendation{sdkCostRecommendation(20, recommenderpb.RecommendationStateInfo_ACTIVE)}}, nil
+						return &recommenderpb.ListRecommendationsResponse{Recommendations: []*recommenderpb.Recommendation{recommendation(20, recommenderpb.RecommendationStateInfo_ACTIVE, "us-central1")}}, nil
 					default:
 						return nil, status.Error(codes.InvalidArgument, "unexpected page token")
 					}
@@ -124,9 +149,13 @@ func TestComputeRecommendationsThroughSDK(t *testing.T) {
 			adapter, err := NewProviderWithProject(ctx, "recommendation-project", options...).GetRecommendationsClient(ctx)
 			require.NoError(t, err)
 			recs, err := adapter.GetRecommendationsForService(ctx, common.ServiceCompute)
-			if len(tc.failure) == 2 {
+			if len(tc.failure) == 2 || tc.invalid {
 				require.Error(t, err)
-				assert.Equal(t, codes.PermissionDenied, status.Code(err))
+				if !tc.invalid {
+					assert.Equal(t, codes.PermissionDenied, status.Code(err))
+				} else {
+					assert.Contains(t, err.Error(), "VCPU")
+				}
 				assert.Contains(t, err.Error(), "all 2 GCP recommendation service calls failed across 2 regions")
 				assert.Nil(t, recs)
 			} else {
@@ -136,6 +165,13 @@ func TestComputeRecommendationsThroughSDK(t *testing.T) {
 					assert.Equal(t, common.ProviderGCP, rec.Provider)
 					assert.Equal(t, common.ServiceCompute, rec.Service)
 					assert.Equal(t, "recommendation-project", rec.Account)
+					assert.Empty(t, rec.ResourceType)
+					if tc.resources != nil {
+						assert.Equal(t, 4, rec.Count)
+						assert.Equal(t, common.ComputeDetails{MemoryGB: 6}, rec.Details)
+					} else {
+						assert.Zero(t, rec.Count)
+					}
 					if rec.EstimatedSavings == 30 {
 						assert.Equal(t, "europe-west1", rec.Region)
 					} else {
@@ -156,11 +192,32 @@ func TestComputeRecommendationsThroughSDK(t *testing.T) {
 			defer mu.Unlock()
 			assert.Equal(t, 1, regionsCalls)
 			expectedRequests := []string{central + "|", west + "|"}
-			if !tc.empty && !tc.failure[central] {
+			if !tc.empty && !tc.failure[central] && !tc.invalid {
 				expectedRequests = append(expectedRequests, central+"|second-page")
 			}
 			assert.ElementsMatch(t, expectedRequests, requests)
 		})
+	}
+}
+
+// Synthetic explicit-filter operations exercise the generic API contract, not a captured cloud response.
+func sdkResourceAmounts(kinds []string, stringVCPU bool, region string) *recommenderpb.RecommendationContent {
+	group := &recommenderpb.OperationGroup{}
+	for _, kind := range kinds {
+		amount := structpb.NewNumberValue(map[string]float64{"VCPU": 4, "MEMORY": 6144, "memory": 6144, "memory_mb": 6144, "ACCELERATOR": 2, "LOCAL_SSD": 375, "UNKNOWN": 99}[kind])
+		if kind == "VCPU" && stringVCPU {
+			amount = structpb.NewStringValue("4")
+		}
+		group.Operations = append(group.Operations, &recommenderpb.Operation{
+			Action: "AdD", ResourceType: "compute.googleapis.com/Commitment",
+			Resource: "//compute.googleapis.com/projects/recommendation-project/regions/" + region + "/commitments/cud-001",
+			Path:     "/resources/*/amount", PathFilters: map[string]*structpb.Value{"/resources/*/type": structpb.NewStringValue(kind)},
+			PathValue: &recommenderpb.Operation_Value{Value: amount},
+		})
+	}
+	return &recommenderpb.RecommendationContent{
+		OperationGroups: []*recommenderpb.OperationGroup{group},
+		Overview:        &structpb.Struct{Fields: map[string]*structpb.Value{"numericValue": structpb.NewNumberValue(999)}},
 	}
 }
 
