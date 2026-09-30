@@ -38,22 +38,17 @@ type SPCoverageSummary struct {
 	// (no SP-eligible activity in the window) or Days==0; a fully covered
 	// window (OnDemandCost==0, covered>0) yields &100.0, not nil.
 	CoveragePct *float64
-	// CoveredUSDPerHour is the average SP-covered spend per hour over the
-	// window (total SpendCoveredBySavingsPlans / windowHours). Nil when
-	// Days==0.
+	// CoveredUSDPerHour normalizes reported SP-covered spend over the requested
+	// window, without adjusting for reporting completeness. Nil when Days==0.
 	CoveredUSDPerHour *float64
-	// OnDemandUSDPerHour is the average spend billed at on-demand rates per
-	// hour, i.e. the SP-eligible spend NOT covered by any Savings Plan.
-	// This is the uncovered portion (CE's OnDemandCost), not the eligible
-	// total - see EligibleUSDPerHour for the total. Nil when Days==0.
+	// OnDemandUSDPerHour normalizes reported uncovered SP-eligible spend over
+	// the same requested window. Nil when Days==0.
 	OnDemandUSDPerHour *float64
-	// EligibleUSDPerHour is the average total SP-eligible spend per hour:
-	// CoveredUSDPerHour + OnDemandUSDPerHour. Provided so consumers (the
-	// ladder sizing math) do not have to re-derive the coverage
-	// denominator. Nil when Days==0.
+	// EligibleUSDPerHour is CoveredUSDPerHour + OnDemandUSDPerHour, normalized
+	// over the requested window including zero-activity days. Nil when Days==0.
 	EligibleUSDPerHour *float64
-	// Days is the count of daily CE data points that had a non-nil Coverage
-	// block in the response. Zero means CE returned no data for the window.
+	// Days counts daily CE data points with a non-nil Coverage block.
+	// It does not indicate reporting completeness or change the rate divisor.
 	Days int
 }
 
