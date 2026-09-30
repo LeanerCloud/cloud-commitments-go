@@ -425,14 +425,12 @@ func calculateStorageSavingsPercentage(onDemandPrice, hoursInTerm, commitmentPri
 	return ((onDemandTotal - commitmentPrice) / onDemandTotal) * 100
 }
 
-// skuMatchesStorageClass checks if a SKU matches the storage class and region.
 func skuMatchesStorageClass(sku *cloudbilling.Sku, storageClass, region string) bool {
-	// Check if the SKU description contains the storage class
-	if !strings.Contains(strings.ToLower(sku.Description), strings.ToLower(storageClass)) {
+	description := strings.ToLower(sku.Description)
+	if !strings.HasPrefix(description, strings.ToLower(storageClass)+" storage ") || strings.Contains(description, "(early delete)") {
 		return false
 	}
 
-	// Check if the SKU is available in the region
 	if sku.ServiceRegions != nil {
 		for _, serviceRegion := range sku.ServiceRegions {
 			if strings.EqualFold(serviceRegion, region) {

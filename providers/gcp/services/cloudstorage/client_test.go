@@ -737,6 +737,29 @@ func TestSkuMatchesStorageClass_CaseInsensitive(t *testing.T) {
 	assert.True(t, skuMatchesStorageClass(sku, "standard", "us-central1"))
 }
 
+func TestSkuMatchesStorageClass_Capacity(t *testing.T) {
+	for _, tc := range []struct {
+		class       string
+		description string
+		want        bool
+	}{
+		{"STANDARD", "Standard Storage Doha", true},
+		{"NEARLINE", "Nearline Storage Doha", true},
+		{"COLDLINE", "Coldline Storage Doha", true},
+		{"ARCHIVE", "Archive Storage Doha", true},
+		{"STANDARD", "Regional Standard Class A Operations", false},
+		{"NEARLINE", "Nearline Data Retrieval", false},
+		{"NEARLINE", "Nearline Storage Doha (Early Delete)", false},
+		{"COLDLINE", "Coldline Storage Doha (Early Delete)", false},
+		{"ARCHIVE", "Archive Storage Doha (Early Delete)", false},
+	} {
+		t.Run(tc.description, func(t *testing.T) {
+			sku := &cloudbilling.Sku{Description: tc.description, ServiceRegions: []string{"me-central1"}}
+			assert.Equal(t, tc.want, skuMatchesStorageClass(sku, tc.class, "me-central1"))
+		})
+	}
+}
+
 // TestCloudStorageClient_ConvertGCPRecommendation_PopulatesRecurringMonthlyCost verifies
 // that convertGCPRecommendation sets a non-nil RecurringMonthlyCost when the billing
 // service returns valid pricing. This is the regression test for issue #264: the
@@ -882,6 +905,11 @@ func TestStoragePricingUnits_PublicConsumers(t *testing.T) {
 			unrelated := storageMockSkus("NEARLINE", 26000000, 20000000)[0]
 			unrelated.PricingInfo[0].PricingExpression.UsageUnit = "unknown"
 			skus = append(skus, unrelated)
+			operation := storageMockSkus("STANDARD", 5000000, 0)[0]
+			operation.Description = "Regional Standard Class A Operations"
+			operation.PricingInfo[0].PricingExpression.UsageUnit = "count"
+			skus = append([]*cloudbilling.Sku{operation}, skus...)
+			skus = append(skus, operation)
 			client := storageCatalogClient(t, skus)
 			for _, term := range []struct {
 				label  string
@@ -928,6 +956,8 @@ func TestStoragePricingUnits_InvalidPublicConsumers(t *testing.T) {
 		{"empty-commitment", "", 1},
 		{"unknown-demand", "GiBy.d", 0},
 		{"unknown-commitment", "GiBy", 1},
+		{"count-demand", "count", 0},
+		{"count-commitment", "count", 1},
 		{"no-commitment", "", -1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
