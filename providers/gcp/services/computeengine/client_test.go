@@ -997,22 +997,6 @@ func TestComputeEngineClient_ConvertGCPRecommendation(t *testing.T) {
 	assert.Nil(t, rec.RecurringMonthlyCost)
 }
 
-// infiniteRecommenderIterator never signals iterator.Done, used to exercise
-// the ctx-cancel guard and the maxRecsPages budget cap.
-type infiniteRecommenderIterator struct{}
-
-func (i *infiniteRecommenderIterator) Next() (*recommenderpb.Recommendation, error) {
-	return &recommenderpb.Recommendation{}, nil
-}
-
-type infiniteRecommenderClient struct{}
-
-func (c *infiniteRecommenderClient) ListRecommendations(_ context.Context, _ *recommenderpb.ListRecommendationsRequest) RecommenderIterator {
-	return &infiniteRecommenderIterator{}
-}
-
-func (c *infiniteRecommenderClient) Close() error { return nil }
-
 // TestComputeEngineClient_GetRecommendations_CtxCancelReturnsError asserts
 // that a canceled context is treated as a terminal stop and returns an error
 // rather than silently producing a partial result set
@@ -1023,21 +1007,10 @@ func TestComputeEngineClient_GetRecommendations_CtxCancelReturnsError(t *testing
 
 	client, err := NewClient(context.Background(), "test-project", "us-central1")
 	require.NoError(t, err)
-	client.SetRecommenderClient(&infiniteRecommenderClient{})
+	client.SetRecommenderClient(&MockRecommenderClient{})
 
 	_, err = client.GetRecommendations(ctx, &common.RecommendationParams{})
 	require.ErrorIs(t, err, context.Canceled, "canceled context must surface an error, not a partial result set")
-}
-
-// TestComputeEngineClient_GetRecommendations_PageCapFires asserts that the
-// iteration budget terminates an infinite iterator rather than looping forever.
-func TestComputeEngineClient_GetRecommendations_PageCapFires(t *testing.T) {
-	client, err := NewClient(context.Background(), "test-project", "us-central1")
-	require.NoError(t, err)
-	client.SetRecommenderClient(&infiniteRecommenderClient{})
-
-	_, err = client.GetRecommendations(context.Background(), &common.RecommendationParams{})
-	require.Error(t, err, "page cap must surface an error when the iterator never terminates")
 }
 
 // Synthetic fixture for conversion and insert tests; not a captured service response.

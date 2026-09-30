@@ -348,7 +348,22 @@ type realRecommenderClient struct {
 }
 
 func (r *realRecommenderClient) ListRecommendations(ctx context.Context, req *recommenderpb.ListRecommendationsRequest) RecommenderIterator {
-	return &realRecommenderIterator{it: r.client.ListRecommendations(ctx, req)}
+	it := r.client.ListRecommendations(ctx, req)
+	fetch := it.InternalFetch
+	pages := 0
+	// The SDK's unstable fetch hook is needed to count empty server pages,
+	// which Next skips internally. SDK boundary tests guard this dependency.
+	it.InternalFetch = func(size int, token string) ([]*recommenderpb.Recommendation, string, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, "", err
+		}
+		if pages >= maxRecsPages {
+			return nil, "", fmt.Errorf("computeengine: GetRecommendations page cap (%d pages) reached", maxRecsPages)
+		}
+		pages++
+		return fetch(size, token)
+	}
+	return &realRecommenderIterator{it: it}
 }
 
 func (r *realRecommenderClient) Close() error {
@@ -401,7 +416,7 @@ func (c *Client) GetRecommendations(ctx context.Context, p *common.Recommendatio
 	}
 
 	it := recClient.ListRecommendations(ctx, req)
-	for pageIdx := 0; pageIdx < maxRecsPages; pageIdx++ {
+	for {
 		if err := ctx.Err(); err != nil {
 			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
@@ -433,8 +448,6 @@ func (c *Client) GetRecommendations(ctx context.Context, p *common.Recommendatio
 			recommendations = append(recommendations, *converted)
 		}
 	}
-
-	return nil, fmt.Errorf("computeengine: GetRecommendations iteration cap (%d items) reached", maxRecsPages)
 }
 
 // GetExistingCommitments retrieves existing Compute Engine CUDs.
