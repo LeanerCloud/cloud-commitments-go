@@ -251,17 +251,36 @@ func (c *Client) fetchCoverageForServiceRegion(ctx context.Context, startStr, en
 	}, windowHours)
 }
 
-// fetchCoveragePaged runs the paginated GetReservationCoverage loop and
-// invokes record on each group with a non-empty INSTANCE_TYPE and a
-// valid Coverage block. The keyed-write logic is callsite-specific
-// (RDS keys carry engine + deployment, non-RDS keys don't), so record
-// closes over the key shape the caller wants.
+type riCoveragePool struct{ instanceType, deployment string }
+type riCoverageTotals struct{ average, weightedPct, lastPct float64 }
+type riCoverageAccumulator map[riCoveragePool]riCoverageTotals
+
+func (a riCoverageAccumulator) addGroup(group types.ReservationCoverageGroup, windowHours float64) {
+	instType, deployment := extractGroupAttributes(group.Attributes)
+	if instType == "" {
+		return
+	}
+	cov, ok := poolCoverageFromGroup(group, windowHours)
+	if !ok {
+		return
+	}
+	key := riCoveragePool{instType, normaliseDeployment(deployment)}
+	sum := a[key]
+	sum.lastPct = cov.Pct
+	if cov.AvgInstancesPerHour > 0 {
+		sum.average += cov.AvgInstancesPerHour
+		sum.weightedPct += cov.Pct * cov.AvgInstancesPerHour
+	}
+	a[key] = sum
+}
+
 func (c *Client) fetchCoveragePaged(
 	ctx context.Context,
 	input *costexplorer.GetReservationCoverageInput,
 	record func(instType, deployment string, cov PoolCoverage),
 	windowHours float64,
 ) error {
+	acc := make(riCoverageAccumulator)
 	var token *string
 	for {
 		if err := ctx.Err(); err != nil {
@@ -274,22 +293,22 @@ func (c *Client) fetchCoveragePaged(
 		}
 		for _, period := range result.CoveragesByTime {
 			for _, group := range period.Groups {
-				instType, deployment := extractGroupAttributes(group.Attributes)
-				if instType == "" {
-					continue
-				}
-				cov, ok := poolCoverageFromGroup(group, windowHours)
-				if !ok {
-					continue
-				}
-				record(instType, deployment, cov)
+				acc.addGroup(group, windowHours)
 			}
 		}
 		if result.NextPageToken == nil || *result.NextPageToken == "" {
-			return nil
+			break
 		}
 		token = result.NextPageToken
 	}
+	for key, sum := range acc {
+		pct := sum.lastPct
+		if sum.average > 0 {
+			pct = sum.weightedPct / sum.average
+		}
+		record(key.instanceType, key.deployment, PoolCoverage{Pct: pct, AvgInstancesPerHour: sum.average})
+	}
+	return nil
 }
 
 // rdsEngineRegionFilter builds the CE Filter expression scoping a
