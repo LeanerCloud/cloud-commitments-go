@@ -443,7 +443,7 @@ func TestParseRecommendations(t *testing.T) {
 	assert.Equal(t, "us-west-2", recs[1].Region)
 }
 
-func TestParseRecommendations_SkipsInvalidDetails(t *testing.T) {
+func TestParseRecommendations_ReportsInvalidDetails(t *testing.T) {
 	client := &Client{}
 
 	awsRecs := []types.ReservationPurchaseRecommendation{
@@ -498,8 +498,9 @@ func TestParseRecommendations_SkipsInvalidDetails(t *testing.T) {
 
 	recs, err := client.parseRecommendations(context.Background(), awsRecs, params)
 
-	require.NoError(t, err)
-	// Should have 2 valid recommendations, skipping the invalid one
+	var incomplete *IncompleteRecommendationsError
+	require.ErrorAs(t, err, &incomplete)
+	assert.Equal(t, 1, incomplete.FailedDetails)
 	assert.Len(t, recs, 2)
 	assert.Equal(t, "t3.medium", recs[0].ResourceType)
 	assert.Equal(t, "r5.xlarge", recs[1].ResourceType)
@@ -611,7 +612,7 @@ func TestParseRIUtilizationSignals(t *testing.T) {
 // during a cudly_search_recommendations call injected a bare line of prose
 // into the middle of the JSON-RPC stream and broke the client session.
 //
-// TestParseRecommendations_SkipsInvalidDetails above already drives this exact
+// TestParseRecommendations_ReportsInvalidDetails above already drives this exact
 // code path, but it only asserts the returned recommendation count -- it stayed
 // green the entire time the bug was live. This test asserts the property that
 // actually matters: nothing reaches stdout, whatever is logged.
@@ -645,7 +646,7 @@ func TestParseRecommendations_WarningsNeverGoToStdout(t *testing.T) {
 
 	stdout, logged := captureStdoutAndLog(t, func() {
 		recs, err := client.parseRecommendations(context.Background(), awsRecs, params)
-		require.NoError(t, err)
+		require.Error(t, err)
 		assert.Empty(t, recs, "the single invalid detail must be skipped")
 	})
 

@@ -499,7 +499,10 @@ func TestGetAllRecommendations(t *testing.T) {
 
 	recs, err := client.GetAllRecommendations(context.Background())
 
-	require.NoError(t, err)
+	var incomplete *IncompleteRecommendationsError
+	require.ErrorAs(t, err, &incomplete)
+	require.Equal(t, 24, incomplete.FailedDetails)
+	require.Zero(t, incomplete.FailedScopes)
 	// Only EC2 will successfully parse since the mock returns EC2 details for all services
 	// Other services will fail parsing and be skipped
 	assert.NotEmpty(t, recs)
@@ -536,8 +539,10 @@ func TestGetAllRecommendations_SomeServicesFail(t *testing.T) {
 
 	recs, err := client.GetAllRecommendations(context.Background())
 
-	// Should not error even if some services fail
-	require.NoError(t, err)
+	var incomplete *IncompleteRecommendationsError
+	require.ErrorAs(t, err, &incomplete)
+	require.Equal(t, 24, incomplete.FailedDetails)
+	require.Zero(t, incomplete.FailedScopes)
 	// Should have recommendations from services that succeeded
 	assert.NotEmpty(t, recs)
 }
@@ -654,7 +659,10 @@ func TestGetAllRecommendations_IncludesSavingsPlans(t *testing.T) {
 	client := NewClientWithAPI(mockAPI, "us-east-1")
 
 	recs, err := client.GetAllRecommendations(context.Background())
-	require.NoError(t, err)
+	var incomplete *IncompleteRecommendationsError
+	require.ErrorAs(t, err, &incomplete)
+	require.Equal(t, 24, incomplete.FailedDetails)
+	require.Zero(t, incomplete.FailedScopes)
 
 	// At least one EC2 rec must be present (existing services not regressed).
 	var ec2Count, spCount int
@@ -925,7 +933,7 @@ func TestMergeServiceResults_AllFailIsError(t *testing.T) {
 	assert.Contains(t, err.Error(), "all", "error should signal that every service failed")
 	assert.Nil(t, recs)
 
-	// Partial failure is still tolerated: surviving service's recs returned, nil error.
+	// Partial failure retains the surviving service with an incomplete diagnostic.
 	ec2Rec := common.Recommendation{Service: common.ServiceEC2}
 	recs, err = mergeServiceResults(
 		serviceResult{name: "EC2", recs: []common.Recommendation{ec2Rec}},
@@ -935,7 +943,9 @@ func TestMergeServiceResults_AllFailIsError(t *testing.T) {
 		serviceResult{name: "Redshift", err: throttle},
 		serviceResult{name: "SavingsPlans", err: throttle},
 	)
-	require.NoError(t, err, "a single surviving service must keep the run successful")
+	var incomplete *IncompleteRecommendationsError
+	require.ErrorAs(t, err, &incomplete)
+	assert.Equal(t, 5, incomplete.FailedScopes)
 	assert.Len(t, recs, 1)
 	assert.Equal(t, common.ServiceEC2, recs[0].Service)
 
