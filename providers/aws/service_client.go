@@ -3,6 +3,7 @@ package aws
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -77,12 +78,13 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 		return nil, fmt.Errorf("params cannot be nil")
 	}
 	recs, err := r.client.GetRecommendations(ctx, params)
-	if err != nil {
+	var incomplete *recommendations.IncompleteRecommendationsError
+	if err != nil && !errors.As(err, &incomplete) {
 		return nil, err
 	}
 
 	recs = applyRecommendationFilters(recs, *params)
-	return recs, nil
+	return recs, err
 }
 
 // applyRecommendationFilters applies account and region filters to recommendations.

@@ -17,18 +17,23 @@ import (
 // parseRecommendations converts AWS recommendations to common.Recommendation format.
 func (c *Client) parseRecommendations(ctx context.Context, awsRecs []types.ReservationPurchaseRecommendation, params common.RecommendationParams) ([]common.Recommendation, error) {
 	var recommendations []common.Recommendation
+	incomplete := &IncompleteRecommendationsError{}
 
 	for r := range awsRecs {
 		awsRec := &awsRecs[r]
 		for i := range awsRec.RecommendationDetails {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			details := &awsRec.RecommendationDetails[i]
 			rec, err := c.parseRecommendationDetail(ctx, details, params)
 			if err != nil {
-				// log (stderr), never fmt.Print (stdout): this package is
-				// linked into cmd/cudly-mcp, whose stdio transport owns
-				// stdout for JSON-RPC framing. A warning printed here during
-				// a cudly_search_recommendations call would be interleaved
-				// into the protocol stream and corrupt the session.
+				if canceled := collectionCancellation(err); canceled != nil {
+					return nil, canceled
+				}
+				incomplete.FailedDetails++
+				incomplete.Causes = append(incomplete.Causes, fmt.Errorf("service %s term %s payment %s block %d detail %d: %w",
+					params.Service, params.Term, params.PaymentOption, r, i, err))
 				log.Printf("Warning: Failed to parse recommendation detail %d: %v", i, err)
 				continue
 			}
@@ -39,6 +44,12 @@ func (c *Client) parseRecommendations(ctx context.Context, awsRecs []types.Reser
 		}
 	}
 
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if incomplete.FailedDetails > 0 {
+		return recommendations, incomplete
+	}
 	return recommendations, nil
 }
 

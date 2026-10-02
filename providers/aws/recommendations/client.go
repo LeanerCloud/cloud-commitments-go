@@ -13,7 +13,6 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
-	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 )
 
 // maxRecommendationPages caps the number of pages fetched per Cost Explorer
@@ -257,12 +256,7 @@ var defaultDiscoveryTerms = []string{"1yr", "3yr"}
 // rows and render as distinct UI rows for free.
 var defaultDiscoveryPaymentOptions = []string{"all-upfront", "partial-upfront", "no-upfront"}
 
-// fetchSingleComboRecs fetches recommendations for one (term, payment) pair.
-// If the context is already done before the call, it returns (nil, ctx.Err()).
-// If GetRecommendations returns an error after ctx cancellation, it also
-// returns (nil, ctx.Err()) so the caller exits the sweep immediately. Per-combo
-// errors (throttle, 5xx) return (nil, err) with ctx.Err() == nil, signaling
-// skip-and-continue tolerance in the outer loop.
+// fetchSingleComboRecs retains incomplete responses but makes cancellation terminal.
 func (c *Client) fetchSingleComboRecs(ctx context.Context, service common.ServiceType, term, payment string) ([]common.Recommendation, error) {
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
@@ -279,20 +273,13 @@ func (c *Client) fetchSingleComboRecs(ctx context.Context, service common.Servic
 		Region:         "",
 	}
 	recs, err := c.GetRecommendations(ctx, &params)
-	if err != nil {
-		// A canceled / deadline-exceeded ctx is NOT a per-combo
-		// failure to be tolerated -- every subsequent combo
-		// would just hit the same dead context and waste time
-		// while we accumulate "failures" that hide the real
-		// reason. Short-circuit so the caller sees the ctx
-		// error verbatim. Per-combo errors (throttle, 5xx)
-		// keep the existing skip-and-continue tolerance.
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		return nil, err
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
 	}
-	return recs, nil
+	if canceled := collectionCancellation(err); canceled != nil {
+		return nil, canceled
+	}
+	return recs, err
 }
 
 // GetRecommendationsForService fetches recommendations for a specific
@@ -303,31 +290,30 @@ func (c *Client) fetchSingleComboRecs(ctx context.Context, service common.Servic
 // params.PaymentOption so the resulting slice contains every combo
 // for the user to choose from in the UI.
 //
-// A per-call Cost Explorer error is tolerated and skipped so a single
-// throttle on one (term, payment) combo doesn't suppress the others;
-// only an error where every combo fails is propagated. This mirrors
-// the "continue on per-service error" tolerance in GetAllRecommendations.
+// Failed details or scopes accompany surviving results as a typed diagnostic.
+// If every API call fails, the ordinary error remains fatal.
 func (c *Client) GetRecommendationsForService(ctx context.Context, service common.ServiceType) ([]common.Recommendation, error) {
 	allRecs := make([]common.Recommendation, 0)
 	var lastErr error
+	incomplete := &IncompleteRecommendationsError{}
 	successCount := 0
-	attempts := 0
 	for _, term := range defaultDiscoveryTerms {
 		for _, payment := range defaultDiscoveryPaymentOptions {
-			attempts++
 			recs, err := c.fetchSingleComboRecs(ctx, service, term, payment)
 			if err != nil {
-				if ctx.Err() != nil {
-					return nil, ctx.Err()
+				if canceled := collectionCancellation(err); canceled != nil {
+					return nil, canceled
 				}
 				lastErr = err
-				continue
+				if !incomplete.addFailure(fmt.Errorf("service %s term %s payment %s: %w", service, term, payment, err)) {
+					continue
+				}
 			}
 			successCount++
 			allRecs = append(allRecs, recs...)
 		}
 	}
-	if successCount == 0 && attempts > 0 && lastErr != nil {
+	if successCount == 0 && lastErr != nil {
 		return nil, fmt.Errorf("all (term, payment) variants failed for service %s: %w", service, lastErr)
 	}
 	// Enrich each rec with 7-day daily coverage history so the frontend
@@ -335,8 +321,12 @@ func (c *Client) GetRecommendationsForService(ctx context.Context, service commo
 	// are skipped inside AttachDailyUsageHistory (no per-SKU CE coverage
 	// breakdown available). Errors are logged and skipped per-tuple so a
 	// single CE failure doesn't suppress the rest of the collection.
-	if len(allRecs) > 0 {
-		c.AttachDailyUsageHistory(ctx, allRecs)
+	c.AttachDailyUsageHistory(ctx, allRecs)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if len(incomplete.Causes) > 0 {
+		return allRecs, incomplete
 	}
 	return allRecs, nil
 }
@@ -350,11 +340,8 @@ func (c *Client) GetRecommendationsForService(ctx context.Context, service commo
 // the canonical order EC2 → RDS → ElastiCache → OpenSearch → Redshift after
 // all goroutines finish so order-sensitive consumers stay stable.
 //
-// Behavior change vs the previous sequential loop: per-service errors are
-// now logged at WARN via mergeServiceResults — the previous loop swallowed
-// them silently with a bare `continue`, leaving operators no signal when a
-// single service was misbehaving. Mirrors the Azure parallelisation in
-// providers/azure/recommendations.go (closes #258, commit b10326c5).
+// Partial results retain diagnostics through mergeServiceResults; callers decide
+// whether their workflow can use an incomplete collection.
 func (c *Client) GetAllRecommendations(ctx context.Context) ([]common.Recommendation, error) {
 	var (
 		ec2Recs, rdsRecs, cacheRecs, osRecs, redshiftRecs []common.Recommendation
@@ -436,41 +423,32 @@ type serviceResult struct {
 	recs []common.Recommendation
 }
 
-// mergeServiceResults logs per-service errors at WARN and appends successful
-// results in the order the slice is passed — callers must preserve the
-// canonical EC2 → RDS → ElastiCache → OpenSearch → Redshift → SavingsPlans
-// order so that order-sensitive consumers stay stable.
-//
-// Partial failure is tolerated: as long as at least one service succeeded, the
-// successful services' recommendations are returned with a nil error and the
-// failures are logged at WARN. But when EVERY service errored (e.g. a sustained
-// Cost Explorer throttle that exhausts each service's per-combo retries), the
-// merge returns a wrapped error instead of an empty-but-nil-error result
-// (08-H4). Returning (recs, nil) on a total failure makes a throttled run
-// indistinguishable from "no savings available", which an operator can misread
-// as "nothing to buy": the same hazard the per-service all-combos-failed guard
-// in GetRecommendationsForService prevents one level down.
+// mergeServiceResults preserves service order and incomplete responses.
+// All ordinary service failures remain fatal, even when no rows were expected.
 func mergeServiceResults(results ...serviceResult) ([]common.Recommendation, error) {
-	total := 0
+	var out []common.Recommendation
+	incomplete := &IncompleteRecommendationsError{}
 	failures := 0
 	var lastErr error
 	for i := range results {
-		total += len(results[i].recs)
-		if results[i].err != nil {
-			failures++
-			lastErr = results[i].err
+		result := &results[i]
+		if result.err != nil {
+			if canceled := collectionCancellation(result.err); canceled != nil {
+				return nil, canceled
+			}
+			lastErr = result.err
+			if !incomplete.addFailure(fmt.Errorf("service %s: %w", result.name, result.err)) {
+				failures++
+				continue
+			}
 		}
-	}
-	out := make([]common.Recommendation, 0, total)
-	for i := range results {
-		if results[i].err != nil {
-			logging.Warnf("AWS %s recommendations: %v", results[i].name, results[i].err)
-			continue
-		}
-		out = append(out, results[i].recs...)
+		out = append(out, result.recs...)
 	}
 	if failures == len(results) && failures > 0 {
 		return nil, fmt.Errorf("all %d AWS recommendation services failed: %w", failures, lastErr)
+	}
+	if len(incomplete.Causes) > 0 {
+		return out, incomplete
 	}
 	return out, nil
 }
