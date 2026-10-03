@@ -124,8 +124,10 @@ func TestAllocate_CoveragePctDoesNotChangeAllocation(t *testing.T) {
 	t.Parallel()
 	layers := awsLayers()
 	states := withExisting(zeroStates(layers), LayerComputeSP, 2)
+	cfg := validConfigAWS()
+	cfg.TargetCoveragePct = 80
 	in := &AllocationInput{
-		Config: validConfigAWS(), Layers: layers, LayerStates: states,
+		Config: cfg, Layers: layers, LayerStates: states,
 		Baseline: UsageBaseline{LowWaterUSDPerHour: ptr(10.0), StableUSDPerHour: ptr(8.0)},
 		Now:      nowFixed(), InFlightUSDPerHour: ptr(0.0),
 	}
