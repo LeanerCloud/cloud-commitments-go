@@ -1,7 +1,6 @@
 package recommendations
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"math"
@@ -10,176 +9,28 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
-	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
 )
-
-// getSavingsPlansRecommendations fetches Savings Plans recommendations.
-//
-// Resolution order for which plan types to query, in order of precedence:
-//  1. params.Service is one of the four per-plan-type slugs
-//     (e.g. ServiceSavingsPlansSageMaker) — query just that plan type. This
-//     is the path the AWS provider's GetServiceClient dispatch takes after
-//     the per-plan-type split: each registered SP service makes its own
-//     Cost Explorer call with its own term/payment defaults.
-//  2. Otherwise, fall back to the legacy IncludeSPTypes/ExcludeSPTypes
-//     filter mechanism (for callers passing the umbrella ServiceSavingsPlansAll
-//     slug or for direct CLI invocations that haven't been migrated yet).
-func (c *Client) getSavingsPlansRecommendations(ctx context.Context, params *common.RecommendationParams) ([]common.Recommendation, error) {
-	planTypes := planTypesForParams(params)
-
-	if len(planTypes) == 0 {
-		return []common.Recommendation{}, nil
-	}
-
-	var allRecommendations []common.Recommendation
-
-	for _, planType := range planTypes {
-		paymentOption, err := convertSavingsPlansPaymentOption(params.PaymentOption)
-		if err != nil {
-			return nil, fmt.Errorf("invalid payment option for Savings Plans recommendation: %w", err)
-		}
-		termInYears, err := convertSavingsPlansTermInYears(params.Term)
-		if err != nil {
-			return nil, fmt.Errorf("invalid term for Savings Plans recommendation: %w", err)
-		}
-		lookbackPeriod, err := convertSavingsPlansLookbackPeriod(params.LookbackPeriod)
-		if err != nil {
-			return nil, fmt.Errorf("invalid lookback period for Savings Plans recommendation: %w", err)
-		}
-		input := &costexplorer.GetSavingsPlansPurchaseRecommendationInput{
-			SavingsPlansType:     planType,
-			PaymentOption:        paymentOption,
-			TermInYears:          termInYears,
-			LookbackPeriodInDays: lookbackPeriod,
-			AccountScope:         types.AccountScopeLinked,
-		}
-
-		recs, err := c.fetchSPAllPages(ctx, input, params, planType)
-		if err != nil {
-			// When the caller scoped the request to one plan type
-			// (post-issue-#22 split), a Cost Explorer failure means an
-			// entire SP service collection returns nothing -- silently
-			// dropping that as "0 recommendations" hides real outages.
-			// Propagate. The umbrella iterate-all path keeps logging
-			// and continuing so a transient failure on one plan type
-			// doesn't poison the others.
-			if len(planTypes) == 1 {
-				return nil, fmt.Errorf("failed to get %s recommendations: %w", planType, err)
-			}
-			// log (stderr), never fmt.Print (stdout): see the identical note
-			// in parser_ri.go's parseRecommendations. cmd/cudly-mcp frames
-			// JSON-RPC on stdout, and this branch fires whenever ONE plan
-			// type fails while others succeed (e.g. Database SP unavailable
-			// in an account) -- a routine condition, not a rare one.
-			log.Printf("Warning: Failed to get %s recommendations: %v", planType, err)
-			continue
-		}
-
-		allRecommendations = append(allRecommendations, recs...)
-	}
-
-	return allRecommendations, nil
-}
-
-// fetchSPAllPages paginates over all pages of SP recommendations for a single
-// plan type. ctx.Err() is checked at the top of each iteration so cancellation
-// is terminal (per feedback_ctx_cancel_terminal.md, issue #692).
-func (c *Client) fetchSPAllPages(
-	ctx context.Context,
-	input *costexplorer.GetSavingsPlansPurchaseRecommendationInput,
-	params *common.RecommendationParams,
-	planType types.SupportedSavingsPlansType,
-) ([]common.Recommendation, error) {
-	var allRecs []common.Recommendation
-	var nextPageToken *string
-
-	for pageIdx := 0; ; pageIdx++ {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if pageIdx >= maxRecommendationPages {
-			return nil, fmt.Errorf(
-				"pagination cap reached after %d pages for SP %s (issue #692)",
-				maxRecommendationPages, planType,
-			)
-		}
-		input.NextPageToken = nextPageToken
-
-		result, err := c.fetchSPPageWithRetry(ctx, input)
-		if err != nil {
-			return nil, err
-		}
-		if result == nil {
-			break
-		}
-
-		if result.SavingsPlansPurchaseRecommendation != nil {
-			recs := c.parseSavingsPlansRecommendations(result.SavingsPlansPurchaseRecommendation, params, planType)
-			allRecs = append(allRecs, recs...)
-		}
-
-		if result.NextPageToken == nil || aws.ToString(result.NextPageToken) == "" {
-			break
-		}
-		nextPageToken = result.NextPageToken
-	}
-
-	return allRecs, nil
-}
-
-// fetchSPPageWithRetry executes a single GetSavingsPlansPurchaseRecommendation
-// call with rate-limiter exponential back-off. Extracted so the pagination loop
-// in fetchSPAllPages stays below the gocyclo cap.
-func (c *Client) fetchSPPageWithRetry(
-	ctx context.Context,
-	input *costexplorer.GetSavingsPlansPurchaseRecommendationInput,
-) (*costexplorer.GetSavingsPlansPurchaseRecommendationOutput, error) {
-	rateLimiter := c.rateLimiter.newOperation()
-	var result *costexplorer.GetSavingsPlansPurchaseRecommendationOutput
-	var err error
-
-	for {
-		if waitErr := rateLimiter.Wait(ctx); waitErr != nil {
-			return nil, fmt.Errorf("rate limiter wait failed: %w", waitErr)
-		}
-
-		if acqErr := concurrency.Acquire(ctx); acqErr != nil {
-			return nil, fmt.Errorf("concurrency acquire failed: %w", acqErr)
-		}
-		result, err = c.costExplorerClient.GetSavingsPlansPurchaseRecommendation(ctx, input)
-		concurrency.Release(ctx)
-		if !rateLimiter.ShouldRetry(err) {
-			break
-		}
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
-}
 
 // parseSavingsPlansRecommendations converts Savings Plans recommendations.
 func (c *Client) parseSavingsPlansRecommendations(
 	spRec *types.SavingsPlansPurchaseRecommendation,
 	params *common.RecommendationParams,
 	planType types.SupportedSavingsPlansType,
-) []common.Recommendation {
+	page int,
+) ([]common.Recommendation, error) {
 	var recommendations []common.Recommendation
+	incomplete := &IncompleteRecommendationsError{}
 
 	for i := range spRec.SavingsPlansPurchaseRecommendationDetails {
 		detail := &spRec.SavingsPlansPurchaseRecommendationDetails[i]
 		rec, err := c.parseSavingsPlanDetail(detail, params, planType)
 		if err != nil {
-			// present-but-unparseable money field: drop this recommendation
-			// rather than forwarding a corrupt $0 to the scheduler/frontend.
-			// Mirrors the RI path (parseAWSCostDetails) which errors on the
-			// same class. Log so operators can detect malformed CE responses.
+			incomplete.FailedDetails++
+			incomplete.Causes = append(incomplete.Causes, fmt.Errorf("service %s term %s payment %s plan %s page %d detail %d: %w",
+				params.Service, params.Term, params.PaymentOption, planType, page, i, err))
 			log.Printf("WARNING: skipping SP recommendation (planType=%s): %v", planType, err)
 			continue
 		}
@@ -188,7 +39,10 @@ func (c *Client) parseSavingsPlansRecommendations(
 		}
 	}
 
-	return recommendations
+	if incomplete.FailedDetails > 0 {
+		return recommendations, incomplete
+	}
+	return recommendations, nil
 }
 
 // parseOptionalFloat parses a *string pointer as float64.

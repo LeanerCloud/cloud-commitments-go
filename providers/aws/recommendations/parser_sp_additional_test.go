@@ -187,7 +187,8 @@ func TestParseSavingsPlansRecommendations(t *testing.T) {
 		LookbackPeriod: "7d",
 	}
 
-	recs := client.parseSavingsPlansRecommendations(spRec, &params, types.SupportedSavingsPlansTypeComputeSp)
+	recs, err := client.parseSavingsPlansRecommendations(spRec, &params, types.SupportedSavingsPlansTypeComputeSp, 0)
+	assert.NoError(t, err)
 
 	assert.Len(t, recs, 2)
 
@@ -213,7 +214,8 @@ func TestParseSavingsPlansRecommendations_Empty(t *testing.T) {
 		LookbackPeriod: "7d",
 	}
 
-	recs := client.parseSavingsPlansRecommendations(spRec, &params, types.SupportedSavingsPlansTypeComputeSp)
+	recs, err := client.parseSavingsPlansRecommendations(spRec, &params, types.SupportedSavingsPlansTypeComputeSp, 0)
+	assert.NoError(t, err)
 
 	assert.Empty(t, recs)
 }
