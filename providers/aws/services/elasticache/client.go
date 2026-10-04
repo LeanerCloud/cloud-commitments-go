@@ -15,6 +15,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/reservationexpiry"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/reservationstate"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/tagging"
 )
@@ -85,11 +86,6 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 				continue
 			}
 
-			duration := aws.ToInt32(node.Duration)
-			termMonths := 12
-			if duration == ThreeYearSeconds {
-				termMonths = 36
-			}
 			if aws.ToString(node.ProductDescription) == "" {
 				log.Printf("WARNING: ElastiCache reservation %s has no engine; matching any cache engine during duplicate checks", aws.ToString(node.ReservedCacheNodeId))
 			}
@@ -105,7 +101,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 				Count:          int(aws.ToInt32(node.CacheNodeCount)),
 				State:          state,
 				StartDate:      aws.ToTime(node.StartTime),
-				EndDate:        aws.ToTime(node.StartTime).AddDate(0, termMonths, 0),
+				EndDate:        reservationexpiry.EndDate(aws.ToTime(node.StartTime), aws.ToInt32(node.Duration)),
 			}
 
 			commitments = append(commitments, commitment)
