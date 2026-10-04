@@ -131,8 +131,8 @@ type SPUtilizationSummary struct {
 // Pass nil to skip SP coverage measurement; CoveragePct will be nil for SP layers.
 //
 // CE API note: GetSavingsPlansCoverage does NOT support plan-type filtering.
-// The returned coverage applies to ALL Savings Plan types in the region, so
-// AWSLadder sets the same CoveragePct on both EC2Instance and Compute SP layers.
+// The returned coverage applies to ALL Savings Plan types in the geography:
+// region "" means all regions; otherwise it is limited to the given region.
 //
 // Adapter requirement: Go interface satisfaction needs identical return types,
 // and PR 4's concrete implementation returns its own richer
