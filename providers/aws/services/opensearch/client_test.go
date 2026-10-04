@@ -406,25 +406,31 @@ func TestRequiredMonthsForTerm(t *testing.T) {
 	}
 }
 
-func TestClient_MatchesPaymentOption(t *testing.T) {
-	client := &Client{}
-
+func TestNormalizeOpenSearchPaymentOption(t *testing.T) {
 	tests := []struct {
-		name          string
-		offeringType  types.ReservedInstancePaymentOption
-		paymentOption string
-		expected      bool
+		name     string
+		option   string
+		expected types.ReservedInstancePaymentOption
+		wantErr  bool
 	}{
-		{"all upfront match", types.ReservedInstancePaymentOptionAllUpfront, "all-upfront", true},
-		{"partial upfront match", types.ReservedInstancePaymentOptionPartialUpfront, "partial-upfront", true},
-		{"no upfront match", types.ReservedInstancePaymentOptionNoUpfront, "no-upfront", true},
-		{"no match", types.ReservedInstancePaymentOptionAllUpfront, "no-upfront", false},
-		{"unknown payment option", types.ReservedInstancePaymentOptionAllUpfront, "unknown", false},
+		{"all upfront", "all-upfront", types.ReservedInstancePaymentOptionAllUpfront, false},
+		{"partial upfront", "partial-upfront", types.ReservedInstancePaymentOptionPartialUpfront, false},
+		{"no upfront", "no-upfront", types.ReservedInstancePaymentOptionNoUpfront, false},
+		{"empty", "", "", true},
+		{"unknown", "unknown", "", true},
+		{"spaced", "All Upfront", "", true},
+		{"raw SDK enum", "ALL_UPFRONT", "", true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := client.matchesPaymentOption(tt.offeringType, tt.paymentOption)
+			result, err := normalizeOpenSearchPaymentOption(tt.option)
+			if tt.wantErr {
+				assert.ErrorContains(t, err, "unsupported OpenSearch payment option")
+				assert.Empty(t, result)
+				return
+			}
+			assert.NoError(t, err)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -1003,11 +1009,6 @@ func TestFindOfferingID_PaginationCapFires(t *testing.T) {
 	mockOS.AssertNumberOfCalls(t, "DescribeReservedInstanceOfferings", maxOfferingPages)
 }
 
-// TestFindOfferingID_WrongVariantRejected asserts that findOfferingID returns an
-// explicit error when an offering matches on instance type and duration but its
-// PaymentOption does not match the request (issue #688). The mismatch is surfaced
-// immediately as a diagnostic error rather than silently skipping the offering and
-// exhausting the pagination loop.
 func TestFindOfferingID_WrongVariantRejected(t *testing.T) {
 	mockOS := &MockOpenSearchClient{}
 	t.Cleanup(func() { mockOS.AssertExpectations(t) })
@@ -1019,9 +1020,6 @@ func TestFindOfferingID_WrongVariantRejected(t *testing.T) {
 		Term:          "1yr",
 	}
 
-	// Return an offering matching the instance type and duration but with a
-	// different payment option. The new guard returns an explicit mismatch error
-	// rather than silently skipping and exhausting pagination.
 	mockOS.On("DescribeReservedInstanceOfferings", mock.Anything, mock.Anything).
 		Return(&opensearch.DescribeReservedInstanceOfferingsOutput{
 			ReservedInstanceOfferings: []types.ReservedInstanceOffering{
@@ -1029,7 +1027,7 @@ func TestFindOfferingID_WrongVariantRejected(t *testing.T) {
 					ReservedInstanceOfferingId: aws.String("other-offering"),
 					InstanceType:               types.OpenSearchPartitionInstanceTypeM5XlargeSearch,
 					Duration:                   31536000,
-					PaymentOption:              types.ReservedInstancePaymentOptionAllUpfront, // mismatch -- explicit error
+					PaymentOption:              types.ReservedInstancePaymentOptionAllUpfront,
 				},
 			},
 		}, nil).Once()
@@ -1037,7 +1035,7 @@ func TestFindOfferingID_WrongVariantRejected(t *testing.T) {
 	id, err := client.findOfferingID(context.Background(), rec, "")
 
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "payment option")
+	assert.Contains(t, err.Error(), "no offerings found")
 	assert.Empty(t, id)
 }
 
