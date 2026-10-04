@@ -30,12 +30,15 @@ const (
 // metadataPrefixes are the address ranges of cloud metadata and credential
 // services: all of IPv4/IPv6 link-local (AWS/Azure/GCP IMDS at 169.254.169.254,
 // ECS task credentials at 169.254.170.2, EKS Pod Identity at 169.254.170.23)
-// plus the AWS IPv6 IMDS and Pod Identity addresses, which are not link-local.
+// plus single routable addresses: the AWS IPv6 IMDS and Pod Identity endpoints,
+// Azure WireServer (168.63.129.16) and Alibaba Cloud IMDS (100.100.100.200).
 var metadataPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("169.254.0.0/16"),
 	netip.MustParsePrefix("fe80::/10"),
 	netip.MustParsePrefix("fd00:ec2::254/128"),
 	netip.MustParsePrefix("fd00:ec2::23/128"),
+	netip.MustParsePrefix("168.63.129.16/32"),
+	netip.MustParsePrefix("100.100.100.200/32"),
 }
 
 // resolver is the dialer's resolver; nil means net.DefaultResolver. Tests

@@ -115,6 +115,26 @@ func TestNew_BlocksMetadataLiteralsOutsideExactMatch(t *testing.T) {
 	}
 }
 
+// Metadata services on routable addresses outside link-local (Azure WireServer,
+// Alibaba Cloud IMDS), reached directly, IPv4-mapped, or via a redirect.
+func TestNew_BlocksRoutableMetadataAddresses(t *testing.T) {
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "http://168.63.129.16/machine?comp=goalstate", http.StatusFound)
+	}))
+	t.Cleanup(redirect.Close)
+
+	c := New()
+	for _, url := range []string{
+		"http://168.63.129.16/machine?comp=goalstate",
+		"http://168.63.129.16:32526/vmSettings",
+		"http://[::ffff:168.63.129.16]/machine?comp=goalstate",
+		"http://100.100.100.200/latest/meta-data/",
+		redirect.URL,
+	} {
+		t.Run(url, func(t *testing.T) { assertBlocked(t, c, url) })
+	}
+}
+
 // A redirect from an allowed endpoint to a name resolving to IMDS must be
 // blocked when the redirect target is dialed.
 func TestNew_BlocksRedirectToIMDS(t *testing.T) {
