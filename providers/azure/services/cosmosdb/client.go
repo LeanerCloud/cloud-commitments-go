@@ -550,15 +550,18 @@ func (c *Client) getCosmosPricing(ctx context.Context, sku, region string, termY
 		return nil, fmt.Errorf("no pricing data found for Cosmos DB SKU %s in region %s", sku, region)
 	}
 
-	_, reservationPrice, currency := extractCosmosPricing(priceData.Items, sku, termYears)
-	if reservationPrice == 0 {
-		return nil, fmt.Errorf("no reservation pricing found for Cosmos DB SKU %s (%d year) in region %s", sku, termYears, region)
+	selected, err := pricing.SelectReservation(priceData.Items, termYears, func(item pricing.RetailPriceItem) bool {
+		return item.ServiceName == "Azure Cosmos DB" && item.ProductName == "Azure Cosmos DB" &&
+			item.ArmRegionName == "Global" && item.ArmSKUName == sku
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return &CosmosPricing{
-		HourlyRate:       reservationPrice / (8760.0 * float64(termYears)),
-		ReservationPrice: reservationPrice,
-		Currency:         currency,
+		HourlyRate:       selected.RetailPrice / (8760.0 * float64(termYears)),
+		ReservationPrice: selected.RetailPrice,
+		Currency:         selected.CurrencyCode,
 	}, nil
 }
 
@@ -577,47 +580,6 @@ func (c *Client) fetchAzurePricing(ctx context.Context, filter string) (*AzureRe
 		return nil, err
 	}
 	return &AzureRetailPrice{Items: items}, nil
-}
-
-// azureTermString returns the Retail Prices API ReservationTerm string for the
-// given number of years. The API uses the singular form "1 Year" for one year
-// and the plural form "N Years" for two or more years.
-func azureTermString(termYears int) string {
-	if termYears == 1 {
-		return "1 Year"
-	}
-	return fmt.Sprintf("%d Years", termYears)
-}
-
-// extractCosmosPricing extracts on-demand and reservation pricing from price
-// items, considering only items whose ArmSKUName matches sku. This is
-// defense in depth on top of the API-side armSkuName filter in
-// getCosmosPricing: if the Retail Prices API ever returns items for other
-// SKUs (a loose or failed server-side filter), extraction still won't pick
-// the wrong SKU's price. An item with an empty ArmSKUName is treated as
-// unscoped and skipped rather than trusted, since the filtered query should
-// only return items for the requested SKU.
-func extractCosmosPricing(items []CosmosRetailPriceItem, sku string, termYears int) (onDemand, reservation float64, currency string) {
-	currency = "USD"
-	termStr := azureTermString(termYears)
-
-	for i := range items {
-		item := &items[i]
-		if item.ArmSKUName != sku {
-			continue
-		}
-		if item.CurrencyCode != "" {
-			currency = item.CurrencyCode
-		}
-
-		if item.ReservationTerm != "" && item.ReservationTerm == termStr {
-			reservation = item.RetailPrice
-		} else if item.Type == "Consumption" {
-			onDemand = item.UnitPrice
-		}
-	}
-
-	return onDemand, reservation, currency
 }
 
 // convertAzureCosmosRecommendation converts Azure Cosmos DB reservation recommendation to common format.
