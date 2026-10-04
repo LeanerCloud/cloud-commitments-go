@@ -15,6 +15,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/reservationexpiry"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/reservationstate"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/tagging"
 )
@@ -84,8 +85,6 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 				continue
 			}
 
-			termMonths := getTermMonthsFromDuration(node.Duration)
-
 			commitment := common.Commitment{
 				Provider:       common.ProviderAWS,
 				CommitmentID:   aws.ToString(node.ReservationId),
@@ -97,7 +96,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 				Count:          int(node.NodeCount),
 				State:          state,
 				StartDate:      aws.ToTime(node.StartTime),
-				EndDate:        aws.ToTime(node.StartTime).AddDate(0, termMonths, 0),
+				EndDate:        reservationexpiry.EndDate(aws.ToTime(node.StartTime), node.Duration),
 			}
 
 			commitments = append(commitments, commitment)
@@ -508,13 +507,4 @@ func (c *Client) createPurchaseTags(rec common.Recommendation, source string) []
 		out[i] = types.Tag{Key: aws.String(p.Key), Value: aws.String(p.Value)}
 	}
 	return out
-}
-
-// getTermMonthsFromDuration converts duration in seconds to months.
-func getTermMonthsFromDuration(duration int32) int {
-	offeringMonths := duration / 2592000
-	if offeringMonths >= 30 {
-		return 36
-	}
-	return 12
 }
