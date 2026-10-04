@@ -109,6 +109,7 @@ func createMockHTTPResponse(statusCode int, body string) *http.Response {
 	}
 }
 
+// createSampleSearchPricingResponse is synthetic; the captured eastus catalog has no Reservation rows.
 func createSampleSearchPricingResponse() string {
 	return `{
 		"Items": [
@@ -117,11 +118,12 @@ func createSampleSearchPricingResponse() string {
 				"retailPrice": 500.0,
 				"unitPrice": 500.0,
 				"armRegionName": "eastus",
-				"productName": "Azure Cognitive Search",
+				"productName": "Azure AI Search",
 				"serviceName": "Azure Cognitive Search",
-				"armSkuName": "Standard_S1",
+				"skuName": "Standard S1",
 				"meterName": "S1 Search Unit",
 				"reservationTerm": "1 Year",
+				"unitOfMeasure": "1 Hour",
 				"type": "Reservation"
 			},
 			{
@@ -129,21 +131,21 @@ func createSampleSearchPricingResponse() string {
 				"retailPrice": 1200.0,
 				"unitPrice": 1200.0,
 				"armRegionName": "eastus",
-				"productName": "Azure Cognitive Search",
+				"productName": "Azure AI Search",
 				"serviceName": "Azure Cognitive Search",
-				"armSkuName": "Standard_S1",
+				"skuName": "Standard S1",
 				"meterName": "S1 Search Unit",
 				"reservationTerm": "3 Years",
+				"unitOfMeasure": "1/Hour",
 				"type": "Reservation"
 			},
 			{
 				"currencyCode": "USD",
-				"retailPrice": 0.20,
-				"unitPrice": 0.20,
+				"retailPrice": 0.336,
+				"unitPrice": 0.336,
 				"armRegionName": "eastus",
-				"productName": "Azure Cognitive Search",
+				"skuName": "Standard S1",
 				"serviceName": "Azure Cognitive Search",
-				"armSkuName": "Standard_S1",
 				"type": "Consumption"
 			}
 		]
@@ -227,7 +229,7 @@ func TestSearchClient_GetOfferingDetails_WithMock(t *testing.T) {
 	)
 
 	rec := common.Recommendation{
-		ResourceType:  "Standard_S1",
+		ResourceType:  "standard",
 		Term:          "1yr",
 		PaymentOption: "upfront",
 	}
@@ -235,9 +237,11 @@ func TestSearchClient_GetOfferingDetails_WithMock(t *testing.T) {
 	details, err := client.GetOfferingDetails(ctx, rec)
 	require.NoError(t, err)
 	require.NotNil(t, details)
-	assert.Equal(t, "Standard_S1", details.ResourceType)
+	assert.Equal(t, "standard", details.ResourceType)
 	assert.Equal(t, "1yr", details.Term)
 	assert.Equal(t, "USD", details.Currency)
+	assert.Equal(t, 500.0, details.TotalCost)
+	assert.Equal(t, 500.0/8760.0, details.EffectiveHourlyRate)
 }
 
 func TestSearchClient_GetOfferingDetails_3YearTerm(t *testing.T) {
@@ -254,7 +258,7 @@ func TestSearchClient_GetOfferingDetails_3YearTerm(t *testing.T) {
 	)
 
 	rec := common.Recommendation{
-		ResourceType:  "Standard_S1",
+		ResourceType:  "standard",
 		Term:          "3yr",
 		PaymentOption: "monthly",
 	}
@@ -264,6 +268,9 @@ func TestSearchClient_GetOfferingDetails_3YearTerm(t *testing.T) {
 	require.NotNil(t, details)
 	assert.Equal(t, "3yr", details.Term)
 	assert.Equal(t, "monthly", details.PaymentOption)
+	assert.Equal(t, 1200.0, details.TotalCost)
+	assert.Equal(t, 1200.0/36.0, details.RecurringCost)
+	assert.Equal(t, 1200.0/(8760.0*3), details.EffectiveHourlyRate)
 }
 
 func TestSearchClient_GetOfferingDetails_NoUpfront(t *testing.T) {
@@ -280,7 +287,7 @@ func TestSearchClient_GetOfferingDetails_NoUpfront(t *testing.T) {
 	)
 
 	rec := common.Recommendation{
-		ResourceType:  "Standard_S1",
+		ResourceType:  "standard",
 		Term:          "1yr",
 		PaymentOption: "no-upfront",
 	}
@@ -289,7 +296,7 @@ func TestSearchClient_GetOfferingDetails_NoUpfront(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, details)
 	assert.Equal(t, float64(0), details.UpfrontCost)
-	assert.Greater(t, details.RecurringCost, float64(0))
+	assert.Equal(t, 500.0/12.0, details.RecurringCost)
 }
 
 func TestSearchClient_GetOfferingDetails_APIError(t *testing.T) {
@@ -306,7 +313,7 @@ func TestSearchClient_GetOfferingDetails_APIError(t *testing.T) {
 	)
 
 	rec := common.Recommendation{
-		ResourceType:  "Standard_S1",
+		ResourceType:  "standard",
 		Term:          "1yr",
 		PaymentOption: "upfront",
 	}
@@ -330,21 +337,17 @@ func TestSearchClient_GetOfferingDetails_NoPricing(t *testing.T) {
 	)
 
 	rec := common.Recommendation{
-		ResourceType:  "Standard_S1",
+		ResourceType:  "standard",
 		Term:          "1yr",
 		PaymentOption: "upfront",
 	}
 
 	_, err := client.GetOfferingDetails(ctx, rec)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "no pricing data found")
+	assert.Contains(t, err.Error(), "no reservation pricing found")
 }
 
-// TestSearchClient_GetOfferingDetails_NoReservationPricing verifies that when
-// on-demand pricing is present but no reservation line is returned, the client
-// returns an error rather than fabricating a price from a hardcoded multiplier
-// (issue #1020 H4). Pre-fix this would have silently surfaced a fabricated
-// TotalCost/SavingsPercentage as a real quote.
+// The captured eastus Search catalog has this Standard S1 Consumption row and no Reservation row.
 func TestSearchClient_GetOfferingDetails_NoReservationPricing(t *testing.T) {
 	ctx := context.Background()
 
@@ -352,10 +355,13 @@ func TestSearchClient_GetOfferingDetails_NoReservationPricing(t *testing.T) {
 		"Items": [
 			{
 				"currencyCode": "USD",
-				"retailPrice": 0.20,
-				"unitPrice": 0.20,
+				"retailPrice": 0.336,
+				"unitPrice": 0.336,
 				"armRegionName": "eastus",
-				"armSkuName": "Standard_S1",
+				"armSkuName": "",
+				"skuName": "Standard S1",
+				"productName": "Azure AI Search",
+				"serviceName": "Azure Cognitive Search",
 				"type": "Consumption"
 			}
 		]
@@ -370,13 +376,233 @@ func TestSearchClient_GetOfferingDetails_NoReservationPricing(t *testing.T) {
 	mockHTTP.On("Do", mock.Anything).Return(response6, nil)
 
 	rec := common.Recommendation{
-		ResourceType:  "Standard_S1",
+		ResourceType:  "standard",
 		Term:          "1yr",
 		PaymentOption: "upfront",
 	}
 	_, err := client.GetOfferingDetails(ctx, rec)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no reservation pricing found")
+}
+
+func TestSearchClient_GetOfferingDetails_SearchDisplaySKUs(t *testing.T) {
+	for _, tc := range []struct{ sdk, display string }{
+		{"basic", "Basic"}, {"standard", "Standard S1"}, {"standard2", "Standard S2"},
+		{"standard3", "Standard S3"}, {"storage_optimized_l1", "Storage Optimized L1"},
+		{"storage_optimized_l2", "Storage Optimized L2"},
+	} {
+		t.Run(tc.sdk, func(t *testing.T) {
+			// Synthetic Reservation: the captured eastus catalog has this display tier only as Consumption.
+			body, err := json.Marshal(map[string]any{"Items": []map[string]any{{
+				"serviceName": "Azure Cognitive Search", "armRegionName": "eastus", "skuName": tc.display,
+				"armSkuName": "", "type": "Reservation", "reservationTerm": "1 Year",
+				"unitOfMeasure": "1 Hour", "retailPrice": 600, "currencyCode": "USD",
+			}}})
+			require.NoError(t, err)
+			response := createMockHTTPResponse(http.StatusOK, string(body))
+			t.Cleanup(func() { require.NoError(t, response.Body.Close()) })
+			mockHTTP := &MockHTTPClient{}
+			mockHTTP.On("Do", mock.Anything).Return(response, nil).Once()
+			details, err := NewClientWithHTTP(nil, "sub", "eastus", mockHTTP).GetOfferingDetails(context.Background(), common.Recommendation{
+				ResourceType: tc.sdk, Term: "1yr", PaymentOption: "upfront",
+			})
+			require.NoError(t, err)
+			assert.Equal(t, 600.0, details.TotalCost)
+			req := mockHTTP.Calls[0].Arguments.Get(0).(*http.Request)
+			assert.Equal(t, "serviceName eq 'Azure Cognitive Search' and armRegionName eq 'eastus' and skuName eq '"+tc.display+"' and priceType eq 'Reservation'", req.URL.Query().Get("$filter"))
+			mockHTTP.AssertExpectations(t)
+		})
+	}
+}
+
+func TestSearchClient_GetOfferingDetails_MixedTermsBothOrders(t *testing.T) {
+	oneYear := pricing.RetailPriceItem{
+		ServiceName: "Azure Cognitive Search", ArmRegionName: "eastus", SKUName: "Standard S1",
+		Type: "Reservation", ReservationTerm: "1 Year", UnitOfMeasure: "1 Hour", RetailPrice: 800, CurrencyCode: "USD",
+	}
+	threeYears := oneYear
+	threeYears.ReservationTerm, threeYears.RetailPrice = "3 Years", 1900
+	for _, tc := range []struct {
+		name, term, payment string
+		items               []pricing.RetailPriceItem
+		wantTotal, wantPaid float64
+		termYears           float64
+	}{
+		{name: "one year first", term: "1yr", payment: "upfront", items: []pricing.RetailPriceItem{oneYear, threeYears}, wantTotal: 800, wantPaid: 800, termYears: 1},
+		{name: "one year last", term: "1yr", payment: "upfront", items: []pricing.RetailPriceItem{threeYears, oneYear}, wantTotal: 800, wantPaid: 800, termYears: 1},
+		{name: "three years first", term: "3yr", payment: "monthly", items: []pricing.RetailPriceItem{threeYears, oneYear}, wantTotal: 1900, wantPaid: 1900.0 / 36, termYears: 3},
+		{name: "three years last", term: "3yr", payment: "monthly", items: []pricing.RetailPriceItem{oneYear, threeYears}, wantTotal: 1900, wantPaid: 1900.0 / 36, termYears: 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body, err := json.Marshal(AzureRetailPrice{Items: tc.items})
+			require.NoError(t, err)
+			response := createMockHTTPResponse(http.StatusOK, string(body))
+			t.Cleanup(func() { require.NoError(t, response.Body.Close()) })
+			mockHTTP := &MockHTTPClient{}
+			mockHTTP.On("Do", mock.Anything).Return(response, nil).Once()
+			details, err := NewClientWithHTTP(nil, "sub", "eastus", mockHTTP).GetOfferingDetails(context.Background(), common.Recommendation{
+				ResourceType: "standard", Term: tc.term, PaymentOption: tc.payment,
+			})
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantTotal, details.TotalCost)
+			assert.Equal(t, tc.wantTotal/(8760.0*tc.termYears), details.EffectiveHourlyRate)
+			if tc.payment == "upfront" {
+				assert.Equal(t, tc.wantPaid, details.UpfrontCost)
+				assert.Zero(t, details.RecurringCost)
+			} else {
+				assert.Zero(t, details.UpfrontCost)
+				assert.Equal(t, tc.wantPaid, details.RecurringCost)
+			}
+			mockHTTP.AssertExpectations(t)
+		})
+	}
+}
+
+func TestSearchClient_GetOfferingDetails_ReservationSelection(t *testing.T) {
+	row := func(overrides map[string]any) map[string]any {
+		item := map[string]any{
+			"serviceName": "Azure Cognitive Search", "armRegionName": "eastus", "skuName": "Standard S1",
+			"productName": "Azure AI Search", "meterName": "Standard S1 Unit", "armSkuName": "",
+			"type": "Reservation", "reservationTerm": "1 Year", "unitOfMeasure": "1 Hour",
+			"retailPrice": 800, "currencyCode": "USD",
+		}
+		for key, value := range overrides {
+			item[key] = value
+		}
+		return item
+	}
+	good := row(nil)
+	wrongSKU := row(map[string]any{"skuName": "Standard S2", "armSkuName": "standard", "retailPrice": 900})
+	metadata := row(map[string]any{"meterId": "different", "productId": "different", "skuId": "different", "effectiveStartDate": "2026-10-01T00:00:00Z", "isPrimaryMeterRegion": true})
+	conflict := row(map[string]any{"meterId": "different", "effectiveStartDate": "2026-10-01T00:00:00Z", "isPrimaryMeterRegion": true, "retailPrice": 950})
+	for _, tc := range []struct {
+		name         string
+		items        []map[string]any
+		wantTotal    float64
+		wantCurrency string
+		wantError    string
+	}{
+		{name: "reservation without consumption", items: []map[string]any{good}, wantTotal: 800, wantCurrency: "USD"},
+		{name: "wrong tier first", items: []map[string]any{wrongSKU, good}, wantTotal: 800, wantCurrency: "USD"},
+		{name: "wrong tier last", items: []map[string]any{good, wrongSKU}, wantTotal: 800, wantCurrency: "USD"},
+		{name: "wrong tier alone with matching ARM", items: []map[string]any{wrongSKU}, wantError: "no reservation pricing found"},
+		{name: "wrong service sibling", items: []map[string]any{row(map[string]any{"serviceName": "Other Search"}), good}, wantTotal: 800, wantCurrency: "USD"},
+		{name: "wrong service alone", items: []map[string]any{row(map[string]any{"serviceName": "Other Search"})}, wantError: "no reservation pricing found"},
+		{name: "wrong region sibling", items: []map[string]any{row(map[string]any{"armRegionName": "westus"}), good}, wantTotal: 800, wantCurrency: "USD"},
+		{name: "wrong region alone", items: []map[string]any{row(map[string]any{"armRegionName": "westus"})}, wantError: "no reservation pricing found"},
+		{name: "consumption sibling", items: []map[string]any{row(map[string]any{"type": "Consumption"}), good}, wantTotal: 800, wantCurrency: "USD"},
+		{name: "consumption alone", items: []map[string]any{row(map[string]any{"type": "Consumption"})}, wantError: "no reservation pricing found"},
+		{name: "other term sibling", items: []map[string]any{row(map[string]any{"reservationTerm": "3 Years"}), good}, wantTotal: 800, wantCurrency: "USD"},
+		{name: "other term alone", items: []map[string]any{row(map[string]any{"reservationTerm": "3 Years"})}, wantError: "no reservation pricing found"},
+		{name: "malformed unrelated row", items: []map[string]any{row(map[string]any{"skuName": "Standard S2", "unitOfMeasure": "100 Hours", "currencyCode": ""}), good}, wantTotal: 800, wantCurrency: "USD"},
+		{name: "unsupported unit", items: []map[string]any{row(map[string]any{"unitOfMeasure": "100 Hours"})}, wantError: "unsupported reservation unit"},
+		{name: "missing currency", items: []map[string]any{row(map[string]any{"currencyCode": ""})}, wantError: "reservation currency is missing"},
+		{name: "zero price", items: []map[string]any{row(map[string]any{"retailPrice": 0})}, wantError: "invalid reservation retail price"},
+		{name: "EUR equivalent unit", items: []map[string]any{row(map[string]any{"unitOfMeasure": "1/Hour", "currencyCode": "EUR"})}, wantTotal: 800, wantCurrency: "EUR"},
+		{name: "equivalent metadata first", items: []map[string]any{metadata, good}, wantTotal: 800, wantCurrency: "USD"},
+		{name: "equivalent metadata last", items: []map[string]any{good, metadata}, wantTotal: 800, wantCurrency: "USD"},
+		{name: "conflicting metadata first", items: []map[string]any{conflict, good}, wantError: "ambiguous reservation pricing"},
+		{name: "conflicting metadata last", items: []map[string]any{good, conflict}, wantError: "ambiguous reservation pricing"},
+		{name: "different product same price", items: []map[string]any{good, row(map[string]any{"productName": "Other Search"})}, wantError: "ambiguous reservation pricing"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body, err := json.Marshal(map[string]any{"Items": tc.items})
+			require.NoError(t, err)
+			response := createMockHTTPResponse(http.StatusOK, string(body))
+			t.Cleanup(func() { require.NoError(t, response.Body.Close()) })
+			mockHTTP := &MockHTTPClient{}
+			mockHTTP.On("Do", mock.Anything).Return(response, nil).Once()
+			details, err := NewClientWithHTTP(nil, "sub", "eastus", mockHTTP).GetOfferingDetails(context.Background(), common.Recommendation{
+				ResourceType: "standard", Term: "1yr", PaymentOption: "all-upfront", Count: 3,
+			})
+			if tc.wantError != "" {
+				require.Error(t, err)
+				assert.Nil(t, details)
+				assert.Contains(t, err.Error(), tc.wantError)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, tc.wantTotal, details.TotalCost)
+				assert.Equal(t, tc.wantTotal, details.UpfrontCost)
+				assert.Equal(t, tc.wantTotal/8760.0, details.EffectiveHourlyRate)
+				assert.Equal(t, tc.wantCurrency, details.Currency)
+			}
+			mockHTTP.AssertExpectations(t)
+		})
+	}
+}
+
+func TestSearchClient_GetOfferingDetails_Pagination(t *testing.T) {
+	selected := pricing.RetailPriceItem{
+		ServiceName: "Azure Cognitive Search", ArmRegionName: "eastus", SKUName: "Standard S1",
+		Type: "Reservation", ReservationTerm: "1 Year", UnitOfMeasure: "1 Hour", RetailPrice: 800, CurrencyCode: "USD",
+	}
+	otherTier := selected
+	otherTier.SKUName, otherTier.RetailPrice = "Standard S2", 900
+	conflict := selected
+	conflict.RetailPrice = 950
+	const nextURL = "https://prices.azure.com/api/retail/prices?$skip=1"
+	for _, tc := range []struct {
+		name, wantError string
+		first, second   pricing.RetailPriceItem
+	}{
+		{name: "selected on second page", first: otherTier, second: selected},
+		{name: "selected on first page", first: selected, second: otherTier},
+		{name: "conflict on second page", first: selected, second: conflict, wantError: "ambiguous reservation pricing"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			firstBody, err := json.Marshal(AzureRetailPrice{Items: []pricing.RetailPriceItem{tc.first}, NextPageLink: nextURL})
+			require.NoError(t, err)
+			secondBody, err := json.Marshal(AzureRetailPrice{Items: []pricing.RetailPriceItem{tc.second}})
+			require.NoError(t, err)
+			firstResponse := createMockHTTPResponse(http.StatusOK, string(firstBody))
+			secondResponse := createMockHTTPResponse(http.StatusOK, string(secondBody))
+			t.Cleanup(func() {
+				require.NoError(t, firstResponse.Body.Close())
+				require.NoError(t, secondResponse.Body.Close())
+			})
+			mockHTTP := &MockHTTPClient{}
+			mockHTTP.On("Do", mock.MatchedBy(func(req *http.Request) bool { return req.URL.Query().Get("$skip") == "" })).Return(firstResponse, nil).Once()
+			mockHTTP.On("Do", mock.MatchedBy(func(req *http.Request) bool { return req.URL.String() == nextURL })).Return(secondResponse, nil).Once()
+			details, err := NewClientWithHTTP(nil, "sub", "eastus", mockHTTP).GetOfferingDetails(context.Background(), common.Recommendation{
+				ResourceType: "standard", Term: "1yr", PaymentOption: "upfront",
+			})
+			if tc.wantError != "" {
+				require.Error(t, err)
+				assert.Nil(t, details)
+				assert.Contains(t, err.Error(), tc.wantError)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, 800.0, details.TotalCost)
+			}
+			mockHTTP.AssertExpectations(t)
+			mockHTTP.AssertNumberOfCalls(t, "Do", 2)
+		})
+	}
+}
+
+func TestSearchClient_GetOfferingDetails_EscapesRegionAndRejectsUnknownTier(t *testing.T) {
+	const region = "east'us"
+	response := createMockHTTPResponse(http.StatusOK, `{"Items":[{"serviceName":"Azure Cognitive Search","armRegionName":"east'us","skuName":"Standard S1","type":"Reservation","reservationTerm":"1 Year","unitOfMeasure":"1 Hour","retailPrice":800,"currencyCode":"USD"}]}`)
+	t.Cleanup(func() { require.NoError(t, response.Body.Close()) })
+	mockHTTP := &MockHTTPClient{}
+	mockHTTP.On("Do", mock.Anything).Return(response, nil).Once()
+	details, err := NewClientWithHTTP(nil, "sub", region, mockHTTP).GetOfferingDetails(context.Background(), common.Recommendation{
+		ResourceType: "standard", Term: "1yr", PaymentOption: "upfront",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 800.0, details.TotalCost)
+	req := mockHTTP.Calls[0].Arguments.Get(0).(*http.Request)
+	assert.Equal(t, "serviceName eq 'Azure Cognitive Search' and armRegionName eq 'east''us' and skuName eq 'Standard S1' and priceType eq 'Reservation'", req.URL.Query().Get("$filter"))
+	assert.Contains(t, req.URL.RawQuery, "%24filter=")
+	mockHTTP.AssertExpectations(t)
+
+	unknownHTTP := &MockHTTPClient{}
+	_, err = NewClientWithHTTP(nil, "sub", "eastus", unknownHTTP).GetOfferingDetails(context.Background(), common.Recommendation{
+		ResourceType: "Standard_S1", Term: "1yr", PaymentOption: "upfront",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported Azure Search SKU")
+	unknownHTTP.AssertNotCalled(t, "Do", mock.Anything)
 }
 
 func TestSearchClient_GetExistingCommitments_Empty(t *testing.T) {
