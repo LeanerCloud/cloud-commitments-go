@@ -532,31 +532,12 @@ type RedisPricing struct {
 }
 
 func (c *Client) getRedisPricing(ctx context.Context, sku, region string, termYears int) (*RedisPricing, error) {
-	priceData, err := c.fetchAzurePricing(ctx, "Redis Cache", sku, region)
+	identity, err := pricing.ParseRedisIdentity(sku)
 	if err != nil {
 		return nil, err
 	}
-
-	if len(priceData.Items) == 0 {
-		return nil, fmt.Errorf("no pricing data found for Redis Cache SKU %s in region %s", sku, region)
-	}
-
-	reservationPrice, currency := extractRedisPricing(priceData.Items, termYears)
-	hoursInTerm := 8760.0 * float64(termYears)
-	if reservationPrice == 0 {
-		return nil, fmt.Errorf("no reservation pricing found for Redis Cache SKU %s (%d year) in region %s", sku, termYears, region)
-	}
-
-	return &RedisPricing{
-		HourlyRate:       reservationPrice / hoursInTerm,
-		ReservationPrice: reservationPrice,
-		Currency:         currency,
-	}, nil
-}
-
-func (c *Client) fetchAzurePricing(ctx context.Context, serviceName, sku, region string) (*AzureRetailPrice, error) {
-	filter := fmt.Sprintf("serviceName eq '%s' and armRegionName eq '%s' and contains(armSkuName, '%s') and priceType eq 'Reservation'",
-		serviceName, strings.ReplaceAll(region, "'", "''"), strings.ReplaceAll(sku, "'", "''"))
+	filter := fmt.Sprintf("serviceName eq 'Redis Cache' and armRegionName eq '%s' and armSkuName eq '%s' and priceType eq 'Reservation'",
+		strings.ReplaceAll(region, "'", "''"), identity.ArmSKUName)
 
 	params := url.Values{}
 	params.Add("$filter", filter)
@@ -567,35 +548,20 @@ func (c *Client) fetchAzurePricing(ctx context.Context, serviceName, sku, region
 	if err != nil {
 		return nil, err
 	}
-	return &AzureRetailPrice{Items: items}, nil
-}
-
-// azureTermString returns the Retail Prices API ReservationTerm string for the
-// given number of years. The API uses the singular form "1 Year" for one year
-// and the plural form "N Years" for two or more years.
-func azureTermString(termYears int) string {
-	if termYears == 1 {
-		return "1 Year"
+	if len(items) == 0 {
+		return nil, fmt.Errorf("no pricing data found for Redis Cache SKU %s in region %s", sku, region)
 	}
-	return fmt.Sprintf("%d Years", termYears)
-}
-
-func extractRedisPricing(items []pricing.RetailPriceItem, termYears int) (reservation float64, currency string) {
-	currency = "USD"
-	termStr := azureTermString(termYears)
-
-	for i := range items {
-		item := &items[i]
-		if item.CurrencyCode != "" {
-			currency = item.CurrencyCode
-		}
-
-		if item.ReservationTerm == termStr {
-			reservation = item.RetailPrice
-		}
+	selected, err := pricing.SelectReservation(items, termYears, func(item pricing.RetailPriceItem) bool {
+		return identity.Matches(item, region)
+	})
+	if err != nil {
+		return nil, err
 	}
-
-	return reservation, currency
+	return &RedisPricing{
+		HourlyRate:       selected.RetailPrice / (8760 * float64(termYears)),
+		ReservationPrice: selected.RetailPrice,
+		Currency:         selected.CurrencyCode,
+	}, nil
 }
 
 // convertAzureRedisRecommendation converts Azure Redis Cache reservation recommendation to common format.
