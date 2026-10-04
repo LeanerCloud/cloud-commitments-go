@@ -105,8 +105,8 @@ func (c *Client) GetRegion() string {
 	return c.region
 }
 
-// RetailPriceItem is the Azure Retail Prices API item shape for
-// Synapse Analytics. Used as the type parameter to pricing.FetchAll.
+// RetailPriceItem is the exported Azure Retail Prices API item shape for
+// Synapse Analytics. Private pricing selection uses the shared item shape.
 type RetailPriceItem struct {
 	CurrencyCode    string  `json:"currencyCode"`
 	RetailPrice     float64 `json:"retailPrice"`
@@ -417,67 +417,33 @@ type Pricing struct {
 
 // getSynapsePricing fetches pricing from the Azure Retail Prices API.
 func (c *Client) getSynapsePricing(ctx context.Context, sku, region string, termYears int) (*Pricing, error) {
-	filter := fmt.Sprintf("serviceName eq 'Azure Synapse Analytics' and armRegionName eq '%s' and skuName eq '%s'",
-		region, sku)
+	filter := fmt.Sprintf("serviceName eq 'Azure Synapse Analytics' and productName eq 'Azure Synapse Analytics Dedicated SQL Pool' and armRegionName eq '%s' and skuName eq '%s' and priceType eq 'Reservation'",
+		strings.ReplaceAll(region, "'", "''"), strings.ReplaceAll(sku, "'", "''"))
 
 	params := url.Values{}
 	params.Add("$filter", filter)
 	params.Add("api-version", "2023-01-01-preview")
 
 	initialURL := "https://prices.azure.com/api/retail/prices?" + params.Encode()
-	items, err := pricing.FetchAll[RetailPriceItem](ctx, c.httpClient, initialURL, pricing.DefaultPageTimeout, pricing.DefaultMaxPages)
+	items, err := pricing.FetchAll[pricing.RetailPriceItem](ctx, c.httpClient, initialURL, pricing.DefaultPageTimeout, pricing.DefaultMaxPages)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(items) == 0 {
-		return nil, fmt.Errorf("no pricing data found for Synapse SKU %s in region %s", sku, region)
+	selected, err := pricing.SelectReservation(items, termYears, func(item pricing.RetailPriceItem) bool {
+		return item.ServiceName == "Azure Synapse Analytics" &&
+			item.ProductName == "Azure Synapse Analytics Dedicated SQL Pool" &&
+			item.ArmRegionName == region && item.SKUName == sku
+	})
+	if err != nil {
+		return nil, fmt.Errorf("synapse reservation pricing for SKU %s in region %s: %w", sku, region, err)
 	}
-
-	onDemandPrice, reservationPrice, currency := extractSynapsePricing(items, termYears)
-	if onDemandPrice == 0 {
-		return nil, fmt.Errorf("no on-demand pricing found for Synapse SKU %s", sku)
-	}
-
-	hoursInTerm := 8760.0 * float64(termYears)
-	if reservationPrice == 0 {
-		return nil, fmt.Errorf("pricing data unavailable for Synapse SKU %s in region %s: no reservation price returned by API", sku, region)
-	}
-
-	savingsPercentage := ((onDemandPrice*hoursInTerm - reservationPrice) / (onDemandPrice * hoursInTerm)) * 100
 
 	return &Pricing{
-		HourlyRate:        reservationPrice / hoursInTerm,
-		ReservationPrice:  reservationPrice,
-		OnDemandPrice:     onDemandPrice * hoursInTerm,
-		Currency:          currency,
-		SavingsPercentage: savingsPercentage,
+		HourlyRate:       selected.RetailPrice / (8760.0 * float64(termYears)),
+		ReservationPrice: selected.RetailPrice,
+		Currency:         selected.CurrencyCode,
 	}, nil
-}
-
-// extractSynapsePricing extracts on-demand and reservation pricing from price items.
-func extractSynapsePricing(items []RetailPriceItem, termYears int) (onDemand, reservation float64, currency string) {
-	currency = "USD"
-	termStr := fmt.Sprintf("%d Year", termYears)
-	if termYears > 1 {
-		termStr = fmt.Sprintf("%d Years", termYears)
-	}
-
-	for i := range items {
-		item := &items[i]
-		if item.CurrencyCode != "" {
-			currency = item.CurrencyCode
-		}
-		switch {
-		case strings.Contains(item.ReservationTerm, termStr):
-			if item.RetailPrice > 0 {
-				reservation = item.RetailPrice
-			}
-		case item.Type == "Consumption" && item.RetailPrice > 0:
-			onDemand = item.RetailPrice
-		}
-	}
-	return onDemand, reservation, currency
 }
 
 // convertSynapseRecommendation converts an Azure reservation recommendation
