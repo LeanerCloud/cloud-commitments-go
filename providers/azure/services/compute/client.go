@@ -707,16 +707,26 @@ func (c *Client) getVMPricing(ctx context.Context, vmSize, region string, termYe
 		return nil, fmt.Errorf("no pricing data found for VM size %s in region %s", vmSize, region)
 	}
 
-	reservationPrice, currency := extractVMPricing(priceData.Items, termYears)
-	if reservationPrice == 0 {
-		return nil, fmt.Errorf("no reservation pricing found for VM size %s (%d year) in region %s", vmSize, termYears, region)
+	item, err := pricing.SelectReservation(priceData.Items, termYears, func(item pricing.RetailPriceItem) bool {
+		return item.ServiceName == "Virtual Machines" && item.ArmRegionName == region && item.ArmSKUName == vmSize &&
+			matchesVMReservationProduct(item)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("VM size %s in region %s: %w", vmSize, region, err)
 	}
 
 	return &VMPricing{
-		HourlyRate:       reservationPrice / (8760.0 * float64(termYears)),
-		ReservationPrice: reservationPrice,
-		Currency:         currency,
+		HourlyRate:       item.RetailPrice / (8760.0 * float64(termYears)),
+		ReservationPrice: item.RetailPrice,
+		Currency:         item.CurrencyCode,
 	}, nil
+}
+
+func matchesVMReservationProduct(item pricing.RetailPriceItem) bool {
+	return item.ProductName != "" && item.MeterName != "" && item.SKUName != "" &&
+		!strings.Contains(item.ProductName, "Windows") &&
+		!strings.Contains(item.MeterName, "Spot") && !strings.Contains(item.SKUName, "Spot") &&
+		!strings.Contains(item.MeterName, "Low Priority") && !strings.Contains(item.SKUName, "Low Priority")
 }
 
 // fetchAzurePricing fetches pricing data from Azure Retail Prices API,
@@ -741,34 +751,6 @@ func (c *Client) fetchAzurePricing(ctx context.Context, filter string) (*AzureRe
 		return nil, err
 	}
 	return &AzureRetailPrice{Items: items}, nil
-}
-
-// azureTermString returns the Retail Prices API ReservationTerm string for the
-// given number of years. The API uses the singular form "1 Year" for one year
-// and the plural form "N Years" for two or more years.
-func azureTermString(termYears int) string {
-	if termYears == 1 {
-		return "1 Year"
-	}
-	return fmt.Sprintf("%d Years", termYears)
-}
-
-func extractVMPricing(items []AzureRetailPriceItem, termYears int) (reservation float64, currency string) {
-	currency = "USD"
-	termStr := azureTermString(termYears)
-
-	for i := range items {
-		item := &items[i]
-		if item.CurrencyCode != "" {
-			currency = item.CurrencyCode
-		}
-
-		if item.ReservationTerm == termStr {
-			reservation = item.RetailPrice
-		}
-	}
-
-	return reservation, currency
 }
 
 // convertAzureVMRecommendation converts Azure VM reservation recommendation to common format.
