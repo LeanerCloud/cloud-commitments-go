@@ -529,17 +529,17 @@ type CosmosPricing struct {
 	SavingsPercentage float64
 }
 
-// getCosmosPricing gets real pricing from Azure Retail Prices API, scoped to
-// the given SKU (throughput tier, e.g. "100RU") like its sibling services
-// (getVMPricing, getRedisPricing, getSQLPricing, getSearchPricing — all of
-// which add an `armSkuName eq '%s'` clause). Without the SKU filter the query
-// can return prices for other Cosmos DB SKUs and silently price the wrong
-// one; extractCosmosPricing additionally re-checks each item's ArmSKUName
-// so a filter that fails to narrow server-side still can't leak another
-// SKU's price into the quote.
 func (c *Client) getCosmosPricing(ctx context.Context, sku, region string, termYears int) (*CosmosPricing, error) {
-	filter := fmt.Sprintf("serviceName eq 'Azure Cosmos DB' and armRegionName eq '%s' and armSkuName eq '%s'",
-		region, sku)
+	switch sku {
+	case "100RU", "100RUperSecond":
+		sku = "Cosmos_DB_100_RUs"
+	default:
+		if !strings.HasPrefix(sku, "Cosmos_DB_") {
+			return nil, fmt.Errorf("unsupported Cosmos DB pricing SKU %q", sku)
+		}
+	}
+	filter := fmt.Sprintf("serviceName eq 'Azure Cosmos DB' and productName eq 'Azure Cosmos DB' and armRegionName eq 'Global' and armSkuName eq '%s' and priceType eq 'Reservation'",
+		strings.ReplaceAll(sku, "'", "''"))
 
 	priceData, err := c.fetchAzurePricing(ctx, filter)
 	if err != nil {
@@ -550,29 +550,15 @@ func (c *Client) getCosmosPricing(ctx context.Context, sku, region string, termY
 		return nil, fmt.Errorf("no pricing data found for Cosmos DB SKU %s in region %s", sku, region)
 	}
 
-	onDemandPrice, reservationPrice, currency := extractCosmosPricing(priceData.Items, sku, termYears)
-	if onDemandPrice == 0 {
-		return nil, fmt.Errorf("no on-demand pricing found for Cosmos DB SKU %s", sku)
-	}
-
-	hoursInTerm := 8760.0 * float64(termYears)
-	// Return an error rather than fabricating a reservation price from a
-	// hardcoded discount multiplier (issue #1020 H4). Presenting an
-	// estimated figure as a real TotalCost/SavingsPercentage is misleading
-	// and can justify uneconomical purchases. managedredis already uses
-	// this pattern as the model.
+	_, reservationPrice, currency := extractCosmosPricing(priceData.Items, sku, termYears)
 	if reservationPrice == 0 {
 		return nil, fmt.Errorf("no reservation pricing found for Cosmos DB SKU %s (%d year) in region %s", sku, termYears, region)
 	}
 
-	savingsPercentage := calculateCosmosSavingsPercentage(onDemandPrice, hoursInTerm, reservationPrice)
-
 	return &CosmosPricing{
-		HourlyRate:        reservationPrice / hoursInTerm,
-		ReservationPrice:  reservationPrice,
-		OnDemandPrice:     onDemandPrice * hoursInTerm,
-		Currency:          currency,
-		SavingsPercentage: savingsPercentage,
+		HourlyRate:       reservationPrice / (8760.0 * float64(termYears)),
+		ReservationPrice: reservationPrice,
+		Currency:         currency,
 	}, nil
 }
 
@@ -632,12 +618,6 @@ func extractCosmosPricing(items []CosmosRetailPriceItem, sku string, termYears i
 	}
 
 	return onDemand, reservation, currency
-}
-
-// calculateCosmosSavingsPercentage calculates the savings percentage.
-func calculateCosmosSavingsPercentage(onDemandPrice, hoursInTerm, reservationPrice float64) float64 {
-	onDemandTotal := onDemandPrice * hoursInTerm
-	return ((onDemandTotal - reservationPrice) / onDemandTotal) * 100
 }
 
 // convertAzureCosmosRecommendation converts Azure Cosmos DB reservation recommendation to common format.
