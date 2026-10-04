@@ -2,6 +2,7 @@ package recommendations
 
 import (
 	"math"
+	"math/big"
 	"testing"
 	"time"
 
@@ -31,6 +32,7 @@ func TestExpiringCoverageMissingDemandPreservesInput(t *testing.T) {
 				AverageInstancesUsedPerHour: 10, ExistingCoveragePct: 60, ExistingCoverageKnown: true,
 				Count: 30, RecommendedCount: 30, CommitmentCost: 3000, OnDemandCost: 6000,
 				EstimatedSavings: 3000, RecurringMonthlyCost: &monthly, ProjectedCoverage: 80,
+				ExistingCoveragePercentExact: big.NewRat(60, 1),
 			}
 			recs := []common.Recommendation{rec, rec}
 			recs[1].Account = "222222222222"
@@ -74,6 +76,8 @@ func TestExpiringCoverageGuardsAndSelection(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			recs := []common.Recommendation{{Service: common.ServiceEC2, Region: "us-east-1", ResourceType: "m5.large", AverageInstancesUsedPerHour: tc.avg, ExistingCoveragePct: 60}}
+			exact := big.NewRat(60, 1)
+			recs[0].ExistingCoveragePercentExact = exact
 			commits := []common.Commitment{{Service: common.ServiceEC2, Region: "us-east-1", ResourceType: "m5.large", Count: tc.count, State: tc.state, EndDate: tc.end}}
 			coverage := PoolCoverageMap{poolKey("us-east-1", "m5.large"): {AvgInstancesPerHour: 90}}
 			if tc.wantAdjusted == 0 {
@@ -83,6 +87,14 @@ func TestExpiringCoverageGuardsAndSelection(t *testing.T) {
 			assert.Equal(t, tc.wantAdjusted, adjusted)
 			assert.Zero(t, missing)
 			assert.InDelta(t, tc.wantCoverage, recs[0].ExistingCoveragePct, 0.001)
+			if tc.wantAdjusted == 0 {
+				assert.Same(t, exact, recs[0].ExistingCoveragePercentExact)
+			} else {
+				if assert.NotNil(t, recs[0].ExistingCoveragePercentExact) {
+					assert.Zero(t, new(big.Rat).SetFloat64(tc.wantCoverage).Cmp(recs[0].ExistingCoveragePercentExact))
+				}
+				assert.Equal(t, big.NewRat(60, 1), exact)
+			}
 		})
 	}
 	adjusted, missing := AdjustExistingCoverageForExpiringCommitmentsWithCoverage(nil, nil, 30, nil)

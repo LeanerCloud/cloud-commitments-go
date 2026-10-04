@@ -2,6 +2,7 @@ package recommendations
 
 import (
 	"math"
+	"math/big"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -98,15 +99,38 @@ func applyExpiringAdjustments(recs []common.Recommendation, expiringByPool map[s
 			missingDemand++
 			continue
 		}
-		expiringPct := float64(expCount) / avg * 100.0
-		if expiringPct > recs[i].ExistingCoveragePct {
-			recs[i].ExistingCoveragePct = 0
-		} else {
-			recs[i].ExistingCoveragePct -= expiringPct
-		}
+		adjustCoverageForExpiry(&recs[i], expCount, avg)
 		adjusted++
 	}
 	return adjusted, missingDemand
+}
+
+func adjustCoverageForExpiry(rec *common.Recommendation, count int, demand float64) {
+	if math.IsNaN(rec.ExistingCoveragePct) || math.IsInf(rec.ExistingCoveragePct, 0) {
+		rec.ExistingCoveragePercentExact = nil
+		expiringPct := float64(count) / demand * 100
+		if expiringPct > rec.ExistingCoveragePct {
+			rec.ExistingCoveragePct = 0
+		} else {
+			rec.ExistingCoveragePct -= expiringPct
+		}
+		return
+	}
+	remaining := new(big.Rat).SetFloat64(rec.ExistingCoveragePct)
+	if prior := rec.ExistingCoveragePercentExact; prior != nil {
+		if displayed, _ := prior.Float64(); displayed == rec.ExistingCoveragePct {
+			remaining.Set(prior)
+		}
+	}
+	expiring := new(big.Rat).SetInt64(int64(count))
+	expiring.Mul(expiring, big.NewRat(100, 1))
+	expiring.Quo(expiring, new(big.Rat).SetFloat64(demand))
+	remaining.Sub(remaining, expiring)
+	if remaining.Sign() < 0 {
+		remaining.SetInt64(0)
+	}
+	rec.ExistingCoveragePercentExact = remaining
+	rec.ExistingCoveragePct, _ = remaining.Float64()
 }
 
 // commitmentIsActive returns true for commitments whose State indicates
