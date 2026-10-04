@@ -52,9 +52,9 @@ func gcpRegionConcurrency() int {
 //
 // All four GCP service clients (computeengine, cloudsql, memorystore,
 // cloudstorage) implement GetRecommendations and are fanned out concurrently
-// when shouldIncludeService permits. Note that cache and storage purchase paths
-// are advisory-only (no-op PurchaseCommitment); their recommendations are still
-// surfaced so operators can see spend-optimisation signals.
+// when shouldIncludeService permits. Cache purchase is advisory-only; the
+// cloudstorage client always returns ErrCommitmentPurchaseNotSupported because
+// Cloud Storage has no commitment product (issue #78).
 type regionResult struct {
 	compute []common.Recommendation
 	sql     []common.Recommendation
@@ -285,9 +285,9 @@ func (r *RecommendationsClientAdapter) collectStorageRecs(ctx context.Context, p
 // collectStorageRecs) to keep this function's cyclomatic complexity under the
 // gocyclo gate.
 //
-// Note: memorystore and cloudstorage PurchaseCommitment paths are advisory-only
-// (no programmatic purchase API exists for either); their recommendations are
-// surfaced so operators can see spend-optimisation signals (H-2 fix).
+// Note: the memorystore purchase path is advisory-only. cloudstorage returns
+// ErrCommitmentPurchaseNotSupported (no commitment product exists), which is
+// logged and counted as a failed call here (issue #78).
 func (r *RecommendationsClientAdapter) collectRegion(ctx context.Context, params common.RecommendationParams, region string) regionResult {
 	var (
 		computeRecs, sqlRecs, cacheRecs, storageRecs []common.Recommendation
