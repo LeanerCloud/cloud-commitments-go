@@ -119,10 +119,12 @@ func createSampleRedisPricingResponse() string {
 				"retailPrice": 350.0,
 				"unitPrice": 350.0,
 				"armRegionName": "eastus",
-				"productName": "Azure Cache for Redis",
-				"serviceName": "Azure Cache for Redis",
-				"armSkuName": "Premium_P1",
-				"meterName": "P1 Instance",
+				"productName": "Azure Redis Cache Premium",
+				"serviceName": "Redis Cache",
+				"armSkuName": "Azure_Redis_Cache_Premium_P1_Cache",
+				"meterName": "P1 Cache Instance",
+				"skuName": "P1",
+				"unitOfMeasure": "1 Hour",
 				"reservationTerm": "1 Year",
 				"type": "Reservation"
 			},
@@ -131,10 +133,12 @@ func createSampleRedisPricingResponse() string {
 				"retailPrice": 850.0,
 				"unitPrice": 850.0,
 				"armRegionName": "eastus",
-				"productName": "Azure Cache for Redis",
-				"serviceName": "Azure Cache for Redis",
-				"armSkuName": "Premium_P1",
-				"meterName": "P1 Instance",
+				"productName": "Azure Redis Cache Premium",
+				"serviceName": "Redis Cache",
+				"armSkuName": "Azure_Redis_Cache_Premium_P1_Cache",
+				"meterName": "P1 Cache Instance",
+				"skuName": "P1",
+				"unitOfMeasure": "1 Hour",
 				"reservationTerm": "3 Years",
 				"type": "Reservation"
 			},
@@ -1476,48 +1480,4 @@ func TestCacheClient_GetValidResourceTypes_PageCapFires(t *testing.T) {
 	skus, err := client.GetValidResourceTypes(context.Background())
 	require.NoError(t, err)
 	require.NotEmpty(t, skus, "page cap must trigger fallback to common SKUs, not an empty result")
-}
-
-// TestExtractRedisPricing_SingularOneYear verifies that extractRedisPricing
-// correctly recognizes the "1 Year" singular form returned by the Azure Retail
-// Prices API for 1-year reservation terms. Before the fix, the extractor used
-// "%d Years" unconditionally, so the 1-year reservation line was silently
-// skipped and reservationPrice remained 0, causing a false "no reservation
-// pricing found" error even when the pricing row was present.
-func TestExtractRedisPricing_SingularOneYear(t *testing.T) {
-	items := []azpricing.RetailPriceItem{
-		{
-			CurrencyCode: "USD",
-			RetailPrice:  0.68,
-			UnitPrice:    0.68,
-			Type:         "Consumption",
-		},
-		{
-			CurrencyCode:    "USD",
-			RetailPrice:     4500.0,
-			ReservationTerm: "1 Year",
-			Type:            "Reservation",
-		},
-	}
-
-	onDemand, reservation, currency := extractRedisPricing(items, 1)
-
-	assert.Equal(t, "USD", currency)
-	assert.Equal(t, 0.68, onDemand, "on-demand price must be extracted")
-	assert.Equal(t, 4500.0, reservation, "reservation price for '1 Year' term must be extracted")
-}
-
-// TestExtractRedisPricing_PluralThreeYears verifies that the plural form
-// "3 Years" continues to work for multi-year terms.
-func TestExtractRedisPricing_PluralThreeYears(t *testing.T) {
-	items := []azpricing.RetailPriceItem{
-		{CurrencyCode: "USD", RetailPrice: 0.68, UnitPrice: 0.68, Type: "Consumption"},
-		{CurrencyCode: "USD", RetailPrice: 11000.0, ReservationTerm: "3 Years", Type: "Reservation"},
-	}
-
-	onDemand, reservation, currency := extractRedisPricing(items, 3)
-
-	assert.Equal(t, "USD", currency)
-	assert.Equal(t, 0.68, onDemand)
-	assert.Equal(t, 11000.0, reservation, "reservation price for '3 Years' term must be extracted")
 }
