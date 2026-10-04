@@ -1,42 +1,63 @@
 package recommendations
 
 import (
+	"math"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
-// AdjustExistingCoverageForExpiringCommitments reduces each rec's
-// ExistingCoveragePct by the share of pool demand attributable to RIs that
-// expire within windowDays. Sized purchases downstream then treat the
-// expiring share as already-uncovered and recommend replacements.
+// AdjustExistingCoverageForExpiringCommitments returns the number of adjusted recommendations.
+// Demand must be complete disjoint pool shares, or freshly rebalanced by ApplyCoverageMapToRecommendations.
 //
-// Returns the number of recommendations whose ExistingCoveragePct was
-// adjusted, so the caller can log a meaningful summary.
-//
-// No-op when windowDays <= 0 or commitments is empty. The intent is that
-// --rebuy-window-days controls whether this adjustment runs at all;
-// callers gate the invocation on cfg.RebuyWindowDays.
-//
-// Pool matching uses the same engine-aware key as the coverage map so the
-// adjustment lines up with the data ApplyCoverageMapToRecommendations
-// just populated. Commitments whose pool key doesn't match any rec are
-// silently dropped (they're for instance types we're not currently
-// recommending; nothing to subtract from).
+// Partial raw slices and duplicated aggregate averages cannot be detected here.
+// Callers with authoritative pool demand should use AdjustExistingCoverageForExpiringCommitmentsWithCoverage.
 func AdjustExistingCoverageForExpiringCommitments(
 	recs []common.Recommendation,
 	commitments []common.Commitment,
 	windowDays int,
 ) int {
+	demand := make(map[string]float64)
+	for i := range recs {
+		avg := recs[i].AverageInstancesUsedPerHour
+		if avg > 0 && !math.IsNaN(avg) && !math.IsInf(avg, 0) {
+			demand[lookupPoolKey(recs[i])] += avg
+		}
+	}
+	adjusted, _ := adjustExpiringCoverage(recs, commitments, windowDays, demand)
+	return adjusted
+}
+
+// AdjustExistingCoverageForExpiringCommitmentsWithCoverage uses authoritative pool demand, never row sums.
+// Eligible rows lacking positive finite demand remain unchanged and are counted in missingDemand.
+func AdjustExistingCoverageForExpiringCommitmentsWithCoverage(
+	recs []common.Recommendation,
+	commitments []common.Commitment,
+	windowDays int,
+	coverage PoolCoverageMap,
+) (adjusted, missingDemand int) {
+	demand := make(map[string]float64, len(coverage))
+	for key, cov := range coverage {
+		demand[key] = cov.AvgInstancesPerHour
+	}
+	return adjustExpiringCoverage(recs, commitments, windowDays, demand)
+}
+
+func adjustExpiringCoverage(
+	recs []common.Recommendation,
+	commitments []common.Commitment,
+	windowDays int,
+	demand map[string]float64,
+) (adjusted, missingDemand int) {
 	if windowDays <= 0 || len(commitments) == 0 {
-		return 0
+		return 0, 0
 	}
 	cutoff := time.Now().Add(time.Duration(windowDays) * 24 * time.Hour)
 	expiringByPool := expiringCountsByPool(commitments, cutoff)
 	if len(expiringByPool) == 0 {
-		return 0
+		return 0, 0
 	}
-	return applyExpiringAdjustments(recs, expiringByPool)
+	return applyExpiringAdjustments(recs, expiringByPool, demand)
 }
 
 // expiringCountsByPool aggregates active commitments expiring at-or-before
@@ -62,26 +83,22 @@ func expiringCountsByPool(commitments []common.Commitment, cutoff time.Time) map
 	return out
 }
 
-// applyExpiringAdjustments subtracts each rec's matching expiring-pool
-// share from ExistingCoveragePct, clamping at zero. Returns the number
-// of recs touched. Recs without a positive avg signal are skipped — we
-// can't compute a per-pool percentage without it.
-func applyExpiringAdjustments(recs []common.Recommendation, expiringByPool map[string]int) int {
-	adjusted := 0
+func applyExpiringAdjustments(recs []common.Recommendation, expiringByPool map[string]int, demand map[string]float64) (adjusted, missingDemand int) {
 	for i := range recs {
 		if recs[i].AverageInstancesUsedPerHour <= 0 {
 			continue
 		}
-		expCount, ok := expiringByPool[lookupPoolKey(recs[i])]
+		key := lookupPoolKey(recs[i])
+		expCount, ok := expiringByPool[key]
 		if !ok || expCount == 0 {
 			continue
 		}
-		// Convert expiring count to percentage of pool demand. Clamp to
-		// avoid negative ExistingCoveragePct if the expiring share exceeds
-		// the CE-reported existing coverage (can happen when CE coverage
-		// is org-wide-averaged below per-pool truth, or when expiring
-		// count includes ZONAL RIs the regional aggregate doesn't credit).
-		expiringPct := float64(expCount) / recs[i].AverageInstancesUsedPerHour * 100.0
+		avg := demand[key]
+		if avg <= 0 || math.IsNaN(avg) || math.IsInf(avg, 0) {
+			missingDemand++
+			continue
+		}
+		expiringPct := float64(expCount) / avg * 100.0
 		if expiringPct > recs[i].ExistingCoveragePct {
 			recs[i].ExistingCoveragePct = 0
 		} else {
@@ -89,7 +106,7 @@ func applyExpiringAdjustments(recs []common.Recommendation, expiringByPool map[s
 		}
 		adjusted++
 	}
-	return adjusted
+	return adjusted, missingDemand
 }
 
 // commitmentIsActive returns true for commitments whose State indicates
