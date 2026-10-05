@@ -129,6 +129,39 @@ func TestParseRecommendedQuantity(t *testing.T) {
 	}
 }
 
+func TestParseRecommendedQuantity_WarnsWhenFractionRoundsToZero(t *testing.T) {
+	client := &Client{}
+	for _, tt := range []struct {
+		qty      string
+		expected int
+		warns    bool
+	}{
+		{"0.4", 0, true},
+		{"0.5", 1, false}, // math.Round rounds half away from zero
+		{"2.4", 2, false},
+		{"0", 0, false},
+		{"0.0", 0, false},
+	} {
+		t.Run(tt.qty, func(t *testing.T) {
+			var logBuf bytes.Buffer
+			prevOut := log.Writer()
+			log.SetOutput(&logBuf)
+			defer log.SetOutput(prevOut)
+
+			got, err := client.parseRecommendedQuantity(&types.ReservationPurchaseRecommendationDetail{
+				RecommendedNumberOfInstancesToPurchase: aws.String(tt.qty),
+			})
+			require.NoError(t, err)
+			assert.Equal(t, tt.expected, got)
+			if tt.warns {
+				assert.Contains(t, logBuf.String(), "rounds to 0")
+			} else {
+				assert.NotContains(t, logBuf.String(), "rounds to 0")
+			}
+		})
+	}
+}
+
 func TestParseCostInformation(t *testing.T) {
 	client := &Client{}
 

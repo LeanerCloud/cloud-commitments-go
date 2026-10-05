@@ -148,7 +148,11 @@ func (c *Client) parseRecommendedQuantity(details *types.ReservationPurchaseReco
 		return 0, fmt.Errorf("recommended quantity %q is not a finite non-negative number", qty)
 	}
 
-	return int(math.Round(count)), nil
+	rounded := int(math.Round(count))
+	if rounded == 0 && count > 0 {
+		log.Printf("Warning: fractional recommended quantity %q rounds to 0 instances", qty)
+	}
+	return rounded, nil
 }
 
 // parseCostInformation extracts cost and savings information.
