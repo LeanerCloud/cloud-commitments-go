@@ -4,11 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"io"
-	"log"
 	"net/http"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -185,101 +182,78 @@ func TestGetExistingCommitments_Happy(t *testing.T) {
 	assert.Equal(t, amount, got.Cost)
 }
 
-// TestGetExistingCommitments_OnlyPlansBilledToSubscription replays a tenant-wide
-// ListAll page (issue #40): only plans billed to the client's subscription, or billed to a
-// billing account and applied to the client's subscription alone, are ours.
-func TestGetExistingCommitments_OnlyPlansBilledToSubscription(t *testing.T) {
-	plan := func(id string, billingScope *string, scopeType armbillingbenefits.AppliedScopeType, props *armbillingbenefits.AppliedScopeProperties) *armbillingbenefits.SavingsPlanModel {
+func TestGetExistingCommitments_SubscriptionOwnership(t *testing.T) {
+	plan := func(id, scope string, applied armbillingbenefits.AppliedScopeType, subscription string) *armbillingbenefits.SavingsPlanModel {
 		return &armbillingbenefits.SavingsPlanModel{
 			ID: toPtr(id),
 			Properties: &armbillingbenefits.SavingsPlanModelProperties{
-				BillingScopeID:         billingScope,
-				AppliedScopeType:       toPtr(scopeType),
-				AppliedScopeProperties: props,
+				BillingScopeID:         toPtr(scope),
+				AppliedScopeType:       toPtr(applied),
+				AppliedScopeProperties: &armbillingbenefits.AppliedScopeProperties{SubscriptionID: toPtr(subscription)},
 			},
 		}
 	}
-	page := []*armbillingbenefits.SavingsPlanModel{
-		plan("own-single", toPtr("/subscriptions/sub-a"), armbillingbenefits.AppliedScopeTypeSingle,
-			&armbillingbenefits.AppliedScopeProperties{SubscriptionID: toPtr("/subscriptions/sub-a")}),
-		plan("own-shared-mixed-case", toPtr("/Subscriptions/SUB-A"), armbillingbenefits.AppliedScopeTypeShared, nil),
-		plan("other-single", toPtr("/subscriptions/sub-b"), armbillingbenefits.AppliedScopeTypeSingle,
-			&armbillingbenefits.AppliedScopeProperties{SubscriptionID: toPtr("/subscriptions/sub-b")}),
-		plan("other-shared", toPtr("/subscriptions/sub-b"), armbillingbenefits.AppliedScopeTypeShared, nil),
-		plan("other-billed-applied-to-us", toPtr("/subscriptions/sub-b"), armbillingbenefits.AppliedScopeTypeSingle,
-			&armbillingbenefits.AppliedScopeProperties{SubscriptionID: toPtr("/subscriptions/sub-a")}),
-		plan("billing-account-scope", toPtr("/providers/Microsoft.Billing/billingAccounts/ba-1"), armbillingbenefits.AppliedScopeTypeShared, nil),
-		plan("billing-account-single-ours", toPtr("/providers/Microsoft.Billing/billingAccounts/ba-1"), armbillingbenefits.AppliedScopeTypeSingle,
-			&armbillingbenefits.AppliedScopeProperties{SubscriptionID: toPtr("/Subscriptions/SUB-A")}),
-		plan("billing-account-single-other", toPtr("/providers/Microsoft.Billing/billingAccounts/ba-1"), armbillingbenefits.AppliedScopeTypeSingle,
-			&armbillingbenefits.AppliedScopeProperties{SubscriptionID: toPtr("/subscriptions/sub-b")}),
-		plan("billing-account-single-no-props", toPtr("/providers/Microsoft.Billing/billingAccounts/ba-1"), armbillingbenefits.AppliedScopeTypeSingle, nil),
-		plan("billing-account-shared-names-us", toPtr("/providers/Microsoft.Billing/billingAccounts/ba-1"), armbillingbenefits.AppliedScopeTypeShared,
-			&armbillingbenefits.AppliedScopeProperties{SubscriptionID: toPtr("/subscriptions/sub-a")}),
-		plan("prefix-lookalike", toPtr("/subscriptions/sub-a-2"), armbillingbenefits.AppliedScopeTypeShared, nil),
-		plan("missing-scope", nil, armbillingbenefits.AppliedScopeTypeShared, nil),
-		plan("empty-scope", toPtr(""), armbillingbenefits.AppliedScopeTypeShared, nil),
-		{ID: toPtr("no-properties")},
+	own := plan("owned", "/subscriptions/sub-a", armbillingbenefits.AppliedScopeTypeShared, "")
+	accountScope := "/providers/Microsoft.Billing/billingAccounts/ba-1"
+	foreignNoID := plan("", "/subscriptions/sub-b", "", "")
+	foreignNoID.ID = nil
+	ownNoID := plan("", "/subscriptions/sub-a", "", "")
+	ownNoID.ID = nil
+	cases := []struct {
+		name    string
+		row     *armbillingbenefits.SavingsPlanModel
+		wantOwn bool
+		wantErr bool
+	}{
+		{"own-single", plan("single", "/subscriptions/sub-a", armbillingbenefits.AppliedScopeTypeSingle, "/subscriptions/sub-a"), true, false},
+		{"own-shared-mixed-case", plan("shared", "/Subscriptions/SUB-A", armbillingbenefits.AppliedScopeTypeShared, ""), true, false},
+		{"foreign-applied-to-us", plan("foreign", "/subscriptions/sub-b", armbillingbenefits.AppliedScopeTypeSingle, "/subscriptions/sub-a"), false, false},
+		{"foreign-no-id", foreignNoID, false, false},
+		{"foreign-empty-id", plan("", "/subscriptions/sub-b", "", ""), false, false},
+		{"prefix-lookalike", plan("foreign", "/subscriptions/sub-a-2", "", ""), false, false},
+		{"account-shared", plan("shared", accountScope, armbillingbenefits.AppliedScopeTypeShared, ""), false, true},
+		{"account-single-ours", plan("single", accountScope, armbillingbenefits.AppliedScopeTypeSingle, "/subscriptions/sub-a"), false, true},
+		{"account-single-other", plan("single", accountScope, armbillingbenefits.AppliedScopeTypeSingle, "/subscriptions/sub-b"), false, true},
+		{"account-management-group", plan("group", accountScope, armbillingbenefits.AppliedScopeTypeManagementGroup, ""), false, true},
+		{"nil-row", nil, false, true},
+		{"missing-properties", &armbillingbenefits.SavingsPlanModel{ID: toPtr("missing")}, false, true},
+		{"missing-scope", &armbillingbenefits.SavingsPlanModel{ID: toPtr("missing"), Properties: &armbillingbenefits.SavingsPlanModelProperties{}}, false, true},
+		{"empty-scope", plan("empty", "", "", ""), false, true},
+		{"empty-subscription", plan("empty", "/subscriptions/", "", ""), false, true},
+		{"nested-scope", plan("nested", "/subscriptions/sub-b/resourceGroups/rg", "", ""), false, true},
+		{"whitespace-subscription", plan("blank", "/subscriptions/ ", "", ""), false, true},
+		{"internal-whitespace", plan("blank", "/subscriptions/sub b", "", ""), false, true},
+		{"control-character", plan("control", "/subscriptions/sub-b\x00", "", ""), false, true},
+		{"backslash", plan("backslash", "/subscriptions/sub-b\\other", "", ""), false, true},
+		{"unknown-scope", plan("unknown", "/unknown", "", ""), false, true},
+		{"own-no-id", ownNoID, false, true},
+		{"own-empty-id", plan("", "/subscriptions/sub-a", "", ""), false, true},
+		{"own-blank-id", plan(" ", "/subscriptions/sub-a", "", ""), false, true},
 	}
-
-	c := NewClient(nil, "sub-a", "eastus")
-	c.SetListAllPager(&mockListAllPager{results: page})
-
-	commitments, err := c.GetExistingCommitments(context.Background())
-	require.NoError(t, err)
-
-	ids := make([]string, 0, len(commitments))
-	for _, cm := range commitments {
-		assert.Equal(t, "sub-a", cm.Account)
-		ids = append(ids, cm.CommitmentID)
-	}
-	assert.Equal(t, []string{"own-single", "own-shared-mixed-case", "billing-account-single-ours"}, ids)
-}
-
-// TestGetExistingCommitments_LogsSkippedPlanScopes checks the skip warning names each skipped
-// plan's ID and billing scope, capped at 20 entries, with the full count.
-func TestGetExistingCommitments_LogsSkippedPlanScopes(t *testing.T) {
-	const logCap = 20
-	var buf bytes.Buffer
-	log.SetOutput(&buf)
-	t.Cleanup(func() { log.SetOutput(os.Stderr) })
-
-	page := []*armbillingbenefits.SavingsPlanModel{{
-		ID: toPtr("ba-shared"),
-		Properties: &armbillingbenefits.SavingsPlanModelProperties{
-			BillingScopeID:   toPtr("/providers/Microsoft.Billing/billingAccounts/ba-1"),
-			AppliedScopeType: toPtr(armbillingbenefits.AppliedScopeTypeShared),
-		},
-	}}
-	for i := 0; i < logCap+5; i++ {
-		page = append(page, &armbillingbenefits.SavingsPlanModel{
-			ID:         toPtr(fmt.Sprintf("other-%02d", i)),
-			Properties: &armbillingbenefits.SavingsPlanModelProperties{BillingScopeID: toPtr("/subscriptions/sub-b")},
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			c := NewClient(nil, "sub-a", "eastus")
+			c.SetListAllPager(&mockListAllPager{results: []*armbillingbenefits.SavingsPlanModel{own, tt.row}})
+			got, err := c.GetExistingCommitments(context.Background())
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Nil(t, got, "unresolved ownership must not return partial inventory")
+				assert.NotContains(t, err.Error(), accountScope)
+				return
+			}
+			require.NoError(t, err)
+			wantIDs := []string{"owned"}
+			if tt.wantOwn {
+				wantIDs = append(wantIDs, *tt.row.ID)
+			}
+			ids := make([]string, 0, len(got))
+			for _, commitment := range got {
+				assert.Equal(t, "sub-a", commitment.Account)
+				ids = append(ids, commitment.CommitmentID)
+			}
+			assert.Equal(t, wantIDs, ids)
 		})
 	}
-
-	c := NewClient(nil, "sub-a", "eastus")
-	c.SetListAllPager(&mockListAllPager{results: page})
-
-	commitments, err := c.GetExistingCommitments(context.Background())
-	require.NoError(t, err)
-	assert.Empty(t, commitments)
-
-	out := buf.String()
-	assert.Contains(t, out, fmt.Sprintf("skipped %d savings plans", logCap+6))
-	assert.Contains(t, out, `ba-shared (billing scope "/providers/Microsoft.Billing/billingAccounts/ba-1", applied scope "Shared")`)
-	assert.Contains(t, out, fmt.Sprintf("other-%02d", logCap-2))
-	assert.NotContains(t, out, fmt.Sprintf("other-%02d", logCap-1))
-}
-
-func TestGetExistingCommitments_NilModel(t *testing.T) {
-	// A nil entry in the page should be skipped without panicking.
-	c := NewClient(nil, "sub", "eastus")
-	c.SetListAllPager(&mockListAllPager{results: []*armbillingbenefits.SavingsPlanModel{nil}})
-
-	commitments, err := c.GetExistingCommitments(context.Background())
-	require.NoError(t, err)
-	assert.Empty(t, commitments)
 }
 
 func TestGetExistingCommitments_PagerError(t *testing.T) {
