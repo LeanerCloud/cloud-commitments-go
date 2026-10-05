@@ -52,7 +52,14 @@ func TestElastiCacheEngineBudgets(t *testing.T) {
 		wantCounts []int
 	}{
 		{"redis covers valkey", []string{"ReDiS"}, []int{1}, []string{"VaLkEy"}, []int{1}, nil},
-		{"valkey covers redis", []string{"valkey"}, []int{1}, []string{"redis"}, []int{1}, nil},
+		// Redis OSS reservations cover Valkey nodes, Valkey reservations cover only Valkey:
+		// https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/CacheNodes.Reserved.html#reserved-nodes-upgrade-to-valkey
+		{"valkey does not cover redis", []string{"valkey"}, []int{1}, []string{"redis"}, []int{1}, []int{1}},
+		{"valkey covers valkey", []string{"valkey"}, []int{1}, []string{"valkey"}, []int{1}, nil},
+		{"valkey and wildcard partial redis", []string{"valkey", ""}, []int{1, 1}, []string{"redis"}, []int{2}, []int{1}},
+		{"valkey before redis for valkey", []string{"valkey", "redis"}, []int{1, 1}, []string{"valkey", "redis"}, []int{1, 1}, nil},
+		{"redis rec first keeps valkey for valkey", []string{"valkey", "redis"}, []int{1, 1}, []string{"redis", "valkey"}, []int{1, 1}, nil},
+		{"valkey overflow onto redis", []string{"valkey", "redis"}, []int{1, 1}, []string{"valkey", "redis"}, []int{2, 1}, []int{1}},
 		{"redis not memcached", []string{"redis"}, []int{1}, []string{"memcached"}, []int{1}, []int{1}},
 		{"valkey not memcached", []string{"valkey"}, []int{1}, []string{"memcached"}, []int{1}, []int{1}},
 		{"unknown covers redis", []string{""}, []int{1}, []string{"redis"}, []int{1}, nil},
