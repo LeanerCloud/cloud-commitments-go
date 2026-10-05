@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -443,6 +445,9 @@ const sampleSynapsePricingJSON = `{
 			"currencyCode": "USD",
 			"retailPrice": 2000.0,
 			"armRegionName": "eastus",
+			"serviceName": "Azure Synapse Analytics",
+			"productName": "Azure Synapse Analytics Dedicated SQL Pool",
+			"unitOfMeasure": "1/Hour",
 			"reservationTerm": "1 Year",
 			"type": "Reservation",
 			"skuName": "DW100c"
@@ -498,6 +503,103 @@ func TestGetOfferingDetails_httpError(t *testing.T) {
 	rec := common.Recommendation{ResourceType: "DW100c", Term: "1yr"}
 	_, err := c.GetOfferingDetails(context.Background(), rec)
 	assert.Error(t, err)
+}
+
+type synapsePriceHTTPClient func(*http.Request) (*http.Response, error)
+
+func (client synapsePriceHTTPClient) Do(req *http.Request) (*http.Response, error) {
+	return client(req)
+}
+
+func synapsePricePage(t *testing.T, items []map[string]any, next string) string {
+	t.Helper()
+	body, err := json.Marshal(map[string]any{"Items": items, "NextPageLink": next})
+	require.NoError(t, err)
+	return string(body)
+}
+
+func synapseQuoteClient(t *testing.T, region string, pages ...string) (*Client, *[]*http.Request) {
+	t.Helper()
+	requests := make([]*http.Request, 0, len(pages))
+	page := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if page >= len(pages) {
+			http.Error(w, "unexpected page", http.StatusBadRequest)
+			return
+		}
+		_, _ = io.WriteString(w, pages[page])
+		page++
+	}))
+	t.Cleanup(server.Close)
+	local := server.Client()
+	local.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
+	transport := synapsePriceHTTPClient(func(req *http.Request) (*http.Response, error) {
+		if req.Method != http.MethodGet || req.URL.Scheme != "https" || req.URL.Hostname() != "prices.azure.com" ||
+			(req.URL.Port() != "" && req.URL.Port() != "443") || req.URL.Path != "/api/retail/prices" {
+			return nil, fmt.Errorf("unexpected pricing request %s", req.URL)
+		}
+		requests = append(requests, req)
+		loopback, err := http.NewRequestWithContext(req.Context(), http.MethodGet, server.URL+req.URL.RequestURI(), nil)
+		if err != nil {
+			return nil, err
+		}
+		return local.Do(loopback)
+	})
+	return NewClientWithHTTP(nil, "sub-123", region, transport), &requests
+}
+
+// The base identity and amounts are from the October 1 eastus capture. Overrides below are synthetic controls.
+func synapseCapturedDW100c(overrides map[string]any) map[string]any {
+	row := map[string]any{
+		"serviceName": "Azure Synapse Analytics", "productName": "Azure Synapse Analytics Dedicated SQL Pool",
+		"armRegionName": "eastus", "armSkuName": "SQL_DW100c", "skuName": "DW100c", "meterName": "100 DWUs",
+		"type": "Reservation", "reservationTerm": "1 Year", "unitOfMeasure": "1/Hour",
+		"retailPrice": 8333.0, "currencyCode": "USD", "unitPrice": 8333.0,
+		"meterId": "cc5e0b3e-9ebc-451a-8b78-904f230e975b", "productId": "DZH318Z0BZ1B",
+		"skuId": "DZH318Z0BZ1B/00MG", "effectiveStartDate": "2019-03-12T00:00:00Z", "isPrimaryMeterRegion": true,
+	}
+	for field, value := range overrides {
+		row[field] = value
+	}
+	return row
+}
+
+func TestGetOfferingDetails_CapturedDW100cAndTerms(t *testing.T) {
+	oneYear := synapseCapturedDW100c(nil)
+	threeYears := synapseCapturedDW100c(map[string]any{"reservationTerm": "3 Years", "retailPrice": 13889.0, "unitPrice": 13889.0, "skuId": "DZH318Z0BZ1B/00MF"})
+	for _, tc := range []struct {
+		name, term, payment string
+		rows                []map[string]any
+		wantTotal, paid     float64
+		termYears           float64
+	}{
+		{"one year first", "1yr", "all-upfront", []map[string]any{oneYear, threeYears}, 8333, 8333, 1},
+		{"one year last", "1yr", "upfront", []map[string]any{threeYears, oneYear}, 8333, 8333, 1},
+		{"three years first", "3yr", "monthly", []map[string]any{threeYears, oneYear}, 13889, 13889.0 / 36, 3},
+		{"three years last", "3yr", "no-upfront", []map[string]any{oneYear, threeYears}, 13889, 13889.0 / 36, 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, requests := synapseQuoteClient(t, "eastus", synapsePricePage(t, tc.rows, ""))
+			quote, err := client.GetOfferingDetails(context.Background(), common.Recommendation{
+				ResourceType: "DW100c", Term: tc.term, PaymentOption: tc.payment, Count: 3,
+			})
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantTotal, quote.TotalCost)
+			assert.Equal(t, tc.wantTotal/(8760*tc.termYears), quote.EffectiveHourlyRate)
+			assert.Equal(t, "USD", quote.Currency)
+			assert.Equal(t, "DW100c", quote.ResourceType)
+			assert.Equal(t, "azure-synapse-DW100c-eastus-"+tc.term, quote.OfferingID)
+			if tc.payment == "upfront" || tc.payment == "all-upfront" {
+				assert.Equal(t, tc.paid, quote.UpfrontCost)
+				assert.Zero(t, quote.RecurringCost)
+			} else {
+				assert.Zero(t, quote.UpfrontCost)
+				assert.Equal(t, tc.paid, quote.RecurringCost)
+			}
+			require.Len(t, *requests, 1)
+			assert.Equal(t, "serviceName eq 'Azure Synapse Analytics' and productName eq 'Azure Synapse Analytics Dedicated SQL Pool' and armRegionName eq 'eastus' and skuName eq 'DW100c' and priceType eq 'Reservation'", (*requests)[0].URL.Query().Get("$filter"))
+		})
+	}
 }
 
 // calcPriceRespJSON returns a minimal calculatePrice JSON response with the
@@ -732,40 +834,123 @@ func TestConvertSynapseReservation_nilSKUName(t *testing.T) {
 	}))
 }
 
-// ---- extractSynapsePricing ------------------------------------------------
+// ---- public reservation selection -----------------------------------------
 
-func TestExtractSynapsePricing_1yr(t *testing.T) {
-	items := []RetailPriceItem{
-		{CurrencyCode: "USD", RetailPrice: 0.5, Type: "Consumption"},
-		{CurrencyCode: "USD", RetailPrice: 2000.0, ReservationTerm: "1 Year", Type: "Reservation"},
-		{CurrencyCode: "USD", RetailPrice: 3500.0, ReservationTerm: "3 Years", Type: "Reservation"},
+func TestGetOfferingDetails_ReservationSelection(t *testing.T) {
+	good := synapseCapturedDW100c(nil)
+	metadata := synapseCapturedDW100c(map[string]any{
+		"meterId": "different", "productId": "different", "skuId": "different",
+		"effectiveStartDate": "2026-10-01T00:00:00Z", "isPrimaryMeterRegion": false,
+	})
+	conflict := synapseCapturedDW100c(map[string]any{
+		"effectiveStartDate": "2026-10-01T00:00:00Z", "isPrimaryMeterRegion": false,
+		"retailPrice": 9000.0, "unitPrice": 9000.0,
+	})
+	for _, tc := range []struct {
+		name, wantError, currency string
+		rows                      []map[string]any
+	}{
+		{"reservation only", "", "USD", []map[string]any{good}},
+		{"foreign service sibling", "", "USD", []map[string]any{synapseCapturedDW100c(map[string]any{"serviceName": "Other"}), good}},
+		{"foreign service alone", "no reservation pricing found", "", []map[string]any{synapseCapturedDW100c(map[string]any{"serviceName": "Other"})}},
+		{"wrong full product sibling", "", "USD", []map[string]any{synapseCapturedDW100c(map[string]any{"productName": "Azure Synapse Analytics Storage"}), good}},
+		{"wrong full product alone", "no reservation pricing found", "", []map[string]any{synapseCapturedDW100c(map[string]any{"productName": "Azure Synapse Analytics Storage"})}},
+		{"wrong display SKU sibling", "", "USD", []map[string]any{synapseCapturedDW100c(map[string]any{"skuName": "DW200c", "armSkuName": "SQL_DW100c"}), good}},
+		{"wrong display SKU alone", "no reservation pricing found", "", []map[string]any{synapseCapturedDW100c(map[string]any{"skuName": "DW200c", "armSkuName": "SQL_DW100c"})}},
+		{"wrong region sibling", "", "USD", []map[string]any{synapseCapturedDW100c(map[string]any{"armRegionName": "westus"}), good}},
+		{"wrong region alone", "no reservation pricing found", "", []map[string]any{synapseCapturedDW100c(map[string]any{"armRegionName": "westus"})}},
+		{"consumption sibling", "", "USD", []map[string]any{synapseCapturedDW100c(map[string]any{"type": "Consumption", "retailPrice": 1}), good}},
+		{"consumption alone", "no reservation pricing found", "", []map[string]any{synapseCapturedDW100c(map[string]any{"type": "Consumption", "retailPrice": 1})}},
+		{"eleven year sibling", "", "USD", []map[string]any{synapseCapturedDW100c(map[string]any{"reservationTerm": "11 Year", "retailPrice": 1}), good}},
+		{"eleven year alone", "no reservation pricing found", "", []map[string]any{synapseCapturedDW100c(map[string]any{"reservationTerm": "11 Year", "retailPrice": 1})}},
+		{"malformed foreign sibling", "", "USD", []map[string]any{synapseCapturedDW100c(map[string]any{"serviceName": "Other", "unitOfMeasure": "100 Hours", "currencyCode": ""}), good}},
+		{"missing unit", "unsupported reservation unit", "", []map[string]any{synapseCapturedDW100c(map[string]any{"unitOfMeasure": ""})}},
+		{"unsupported unit", "unsupported reservation unit", "", []map[string]any{synapseCapturedDW100c(map[string]any{"unitOfMeasure": "100 Hours"})}},
+		{"missing currency", "reservation currency is missing", "", []map[string]any{synapseCapturedDW100c(map[string]any{"currencyCode": ""})}},
+		{"missing price", "invalid reservation retail price", "", []map[string]any{synapseCapturedDW100c(map[string]any{"retailPrice": 0})}},
+		{"negative price", "invalid reservation retail price", "", []map[string]any{synapseCapturedDW100c(map[string]any{"retailPrice": -1})}},
+		{"EUR quote", "", "EUR", []map[string]any{synapseCapturedDW100c(map[string]any{"currencyCode": "EUR"})}},
+		{"same metadata first", "", "USD", []map[string]any{metadata, good}},
+		{"same metadata last", "", "USD", []map[string]any{good, metadata}},
+		{"equivalent unit spelling", "", "USD", []map[string]any{good, synapseCapturedDW100c(map[string]any{"unitOfMeasure": "1 Hour"})}},
+		{"different price first", "ambiguous reservation pricing", "", []map[string]any{conflict, good}},
+		{"different price last", "ambiguous reservation pricing", "", []map[string]any{good, conflict}},
+		{"different currency", "ambiguous reservation pricing", "", []map[string]any{good, synapseCapturedDW100c(map[string]any{"currencyCode": "EUR"})}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, _ := synapseQuoteClient(t, "eastus", synapsePricePage(t, tc.rows, ""))
+			quote, err := client.GetOfferingDetails(context.Background(), common.Recommendation{ResourceType: "DW100c", Term: "1yr", PaymentOption: "upfront"})
+			if tc.wantError != "" {
+				require.Error(t, err)
+				assert.Nil(t, quote)
+				assert.Contains(t, err.Error(), tc.wantError)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, 8333.0, quote.TotalCost)
+			assert.Equal(t, 8333.0, quote.UpfrontCost)
+			assert.Equal(t, 8333.0/8760, quote.EffectiveHourlyRate)
+			assert.Equal(t, tc.currency, quote.Currency)
+		})
 	}
-	onDemand, reservation, currency := extractSynapsePricing(items, 1)
-	assert.InDelta(t, 0.5, onDemand, 0.01)
-	assert.InDelta(t, 2000.0, reservation, 0.01)
-	assert.Equal(t, "USD", currency)
 }
 
-func TestExtractSynapsePricing_3yr(t *testing.T) {
-	items := []RetailPriceItem{
-		{CurrencyCode: "USD", RetailPrice: 0.5, Type: "Consumption"},
-		{CurrencyCode: "USD", RetailPrice: 2000.0, ReservationTerm: "1 Year", Type: "Reservation"},
-		{CurrencyCode: "USD", RetailPrice: 3500.0, ReservationTerm: "3 Years", Type: "Reservation"},
+func TestGetOfferingDetails_Pagination(t *testing.T) {
+	good := synapseCapturedDW100c(nil)
+	foreign := synapseCapturedDW100c(map[string]any{"skuName": "DW200c"})
+	conflict := synapseCapturedDW100c(map[string]any{"retailPrice": 9000.0, "unitPrice": 9000.0})
+	const next = "https://prices.azure.com/api/retail/prices?$skip=1"
+	for _, tc := range []struct {
+		name, wantError string
+		first, second   map[string]any
+	}{
+		{"selected on second page", "", foreign, good},
+		{"selected on first page", "", good, foreign},
+		{"conflict on second page", "ambiguous reservation pricing", good, conflict},
+		{"conflict on first page", "ambiguous reservation pricing", conflict, good},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client, requests := synapseQuoteClient(t, "eastus",
+				synapsePricePage(t, []map[string]any{tc.first}, next),
+				synapsePricePage(t, []map[string]any{tc.second}, ""))
+			quote, err := client.GetOfferingDetails(context.Background(), common.Recommendation{ResourceType: "DW100c", Term: "1yr", PaymentOption: "upfront"})
+			if tc.wantError != "" {
+				require.Error(t, err)
+				assert.Nil(t, quote)
+				assert.Contains(t, err.Error(), tc.wantError)
+			} else {
+				require.NoError(t, err)
+				assert.Equal(t, 8333.0, quote.TotalCost)
+			}
+			require.Len(t, *requests, 2)
+			assert.Equal(t, next, (*requests)[1].URL.String())
+		})
 	}
-	onDemand, reservation, currency := extractSynapsePricing(items, 3)
-	assert.InDelta(t, 0.5, onDemand, 0.01)
-	assert.InDelta(t, 3500.0, reservation, 0.01)
-	assert.Equal(t, "USD", currency)
 }
 
-func TestExtractSynapsePricing_noReservation(t *testing.T) {
-	items := []RetailPriceItem{
-		{CurrencyCode: "USD", RetailPrice: 0.5, Type: "Consumption"},
-	}
-	onDemand, reservation, currency := extractSynapsePricing(items, 1)
-	assert.InDelta(t, 0.5, onDemand, 0.01)
-	assert.Equal(t, 0.0, reservation)
-	assert.Equal(t, "USD", currency)
+func TestGetOfferingDetails_QueryEscapesRegionAndSKU(t *testing.T) {
+	client, requests := synapseQuoteClient(t, "east'us", synapsePricePage(t, []map[string]any{
+		synapseCapturedDW100c(map[string]any{"armRegionName": "east'us", "skuName": "DW'100c"}),
+	}, ""))
+	quote, err := client.GetOfferingDetails(context.Background(), common.Recommendation{ResourceType: "DW'100c", Term: "1yr", PaymentOption: "upfront"})
+	require.NoError(t, err)
+	assert.Equal(t, 8333.0, quote.TotalCost)
+	require.Len(t, *requests, 1)
+	assert.Equal(t, "serviceName eq 'Azure Synapse Analytics' and productName eq 'Azure Synapse Analytics Dedicated SQL Pool' and armRegionName eq 'east''us' and skuName eq 'DW''100c' and priceType eq 'Reservation'", (*requests)[0].URL.Query().Get("$filter"))
+	assert.Contains(t, (*requests)[0].URL.RawQuery, "%24filter=")
+}
+
+func TestGetOfferingDetails_RejectsUnsupportedTermAndPayment(t *testing.T) {
+	client, requests := synapseQuoteClient(t, "eastus", synapsePricePage(t, []map[string]any{synapseCapturedDW100c(nil)}, ""))
+	quote, err := client.GetOfferingDetails(context.Background(), common.Recommendation{ResourceType: "DW100c", Term: "2yr", PaymentOption: "upfront"})
+	require.Error(t, err)
+	assert.Nil(t, quote)
+	assert.Empty(t, *requests)
+	quote, err = client.GetOfferingDetails(context.Background(), common.Recommendation{ResourceType: "DW100c", Term: "1yr", PaymentOption: "partial-upfront"})
+	require.Error(t, err)
+	assert.Nil(t, quote)
+	assert.Contains(t, err.Error(), "unsupported payment option")
+	require.Len(t, *requests, 1)
 }
 
 // ---- parseReservationTermYears --------------------------------------------
@@ -968,7 +1153,7 @@ func TestGetOfferingDetails_noReservationPrice(t *testing.T) {
 	rec := common.Recommendation{ResourceType: "DW100c", Term: "1yr"}
 	_, err := c.GetOfferingDetails(context.Background(), rec)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "pricing data unavailable")
+	assert.Contains(t, err.Error(), "no reservation pricing found")
 }
 
 // ---- reservation tag application ------------------------------------------
