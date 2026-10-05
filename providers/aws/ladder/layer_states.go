@@ -25,14 +25,13 @@ func ptr(v float64) *float64 { return &v }
 //     active commitments; non-nil with the summed hourly amortized cost otherwise.
 //   - ExpiringUSDPerHour: 0 (explicit zero pointer) when nothing expires within
 //     Config.HorizonDays; the expiring share otherwise.
-//   - CoveragePct: nil when not measured (SP layers before the parallel SP
-//     coverage PR lands); non-nil from CE coverage data for the RI layer.
+//   - CoveragePct: nil when not measured; non-nil from CE coverage data.
 //   - UtilizationPct: nil on an empty layer or when data is unavailable; non-nil
-//     from CE utilization data for the RI layer.
+//     from CE utilization data.
 //
 // CE API note: GetSavingsPlansCoverage does not support plan-type filtering,
-// so both EC2Instance and Compute SP layers share the same CoveragePct value.
-// This is documented on each SP LayerState via the layer type field.
+// so SP coverage is aggregate within the layer's geography, not attributable
+// to its plan type: configured-region for EC2Instance, all regions for Compute.
 //
 // The scope must match Config.AccountID and common.ProviderAWS.
 func (a *AWSLadder) GetLayerStates(ctx context.Context, scope ladder.Scope) (map[ladder.LayerType]ladder.LayerState, error) {
@@ -60,14 +59,10 @@ func (a *AWSLadder) GetLayerStates(ctx context.Context, scope ladder.Scope) (map
 	now := time.Now()
 	horizon := now.Add(time.Duration(a.cfg.horizonDays()) * 24 * time.Hour)
 
-	// SP coverage is fetched once; the CE GetSavingsPlansCoverage API does not
-	// support filtering by plan type, so both SP layers receive the same value.
-	spCovPct := a.fetchSPCoveragePct(ctx)
-
 	states := make(map[ladder.LayerType]ladder.LayerState, 3)
 	states[ladder.LayerConvertibleRI] = a.riLayerState(ris, horizon, coverageMap, covErr, utils, utilErr)
-	states[ladder.LayerEC2InstanceSP] = a.spLayerState(ctx, ladder.LayerEC2InstanceSP, spPlanTypeEC2Instance, sps, horizon, spCovPct)
-	states[ladder.LayerComputeSP] = a.spLayerState(ctx, ladder.LayerComputeSP, spPlanTypeCompute, sps, horizon, spCovPct)
+	states[ladder.LayerEC2InstanceSP] = a.spLayerState(ctx, ladder.LayerEC2InstanceSP, spPlanTypeEC2Instance, sps, horizon)
+	states[ladder.LayerComputeSP] = a.spLayerState(ctx, ladder.LayerComputeSP, spPlanTypeCompute, sps, horizon)
 	return states, nil
 }
 
@@ -117,59 +112,52 @@ func (a *AWSLadder) riLayerState(
 }
 
 // spLayerState builds the LayerState for an EC2Instance or Compute SP layer.
-//
-// sharedCovPct is the SP coverage percentage fetched once for both SP layers;
-// the CE GetSavingsPlansCoverage API does not support plan-type filtering so
-// both layers receive the same value (nil when the source is not yet wired).
-//
-// UtilizationPct is fetched per-layer via spUtilizationSource, which uses
-// GetSavingsPlansUtilization and does support plan-type filtering.
 func (a *AWSLadder) spLayerState(
 	ctx context.Context,
 	layerType ladder.LayerType,
 	planType string,
 	sps []ActiveSP,
 	horizon time.Time,
-	sharedCovPct *float64,
 ) ladder.LayerState {
 	existing := sumSPHourlyCost(sps, planType)
 	expiring := sumExpiringSPHourlyCost(sps, planType, horizon)
+	region := a.cfg.Region
+	if planType == spPlanTypeCompute {
+		region = ""
+	}
 
 	state := ladder.LayerState{
 		Layer:              layerType,
 		ExistingUSDPerHour: ptr(existing),
 		ExpiringUSDPerHour: ptr(expiring),
-		CoveragePct:        sharedCovPct,
-		UtilizationPct:     a.fetchSPUtilizationPct(ctx, planType),
+		CoveragePct:        a.fetchSPCoveragePct(ctx, layerType, region),
+		UtilizationPct:     a.fetchSPUtilizationPct(ctx, planType, region),
 	}
 	return state
 }
 
 // fetchSPCoveragePct calls the injected spCoverageSource when wired; returns
-// nil (unmeasured) when the interface is nil (PR 4 not yet landed).
+// nil (unmeasured) when the interface is nil.
 // No planType is passed: the CE GetSavingsPlansCoverage API does not support
-// filtering by plan type; the result applies to all SP types in the region.
-func (a *AWSLadder) fetchSPCoveragePct(ctx context.Context) *float64 {
+// filtering by plan type; the result applies to all SP types in the geography.
+func (a *AWSLadder) fetchSPCoveragePct(ctx context.Context, layerType ladder.LayerType, region string) *float64 {
 	if a.spCoverage == nil {
 		return nil
 	}
-	summary, err := a.spCoverage.GetSPCoverageSummary(ctx, a.cfg.Region, a.cfg.lookbackDays())
+	summary, err := a.spCoverage.GetSPCoverageSummary(ctx, region, a.cfg.lookbackDays())
 	if err != nil {
 		// Degrade gracefully (caller treats nil as unmeasured) but log: a
 		// persistently failing CE call must not silently disable SP coverage.
-		log.Printf("WARNING: AWSLadder GetLayerStates: SP coverage degraded to nil (layers=%s+%s, source=GetSPCoverageSummary, region=%s): %v",
-			ladder.LayerEC2InstanceSP, ladder.LayerComputeSP, a.cfg.Region, err)
+		log.Printf("WARNING: AWSLadder GetLayerStates: SP coverage degraded to nil (layer=%s, source=GetSPCoverageSummary, region=%q): %v",
+			layerType, region, err)
 		return nil
 	}
 	return summary.CoveragePct
 }
 
 // fetchSPUtilizationPct calls the injected spUtilizationSource when wired;
-// returns nil when the interface is nil (PR 4 not yet landed).
-//
-// Compute SPs are global; their utilization is queried with region="" (all
-// regions). EC2 Instance SPs are region-specific; the configured region is used.
-func (a *AWSLadder) fetchSPUtilizationPct(ctx context.Context, planType string) *float64 {
+// returns nil when the interface is nil.
+func (a *AWSLadder) fetchSPUtilizationPct(ctx context.Context, planType, region string) *float64 {
 	if a.spUtil == nil {
 		return nil
 	}
@@ -179,11 +167,6 @@ func (a *AWSLadder) fetchSPUtilizationPct(ctx context.Context, planType string) 
 		log.Printf("WARNING: AWSLadder GetLayerStates: SP utilization degraded to nil (planType=%s, source=toSPUtilPlanType): %v",
 			planType, err)
 		return nil
-	}
-	// Compute SPs are global; EC2 Instance SPs are region-scoped.
-	region := a.cfg.Region
-	if planType == spPlanTypeCompute {
-		region = "" // "" = all regions in the CE GetSavingsPlansUtilization API
 	}
 	summary, err := a.spUtil.GetSPUtilization(ctx, cePlanType, region, a.cfg.lookbackDays())
 	if err != nil {

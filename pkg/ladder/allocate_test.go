@@ -4,6 +4,7 @@ import (
 	"maps"
 	"math"
 	"math/big"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -118,6 +119,39 @@ func ratEq(t *testing.T, label string, got *big.Rat, num, den int64) {
 func nowFixed() time.Time { return time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC) }
 
 // --- tests ---
+
+func TestAllocate_CoveragePctDoesNotChangeAllocation(t *testing.T) {
+	t.Parallel()
+	layers := awsLayers()
+	states := withExisting(zeroStates(layers), LayerComputeSP, 2)
+	cfg := validConfigAWS()
+	cfg.TargetCoveragePct = 80
+	in := &AllocationInput{
+		Config: cfg, Layers: layers, LayerStates: states,
+		Baseline: UsageBaseline{LowWaterUSDPerHour: ptr(10.0), StableUSDPerHour: ptr(8.0)},
+		Now:      nowFixed(), InFlightUSDPerHour: ptr(0.0),
+	}
+	want, err := Allocate(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(want.Allocations) == 0 {
+		t.Fatal("control must produce a positive purchase allocation")
+	}
+	for _, coverage := range []*float64{nil, ptr(0.0), ptr(5.0), ptr(90.0)} {
+		for layer, state := range states {
+			state.CoveragePct = coverage
+			states[layer] = state
+		}
+		got, err := Allocate(in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(want, got) {
+			t.Errorf("coverage %v changed allocation, holds or reshapes: got %+v, want %+v", coverage, got, want)
+		}
+	}
+}
 
 func TestAllocate_NilInput(t *testing.T) {
 	t.Parallel()
