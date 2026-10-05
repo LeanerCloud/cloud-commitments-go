@@ -47,19 +47,17 @@ func gcpRegionConcurrency() int {
 
 // regionResult bundles per-service recommendation slices returned for a single
 // GCP region. The merge in GetRecommendations walks regions in sorted order
-// and appends compute, sql, cache, storage per region so output is
+// and appends compute, sql, cache per region so output is
 // deterministic independent of goroutine completion order.
 //
-// All four GCP service clients (computeengine, cloudsql, memorystore,
-// cloudstorage) implement GetRecommendations and are fanned out concurrently
-// when shouldIncludeService permits. Cache purchase is advisory-only; the
-// cloudstorage client always returns ErrCommitmentPurchaseNotSupported because
-// Cloud Storage has no commitment product (issue #78).
+// The computeengine, cloudsql and memorystore clients are fanned out
+// concurrently when shouldIncludeService permits. Cache purchase is
+// advisory-only. Cloud Storage is not part of the fan-out: it has no commitment
+// product, so only an explicit request reaches its client (issue #78).
 type regionResult struct {
 	compute []common.Recommendation
 	sql     []common.Recommendation
 	cache   []common.Recommendation
-	storage []common.Recommendation
 	// attempted counts the service calls launched for this region (after the
 	// params service filter), failed counts how many of those errored, and
 	// lastErr keeps one representative error. mergeRegionResults aggregates
@@ -83,8 +81,8 @@ type RecommendationsClientAdapter struct {
 //   - Outer: errgroup over regions, capped at gcpRegionConcurrency()
 //     (CUDLY_GCP_REGION_PARALLELISM, default 10) to stay polite to the
 //     project-scoped Recommender API quota.
-//   - Inner: within each region's goroutine, the four service calls
-//     (compute, cloud-sql, memorystore, cloudstorage) run as concurrent
+//   - Inner: within each region's goroutine, the three service calls
+//     (compute, cloud-sql, memorystore) run as concurrent
 //     goroutines under a per-region sub-errgroup, so the per-region cost is
 //     max(service latencies) rather than their sum.
 //
@@ -107,6 +105,9 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 		return nil, fmt.Errorf("params cannot be nil")
 	}
 	params := *p
+	if params.Service == common.ServiceStorage {
+		return r.collectStorageRecs(ctx, params)
+	}
 	// Context cancellation is terminal: bail out before any API fan-out.
 	// Newer cloud.google.com/go/compute REST clients can complete a regions
 	// List call (and return a real 403) even when ctx is already canceled,
@@ -165,7 +166,7 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 	}
 
 	// Deterministic merge: walk regions in sorted order, append compute, sql,
-	// cache, storage per region. Output is stable regardless of GCP API
+	// cache per region. Output is stable regardless of GCP API
 	// region-list ordering or goroutine completion order.
 	sortedRegions := make([]string, 0, len(results))
 	for region := range results {
@@ -176,7 +177,7 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 	return mergeRegionResults(sortedRegions, results)
 }
 
-// mergeRegionResults appends compute, sql, cache, storage per region in the
+// mergeRegionResults appends compute, sql, cache per region in the
 // (sorted) order given so output is deterministic, and ports the AWS 08-H4
 // all-failed guard from providers/aws/recommendations/client.go: when every
 // attempted (region, service) call errored (e.g. an expired credential, a
@@ -195,7 +196,7 @@ func mergeRegionResults(sortedRegions []string, results map[string]regionResult)
 	total := 0
 	for _, region := range sortedRegions {
 		res := results[region]
-		total += len(res.compute) + len(res.sql) + len(res.cache) + len(res.storage)
+		total += len(res.compute) + len(res.sql) + len(res.cache)
 	}
 	merged := make([]common.Recommendation, 0, total)
 	for _, region := range sortedRegions {
@@ -208,7 +209,6 @@ func mergeRegionResults(sortedRegions []string, results map[string]regionResult)
 		merged = append(merged, res.compute...)
 		merged = append(merged, res.sql...)
 		merged = append(merged, res.cache...)
-		merged = append(merged, res.storage...)
 	}
 	if failed > 0 && failed == attempted {
 		return nil, fmt.Errorf("all %d GCP recommendation service calls failed across %d regions: %w", failed, len(sortedRegions), lastErr)
@@ -257,21 +257,22 @@ func (r *RecommendationsClientAdapter) collectCacheRecs(ctx context.Context, par
 	return client.GetRecommendations(ctx, &params)
 }
 
-// collectStorageRecs fetches Cloud Storage recommendations for one region.
-func (r *RecommendationsClientAdapter) collectStorageRecs(ctx context.Context, params common.RecommendationParams, region string) ([]common.Recommendation, error) {
+// collectStorageRecs returns the Cloud Storage client's not-supported error for
+// an explicit Cloud Storage request.
+func (r *RecommendationsClientAdapter) collectStorageRecs(ctx context.Context, params common.RecommendationParams) ([]common.Recommendation, error) {
 	if err := concurrency.Acquire(ctx); err != nil {
 		return nil, err
 	}
 	defer concurrency.Release(ctx)
-	client, err := cloudstorage.NewClient(ctx, r.projectID, region, r.clientOpts...)
+	client, err := cloudstorage.NewClient(ctx, r.projectID, "", r.clientOpts...)
 	if err != nil {
 		return nil, err
 	}
 	return client.GetRecommendations(ctx, &params)
 }
 
-// collectRegion fetches recommendations for all four GCP services
-// (Compute Engine, Cloud SQL, Memorystore, Cloud Storage) for a single region
+// collectRegion fetches recommendations for the three GCP services with
+// commitment products (Compute Engine, Cloud SQL, Memorystore) for a single region
 // concurrently. Per-service errors are logged at WARN with the region+service
 // tag and do not fail the region on their own -- the previous
 // silent-skip-on-err shape is preserved for partial failures (so a
@@ -281,17 +282,15 @@ func (r *RecommendationsClientAdapter) collectStorageRecs(ctx context.Context, p
 // fail loud when EVERY attempted call across all regions errored (COR-03).
 // The per-service fetch logic
 // (semaphore, client construction, GetRecommendations call) is delegated to
-// dedicated helpers (collectComputeRecs, collectSQLRecs, collectCacheRecs,
-// collectStorageRecs) to keep this function's cyclomatic complexity under the
+// dedicated helpers (collectComputeRecs, collectSQLRecs, collectCacheRecs)
+// to keep this function's cyclomatic complexity under the
 // gocyclo gate.
 //
-// Note: the memorystore purchase path is advisory-only. cloudstorage returns
-// ErrCommitmentPurchaseNotSupported (no commitment product exists), which is
-// logged and counted as a failed call here (issue #78).
+// Note: the memorystore purchase path is advisory-only.
 func (r *RecommendationsClientAdapter) collectRegion(ctx context.Context, params common.RecommendationParams, region string) regionResult {
 	var (
-		computeRecs, sqlRecs, cacheRecs, storageRecs []common.Recommendation
-		computeErr, sqlErr, cacheErr, storageErr     error
+		computeRecs, sqlRecs, cacheRecs []common.Recommendation
+		computeErr, sqlErr, cacheErr    error
 	)
 
 	g, gctx := errgroup.WithContext(ctx)
@@ -318,13 +317,6 @@ func (r *RecommendationsClientAdapter) collectRegion(ctx context.Context, params
 			return nil
 		})
 	}
-	if shouldIncludeService(params, common.ServiceStorage) {
-		attempted++
-		g.Go(func() error {
-			storageRecs, storageErr = r.collectStorageRecs(gctx, params, region)
-			return nil
-		})
-	}
 	_ = g.Wait() //nolint:errcheck // always nil: every g.Go closure above returns nil unconditionally, isolating per-service errors into the named result vars below instead of propagating them through errgroup
 
 	failed := 0
@@ -344,14 +336,9 @@ func (r *RecommendationsClientAdapter) collectRegion(ctx context.Context, params
 		failed++
 		lastErr = cacheErr
 	}
-	if storageErr != nil {
-		logging.Warnf("GCP %s cloudstorage recommendations: %v", region, storageErr)
-		failed++
-		lastErr = storageErr
-	}
 
 	return regionResult{
-		compute: computeRecs, sql: sqlRecs, cache: cacheRecs, storage: storageRecs,
+		compute: computeRecs, sql: sqlRecs, cache: cacheRecs,
 		attempted: attempted, failed: failed, lastErr: lastErr,
 	}
 }
