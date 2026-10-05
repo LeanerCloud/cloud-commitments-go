@@ -119,6 +119,8 @@ func ApplyCoverage(recs []common.Recommendation, coverage float64, logf Logf, dr
 //	If n_target == 0 (gap too small to fit one RI) → drop with INFO log.
 //	If AverageInstancesUsedPerHour <= 0 → pass through (no signal); counted
 //	in the per-run skip summary.
+//	If avg, existing% or target is NaN/Inf, existing% is negative, or
+//	n_target overflows int → drop with WARNING log (target-input-invalid).
 //	Projected coverage = ExistingCoveragePct + n_target/avg * 100 (total
 //	coverage after the purchase, clamped to 100). Projected utilization =
 //	avg/n_target * 100 clamped to 100.
@@ -156,7 +158,7 @@ func ApplyCoverage(recs []common.Recommendation, coverage float64, logf Logf, dr
 // nil to skip tracking. logf receives WARNING/INFO lines (nil-safe; pass nil
 // to disable logging).
 func ApplyTargetCoverage(recs []common.Recommendation, targetPct float64, logf Logf, drops *common.DropSummary) []common.Recommendation {
-	if targetPct <= 0 || targetPct > 100 {
+	if finiteTargetOutOfRange(targetPct) {
 		// Validation ensures we never get here in production, but be defensive
 		// so a buggy caller doesn't divide by zero.
 		logf.printf("WARNING: ApplyTargetCoverage called with targetPct=%.2f outside (0,100]; returning recs unchanged\n", targetPct)
@@ -187,11 +189,22 @@ func ApplyTargetCoverage(recs []common.Recommendation, targetPct float64, logf L
 	return result
 }
 
+// finiteTargetOutOfRange reports whether targetPct is a finite number outside
+// (0,100]. Non-finite targets are not out of range: they are invalid input
+// that the RI branch drops, while SPs and other types pass through.
+func finiteTargetOutOfRange(targetPct float64) bool {
+	return isFiniteTarget(targetPct) && (targetPct <= 0 || targetPct > 100)
+}
+
+func isFiniteTarget(targetPct float64) bool {
+	return !math.IsNaN(targetPct) && !math.IsInf(targetPct, 0)
+}
+
 // applyTargetCoverageOne dispatches a single recommendation through the
 // appropriate branch. Returns (rec, kept, missingSignal, dropReason):
 //   - kept=true → caller appends `rec` (the adjusted or pass-through value).
 //   - kept=false → caller drops the rec (only the RI "target unreachable"
-//     branches return this; an INFO log already fired).
+//     and invalid-input branches return this; a log line already fired).
 //   - missingSignal=true → counted toward the end-of-run skip summary.
 //   - dropReason is non-empty when kept=false and the drop has a named category.
 //
@@ -200,6 +213,10 @@ func ApplyTargetCoverage(recs []common.Recommendation, targetPct float64, logf L
 func applyTargetCoverageOne(rec common.Recommendation, targetPct float64, unsupportedSeen map[common.CommitmentType]bool, logf Logf) (result common.Recommendation, kept, missingSignal bool, drop string) {
 	switch {
 	case common.IsSavingsPlan(rec.Service):
+		if !isFiniteTarget(targetPct) {
+			// A NaN or infinite target must never scale an SP.
+			return rec, true, false, ""
+		}
 		adjusted, ok := applyTargetCoverageSP(rec, targetPct, logf)
 		if !ok {
 			// SP no-signal: pass through unchanged.
@@ -209,9 +226,9 @@ func applyTargetCoverageOne(rec common.Recommendation, targetPct float64, unsupp
 	case rec.CommitmentType == common.CommitmentReservedInstance:
 		adjusted, ok, dropReason := applyTargetCoverageRI(rec, targetPct, logf)
 		if !ok {
-			// Distinguish "no signal" (pass through, count in summary) from
-			// "target unreachable" (drop with already-fired INFO log).
-			if rec.AverageInstancesUsedPerHour <= 0 {
+			// An empty dropReason means "no signal" (pass through, count in
+			// summary); otherwise drop with the already-logged reason.
+			if dropReason == "" {
 				return rec, true, true, ""
 			}
 			return rec, false, false, dropReason
@@ -227,11 +244,13 @@ func applyTargetCoverageOne(rec common.Recommendation, targetPct float64, unsupp
 }
 
 // applyTargetCoverageRI is the RI branch of ApplyTargetCoverage. Returns
-// (adjusted, true, "") on success, (rec, false, dropReason) when the rec
-// should be passed through unscaled (no signal) or dropped (target
-// unreachable). Caller distinguishes no-signal from drop via
-// rec.AverageInstancesUsedPerHour and uses dropReason for the summary.
+// (adjusted, true, "") on success, (rec, false, "") when the rec should be
+// passed through unscaled (no signal), and (rec, false, dropReason) when it
+// should be dropped (target unreachable or invalid input).
 func applyTargetCoverageRI(rec common.Recommendation, targetPct float64, logf Logf) (result common.Recommendation, ok bool, drop string) {
+	if !targetCoverageInputsValid(rec, targetPct) {
+		return rec, false, dropInvalidTargetCoverageInput(rec, targetPct, logf)
+	}
 	if rec.AverageInstancesUsedPerHour <= 0 {
 		// No signal — caller will pass through and count in the summary.
 		return rec, false, ""
@@ -258,15 +277,12 @@ func applyTargetCoverageRI(rec common.Recommendation, targetPct float64, logf Lo
 	gapPct := targetPct - rec.ExistingCoveragePct
 	nTarget, alreadyMet, valid := targetCoverageRICount(rec, targetPct)
 	if !valid {
-		logf.printf("WARNING: exact target-coverage sizing has invalid or out-of-range inputs for %s/%s/%s; passed through unchanged, target compliance unknown\n",
-			rec.Service, rec.Region, rec.ResourceType)
-		return rec, true, ""
+		return rec, false, dropInvalidTargetCoverageInput(rec, targetPct, logf)
 	}
 	if alreadyMet {
 		// Existing commitments already meet or exceed the target; no purchase
 		// needed in this pool. Drop with an info log so operators can see what
-		// the flag did. Returning (_, false) with avg > 0 signals "drop, don't
-		// pass through".
+		// the flag did.
 		logf.printf("INFO: --target-coverage=%.1f%% already met by existing coverage %.1f%% for %s/%s/%s; dropped recommendation\n",
 			targetPct, rec.ExistingCoveragePct, rec.Service, rec.Region, rec.ResourceType)
 		return rec, false, common.DropTargetAlreadyMet
@@ -284,9 +300,6 @@ func applyTargetCoverageRI(rec common.Recommendation, targetPct float64, logf Lo
 		// these out earlier so they don't show up as drops in the log.
 		logf.printf("INFO: --target-coverage=%.1f%% sizes %s/%s/%s to 0 instances (avg=%.2f, gap=%.2f%% produces <1 RI); dropped recommendation\n",
 			targetPct, rec.Service, rec.Region, rec.ResourceType, avg, gapPct)
-		// Returning (_, false) with avg > 0 signals "drop, don't pass through".
-		// applyTargetCoverageRI's caller branches on
-		// rec.AverageInstancesUsedPerHour to distinguish drop vs no-signal.
 		return rec, false, common.DropTargetSizedToZero
 	}
 
@@ -326,15 +339,35 @@ func applyTargetCoverageRI(rec common.Recommendation, targetPct float64, logf Lo
 	return adjusted, true, ""
 }
 
+// targetCoverageInputsValid rejects inputs that make the sized count
+// meaningless; callers must drop such recs rather than keep AWS's full count.
+func targetCoverageInputsValid(rec common.Recommendation, targetPct float64) bool {
+	for _, v := range []float64{rec.AverageInstancesUsedPerHour, rec.ExistingCoveragePct, targetPct} {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return false
+		}
+	}
+	return rec.ExistingCoveragePct >= 0
+}
+
+func dropInvalidTargetCoverageInput(rec common.Recommendation, targetPct float64, logf Logf) string {
+	logf.printf("WARNING: --target-coverage=%v has invalid or out-of-range inputs for %s/%s/%s (avg=%v, existing=%v%%); dropped recommendation\n",
+		targetPct, rec.Service, rec.Region, rec.ResourceType, rec.AverageInstancesUsedPerHour, rec.ExistingCoveragePct)
+	return common.DropTargetInputInvalid
+}
+
+// targetCoverageRICount expects inputs accepted by targetCoverageInputsValid
+// and positive average demand; valid=false means a negative exact coverage
+// (one that rounds to 0) or a count that overflows int.
 func targetCoverageRICount(rec common.Recommendation, targetPct float64) (count int, alreadyMet, valid bool) {
 	if exact := rec.ExistingCoveragePercentExact; exact != nil {
 		percent, _ := exact.Float64()
 		if percent == rec.ExistingCoveragePct {
-			avg := new(big.Rat).SetFloat64(rec.AverageInstancesUsedPerHour)
-			target := new(big.Rat).SetFloat64(targetPct)
-			if avg == nil || target == nil || exact.Sign() < 0 {
+			if exact.Sign() < 0 {
 				return 0, false, false
 			}
+			avg := new(big.Rat).SetFloat64(rec.AverageInstancesUsedPerHour)
+			target := new(big.Rat).SetFloat64(targetPct)
 			gap := target.Sub(target, exact)
 			if gap.Sign() <= 0 {
 				return 0, true, true
@@ -349,7 +382,14 @@ func targetCoverageRICount(rec common.Recommendation, targetPct float64) (count 
 		}
 	}
 	gap := targetPct - rec.ExistingCoveragePct
-	return int(math.Floor(rec.AverageInstancesUsedPerHour * gap / 100.0)), gap <= 0, true
+	if gap <= 0 {
+		return 0, true, true
+	}
+	quantity := math.Floor(rec.AverageInstancesUsedPerHour * gap / 100.0)
+	if quantity >= float64(math.MaxInt) {
+		return 0, false, false
+	}
+	return int(quantity), false, true
 }
 
 // applyTargetCoverageSP is the SP branch of ApplyTargetCoverage. Returns
