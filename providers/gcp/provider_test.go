@@ -289,6 +289,10 @@ func TestGCPProvider_GetSupportedServices(t *testing.T) {
 	require.NotEmpty(t, services)
 	assert.Contains(t, services, common.ServiceCompute)
 	assert.Contains(t, services, common.ServiceRelationalDB)
+	assert.Contains(t, services, common.ServiceCache)
+	// Cloud Storage has no commitment product; listing it lets callers that
+	// validate against this list accept a search that always fails (#199).
+	assert.NotContains(t, services, common.ServiceStorage)
 }
 
 func TestGCPProvider_GetServiceClient_UnsupportedService(t *testing.T) {
