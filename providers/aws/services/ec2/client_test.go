@@ -1254,14 +1254,6 @@ func TestDescribeInputFromQuery_OfferingClass(t *testing.T) {
 		wantOfferingType: types.OfferingTypeValuesNoUpfront,
 	}
 
-	t.Run("convertible by default (empty field)", func(t *testing.T) {
-		t.Parallel()
-		q := base
-		q.offeringClass = ""
-		inp := describeInputFromQuery(q, nil)
-		assert.Equal(t, types.OfferingClassTypeConvertible, inp.OfferingClass)
-	})
-
 	t.Run("convertible explicit", func(t *testing.T) {
 		t.Parallel()
 		q := base
@@ -1593,10 +1585,12 @@ func TestFindConvertibleOffering_TenancyScopeVariants_SendEnumValues(t *testing.
 			require.NoError(t, err)
 			assert.Equal(t, "offering-"+tc.name, id)
 			require.NotNil(t, got)
-			assert.Equal(t, []string{string(tc.wantTenancy)}, filterValues(got.Filters, "instance-tenancy"))
+			assert.Equal(t, tc.wantTenancy, got.InstanceTenancy)
+			assert.Nil(t, filterValues(got.Filters, "instance-tenancy"), "instance-tenancy is not a documented filter")
 			assert.Equal(t, []string{tc.wantScope}, filterValues(got.Filters, "scope"))
 			assert.Equal(t, []string{"m5.large"}, filterValues(got.Filters, "instance-type"))
-			assert.Equal(t, []string{"convertible"}, filterValues(got.Filters, "offering-class"))
+			assert.Equal(t, types.OfferingClassTypeConvertible, got.OfferingClass)
+			assert.Nil(t, filterValues(got.Filters, "offering-class"), "offering-class is not a documented filter")
 		})
 	}
 }

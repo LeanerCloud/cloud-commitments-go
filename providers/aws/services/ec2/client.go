@@ -429,17 +429,13 @@ func buildEC2OfferingQuery(rec common.Recommendation, details *common.ComputeDet
 // typed lookup. Typed fields land on AWS's primary indices; only scope has no
 // typed equivalent and stays in Filters[].
 func describeInputFromQuery(q ec2OfferingQuery, nextToken *string) *ec2.DescribeReservedInstancesOfferingsInput {
-	oc := q.offeringClass
-	if oc == "" {
-		oc = types.OfferingClassTypeConvertible
-	}
 	return &ec2.DescribeReservedInstancesOfferingsInput{
 		InstanceType:       q.instanceType,
 		ProductDescription: q.productDesc,
 		InstanceTenancy:    q.tenancy,
 		MinDuration:        aws.Int64(q.duration),
 		MaxDuration:        aws.Int64(q.duration),
-		OfferingClass:      oc,
+		OfferingClass:      q.offeringClass,
 		OfferingType:       q.wantOfferingType,
 		IncludeMarketplace: aws.Bool(false),
 		MaxResults:         aws.Int32(100),
@@ -799,14 +795,14 @@ func (c *Client) FindConvertibleOffering(ctx context.Context, params FindConvert
 	filters := []types.Filter{
 		{Name: aws.String("instance-type"), Values: []string{params.InstanceType}},
 		{Name: aws.String("product-description"), Values: []string{productDesc}},
-		{Name: aws.String("instance-tenancy"), Values: []string{string(tenancy)}},
 		{Name: aws.String("scope"), Values: []string{string(scope)}},
 		{Name: aws.String("duration"), Values: []string{fmt.Sprintf("%d", duration)}},
-		{Name: aws.String("offering-class"), Values: []string{string(types.OfferingClassTypeConvertible)}},
 	}
 
 	input := &ec2.DescribeReservedInstancesOfferingsInput{
 		Filters:            filters,
+		InstanceTenancy:    tenancy,
+		OfferingClass:      types.OfferingClassTypeConvertible,
 		IncludeMarketplace: aws.Bool(false),
 		MaxResults:         aws.Int32(20),
 	}

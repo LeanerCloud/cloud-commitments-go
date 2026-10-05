@@ -96,10 +96,8 @@ func (a *AWSLadder) purchaseSP(ctx context.Context, layer ladder.LayerType, plan
 // option strings the offering query converts.
 //
 // Platform, Tenancy, and Scope are REQUIRED non-empty (no-silent-fallback
-// rule): the ec2 client silently defaults an empty Tenancy to "default" and
-// an empty Scope to "Regional", which could buy a default-tenancy RI from a
-// recommendation that meant dedicated tenancy. On this money path the intent
-// must be explicit, so empties are rejected here before any AWS call.
+// rule): the ec2 client rejects an empty Tenancy or Scope, and this check
+// surfaces the same error before any AWS call, naming the ladder field.
 func validateRIPurchaseRec(rec *common.Recommendation) error {
 	details, ok := rec.Details.(*common.ComputeDetails)
 	if !ok || details == nil {
@@ -115,10 +113,10 @@ func validateRIPurchaseRec(rec *common.Recommendation) error {
 		return fmt.Errorf("ComputeDetails.Platform must not be empty for an EC2 RI purchase (offering lookup matches on it)")
 	}
 	if details.Tenancy == "" {
-		return fmt.Errorf("ComputeDetails.Tenancy must not be empty for an EC2 RI purchase (the ec2 client would silently default it to %q)", "default")
+		return fmt.Errorf("ComputeDetails.Tenancy must not be empty for an EC2 RI purchase (the ec2 client rejects it)")
 	}
 	if details.Scope == "" {
-		return fmt.Errorf("ComputeDetails.Scope must not be empty for an EC2 RI purchase (the ec2 client would silently default it to %q)", "Regional")
+		return fmt.Errorf("ComputeDetails.Scope must not be empty for an EC2 RI purchase (the ec2 client rejects it)")
 	}
 	return validateTermAndPayment(rec)
 }
