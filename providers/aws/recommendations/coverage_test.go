@@ -2,6 +2,7 @@ package recommendations
 
 import (
 	"context"
+	"math/big"
 	"testing"
 	"time"
 
@@ -179,8 +180,9 @@ func TestGetRICoverageMap_LookbackWindowWidth(t *testing.T) {
 // linked account in the org sees the same coverage % for the same pool
 // (matches AWS console aggregation).
 func TestApplyCoverageMapToRecommendations(t *testing.T) {
+	exact := big.NewRat(50, 1)
 	recs := []common.Recommendation{
-		{Region: "us-east-1", ResourceType: "db.r6g.large", Account: "acct-a"},
+		{Region: "us-east-1", ResourceType: "db.r6g.large", Account: "acct-a", ExistingCoveragePct: 50},
 		{Region: "eu-west-2", ResourceType: "db.r6g.large", Account: "acct-b"},
 		{Region: "us-east-1", ResourceType: "db.m5.large", Account: "acct-a"}, // no match
 	}
@@ -188,9 +190,15 @@ func TestApplyCoverageMapToRecommendations(t *testing.T) {
 		poolKey("us-east-1", "db.r6g.large"): {Pct: 50.0},
 		poolKey("eu-west-2", "db.r6g.large"): {Pct: 33.7},
 	}
+	for i := range recs {
+		recs[i].ExistingCoveragePercentExact = exact
+	}
 
 	ApplyCoverageMapToRecommendations(recs, coverage)
 
+	assert.Nil(t, recs[0].ExistingCoveragePercentExact, "same percentage overwrite clears provenance")
+	assert.Nil(t, recs[1].ExistingCoveragePercentExact)
+	assert.Same(t, exact, recs[2].ExistingCoveragePercentExact, "unmatched coverage preserves state")
 	assert.InDelta(t, 50.0, recs[0].ExistingCoveragePct, 0.001)
 	assert.True(t, recs[0].ExistingCoverageKnown, "matched pool sets Known=true")
 	assert.InDelta(t, 33.7, recs[1].ExistingCoveragePct, 0.001)
@@ -200,10 +208,11 @@ func TestApplyCoverageMapToRecommendations(t *testing.T) {
 
 	t.Run("empty map is a no-op", func(t *testing.T) {
 		recs := []common.Recommendation{
-			{Region: "us-east-1", ResourceType: "db.r6g.large", ExistingCoveragePct: 42},
+			{Region: "us-east-1", ResourceType: "db.r6g.large", ExistingCoveragePct: 42, ExistingCoveragePercentExact: exact},
 		}
 		ApplyCoverageMapToRecommendations(recs, nil)
 		assert.Equal(t, 42.0, recs[0].ExistingCoveragePct, "nil map must leave existing values untouched")
+		assert.Same(t, exact, recs[0].ExistingCoveragePercentExact)
 	})
 
 	t.Run("case-insensitive matching for region/instance", func(t *testing.T) {
