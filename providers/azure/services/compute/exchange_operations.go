@@ -129,11 +129,6 @@ type ExchangeTarget struct {
 	// BillingScopeID is the subscription or billing account that will be
 	// charged. Required by the Azure exchange API.
 	BillingScopeID string
-
-	// AppliedScopeType controls whether the discount applies to a single
-	// subscription or all subscriptions ("Shared"). Optional: Azure's
-	// documented default of Shared is used when nil.
-	AppliedScopeType *armreservations.AppliedScopeType
 }
 
 // CalculateExchangeCallerFunc is the narrow LRO-invoker interface that
@@ -220,7 +215,9 @@ func (c *Client) buildDoExchangeCaller() (DoExchangeCallerFunc, error) {
 // committing it. Returns the priced preview (including the SessionID needed
 // to execute) and the per-target compatible-offering breakdown.
 //
-// Every source must have a non-empty ReservationID and Quantity >= 1; every
+// Every source must have a non-empty ReservationID, Quantity >= 1 and the
+// same applied scope as the others (Shared, or Single with its scopes); the
+// purchased reservations get that scope. Every
 // target must have a non-empty SKU/Location/BillingScopeID, Quantity >= 1,
 // and a Term from PossibleReservationTermValues(). There is no coercion of
 // invalid values (no clamping quantity to 1, no defaulting an unrecognized
@@ -387,6 +384,12 @@ func validateExchangeSources(sources []ExchangeableReservation) error {
 		if s.Quantity < 1 {
 			return fmt.Errorf("azure: CalculateExchange: sources[%d].quantity must be >= 1, got %d", i, s.Quantity)
 		}
+		if err := s.validateAppliedScope(); err != nil {
+			return fmt.Errorf("azure: CalculateExchange: sources[%d]: %w", i, err)
+		}
+		if !s.sameAppliedScope(&sources[0]) {
+			return fmt.Errorf("azure: CalculateExchange: sources[%d] has a different applied scope than sources[0]; exchange them separately so each keeps its scope", i)
+		}
 	}
 	return nil
 }
@@ -431,8 +434,11 @@ func isValidReservationTerm(term armreservations.ReservationTerm) bool {
 
 // buildCalculateExchangeRequest converts validated sources/targets into the
 // SDK request shape, using typed SDK enum constants throughout
-// (feedback_sdk_enum_string_literals) rather than raw strings.
+// (feedback_sdk_enum_string_literals) rather than raw strings. Every target
+// inherits the sources' applied scope, which validateExchangeSources has
+// checked is present and shared by all sources.
 func buildCalculateExchangeRequest(sources []ExchangeableReservation, targets []ExchangeTarget) armreservations.CalculateExchangeRequest {
+	scope := sources[0]
 	toReturn := make([]*armreservations.ReservationToReturn, 0, len(sources))
 	for i := range sources {
 		src := sources[i]
@@ -445,15 +451,12 @@ func buildCalculateExchangeRequest(sources []ExchangeableReservation, targets []
 	toPurchase := make([]*armreservations.PurchaseRequest, 0, len(targets))
 	for i := range targets {
 		tgt := targets[i]
-		scopeType := armreservations.AppliedScopeTypeShared
-		if tgt.AppliedScopeType != nil {
-			scopeType = *tgt.AppliedScopeType
-		}
 		toPurchase = append(toPurchase, &armreservations.PurchaseRequest{
 			Location: to.Ptr(tgt.Location),
 			SKU:      &armreservations.SKUName{Name: to.Ptr(tgt.SKU)},
 			Properties: &armreservations.PurchaseRequestProperties{
-				AppliedScopeType:     to.Ptr(scopeType),
+				AppliedScopeType:     to.Ptr(scope.AppliedScopeType),
+				AppliedScopes:        to.SliceOfPtrs(scope.AppliedScopes...),
 				BillingPlan:          to.Ptr(armreservations.ReservationBillingPlanUpfront),
 				BillingScopeID:       to.Ptr(tgt.BillingScopeID),
 				Quantity:             to.Ptr(tgt.Quantity),
