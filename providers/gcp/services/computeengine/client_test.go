@@ -1692,6 +1692,43 @@ func TestRecommendationVCPUAmountRejectsInvalidQuantities(t *testing.T) {
 	assert.Equal(t, math.MaxInt, count)
 }
 
+func TestConvertGCPRecommendationMemoryAmountRepresentations(t *testing.T) {
+	cases := []struct {
+		name    string
+		value   *structpb.Value
+		wantMB  int64
+		wantErr string
+	}{
+		{name: "numeric control", value: structpb.NewNumberValue(6144), wantMB: 6144},
+		{name: "decimal string", value: structpb.NewStringValue("6144"), wantMB: 6144},
+		{name: "unparseable string", value: structpb.NewStringValue("6Gi"), wantErr: "invalid MEMORY amount"},
+		{name: "empty string", value: structpb.NewStringValue(""), wantErr: "invalid MEMORY amount"},
+		{name: "zero string", value: structpb.NewStringValue("0"), wantErr: "MEMORY amount"},
+		{name: "fractional number", value: structpb.NewNumberValue(1.5), wantErr: "MEMORY amount"},
+		{name: "unsafe number", value: structpb.NewNumberValue(1 << 53), wantErr: "MEMORY amount"},
+		{name: "bool", value: structpb.NewBoolValue(true), wantErr: "MEMORY amount"},
+		{name: "absent", value: nil, wantErr: "MEMORY amount"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := commitmentOnlyCUDRecommendation()
+			input.Content.OperationGroups[0].Operations[1].PathValue = &recommenderpb.Operation_Value{Value: tc.value}
+			rec, err := (&Client{}).convertGCPRecommendation(context.Background(), input, common.RecommendationParams{})
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				assert.Nil(t, rec)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, rec)
+			assert.Equal(t, 4, rec.Count)
+			amount, memErr := memoryMBFromDetails(*rec)
+			require.NoError(t, memErr)
+			assert.Equal(t, tc.wantMB, amount)
+		})
+	}
+}
+
 // TestIsMemoryAmountOp_MatchesBothSpellings asserts that the inbound Recommender
 // memory-op detector skips both the canonical "MEMORY" and legacy "MEMORY_MB"
 // path_filter spellings, so the VCPU extractor never mistakes the memory sibling
