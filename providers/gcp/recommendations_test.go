@@ -3,11 +3,22 @@ package gcp
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 
+	"cloud.google.com/go/recommender/apiv1/recommenderpb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/api/option"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
+	"google.golang.org/grpc/test/bufconn"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
@@ -161,25 +172,16 @@ func TestRecommendationsClientAdapter_GetRecommendations_PropagatesContextCancel
 		"GetRecommendations must propagate the parent ctx error")
 }
 
-// TestRegionResult_HasCacheAndStorageFields is a compile-time regression test
-// for H-2 (GCP broad audit): regionResult must carry cache and storage slices
-// so collectRegion can fan out to memorystore and cloudstorage in addition to
-// compute and cloudsql. If this test stops compiling, the wiring was reverted.
-func TestRegionResult_HasCacheAndStorageFields(t *testing.T) {
+// TestRegionResult_HasCacheField pins that regionResult carries the cache slice
+// next to compute and sql (H-2); Cloud Storage has no slice because it is not
+// part of the region fan-out (issue #78).
+func TestRegionResult_HasCacheField(t *testing.T) {
 	recs := []common.Recommendation{{Provider: common.ProviderGCP}}
+	result := regionResult{compute: recs, sql: recs, cache: recs}
 
-	// Field access verifies that regionResult has the full four-service shape.
-	result := regionResult{
-		compute: recs,
-		sql:     recs,
-		cache:   recs,
-		storage: recs,
-	}
-
-	assert.Len(t, result.compute, 1, "compute field must be present on regionResult")
-	assert.Len(t, result.sql, 1, "sql field must be present on regionResult")
-	assert.Len(t, result.cache, 1, "cache field must be present on regionResult (H-2)")
-	assert.Len(t, result.storage, 1, "storage field must be present on regionResult (H-2)")
+	assert.Len(t, result.compute, 1)
+	assert.Len(t, result.sql, 1)
+	assert.Len(t, result.cache, 1)
 }
 
 // TestShouldIncludeService_Cache_Storage verifies that shouldIncludeService
@@ -324,4 +326,66 @@ func TestMergeRegionResults_NoAttemptsIsNotAFailure(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Empty(t, recs)
+}
+
+func deniedSDKAdapter(t *testing.T) *RecommendationsClientAdapter {
+	t.Helper()
+	regions := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"items":[{"name":"us-central1","status":"UP"},{"name":"europe-west1","status":"UP"}]}`)
+	}))
+	t.Cleanup(regions.Close)
+	listener := bufconn.Listen(1024 * 1024)
+	server := grpc.NewServer()
+	recommenderpb.RegisterRecommenderServer(server, &recommendationSDKServer{
+		list: func(context.Context, *recommenderpb.ListRecommendationsRequest) (*recommenderpb.ListRecommendationsResponse, error) {
+			return nil, status.Error(codes.PermissionDenied, "recommendations permission denied")
+		},
+	})
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	adapter, err := NewProviderWithProject(context.Background(), "recommendation-project",
+		option.WithoutAuthentication(),
+		option.WithEndpoint(regions.URL),
+		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
+		option.WithGRPCDialOption(grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return listener.DialContext(ctx)
+		})),
+	).GetRecommendationsClient(context.Background())
+	require.NoError(t, err)
+	return adapter.(*RecommendationsClientAdapter)
+}
+
+func TestGetAllRecommendations_TotalFailureKeepsRealCause(t *testing.T) {
+	adapter := deniedSDKAdapter(t)
+
+	recs, err := adapter.GetAllRecommendations(context.Background())
+
+	require.Error(t, err)
+	assert.Nil(t, recs)
+	assert.True(t, IsPermissionError(err), "aggregate error must keep the PermissionDenied cause: %v", err)
+	assert.NotErrorIs(t, err, common.ErrCommitmentPurchaseNotSupported)
+	assert.Contains(t, err.Error(), "all 6 GCP recommendation service calls failed across 2 regions")
+}
+
+func TestCollectRegion_DefaultFanOutSkipsCloudStorage(t *testing.T) {
+	adapter := deniedSDKAdapter(t)
+
+	res := adapter.collectRegion(context.Background(), common.RecommendationParams{}, "us-central1")
+
+	assert.Equal(t, 3, res.attempted)
+	assert.Equal(t, 3, res.failed)
+	assert.NotErrorIs(t, res.lastErr, common.ErrCommitmentPurchaseNotSupported)
+	assert.True(t, IsPermissionError(res.lastErr))
+}
+
+func TestGetRecommendations_ExplicitCloudStorageIsNotSupported(t *testing.T) {
+	adapter := deniedSDKAdapter(t)
+
+	recs, err := adapter.GetRecommendations(context.Background(), &common.RecommendationParams{Service: common.ServiceStorage})
+
+	require.Error(t, err)
+	assert.Nil(t, recs)
+	assert.ErrorIs(t, err, common.ErrCommitmentPurchaseNotSupported)
+	assert.NotContains(t, err.Error(), "GCP recommendation service calls failed")
 }

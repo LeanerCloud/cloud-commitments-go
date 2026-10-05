@@ -10,14 +10,12 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"cloud.google.com/go/recommender/apiv1/recommenderpb"
 	"cloud.google.com/go/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/cloudbilling/v1"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
-	"google.golang.org/genproto/googleapis/type/money"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
@@ -74,41 +72,6 @@ func (m *MockBucketHandle) Create(ctx context.Context, projectID string, attrs *
 		*m.createCalled = true
 	}
 	return m.createErr
-}
-
-// MockRecommenderClient mocks the RecommenderClient interface.
-type MockRecommenderClient struct {
-	recommendations []*recommenderpb.Recommendation
-	err             error
-	closed          bool
-}
-
-func (m *MockRecommenderClient) ListRecommendations(ctx context.Context, req *recommenderpb.ListRecommendationsRequest) RecommenderIterator {
-	return &MockRecommenderIterator{recommendations: m.recommendations, err: m.err}
-}
-
-func (m *MockRecommenderClient) Close() error {
-	m.closed = true
-	return nil
-}
-
-// MockRecommenderIterator mocks the RecommenderIterator interface.
-type MockRecommenderIterator struct {
-	recommendations []*recommenderpb.Recommendation
-	index           int
-	err             error
-}
-
-func (m *MockRecommenderIterator) Next() (*recommenderpb.Recommendation, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	if m.index >= len(m.recommendations) {
-		return nil, iterator.Done
-	}
-	rec := m.recommendations[m.index]
-	m.index++
-	return rec, nil
 }
 
 // MockBillingService mocks the BillingService interface.
@@ -296,11 +259,6 @@ func TestCloudStorageClient_SetterMethods(t *testing.T) {
 	client.SetStorageService(mockStorage)
 	assert.Equal(t, mockStorage, client.storageService)
 
-	// Test SetRecommenderClient
-	mockRec := &MockRecommenderClient{}
-	client.SetRecommenderClient(mockRec)
-	assert.Equal(t, mockRec, client.recommenderClient)
-
 	// Test SetBillingService
 	mockBilling := &MockBillingService{}
 	client.SetBillingService(mockBilling)
@@ -347,80 +305,16 @@ func TestCloudStorageClient_PurchaseCommitment_NotSupported(t *testing.T) {
 	assert.False(t, createCalled, "PurchaseCommitment must not call bucket Create")
 }
 
-func TestCloudStorageClient_GetRecommendations_WithMock(t *testing.T) {
+// TestCloudStorageClient_GetRecommendations_NotSupported is the regression test
+// for issue #78(c): the old path turned a bucket name from a CostRecommender
+// operation into ResourceType, which pricing then treated as a storage class.
+func TestCloudStorageClient_GetRecommendations_NotSupported(t *testing.T) {
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
-	mockClient := &MockRecommenderClient{
-		recommendations: []*recommenderpb.Recommendation{
-			{
-				Name:      "recommendation-1",
-				StateInfo: &recommenderpb.RecommendationStateInfo{State: recommenderpb.RecommendationStateInfo_ACTIVE},
-				PrimaryImpact: &recommenderpb.Impact{
-					Category: recommenderpb.Impact_COST,
-					Projection: &recommenderpb.Impact_CostProjection{
-						CostProjection: &recommenderpb.CostProjection{
-							Cost: &money.Money{
-								Units:        -100,
-								Nanos:        0,
-								CurrencyCode: "USD",
-							},
-						},
-					},
-				},
-				Content: &recommenderpb.RecommendationContent{
-					OperationGroups: []*recommenderpb.OperationGroup{
-						{
-							Operations: []*recommenderpb.Operation{
-								{Resource: "projects/test/buckets/STANDARD"},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	client.SetRecommenderClient(mockClient)
-
-	recommendations, err := client.GetRecommendations(ctx, &common.RecommendationParams{})
-	require.NoError(t, err)
-	assert.Len(t, recommendations, 1)
-	assert.Equal(t, common.ProviderGCP, recommendations[0].Provider)
-	assert.Equal(t, common.ServiceStorage, recommendations[0].Service)
-	assert.Equal(t, float64(100), recommendations[0].EstimatedSavings)
-	assert.True(t, mockClient.closed)
-}
-
-func TestCloudStorageClient_GetRecommendations_Empty(t *testing.T) {
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	mockClient := &MockRecommenderClient{
-		recommendations: []*recommenderpb.Recommendation{},
-	}
-	client.SetRecommenderClient(mockClient)
-
-	recommendations, err := client.GetRecommendations(ctx, &common.RecommendationParams{})
-	require.NoError(t, err)
-	assert.Empty(t, recommendations)
-}
-
-func TestCloudStorageClient_GetRecommendations_IteratorError(t *testing.T) {
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	mockClient := &MockRecommenderClient{
-		err: errors.New("API error"),
-	}
-	client.SetRecommenderClient(mockClient)
-
-	// Iterator errors now propagate (issue #1022 H2 fix) -- they must not be
-	// silently swallowed, as that would mask auth/quota failures and cause callers
-	// to act on a partial (empty) recommendation list.
-	recommendations, err := client.GetRecommendations(ctx, &common.RecommendationParams{})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cloudstorage: iterate recommendations")
-	assert.Nil(t, recommendations)
+	recs, err := client.GetRecommendations(ctx, &common.RecommendationParams{})
+	require.ErrorIs(t, err, common.ErrCommitmentPurchaseNotSupported)
+	assert.Nil(t, recs)
 }
 
 // storageMockSkus returns a slice with both an on-demand and a commitment SKU for
@@ -587,84 +481,6 @@ func TestCloudStorageClient_GetOfferingDetails_DefaultPaymentOption(t *testing.T
 	assert.Greater(t, details.UpfrontCost, float64(0))
 }
 
-func TestCloudStorageClient_ConvertGCPRecommendation(t *testing.T) {
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	gcpRec := &recommenderpb.Recommendation{
-		Name: "test-rec",
-		PrimaryImpact: &recommenderpb.Impact{
-			Category: recommenderpb.Impact_COST,
-			Projection: &recommenderpb.Impact_CostProjection{
-				CostProjection: &recommenderpb.CostProjection{
-					Cost: &money.Money{
-						Units:        -50,
-						Nanos:        -500000000,
-						CurrencyCode: "USD",
-					},
-				},
-			},
-		},
-		Content: &recommenderpb.RecommendationContent{
-			OperationGroups: []*recommenderpb.OperationGroup{
-				{
-					Operations: []*recommenderpb.Operation{
-						{Resource: "projects/test/buckets/COLDLINE"},
-					},
-				},
-			},
-		},
-	}
-
-	rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
-	require.NotNil(t, rec)
-	assert.Equal(t, common.ProviderGCP, rec.Provider)
-	assert.Equal(t, common.ServiceStorage, rec.Service)
-	assert.Equal(t, "test-project", rec.Account)
-	assert.Equal(t, "us-central1", rec.Region)
-	assert.Equal(t, "COLDLINE", rec.ResourceType)
-	assert.Equal(t, 50.5, rec.EstimatedSavings)
-	assert.Equal(t, common.CommitmentReservedCapacity, rec.CommitmentType)
-}
-
-func TestCloudStorageClient_ConvertGCPRecommendation_NilContent(t *testing.T) {
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	gcpRec := &recommenderpb.Recommendation{
-		Name:    "test-rec",
-		Content: nil,
-	}
-
-	rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
-	require.NotNil(t, rec)
-	assert.Equal(t, common.ProviderGCP, rec.Provider)
-	assert.Empty(t, rec.ResourceType)
-}
-
-func TestCloudStorageClient_ConvertGCPRecommendation_NilPrimaryImpact(t *testing.T) {
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	gcpRec := &recommenderpb.Recommendation{
-		Name:          "test-rec",
-		PrimaryImpact: nil,
-		Content: &recommenderpb.RecommendationContent{
-			OperationGroups: []*recommenderpb.OperationGroup{
-				{
-					Operations: []*recommenderpb.Operation{
-						{Resource: "projects/test/buckets/STANDARD"},
-					},
-				},
-			},
-		},
-	}
-
-	rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
-	require.NotNil(t, rec)
-	assert.Equal(t, float64(0), rec.EstimatedSavings)
-}
-
 func TestCloudStorageClient_GetStoragePricing_WithCommitmentPrice(t *testing.T) {
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
@@ -700,35 +516,6 @@ func TestCloudStorageClient_GetStoragePricing_3Year(t *testing.T) {
 	assert.Greater(t, pricing.CommitmentPrice, float64(0))
 }
 
-// TestConvertGCPRecommendation_PropagatesTermFromParams is a regression test for
-// the finding that convertGCPRecommendation hardcoded rec.Term = "1yr",
-// ignoring params.Term. A caller requesting "3yr" must get "3yr" in the output.
-//
-// This test FAILS on the pre-fix code that always set Term = "1yr".
-func TestCloudStorageConvertGCPRecommendation_PropagatesTermFromParams(t *testing.T) {
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	gcpRec := &recommenderpb.Recommendation{Name: "test-rec"}
-
-	tests := []struct {
-		inputTerm string
-		wantTerm  string
-	}{
-		{"3yr", "3yr"},
-		{"1yr", "1yr"},
-		{"", "1yr"}, // empty defaults to "1yr"
-	}
-
-	for _, tt := range tests {
-		params := common.RecommendationParams{Term: tt.inputTerm}
-		rec := client.convertGCPRecommendation(ctx, gcpRec, params)
-		require.NotNil(t, rec)
-		assert.Equal(t, tt.wantTerm, rec.Term,
-			"params.Term %q must produce rec.Term %q", tt.inputTerm, tt.wantTerm)
-	}
-}
-
 func TestSkuMatchesStorageClass_CaseInsensitive(t *testing.T) {
 	sku := &cloudbilling.Sku{
 		Description:    "STANDARD Storage in Americas",
@@ -758,128 +545,6 @@ func TestSkuMatchesStorageClass_Capacity(t *testing.T) {
 			assert.Equal(t, tc.want, skuMatchesStorageClass(sku, tc.class, "me-central1"))
 		})
 	}
-}
-
-// TestCloudStorageClient_ConvertGCPRecommendation_PopulatesRecurringMonthlyCost verifies
-// that convertGCPRecommendation sets a non-nil RecurringMonthlyCost when the billing
-// service returns valid pricing. This is the regression test for issue #264: the
-// pre-fix state left RecurringMonthlyCost nil, causing the frontend to render "—".
-func TestCloudStorageClient_ConvertGCPRecommendation_PopulatesRecurringMonthlyCost(t *testing.T) {
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	// Provide a billing mock that returns a non-zero on-demand price so that
-	// getStoragePricing succeeds and produces a positive CommitmentPrice.
-	mockBilling := &MockBillingService{
-		skus: &cloudbilling.ListSkusResponse{
-			Skus: []*cloudbilling.Sku{
-				{
-					Description:    "Standard Storage in us-central1",
-					ServiceRegions: []string{"us-central1"},
-					PricingInfo: []*cloudbilling.PricingInfo{
-						{
-							PricingExpression: &cloudbilling.PricingExpression{
-								UsageUnit: "GiBy.mo",
-								TieredRates: []*cloudbilling.TierRate{
-									{
-										UnitPrice: &cloudbilling.Money{
-											Units:        0,
-											Nanos:        26000000,
-											CurrencyCode: "USD",
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-				{
-					// Commitment SKU required by getStoragePricing: without a
-					// "commitment" SKU it errors and RecurringMonthlyCost stays nil.
-					Description:    "Standard Storage commitment 1yr in us-central1",
-					ServiceRegions: []string{"us-central1"},
-					PricingInfo: []*cloudbilling.PricingInfo{
-						{
-							PricingExpression: &cloudbilling.PricingExpression{
-								UsageUnit: "GiBy.mo",
-								TieredRates: []*cloudbilling.TierRate{
-									{
-										UnitPrice: &cloudbilling.Money{
-											Units:        0,
-											Nanos:        20000000,
-											CurrencyCode: "USD",
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	client.SetBillingService(mockBilling)
-
-	gcpRec := &recommenderpb.Recommendation{
-		Name: "test-rec",
-		PrimaryImpact: &recommenderpb.Impact{
-			Category: recommenderpb.Impact_COST,
-			Projection: &recommenderpb.Impact_CostProjection{
-				CostProjection: &recommenderpb.CostProjection{
-					Cost: &money.Money{
-						Units:        -100,
-						Nanos:        0,
-						CurrencyCode: "USD",
-					},
-				},
-			},
-		},
-		Content: &recommenderpb.RecommendationContent{
-			OperationGroups: []*recommenderpb.OperationGroup{
-				{
-					Operations: []*recommenderpb.Operation{
-						{Resource: "projects/test/buckets/STANDARD"},
-					},
-				},
-			},
-		},
-	}
-
-	rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
-	require.NotNil(t, rec)
-	require.NotNil(t, rec.RecurringMonthlyCost, "RecurringMonthlyCost must be non-nil when billing lookup succeeds")
-	assert.Greater(t, *rec.RecurringMonthlyCost, float64(0))
-}
-
-// TestCloudStorageClient_ConvertGCPRecommendation_BillingFailure_RecurringMonthlyCostNil
-// verifies that convertGCPRecommendation leaves RecurringMonthlyCost nil (rather than
-// coercing to 0) when the billing service call fails, matching the sibling services'
-// non-fatal-failure contract.
-func TestCloudStorageClient_ConvertGCPRecommendation_BillingFailure_RecurringMonthlyCostNil(t *testing.T) {
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	mockBilling := &MockBillingService{
-		err: errors.New("billing API unavailable"),
-	}
-	client.SetBillingService(mockBilling)
-
-	gcpRec := &recommenderpb.Recommendation{
-		Name: "test-rec",
-		Content: &recommenderpb.RecommendationContent{
-			OperationGroups: []*recommenderpb.OperationGroup{
-				{
-					Operations: []*recommenderpb.Operation{
-						{Resource: "projects/test/buckets/STANDARD"},
-					},
-				},
-			},
-		},
-	}
-
-	rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
-	require.NotNil(t, rec)
-	assert.Nil(t, rec.RecurringMonthlyCost, "RecurringMonthlyCost must remain nil when billing lookup fails")
 }
 
 func TestStoragePricingUnits_PublicConsumers(t *testing.T) {
@@ -916,16 +581,7 @@ func TestStoragePricingUnits_PublicConsumers(t *testing.T) {
 				months float64
 			}{{"1yr", 12}, {"3yr", 36}} {
 				t.Run(term.label, func(t *testing.T) {
-					recs, err := client.GetRecommendations(t.Context(), &common.RecommendationParams{Term: term.label})
-					require.NoError(t, err)
-					require.Len(t, recs, 1)
-					rec := recs[0]
-					assert.InDelta(t, tc.monthlyCommit*term.months, rec.CommitmentCost, 1e-12)
-					assert.InDelta(t, tc.monthlyDemand*term.months, rec.OnDemandCost, 1e-12)
-					require.NotNil(t, rec.RecurringMonthlyCost)
-					assert.InDelta(t, tc.monthlyCommit, *rec.RecurringMonthlyCost, 1e-12)
-					assert.InDelta(t, (tc.monthlyDemand-tc.monthlyCommit)/tc.monthlyDemand*100, rec.SavingsPercentage, 1e-10)
-					assert.InDelta(t, tc.monthlyCommit*term.months/(tc.monthlyDemand-tc.monthlyCommit), rec.BreakEvenMonths, 1e-10)
+					rec := common.Recommendation{ResourceType: "STANDARD", Term: term.label}
 					for _, payment := range []string{"monthly", "all-upfront"} {
 						rec.PaymentOption = payment
 						details, err := client.GetOfferingDetails(t.Context(), rec)
@@ -973,14 +629,6 @@ func TestStoragePricingUnits_InvalidPublicConsumers(t *testing.T) {
 			details, err := client.GetOfferingDetails(t.Context(), common.Recommendation{ResourceType: "STANDARD", Term: "1yr"})
 			require.ErrorContains(t, err, wantError)
 			assert.Nil(t, details)
-			recs, err := client.GetRecommendations(t.Context(), &common.RecommendationParams{})
-			require.NoError(t, err)
-			require.Len(t, recs, 1)
-			assert.Zero(t, recs[0].CommitmentCost)
-			assert.Zero(t, recs[0].OnDemandCost)
-			assert.Zero(t, recs[0].SavingsPercentage)
-			assert.Zero(t, recs[0].BreakEvenMonths)
-			assert.Nil(t, recs[0].RecurringMonthlyCost)
 		})
 	}
 }
@@ -1004,12 +652,5 @@ func storageCatalogClient(t *testing.T, skus []*cloudbilling.Sku) *Client {
 	client, err := NewClient(t.Context(), "test-project", "us-central1", option.WithEndpoint(server.URL),
 		option.WithHTTPClient(&http.Client{Transport: transport}), option.WithoutAuthentication())
 	require.NoError(t, err)
-	// The synthetic commitment SKU and STANDARD suffix exercise the pricing path, not a live GCS commitment.
-	client.SetRecommenderClient(&MockRecommenderClient{recommendations: []*recommenderpb.Recommendation{{
-		StateInfo: &recommenderpb.RecommendationStateInfo{State: recommenderpb.RecommendationStateInfo_ACTIVE},
-		Content: &recommenderpb.RecommendationContent{OperationGroups: []*recommenderpb.OperationGroup{{
-			Operations: []*recommenderpb.Operation{{Resource: "projects/test-project/buckets/STANDARD"}},
-		}}},
-	}}})
 	return client
 }

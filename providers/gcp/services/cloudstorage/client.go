@@ -3,25 +3,16 @@ package cloudstorage
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
-	recommender "cloud.google.com/go/recommender/apiv1"
-	"cloud.google.com/go/recommender/apiv1/recommenderpb"
 	"cloud.google.com/go/storage"
 	"google.golang.org/api/cloudbilling/v1"
-	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
-
-// maxRecsPages caps GCP Recommender API iteration to avoid looping forever on a
-// stalled or unexpectedly large result set.
-const maxRecsPages = 20
 
 // Match the annual-average convention used for term totals, not calendar-month lengths.
 const averageHoursPerMonth = 8760.0 / 12
@@ -43,17 +34,6 @@ type BucketHandle interface {
 	Create(ctx context.Context, projectID string, attrs *storage.BucketAttrs) error
 }
 
-// RecommenderClient interface for recommender operations (enables mocking).
-type RecommenderClient interface {
-	ListRecommendations(ctx context.Context, req *recommenderpb.ListRecommendationsRequest) RecommenderIterator
-	Close() error
-}
-
-// RecommenderIterator interface for recommender iteration (enables mocking).
-type RecommenderIterator interface {
-	Next() (*recommenderpb.Recommendation, error)
-}
-
 // BillingService interface for billing operations (enables mocking).
 type BillingService interface {
 	ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error)
@@ -61,13 +41,12 @@ type BillingService interface {
 
 // Client handles GCP Cloud Storage commitments.
 type Client struct {
-	ctx               context.Context
-	projectID         string
-	region            string
-	clientOpts        []option.ClientOption
-	storageService    StorageService
-	recommenderClient RecommenderClient
-	billingService    BillingService
+	ctx            context.Context
+	projectID      string
+	region         string
+	clientOpts     []option.ClientOption
+	storageService StorageService
+	billingService BillingService
 }
 
 // NewClient creates a new GCP Cloud Storage client.
@@ -85,36 +64,9 @@ func (c *Client) SetStorageService(svc StorageService) {
 	c.storageService = svc
 }
 
-// SetRecommenderClient sets the recommender client (for testing).
-func (c *Client) SetRecommenderClient(client RecommenderClient) {
-	c.recommenderClient = client
-}
-
 // SetBillingService sets the billing service (for testing).
 func (c *Client) SetBillingService(svc BillingService) {
 	c.billingService = svc
-}
-
-// realRecommenderIterator wraps the real recommender iterator.
-type realRecommenderIterator struct {
-	it *recommender.RecommendationIterator
-}
-
-func (r *realRecommenderIterator) Next() (*recommenderpb.Recommendation, error) {
-	return r.it.Next()
-}
-
-// realRecommenderClient wraps the real recommender client.
-type realRecommenderClient struct {
-	client *recommender.Client
-}
-
-func (r *realRecommenderClient) ListRecommendations(ctx context.Context, req *recommenderpb.ListRecommendationsRequest) RecommenderIterator {
-	return &realRecommenderIterator{it: r.client.ListRecommendations(ctx, req)}
-}
-
-func (r *realRecommenderClient) Close() error {
-	return r.client.Close()
 }
 
 // realBillingService wraps the real cloudbilling.APIService.
@@ -136,73 +88,11 @@ func (c *Client) GetRegion() string {
 	return c.region
 }
 
-// resolveRecommenderClient returns the injected client (for testing) or creates
-// a new one from the stored options.
-func (c *Client) resolveRecommenderClient(ctx context.Context) (RecommenderClient, error) {
-	if c.recommenderClient != nil {
-		return c.recommenderClient, nil
-	}
-	client, err := recommender.NewClient(ctx, c.clientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create recommender client: %w", err)
-	}
-	return &realRecommenderClient{client: client}, nil
-}
-
-// GetRecommendations gets Cloud Storage recommendations from GCP Recommender API.
-func (c *Client) GetRecommendations(ctx context.Context, p *common.RecommendationParams) ([]common.Recommendation, error) {
-	if p == nil {
-		return nil, fmt.Errorf("params cannot be nil")
-	}
-	params := *p
-	recommendations := make([]common.Recommendation, 0)
-
-	recClient, err := c.resolveRecommenderClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer recClient.Close()
-
-	// Cloud Storage commitment recommender
-	parent := fmt.Sprintf("projects/%s/locations/%s/recommenders/google.storage.bucket.CostRecommender",
-		c.projectID, c.region)
-
-	req := &recommenderpb.ListRecommendationsRequest{
-		Parent: parent,
-	}
-
-	it := recClient.ListRecommendations(ctx, req)
-	for pageIdx := 0; ; pageIdx++ {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context canceled during pagination: %w", err)
-		}
-		if pageIdx >= maxRecsPages {
-			return nil, fmt.Errorf("cloudstorage: GetRecommendations iteration cap (%d items) reached", maxRecsPages)
-		}
-		rec, err := it.Next()
-		if errors.Is(err, iterator.Done) {
-			break
-		}
-		if err != nil {
-			// Iterator errors must propagate so callers don't silently act on a
-			// partial recommendation list -- see the computeengine client for the
-			// full rationale (issue #1022 H2 fix).
-			return nil, fmt.Errorf("cloudstorage: iterate recommendations: %w", err)
-		}
-
-		// Skip non-ACTIVE recommendations (CLAIMED/SUCCEEDED/FAILED/DISMISSED).
-		// See computeengine.GetRecommendations for the full rationale.
-		if rec.GetStateInfo().GetState() != recommenderpb.RecommendationStateInfo_ACTIVE {
-			continue
-		}
-
-		converted := c.convertGCPRecommendation(ctx, rec, params)
-		if converted != nil {
-			recommendations = append(recommendations, *converted)
-		}
-	}
-
-	return recommendations, nil
+// GetRecommendations always returns an error: Google has no commitment product
+// for Cloud Storage (issue #78), so there is nothing to recommend. The error is
+// explicit so callers do not read an empty result as "nothing to buy".
+func (c *Client) GetRecommendations(_ context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
+	return nil, fmt.Errorf("%w: Cloud Storage has no commitment product to recommend", common.ErrCommitmentPurchaseNotSupported)
 }
 
 // GetExistingCommitments returns an empty slice for Cloud Storage. GCP Cloud
@@ -441,117 +331,4 @@ func skuMatchesStorageClass(sku *cloudbilling.Sku, storageClass, region string) 
 	}
 
 	return true
-}
-
-// extractGCPResourceType returns the last path segment of the first non-empty
-// resource field found across all operation groups, or "" if none is present.
-func extractGCPResourceType(rec *recommenderpb.Recommendation) string {
-	if rec.Content == nil || rec.Content.OperationGroups == nil {
-		return ""
-	}
-	for _, opGroup := range rec.Content.OperationGroups {
-		for _, op := range opGroup.Operations {
-			if op.Resource == "" {
-				continue
-			}
-			parts := strings.Split(op.Resource, "/")
-			if len(parts) > 0 {
-				return parts[len(parts)-1]
-			}
-		}
-	}
-	return ""
-}
-
-// extractGCPSavings returns the estimated monthly savings (positive value)
-// from the primary cost impact of a GCP recommendation, or 0 if absent.
-func extractGCPSavings(rec *recommenderpb.Recommendation) float64 {
-	if rec.PrimaryImpact == nil {
-		return 0
-	}
-	costProj := rec.PrimaryImpact.GetCostProjection()
-	if costProj == nil || costProj.Cost == nil {
-		return 0
-	}
-	cost := costProj.Cost
-	return -(float64(cost.Units) + float64(cost.Nanos)/1e9)
-}
-
-// fillStoragePricing calls getStoragePricing and, on success, writes CommitmentCost,
-// OnDemandCost, SavingsPercentage, and BreakEvenMonths into rec. Pricing
-// failures are logged and do not discard the recommendation.
-func (c *Client) fillStoragePricing(ctx context.Context, rec *common.Recommendation, termYears int) {
-	pricing, err := c.getStoragePricing(ctx, rec.ResourceType, c.region, termYears)
-	if err != nil {
-		log.Printf("cloudstorage: pricing unavailable for %s in %s (issue #1020): %v", rec.ResourceType, c.region, err)
-		return
-	}
-	rec.CommitmentCost = pricing.CommitmentPrice
-	rec.OnDemandCost = pricing.OnDemandPrice
-	rec.SavingsPercentage = pricing.SavingsPercentage
-	if pricing.OnDemandPrice > 0 && pricing.SavingsPercentage > 0 {
-		monthlySavings := pricing.OnDemandPrice * pricing.SavingsPercentage / 100.0 / float64(termYears*12)
-		if monthlySavings > 0 {
-			rec.BreakEvenMonths = pricing.CommitmentPrice / monthlySavings
-		}
-	}
-}
-
-// termYearsFromLabel converts a term string such as "1yr" or "3yr" to an
-// integer number of years (defaults to 1 for any unrecognized value).
-func termYearsFromLabel(term string) int {
-	if term == "3yr" || term == "3" {
-		return 3
-	}
-	return 1
-}
-
-// convertGCPRecommendation converts a GCP Recommender recommendation to common format.
-// It also calls getStoragePricing to fill CommitmentCost/OnDemandCost/SavingsPercentage/
-// BreakEvenMonths so the scorer can filter and rank GCP recommendations correctly
-// (issue #1022 C2). Pricing failures are logged but do not discard the recommendation.
-func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommenderpb.Recommendation, params common.RecommendationParams) *common.Recommendation {
-	paymentOption := params.PaymentOption
-	if paymentOption == "" {
-		paymentOption = "monthly"
-	}
-
-	term := params.Term
-	if term == "" {
-		term = "1yr"
-	}
-
-	rec := &common.Recommendation{
-		Provider:       common.ProviderGCP,
-		Service:        common.ServiceStorage,
-		Account:        c.projectID,
-		Region:         c.region,
-		CommitmentType: common.CommitmentReservedCapacity,
-		Timestamp:      time.Now(),
-		Term:           term,
-		PaymentOption:  paymentOption,
-	}
-
-	rec.ResourceType = extractGCPResourceType(gcpRec)
-	rec.EstimatedSavings = extractGCPSavings(gcpRec)
-
-	// Thread pricing into the converter so the scorer can rank/filter GCP recs
-	// correctly (issue #1022 C2). fillStoragePricing performs the single billing
-	// lookup and populates CommitmentCost; we reuse that value below to derive
-	// RecurringMonthlyCost rather than issuing a second SKU call.
-	if rec.ResourceType != "" {
-		termYears := termYearsFromLabel(rec.Term)
-		c.fillStoragePricing(ctx, rec, termYears)
-
-		// Cloud Storage committed-use discounts are monthly-payment commitments,
-		// so the per-month charge is CommitmentCost / termMonths. When the
-		// billing lookup failed, CommitmentCost stays 0 and RecurringMonthlyCost
-		// remains nil so the frontend renders "—" rather than a stale value.
-		if rec.CommitmentCost > 0 {
-			monthly := rec.CommitmentCost / float64(termYears*12)
-			rec.RecurringMonthlyCost = &monthly
-		}
-	}
-
-	return rec
 }
