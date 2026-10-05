@@ -219,6 +219,15 @@ func TestLoad_OtherFlags(t *testing.T) {
 		wantText   string
 	}{
 		{
+			name: "purchase registered as string",
+			register: func(fs *pflag.FlagSet) {
+				fs.String("purchase", "", "")
+			},
+			args:       []string{"--purchase=yes"},
+			wantPrefix: "--purchase:",
+			wantText:   "trying to get bool value",
+		},
+		{
 			name: "yes registered as string",
 			register: func(fs *pflag.FlagSet) {
 				fs.String("yes", "", "")
@@ -345,6 +354,7 @@ func TestLoad_PurchaseFlag(t *testing.T) {
 		{name: "purchase disables dry-run", args: []string{"--purchase"}, wantDryRun: false},
 		{name: "purchase overrides yaml", yaml: "dry_run: true\n", args: []string{"--purchase"}, wantDryRun: false},
 		{name: "purchase overrides env", env: "true", args: []string{"--purchase"}, wantDryRun: false},
+		{name: "explicit purchase=false keeps dry-run", yaml: "dry_run: false\n", args: []string{"--purchase=false"}, wantDryRun: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

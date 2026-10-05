@@ -291,9 +291,14 @@ func applyFlags(cfg *Config, flags *pflag.FlagSet) error {
 
 // applyFlagsDryRun sets DryRun from --purchase, the CLI's only purchase-gating flag.
 func applyFlagsDryRun(cfg *Config, flags *pflag.FlagSet) error {
-	if flags.Changed("purchase") {
-		cfg.DryRun = false
+	if !flags.Changed("purchase") {
+		return nil
 	}
+	v, err := flags.GetBool("purchase")
+	if err != nil {
+		return fmt.Errorf("--purchase: %w", err)
+	}
+	cfg.DryRun = !v
 	return nil
 }
 
