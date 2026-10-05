@@ -310,45 +310,33 @@ func (c *Client) tagReservedInstance(ctx context.Context, riID string, rec commo
 	})
 }
 
-// canonicalizeEC2Tenancy maps legacy lowercase/hyphenated tenancy values that
-// were written by parser versions before fix #598 to the canonical EC2 API enum
-// values. New parser output already carries the correct casing, so this is a
-// defensive shim for pre-fix-collected recommendations persisted in the DB.
-//
-// Canonical mappings (per types.Tenancy in the AWS SDK):
-//
-//	"shared"    -> "default"  (CE-to-EC2 mismatch that the old parser passed through)
-//	"default"   -> "default"  (already canonical; no-op)
-//	"dedicated" -> "dedicated" (already canonical; no-op)
-func canonicalizeEC2Tenancy(t string) string {
+// parseEC2Tenancy maps a tenancy value, including the legacy "shared" written
+// before fix #598, to the RI offering enum. Empty, "host" (no RI product) and
+// unknown values error instead of defaulting to shared tenancy.
+func parseEC2Tenancy(t string) (types.Tenancy, error) {
 	switch strings.ToLower(t) {
-	case "shared", "default":
-		return string(types.TenancyDefault)
-	case "dedicated":
-		return string(types.TenancyDedicated)
+	case "shared", string(types.TenancyDefault):
+		return types.TenancyDefault, nil
+	case string(types.TenancyDedicated):
+		return types.TenancyDedicated, nil
 	default:
-		return t
+		return "", fmt.Errorf("unsupported EC2 RI tenancy %q: must be %q or %q",
+			t, types.TenancyDefault, types.TenancyDedicated)
 	}
 }
 
-// canonicalizeEC2Scope maps legacy lowercase/hyphenated scope values that were
-// written by parser versions before fix #598 to the canonical EC2 API enum
-// values. New parser output already carries the correct casing.
-//
-// Canonical mappings (per types.Scope in the AWS SDK):
-//
-//	"region"            -> "Region"           (lowercase, old parser)
-//	"availability-zone" -> "Availability Zone" (hyphenated, old parser)
-//	"Region"            -> "Region"            (no-op)
-//	"Availability Zone" -> "Availability Zone" (no-op)
-func canonicalizeEC2Scope(s string) string {
+// parseEC2Scope maps a scope value, including the legacy lowercase and
+// hyphenated spellings written before fix #598, to the RI offering enum.
+// Empty and unknown values error instead of defaulting to regional scope.
+func parseEC2Scope(s string) (types.Scope, error) {
 	switch strings.ToLower(s) {
 	case "region":
-		return string(types.ScopeRegional)
+		return types.ScopeRegional, nil
 	case "availability-zone", "availability zone":
-		return string(types.ScopeAvailabilityZone)
+		return types.ScopeAvailabilityZone, nil
 	default:
-		return s
+		return "", fmt.Errorf("unsupported EC2 RI scope %q: must be %q or %q",
+			s, types.ScopeRegional, types.ScopeAvailabilityZone)
 	}
 }
 
@@ -385,7 +373,7 @@ type ec2OfferingQuery struct {
 	instanceType     types.InstanceType
 	productDesc      types.RIProductDescription
 	tenancy          types.Tenancy
-	scope            string
+	scope            types.Scope
 	duration         int64
 	wantOfferingType types.OfferingTypeValues
 	offeringClass    types.OfferingClassType
@@ -407,10 +395,10 @@ func resolveOfferingClassType(s string) (types.OfferingClassType, error) {
 	}
 }
 
-// buildEC2OfferingQuery resolves the typed lookup parameters from a rec,
-// canonicalising legacy tenancy/scope values. Returns an error when Platform is
-// empty: on the purchase path the CE parser always populates it from the
-// recommendation payload, so an empty Platform signals a malformed rec rather
+// buildEC2OfferingQuery resolves the typed lookup parameters from a rec.
+// Returns an error when Platform, Tenancy or Scope is empty or unrecognized:
+// on the purchase path the CE parser always populates them from the
+// recommendation payload, so an empty value signals a malformed rec rather
 // than a value that should be fabricated (M2/M3 fix, see 19-hardcoded-fallbacks-aws.md).
 func buildEC2OfferingQuery(rec common.Recommendation, details *common.ComputeDetails, duration int64) (ec2OfferingQuery, error) {
 	if details.Platform == "" {
@@ -420,18 +408,18 @@ func buildEC2OfferingQuery(rec common.Recommendation, details *common.ComputeDet
 			rec.ResourceType,
 		)
 	}
-	tenancy := canonicalizeEC2Tenancy(details.Tenancy)
-	if tenancy == "" {
-		tenancy = string(types.TenancyDefault)
+	tenancy, err := parseEC2Tenancy(details.Tenancy)
+	if err != nil {
+		return ec2OfferingQuery{}, fmt.Errorf("EC2 recommendation for %s: %w", rec.ResourceType, err)
 	}
-	scope := canonicalizeEC2Scope(details.Scope)
-	if scope == "" {
-		scope = string(types.ScopeRegional)
+	scope, err := parseEC2Scope(details.Scope)
+	if err != nil {
+		return ec2OfferingQuery{}, fmt.Errorf("EC2 recommendation for %s: %w", rec.ResourceType, err)
 	}
 	return ec2OfferingQuery{
 		instanceType: types.InstanceType(rec.ResourceType),
 		productDesc:  types.RIProductDescription(details.Platform),
-		tenancy:      types.Tenancy(tenancy),
+		tenancy:      tenancy,
 		scope:        scope,
 		duration:     duration,
 	}, nil
@@ -457,7 +445,7 @@ func describeInputFromQuery(q ec2OfferingQuery, nextToken *string) *ec2.Describe
 		MaxResults:         aws.Int32(100),
 		NextToken:          nextToken,
 		Filters: []types.Filter{
-			{Name: aws.String("scope"), Values: []string{q.scope}},
+			{Name: aws.String("scope"), Values: []string{string(q.scope)}},
 		},
 	}
 }
@@ -791,13 +779,13 @@ type FindConvertibleOfferingParams struct {
 
 // FindConvertibleOffering finds a convertible RI offering ID for the given parameters.
 func (c *Client) FindConvertibleOffering(ctx context.Context, params FindConvertibleOfferingParams) (string, error) {
-	tenancy := params.Tenancy
-	if tenancy == "" {
-		tenancy = "default"
+	tenancy, err := parseEC2Tenancy(params.Tenancy)
+	if err != nil {
+		return "", err
 	}
-	scope := params.Scope
-	if scope == "" {
-		scope = "Region"
+	scope, err := parseEC2Scope(params.Scope)
+	if err != nil {
+		return "", err
 	}
 	duration := params.Duration
 	if duration == 0 {
@@ -811,8 +799,8 @@ func (c *Client) FindConvertibleOffering(ctx context.Context, params FindConvert
 	filters := []types.Filter{
 		{Name: aws.String("instance-type"), Values: []string{params.InstanceType}},
 		{Name: aws.String("product-description"), Values: []string{productDesc}},
-		{Name: aws.String("instance-tenancy"), Values: []string{tenancy}},
-		{Name: aws.String("scope"), Values: []string{scope}},
+		{Name: aws.String("instance-tenancy"), Values: []string{string(tenancy)}},
+		{Name: aws.String("scope"), Values: []string{string(scope)}},
 		{Name: aws.String("duration"), Values: []string{fmt.Sprintf("%d", duration)}},
 		{Name: aws.String("offering-class"), Values: []string{string(types.OfferingClassTypeConvertible)}},
 	}
@@ -864,19 +852,11 @@ type ListTargetOfferingsParams struct {
 // enough given the small number of convertible instance types AWS offers.
 const maxTargetOfferingPages = 10
 
-// normalizeTargetOfferingsParams fills defaults for any zero-valued fields in
-// p and converts the OfferingType string to the AWS SDK enum. Extracted from
-// ListTargetOfferings to keep the main function's cyclomatic complexity under
-// the project threshold of 10.
-func normalizeTargetOfferingsParams(p ListTargetOfferingsParams) (tenancy, scope, productDesc string, duration int64, offeringType types.OfferingTypeValues) {
-	tenancy = canonicalizeEC2Tenancy(p.Tenancy)
-	if tenancy == "" {
-		tenancy = string(types.TenancyDefault)
-	}
-	scope = canonicalizeEC2Scope(p.Scope)
-	if scope == "" {
-		scope = string(types.ScopeRegional)
-	}
+// normalizeTargetOfferingsParams fills defaults for a zero Duration or
+// ProductDescription and converts the OfferingType string to the AWS SDK enum.
+// Extracted from ListTargetOfferings to keep the main function's cyclomatic
+// complexity under the project threshold of 10.
+func normalizeTargetOfferingsParams(p ListTargetOfferingsParams) (productDesc string, duration int64, offeringType types.OfferingTypeValues) {
 	duration = p.Duration
 	if duration == 0 {
 		duration = OneYearSeconds
@@ -939,7 +919,15 @@ func appendTargetOfferings(out []TargetOffering, offerings []types.ReservedInsta
 // matching the other constraints -- that is exactly the "valid targets" set for
 // a convertible RI exchange.
 func (c *Client) ListTargetOfferings(ctx context.Context, params ListTargetOfferingsParams) ([]TargetOffering, error) {
-	tenancy, scope, productDesc, duration, offeringType := normalizeTargetOfferingsParams(params)
+	tenancy, err := parseEC2Tenancy(params.Tenancy)
+	if err != nil {
+		return nil, err
+	}
+	scope, err := parseEC2Scope(params.Scope)
+	if err != nil {
+		return nil, err
+	}
+	productDesc, duration, offeringType := normalizeTargetOfferingsParams(params)
 
 	var out []TargetOffering
 	var nextToken *string
@@ -949,7 +937,7 @@ func (c *Client) ListTargetOfferings(ctx context.Context, params ListTargetOffer
 		}
 		input := &ec2.DescribeReservedInstancesOfferingsInput{
 			ProductDescription: types.RIProductDescription(productDesc),
-			InstanceTenancy:    types.Tenancy(tenancy),
+			InstanceTenancy:    tenancy,
 			MinDuration:        aws.Int64(duration),
 			MaxDuration:        aws.Int64(duration),
 			OfferingClass:      types.OfferingClassTypeConvertible,
@@ -957,13 +945,13 @@ func (c *Client) ListTargetOfferings(ctx context.Context, params ListTargetOffer
 			IncludeMarketplace: aws.Bool(false),
 			MaxResults:         aws.Int32(100),
 			NextToken:          nextToken,
-			Filters:            []types.Filter{{Name: aws.String("scope"), Values: []string{scope}}},
+			Filters:            []types.Filter{{Name: aws.String("scope"), Values: []string{string(scope)}}},
 		}
 		result, err := c.client.DescribeReservedInstancesOfferings(ctx, input)
 		if err != nil {
 			return nil, fmt.Errorf("describe target offerings: %w", err)
 		}
-		out = appendTargetOfferings(out, result.ReservedInstancesOfferings, scope)
+		out = appendTargetOfferings(out, result.ReservedInstancesOfferings, string(scope))
 		if isLastEC2Page(result.NextToken) {
 			break
 		}
