@@ -13,9 +13,9 @@ import (
 )
 
 // newFlags builds a pflag.FlagSet that mirrors the CLI flags relevant to Load().
+// The CLI registers no --dry-run flag; its TestDryRunFlagRemoved guards that.
 func newFlags() *pflag.FlagSet {
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
-	fs.Bool("dry-run", true, "")
 	fs.Bool("purchase", false, "")
 	fs.Bool("yes", false, "")
 	fs.String("audit-log", "./cudly-audit.jsonl", "")
@@ -332,23 +332,30 @@ func TestLoad_OtherFlags(t *testing.T) {
 	})
 }
 
-func TestLoad_DryRunAndPurchaseConflict(t *testing.T) {
-	t.Parallel()
-	fs := newFlags()
-	require.NoError(t, fs.Parse([]string{"--dry-run=true", "--purchase"}))
-	_, err := Load("", fs)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "--dry-run")
-	assert.Contains(t, err.Error(), "--purchase")
-}
-
-func TestLoad_PurchaseFlagSetsDryRunFalse(t *testing.T) {
-	t.Parallel()
-	fs := newFlags()
-	require.NoError(t, fs.Parse([]string{"--purchase"}))
-	cfg, err := Load("", fs)
-	require.NoError(t, err)
-	assert.False(t, cfg.DryRun)
+func TestLoad_PurchaseFlag(t *testing.T) {
+	// NOT parallel: uses t.Setenv (process-wide env mutation panics with t.Parallel).
+	cases := []struct {
+		name       string
+		yaml       string
+		env        string
+		args       []string
+		wantDryRun bool
+	}{
+		{name: "no flag keeps dry-run default", wantDryRun: true},
+		{name: "purchase disables dry-run", args: []string{"--purchase"}, wantDryRun: false},
+		{name: "purchase overrides yaml", yaml: "dry_run: true\n", args: []string{"--purchase"}, wantDryRun: false},
+		{name: "purchase overrides env", env: "true", args: []string{"--purchase"}, wantDryRun: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("CUDLY_DRY_RUN", tc.env)
+			fs := newFlags()
+			require.NoError(t, fs.Parse(tc.args))
+			cfg, err := Load(writeYAML(t, tc.yaml), fs)
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantDryRun, cfg.DryRun)
+		})
+	}
 }
 
 func TestLoad_UnknownCloud_Error(t *testing.T) {
