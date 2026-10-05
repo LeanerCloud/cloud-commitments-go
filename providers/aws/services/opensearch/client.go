@@ -18,6 +18,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/retry"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/reservationexpiry"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/reservationstate"
 )
 
@@ -104,8 +105,6 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 				continue
 			}
 
-			termMonths := getTermMonthsFromDuration(ri.Duration)
-
 			commitment := common.Commitment{
 				Provider:       common.ProviderAWS,
 				CommitmentID:   aws.ToString(ri.ReservedInstanceId),
@@ -116,7 +115,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 				Count:          int(ri.InstanceCount),
 				State:          state,
 				StartDate:      aws.ToTime(ri.StartTime),
-				EndDate:        aws.ToTime(ri.StartTime).AddDate(0, termMonths, 0),
+				EndDate:        reservationexpiry.EndDate(aws.ToTime(ri.StartTime), ri.Duration),
 			}
 
 			commitments = append(commitments, commitment)
@@ -390,6 +389,10 @@ func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation, 
 	if err != nil {
 		return "", err
 	}
+	wantPayment, err := normalizeOpenSearchPaymentOption(rec.PaymentOption)
+	if err != nil {
+		return "", err
+	}
 	tag := purchasecfg.ResolveTag(execID)
 	t0 := time.Now()
 	log.Printf("purchase[%s]: OpenSearch findOfferingID starting (instanceType=%s term=%s payment=%s)",
@@ -423,9 +426,7 @@ func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation, 
 		log.Printf("purchase[%s]: OpenSearch findOfferingID page %d: %d offerings in %s",
 			tag, page, len(result.ReservedInstanceOfferings), time.Since(pageStart))
 
-		if id, scanErr := c.scanOpenSearchOfferingPage(result.ReservedInstanceOfferings, rec, requiredMonths); scanErr != nil {
-			return "", scanErr
-		} else if id != "" {
+		if id := c.scanOpenSearchOfferingPage(result.ReservedInstanceOfferings, rec, requiredMonths, wantPayment); id != "" {
 			log.Printf("purchase[%s]: OpenSearch findOfferingID found match on page %d after %s total",
 				tag, page, time.Since(t0))
 			return id, nil
@@ -444,11 +445,7 @@ func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation, 
 }
 
 // scanOpenSearchOfferingPage finds a matching offering in a single page of results.
-// Returns ("", nil) when no match is found on the page so the caller can continue paginating.
-// Returns an error when an offering matches on instance type and duration but the payment
-// option differs -- this surfaces API filter mismatches rather than silently skipping them.
-func (c *Client) scanOpenSearchOfferingPage(offerings []types.ReservedInstanceOffering, rec common.Recommendation, requiredMonths int) (string, error) {
-	wantPayment := normalizeOpenSearchPaymentOption(rec.PaymentOption)
+func (c *Client) scanOpenSearchOfferingPage(offerings []types.ReservedInstanceOffering, rec common.Recommendation, requiredMonths int, wantPayment types.ReservedInstancePaymentOption) string {
 	for _, offering := range offerings {
 		if string(offering.InstanceType) != rec.ResourceType {
 			continue
@@ -456,43 +453,24 @@ func (c *Client) scanOpenSearchOfferingPage(offerings []types.ReservedInstanceOf
 		if !c.matchesDuration(offering.Duration, requiredMonths) {
 			continue
 		}
-		gotPayment := string(offering.PaymentOption)
-		if gotPayment != wantPayment {
-			return "", fmt.Errorf("OpenSearch offering %s has payment option %q, want %q (rec: %s %s)",
-				aws.ToString(offering.ReservedInstanceOfferingId), gotPayment, wantPayment,
-				rec.ResourceType, rec.PaymentOption)
+		if offering.PaymentOption != wantPayment {
+			continue
 		}
-		return aws.ToString(offering.ReservedInstanceOfferingId), nil
+		return aws.ToString(offering.ReservedInstanceOfferingId)
 	}
-	return "", nil
+	return ""
 }
 
-// normalizeOpenSearchPaymentOption converts a rec payment-option slug to the
-// AWS OpenSearch PaymentOption string (matches types.ReservedInstancePaymentOption).
-func normalizeOpenSearchPaymentOption(option string) string {
+func normalizeOpenSearchPaymentOption(option string) (types.ReservedInstancePaymentOption, error) {
 	switch option {
 	case "all-upfront":
-		return string(types.ReservedInstancePaymentOptionAllUpfront)
+		return types.ReservedInstancePaymentOptionAllUpfront, nil
 	case "partial-upfront":
-		return string(types.ReservedInstancePaymentOptionPartialUpfront)
+		return types.ReservedInstancePaymentOptionPartialUpfront, nil
 	case "no-upfront":
-		return string(types.ReservedInstancePaymentOptionNoUpfront)
+		return types.ReservedInstancePaymentOptionNoUpfront, nil
 	default:
-		return option
-	}
-}
-
-// matchesPaymentOption checks if the offering payment option matches.
-func (c *Client) matchesPaymentOption(offeringOption types.ReservedInstancePaymentOption, required string) bool {
-	switch required {
-	case "all-upfront":
-		return offeringOption == types.ReservedInstancePaymentOptionAllUpfront
-	case "partial-upfront":
-		return offeringOption == types.ReservedInstancePaymentOptionPartialUpfront
-	case "no-upfront":
-		return offeringOption == types.ReservedInstancePaymentOptionNoUpfront
-	default:
-		return false
+		return "", fmt.Errorf("unsupported OpenSearch payment option %q: must be one of all-upfront, partial-upfront, no-upfront", option)
 	}
 }
 
@@ -614,15 +592,6 @@ func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 		"i3.8xlarge.search",
 		"i3.16xlarge.search",
 	}, nil
-}
-
-// getTermMonthsFromDuration converts duration in seconds to months.
-func getTermMonthsFromDuration(duration int32) int {
-	offeringMonths := duration / 2592000
-	if offeringMonths >= 30 {
-		return 36
-	}
-	return 12
 }
 
 // safeInt32Count validates that n is a positive value that fits in int32 and
