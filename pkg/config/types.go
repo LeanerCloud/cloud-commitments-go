@@ -63,9 +63,9 @@ type yamlConfig struct {
 }
 
 type yamlScorer struct {
-	MinSavingsPct      float64  `yaml:"min_savings_pct"`
-	MaxBreakEvenMonths int      `yaml:"max_break_even_months"`
-	MinCount           int      `yaml:"min_count"`
+	MinSavingsPct      *float64 `yaml:"min_savings_pct"` // nil when absent, so an explicit 0 is kept
+	MaxBreakEvenMonths *int     `yaml:"max_break_even_months"`
+	MinCount           *int     `yaml:"min_count"`
 	EnabledServices    []string `yaml:"enabled_services"`
 }
 
