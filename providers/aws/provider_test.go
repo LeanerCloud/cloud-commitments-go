@@ -522,6 +522,30 @@ func TestAWSProvider_GetAccounts_WithMock(t *testing.T) {
 		assert.Equal(t, "123456789012", accounts[0].ID)
 	})
 
+	t.Run("propagates AccessDenied after a page succeeded instead of returning a partial org list", func(t *testing.T) {
+		p := &Provider{
+			cfg: aws.Config{Region: "us-east-1"},
+		}
+		p.SetSTSClient(&mockSTSClient{
+			getCallerIdentityFunc: func(ctx context.Context, params *sts.GetCallerIdentityInput, optFns ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error) {
+				return &sts.GetCallerIdentityOutput{Account: aws.String("123456789012")}, nil
+			},
+		})
+		p.SetOrganizationsPaginator(&mockOrganizationsPaginator{
+			pages: []*organizations.ListAccountsOutput{
+				{Accounts: []orgtypes.Account{{Id: aws.String("444444444444"), Name: aws.String("member")}}},
+				{},
+			},
+			nextErr:   &smithy.GenericAPIError{Code: "AccessDeniedException", Message: "denied by SCP"},
+			errOnPage: 1,
+		})
+
+		_, err := p.GetAccounts(context.Background())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "organizations: list accounts")
+		assert.Contains(t, err.Error(), "AccessDeniedException")
+	})
+
 	t.Run("propagates non-classified errors so callers don't see a silent truncation", func(t *testing.T) {
 		p := &Provider{
 			cfg: aws.Config{Region: "us-east-1"},

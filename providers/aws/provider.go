@@ -264,15 +264,25 @@ var orgListAccountsSilentErrorCodes = map[string]struct{}{
 	"AccessDeniedException":             {},
 }
 
+func isOrgListAccountsSilentError(err error) bool {
+	var apiErr smithy.APIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	_, silent := orgListAccountsSilentErrorCodes[apiErr.ErrorCode()]
+	return silent
+}
+
 // appendOrgAccounts adds organization member accounts to the slice, skipping
 // the current account (already added as the default) and suspended accounts
 // with nil fields.
 //
 // Error classification: returns the accumulated accounts with nil error only
-// for the expected fallback cases (not in an org, permission denied). Any
-// other mid-pagination error (throttling, network, SDK bug) is returned to
-// the caller so an incomplete list can't silently slip into the purchase
-// flow as if it were complete. See orgListAccountsSilentErrorCodes above.
+// for the expected fallback cases (not in an org, permission denied) on the
+// first page. Any other error (throttling, network, SDK bug), and any error
+// at all once a page has succeeded, is returned to the caller so an
+// incomplete list can't silently slip into the purchase flow as if it were
+// complete. See orgListAccountsSilentErrorCodes above.
 func (p *Provider) appendOrgAccounts(ctx context.Context, accounts []common.Account, currentAccountID string) ([]common.Account, error) {
 	var paginator OrganizationsPaginator
 	if p.orgPaginator != nil {
@@ -284,14 +294,11 @@ func (p *Provider) appendOrgAccounts(ctx context.Context, accounts []common.Acco
 		}
 	}
 
-	for paginator.HasMorePages() {
+	for page := 0; paginator.HasMorePages(); page++ {
 		output, err := paginator.NextPage(ctx)
 		if err != nil {
-			var apiErr smithy.APIError
-			if errors.As(err, &apiErr) {
-				if _, silent := orgListAccountsSilentErrorCodes[apiErr.ErrorCode()]; silent {
-					return accounts, nil
-				}
+			if page == 0 && isOrgListAccountsSilentError(err) {
+				return accounts, nil
 			}
 			logging.Warnf("AWS Organizations ListAccounts pagination failed mid-run: %v", err)
 			return accounts, fmt.Errorf("organizations: list accounts: %w", err)
