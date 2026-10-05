@@ -5,6 +5,7 @@ package exchange
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -341,25 +342,33 @@ func ExecuteExchange(ctx context.Context, req ExchangeExecuteRequest) (exchangeI
 	return executeWithAPI(ctx, ec2.NewFromConfig(cfg), sts.NewFromConfig(cfg), req)
 }
 
-// requirePaymentDue returns the quote's PaymentDueUSD, refusing a quote that
-// carries none. AWS reports the true-up cost as a decimal that is zero or
-// more, so a zero-cost exchange parses to a non-nil zero; a nil means the
-// response had no amount at all, and a spend cap cannot be enforced against
-// an unknown amount.
-func requirePaymentDue(q *ExchangeQuoteSummary) (*big.Rat, error) {
+// ErrQuoteNotUSD is returned when a quote's CurrencyCode is not USD or is
+// absent, since every exchange spend cap is denominated in USD.
+var ErrQuoteNotUSD = errors.New("exchange quote is not denominated in USD")
+
+// requireUSDPaymentDue returns the quote's PaymentDueUSD, refusing an absent
+// amount (a zero-cost exchange parses to a non-nil zero) or a non-USD currency.
+func requireUSDPaymentDue(q *ExchangeQuoteSummary) (*big.Rat, error) {
 	if q.PaymentDueUSD == nil {
 		return nil, fmt.Errorf("quote reported no PaymentDue; refusing to enforce the spend cap against an unknown amount")
 	}
-	return q.PaymentDueUSD, nil
+	switch q.CurrencyCode {
+	case string(ec2types.CurrencyCodeValuesUsd):
+		return q.PaymentDueUSD, nil
+	case "":
+		return nil, fmt.Errorf("%w: quote reported no CurrencyCode; refusing to enforce the USD spend cap", ErrQuoteNotUSD)
+	default:
+		return nil, fmt.Errorf("%w: quote is in %q; refusing to compare it against the USD spend cap", ErrQuoteNotUSD, q.CurrencyCode)
+	}
 }
 
 // checkInitialQuote returns an error if the quote is invalid, carries no
-// payment amount, or exceeds the spend cap.
+// USD payment amount, or exceeds the spend cap.
 func checkInitialQuote(q *ExchangeQuoteSummary, maxPayment *big.Rat) error {
 	if !q.IsValidExchange {
 		return fmt.Errorf("exchange is not valid: %s", q.ValidationFailureReason)
 	}
-	paymentDue, err := requirePaymentDue(q)
+	paymentDue, err := requireUSDPaymentDue(q)
 	if err != nil {
 		return err
 	}
@@ -370,14 +379,14 @@ func checkInitialQuote(q *ExchangeQuoteSummary, maxPayment *big.Rat) error {
 }
 
 // checkReQuote returns an error if the pre-accept re-quote is invalid, carries
-// no payment amount, or exceeds the cap. It is called immediately before
+// no USD payment amount, or exceeds the cap. It is called immediately before
 // AcceptReservedInstancesExchangeQuote to narrow the race window between
 // pricing changes.
 func checkReQuote(q *ExchangeQuoteSummary, maxPayment *big.Rat) error {
 	if !q.IsValidExchange {
 		return fmt.Errorf("exchange no longer valid at accept time: %s", q.ValidationFailureReason)
 	}
-	paymentDue, err := requirePaymentDue(q)
+	paymentDue, err := requireUSDPaymentDue(q)
 	if err != nil {
 		return fmt.Errorf("aborting exchange at accept time: %w", err)
 	}
