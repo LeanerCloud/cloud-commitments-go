@@ -116,20 +116,35 @@ func dedupeKey(resourceType, region, engine, deployment string) string {
 	return fmt.Sprintf("%s|%s|%s|%s", resourceType, region, engine, deployment)
 }
 
-const unknownElastiCacheEngine = "elasticache:*"
+const (
+	elastiCacheEnginePrefix  = "elasticache:"
+	unknownElastiCacheEngine = elastiCacheEnginePrefix + "*"
+	elastiCacheRedisEngine   = elastiCacheEnginePrefix + "redis"
+	elastiCacheValkeyEngine  = elastiCacheEnginePrefix + "valkey"
+)
 
 func dedupeEngine(providerType common.ProviderType, service common.ServiceType, engine string) (string, bool) {
 	engine = common.NormalizeEngineName(engine)
 	if providerType != common.ProviderAWS || (service != common.ServiceCache && service != common.ServiceElastiCache) {
 		return engine, false
 	}
-	switch engine {
-	case "":
+	if engine == "" {
 		return unknownElastiCacheEngine, true
-	case "valkey":
-		engine = "redis"
 	}
-	return "elasticache:" + engine, true
+	return elastiCacheEnginePrefix + engine, true
+}
+
+// coveringElastiCacheEngines lists the reservation engines that cover a node of engine, in consumption order.
+// Redis OSS reservations also cover Valkey nodes, never the reverse: https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/CacheNodes.Reserved.html#reserved-nodes-upgrade-to-valkey
+func coveringElastiCacheEngines(engine string) []string {
+	switch engine {
+	case unknownElastiCacheEngine:
+		return []string{unknownElastiCacheEngine}
+	case elastiCacheValkeyEngine:
+		return []string{elastiCacheValkeyEngine, elastiCacheRedisEngine, unknownElastiCacheEngine}
+	default:
+		return []string{engine, unknownElastiCacheEngine}
+	}
 }
 
 // buildExistingCommitmentsMap builds a map of commitments by resource type, region, engine, and deployment.
@@ -176,12 +191,13 @@ func adjustSingleRecommendation(rec common.Recommendation, existingMap map[strin
 	engine, isElastiCache := dedupeEngine(rec.Provider, rec.Service, common.EngineFromDetails(rec.Details))
 	deployment := common.NormalizeDeploymentName(common.DeploymentFromDetails(rec.Details))
 	key := dedupeKey(rec.ResourceType, rec.Region, engine, deployment)
-	keys := []string{key}
-	if isElastiCache && engine != unknownElastiCacheEngine {
-		keys = append(keys, dedupeKey(rec.ResourceType, rec.Region, unknownElastiCacheEngine, deployment))
+	engines := []string{engine}
+	if isElastiCache {
+		engines = coveringElastiCacheEngines(engine)
 	}
 	remaining := rec.Count
-	for _, candidate := range keys {
+	for _, coveringEngine := range engines {
+		candidate := dedupeKey(rec.ResourceType, rec.Region, coveringEngine, deployment)
 		if available := existingMap[candidate]; available > 0 {
 			used := min(available, remaining)
 			remaining -= used
