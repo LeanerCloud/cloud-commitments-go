@@ -463,13 +463,9 @@ type RedisPricing struct {
 	SavingsPercentage float64
 }
 
-// getRedisPricing fetches pricing from the Azure Retail Prices API using the
-// shared pricing.FetchAll walker, which enforces a seen-URL guard, a max-pages
-// cap, and a per-page timeout independent of the caller's context budget. This
-// replaces the former hand-rolled NextPageLink loop (issue #1021 H2).
 func (c *Client) getRedisPricing(ctx context.Context, sku, region string, termYears int) (*RedisPricing, error) {
-	filter := fmt.Sprintf("serviceName eq 'Azure Cache for Redis' and armRegionName eq '%s' and contains(armSkuName, '%s')",
-		region, sku)
+	filter := fmt.Sprintf("serviceName eq 'Redis Cache' and armRegionName eq '%s' and contains(armSkuName, '%s') and priceType eq 'Reservation'",
+		strings.ReplaceAll(region, "'", "''"), strings.ReplaceAll(sku, "'", "''"))
 
 	params := url.Values{}
 	params.Add("$filter", filter)
@@ -486,25 +482,17 @@ func (c *Client) getRedisPricing(ctx context.Context, sku, region string, termYe
 		return nil, fmt.Errorf("no pricing data found for Redis Cache SKU %s in region %s", sku, region)
 	}
 
-	onDemandPrice, reservationPrice, currency := parsePriceItems(items, termYears)
-
-	if onDemandPrice == 0 {
-		return nil, fmt.Errorf("no on-demand pricing found for Redis Cache SKU %s", sku)
-	}
+	reservationPrice, currency := parsePriceItems(items, termYears)
 
 	hoursInTerm := 8760.0 * float64(termYears)
 	if reservationPrice == 0 {
 		return nil, fmt.Errorf("no reservation pricing found for Redis Cache SKU %s (%d year) in region %s", sku, termYears, region)
 	}
 
-	savingsPct := ((onDemandPrice*hoursInTerm - reservationPrice) / (onDemandPrice * hoursInTerm)) * 100
-
 	return &RedisPricing{
-		HourlyRate:        reservationPrice / hoursInTerm,
-		ReservationPrice:  reservationPrice,
-		OnDemandPrice:     onDemandPrice * hoursInTerm,
-		Currency:          currency,
-		SavingsPercentage: savingsPct,
+		HourlyRate:       reservationPrice / hoursInTerm,
+		ReservationPrice: reservationPrice,
+		Currency:         currency,
 	}, nil
 }
 
@@ -518,9 +506,7 @@ func azureTermString(termYears int) string {
 	return fmt.Sprintf("%d Years", termYears)
 }
 
-// parsePriceItems extracts on-demand price, reservation price, and currency
-// from the flat list returned by the Azure Retail Prices API.
-func parsePriceItems(items []pricing.RetailPriceItem, termYears int) (onDemand, reservation float64, currency string) {
+func parsePriceItems(items []pricing.RetailPriceItem, termYears int) (reservation float64, currency string) {
 	currency = "USD"
 	termStr := azureTermString(termYears)
 	for i := range items {
@@ -530,8 +516,6 @@ func parsePriceItems(items []pricing.RetailPriceItem, termYears int) (onDemand, 
 		}
 		if item.ReservationTerm == termStr {
 			reservation = item.RetailPrice
-		} else if item.Type == "Consumption" {
-			onDemand = item.UnitPrice
 		}
 	}
 	return
