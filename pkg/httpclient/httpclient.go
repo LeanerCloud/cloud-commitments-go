@@ -65,6 +65,11 @@ func blockMetadata(_, address string, _ syscall.RawConn) error {
 
 // New returns an *http.Client with a 30-second timeout and IMDS blocking.
 func New() *http.Client {
+	client, _ := newClient()
+	return client
+}
+
+func newClient() (*http.Client, *net.Dialer) {
 	dialer := &net.Dialer{
 		Timeout:   dialTimeout,
 		KeepAlive: keepAliveInterval,
@@ -78,5 +83,5 @@ func New() *http.Client {
 	return &http.Client{
 		Timeout:   requestTimeout,
 		Transport: transport,
-	}
+	}, dialer
 }

@@ -3,16 +3,44 @@ package httpclient
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 )
 
 // imdsIPv4 is what every name handed to the fake resolver resolves to.
 var imdsIPv4 = [4]byte{169, 254, 169, 254}
+
+var errTestContainment = errors.New("test containment denied off-loopback dial")
+
+func newContainedClient(t *testing.T) *http.Client {
+	t.Helper()
+	client, dialer := newClient()
+	productionControl := dialer.Control
+	if productionControl == nil {
+		t.Fatal("metadata dial control is missing")
+	}
+	dialer.Control = func(network, address string, conn syscall.RawConn) error {
+		if err := productionControl(network, address, conn); err != nil {
+			return err
+		}
+		ap, err := netip.ParseAddrPort(address)
+		if err != nil || !ap.Addr().Unmap().WithZone("").IsLoopback() {
+			return errTestContainment
+		}
+		return nil
+	}
+	client.Timeout = 2 * time.Second
+	t.Cleanup(client.Transport.(*http.Transport).CloseIdleConnections)
+	return client
+}
 
 // useFakeResolver points New's dialer at an in-process DNS server that answers
 // every A query with 169.254.169.254, the way metadata.google.internal (and
@@ -77,8 +105,8 @@ func assertBlocked(t *testing.T, c *http.Client, url string) {
 		resp.Body.Close()
 		t.Fatalf("request to %s must be blocked", url)
 	}
-	if !strings.Contains(err.Error(), "blocked") {
-		t.Fatalf("request to %s: expected metadata-blocked error, got: %v", url, err)
+	if errors.Is(err, errTestContainment) || !strings.Contains(err.Error(), "connection to metadata endpoint ") {
+		t.Fatalf("request to %s: expected production metadata error, got: %v", url, err)
 	}
 }
 
@@ -86,7 +114,7 @@ func assertBlocked(t *testing.T, c *http.Client, url string) {
 // not waved through because the name itself is not an IP literal.
 func TestNew_BlocksHostnameResolvingToIMDS(t *testing.T) {
 	useFakeResolver(t)
-	c := New()
+	c := newContainedClient(t)
 	for _, url := range []string{
 		"http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
 		"http://instance-data.ec2.internal/latest/meta-data/",
@@ -101,7 +129,7 @@ func TestNew_BlocksHostnameResolvingToIMDS(t *testing.T) {
 // Literal addresses outside the old two-entry map: the IPv4-mapped IPv6 form
 // of IMDS, and the ECS / EKS Pod Identity credential endpoints.
 func TestNew_BlocksMetadataLiteralsOutsideExactMatch(t *testing.T) {
-	c := New()
+	c := newContainedClient(t)
 	for _, url := range []string{
 		"http://[::ffff:169.254.169.254]/metadata/identity/oauth2/token",
 		"http://[::ffff:a9fe:a9fe]/latest/meta-data/",
@@ -123,7 +151,7 @@ func TestNew_BlocksRoutableMetadataAddresses(t *testing.T) {
 	}))
 	t.Cleanup(redirect.Close)
 
-	c := New()
+	c := newContainedClient(t)
 	for _, url := range []string{
 		"http://168.63.129.16/machine?comp=goalstate",
 		"http://168.63.129.16:32526/vmSettings",
@@ -144,5 +172,32 @@ func TestNew_BlocksRedirectToIMDS(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 
-	assertBlocked(t, New(), srv.URL)
+	assertBlocked(t, newContainedClient(t), srv.URL)
+}
+
+func TestContainedClient_AllowsLoopback(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(srv.Close)
+
+	resp, err := newContainedClient(t).Get(srv.URL)
+	if err != nil {
+		t.Fatalf("loopback request failed: %v", err)
+	}
+	t.Cleanup(func() { resp.Body.Close() })
+	if resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusNoContent)
+	}
+}
+
+func TestContainedClient_DeniesDocumentationAddress(t *testing.T) {
+	resp, err := newContainedClient(t).Get("http://192.0.2.1/")
+	if err == nil {
+		resp.Body.Close()
+		t.Fatal("documentation address reached without containment")
+	}
+	if !errors.Is(err, errTestContainment) {
+		t.Fatalf("expected test containment error, got: %v", err)
+	}
 }
