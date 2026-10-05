@@ -13,6 +13,7 @@ const (
 	DropExtendedSupport       = "--include-extended-support"
 	DropTargetAlreadyMet      = "target-already-met"
 	DropTargetSizedToZero     = "target-sized-to-zero"
+	DropTargetInputInvalid    = "target-input-invalid"
 	DropFamilyAlreadyAtTarget = "family-nu-already-at-target"
 	DropFamilyNoNUSignal      = "family-nu-no-nu-signal"
 	DropFamilySizedToZero     = "family-nu-sized-to-zero"
