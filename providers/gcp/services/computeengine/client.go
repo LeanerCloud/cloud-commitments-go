@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"maps"
 	"math"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -212,6 +214,7 @@ func termYearsFromTerm(term string) int {
 type CommitmentsService interface {
 	List(ctx context.Context, req *computepb.ListRegionCommitmentsRequest) CommitmentsIterator
 	Insert(ctx context.Context, req *computepb.InsertRegionCommitmentRequest) (CommitmentsOperation, error)
+	Get(ctx context.Context, req *computepb.GetRegionCommitmentRequest) (*computepb.Commitment, error)
 	Close() error
 }
 
@@ -305,6 +308,10 @@ func (r *realCommitmentsService) List(ctx context.Context, req *computepb.ListRe
 
 func (r *realCommitmentsService) Insert(ctx context.Context, req *computepb.InsertRegionCommitmentRequest) (CommitmentsOperation, error) {
 	return r.client.Insert(ctx, req)
+}
+
+func (r *realCommitmentsService) Get(ctx context.Context, req *computepb.GetRegionCommitmentRequest) (*computepb.Commitment, error) {
+	return r.client.Get(ctx, req)
 }
 
 func (r *realCommitmentsService) Close() error {
@@ -660,6 +667,51 @@ func isResourceExhausted(err error) bool {
 	return strings.Contains(s, "ResourceExhausted") || strings.Contains(s, "RESOURCE_EXHAUSTED") || strings.Contains(s, "429")
 }
 
+// ErrExistingCommitmentMismatch reports that a commitment already holds the
+// idempotent name but differs from the requested purchase.
+var ErrExistingCommitmentMismatch = errors.New("existing GCP commitment does not match the requested purchase")
+
+// isAlreadyExists reports whether the Compute REST API rejected a create because
+// the resource exists: ALREADY_EXISTS maps to HTTP 409 (google/rpc/code.proto).
+func isAlreadyExists(err error) bool {
+	var gapiErr *googleapi.Error
+	return errors.As(err, &gapiErr) && gapiErr.Code == http.StatusConflict
+}
+
+// adoptExistingCommitment returns nil only when insertErr is a re-drive's name
+// collision with a commitment whose plan, type and resources equal the request.
+func adoptExistingCommitment(ctx context.Context, svc CommitmentsService, req *computepb.InsertRegionCommitmentRequest, token string, insertErr error) error {
+	if token == "" || !isAlreadyExists(insertErr) {
+		return stripPermanentPrefix(insertErr)
+	}
+	want := req.GetCommitmentResource()
+	got, err := svc.Get(ctx, &computepb.GetRegionCommitmentRequest{
+		Project:    req.GetProject(),
+		Region:     req.GetRegion(),
+		Commitment: want.GetName(),
+	})
+	if err != nil {
+		return fmt.Errorf("commitment %s already exists but could not be read to confirm it matches this purchase: %w", want.GetName(), err)
+	}
+	gotRes, wantRes := resourceAmounts(got), resourceAmounts(want)
+	if got.GetPlan() != want.GetPlan() || got.GetType() != want.GetType() || !maps.Equal(gotRes, wantRes) {
+		return fmt.Errorf("%w: commitment %s in %s has plan=%s type=%s resources=%v, requested plan=%s type=%s resources=%v",
+			ErrExistingCommitmentMismatch, want.GetName(), req.GetRegion(),
+			got.GetPlan(), got.GetType(), gotRes, want.GetPlan(), want.GetType(), wantRes)
+	}
+	log.Printf("GCP CUD %s for token %s already exists and matches the request; treating the re-drive as the earlier purchase (issue #44)",
+		want.GetName(), common.MaskToken(token))
+	return nil
+}
+
+func resourceAmounts(c *computepb.Commitment) map[string]int64 {
+	amounts := make(map[string]int64, len(c.GetResources()))
+	for _, r := range c.GetResources() {
+		amounts[r.GetType()] += r.GetAmount()
+	}
+	return amounts
+}
+
 // stripPermanentPrefix removes the `retry: permanent error, do not retry: `
 // text added when a non-retryable SDK error is wrapped via
 // fmt.Errorf("%w: <message>: %w", retry.ErrPermanent, sdkErr). The original
@@ -750,11 +802,12 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		return nil
 	})
 	if doErr != nil {
-		// Strip the `retry: permanent error, do not retry: ` prefix so the
-		// user-facing message matches the pre-refactor shape, while keeping
-		// the original SDK error reachable via errors.Is/As.
-		result.Error = stripPermanentPrefix(doErr)
-		return result, result.Error
+		// A re-drive collides on the token-derived name with the CUD an earlier
+		// attempt created (issue #44); any other error is reported unprefixed.
+		if err := adoptExistingCommitment(ctx, svc, insertReq, opts.IdempotencyToken, doErr); err != nil {
+			result.Error = err
+			return result, err
+		}
 	}
 
 	result.Success = true

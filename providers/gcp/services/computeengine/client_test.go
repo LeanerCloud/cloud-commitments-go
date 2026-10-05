@@ -4,18 +4,26 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
+	"net/http"
+	"net/http/httptest"
 	"strconv"
 	"testing"
 
 	"cloud.google.com/go/compute/apiv1/computepb"
 	"cloud.google.com/go/recommender/apiv1/recommenderpb"
 	gax "github.com/googleapis/gax-go/v2"
+	"github.com/googleapis/gax-go/v2/apierror"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/cloudbilling/v1"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/iterator"
+	"google.golang.org/api/option"
 	"google.golang.org/genproto/googleapis/type/money"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -30,6 +38,8 @@ type MockCommitmentsService struct {
 	operation     *MockOperation
 	insertReqs    []*computepb.InsertRegionCommitmentRequest // every Insert call (re-drive assertions)
 	commitments   []*computepb.Commitment
+	getCommitment *computepb.Commitment
+	getErr        error
 }
 
 func (m *MockCommitmentsService) List(ctx context.Context, req *computepb.ListRegionCommitmentsRequest) CommitmentsIterator {
@@ -43,6 +53,10 @@ func (m *MockCommitmentsService) Insert(ctx context.Context, req *computepb.Inse
 		return nil, m.insertErr
 	}
 	return m.operation, nil
+}
+
+func (m *MockCommitmentsService) Get(ctx context.Context, req *computepb.GetRegionCommitmentRequest) (*computepb.Commitment, error) {
+	return m.getCommitment, m.getErr
 }
 
 func (m *MockCommitmentsService) Close() error {
@@ -686,6 +700,127 @@ func TestComputeEngineClient_PurchaseCommitment_EmptyTokenNoRequestID(t *testing
 	require.NotNil(t, mockService.lastInsertReq.CommitmentResource)
 	assert.Contains(t, mockService.lastInsertReq.CommitmentResource.GetName(), "cud-",
 		"empty token keeps the timestamp-based name")
+}
+
+// Issue #44, through the real REST client: GCP answers the re-drive Insert with
+// 409 alreadyExists, and the outcome depends on the existing CUD.
+func TestComputeEngineClient_PurchaseCommitment_ReDriveAlreadyExists(t *testing.T) {
+	rec := common.Recommendation{ResourceType: "n2-standard-4", Term: "3yr", Count: 8,
+		Details: common.ComputeDetails{MemoryGB: 32}}
+	token := common.DeriveIdempotencyToken("exec-44", 0)
+	tokenOpts := common.PurchaseOptions{Source: common.PurchaseSourceWeb, IdempotencyToken: token}
+
+	for _, tt := range []struct {
+		name      string
+		opts      common.PurchaseOptions
+		existing  func(*computepb.Commitment)
+		getStatus int
+		wantGets  int
+		wantErrIs error
+		wantErr   string
+	}{
+		{name: "matching commitment is the earlier purchase", opts: tokenOpts, getStatus: http.StatusOK, wantGets: 1},
+		{name: "different vCPU amount stays a failure", opts: tokenOpts, getStatus: http.StatusOK, wantGets: 1,
+			existing:  func(c *computepb.Commitment) { c.Resources[0].Amount = int64Ptr(4) },
+			wantErrIs: ErrExistingCommitmentMismatch},
+		{name: "different plan stays a failure", opts: tokenOpts, getStatus: http.StatusOK, wantGets: 1,
+			existing:  func(c *computepb.Commitment) { c.Plan = stringPtr(computepb.Commitment_TWELVE_MONTH.String()) },
+			wantErrIs: ErrExistingCommitmentMismatch},
+		{name: "extra resource stays a failure", opts: tokenOpts, getStatus: http.StatusOK, wantGets: 1,
+			existing: func(c *computepb.Commitment) {
+				c.Resources = append(c.Resources, &computepb.ResourceCommitment{Type: stringPtr("LOCAL_SSD"), Amount: int64Ptr(375)})
+			},
+			wantErrIs: ErrExistingCommitmentMismatch},
+		{name: "unreadable existing commitment stays a failure", opts: tokenOpts, getStatus: http.StatusForbidden, wantGets: 1,
+			wantErr: "could not be read to confirm"},
+		{name: "no token keeps the conflict a failure", opts: common.PurchaseOptions{}, getStatus: http.StatusOK,
+			wantErr: "failed to create commitment"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			planner, err := NewClient(context.Background(), "test-project", "us-central1")
+			require.NoError(t, err)
+			insertReq, name, err := planner.buildInsertRequest(rec, tt.opts)
+			require.NoError(t, err)
+			existing := proto.Clone(insertReq.GetCommitmentResource()).(*computepb.Commitment)
+			existing.Status = stringPtr(computepb.Commitment_NOT_YET_ACTIVE.String())
+			if tt.existing != nil {
+				tt.existing(existing)
+			}
+			existingJSON, err := protojson.Marshal(existing)
+			require.NoError(t, err)
+
+			collection := "/compute/v1/projects/test-project/regions/us-central1/commitments"
+			var inserts, gets int
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case r.Method == http.MethodPost && r.URL.Path == collection:
+					inserts++
+					w.WriteHeader(http.StatusConflict)
+					_, _ = fmt.Fprintf(w, `{"error":{"code":409,"message":"The resource 'projects/test-project/regions/us-central1/commitments/%[1]s' already exists","errors":[{"message":"The resource 'projects/test-project/regions/us-central1/commitments/%[1]s' already exists","domain":"global","reason":"alreadyExists"}]}}`, name)
+				case r.Method == http.MethodGet && r.URL.Path == collection+"/"+name:
+					gets++
+					w.WriteHeader(tt.getStatus)
+					if tt.getStatus == http.StatusOK {
+						_, _ = w.Write(existingJSON)
+						return
+					}
+					_, _ = fmt.Fprintf(w, `{"error":{"code":%d,"message":"denied"}}`, tt.getStatus)
+				default:
+					t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			defer srv.Close()
+
+			client, err := NewClient(context.Background(), "test-project", "us-central1",
+				option.WithEndpoint(srv.URL), option.WithoutAuthentication())
+			require.NoError(t, err)
+			result, err := client.PurchaseCommitment(context.Background(), rec, tt.opts)
+
+			assert.Equal(t, 1, inserts, "a 409 is not retried")
+			assert.Equal(t, tt.wantGets, gets)
+			if tt.wantErrIs == nil && tt.wantErr == "" {
+				require.NoError(t, err)
+				assert.True(t, result.Success)
+				assert.Equal(t, name, result.CommitmentID)
+				require.NotNil(t, result.Cost)
+				assert.Zero(t, *result.Cost)
+				return
+			}
+			require.Error(t, err)
+			assert.False(t, result.Success)
+			assert.Empty(t, result.CommitmentID)
+			assert.Equal(t, err, result.Error)
+			if tt.wantErrIs != nil {
+				assert.ErrorIs(t, err, tt.wantErrIs)
+			}
+			assert.Contains(t, err.Error(), tt.wantErr)
+		})
+	}
+}
+
+// A conflict can also surface from the operation, which Poll wraps in an
+// apierror, rather than from the Insert call itself.
+func TestComputeEngineClient_PurchaseCommitment_ReDriveAlreadyExistsOnWait(t *testing.T) {
+	client, err := NewClient(context.Background(), "test-project", "us-central1")
+	require.NoError(t, err)
+	rec := common.Recommendation{ResourceType: "n1-standard-1", Term: "1yr", Count: 2,
+		Details: common.ComputeDetails{MemoryGB: 8}}
+	opts := common.PurchaseOptions{IdempotencyToken: common.DeriveIdempotencyToken("exec-44-wait", 0)}
+	insertReq, name, err := client.buildInsertRequest(rec, opts)
+	require.NoError(t, err)
+	waitErr, ok := apierror.FromError(&googleapi.Error{Code: http.StatusConflict, Message: "already exists"})
+	require.True(t, ok)
+	client.SetCommitmentsService(&MockCommitmentsService{
+		operation:     &MockOperation{err: waitErr},
+		getCommitment: insertReq.GetCommitmentResource(),
+	})
+
+	result, err := client.PurchaseCommitment(context.Background(), rec, opts)
+	require.NoError(t, err)
+	assert.True(t, result.Success)
+	assert.Equal(t, name, result.CommitmentID)
 }
 
 func TestComputeEngineClient_PurchaseCommitment_3Year(t *testing.T) {
