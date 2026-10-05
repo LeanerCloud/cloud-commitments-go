@@ -296,7 +296,9 @@ func (r *ExchangeableReservation) validateAppliedScope() error {
 
 // sameAppliedScope compares the scope type, and the scope set only for
 // Single, case-insensitively and order-free since ARM resource IDs are
-// case-insensitive. Azure ignores appliedScopes for Shared.
+// case-insensitive. The Calculate Exchange docs say not to specify
+// appliedScopes when appliedScopeType is Shared:
+// https://learn.microsoft.com/en-us/rest/api/reserved-vm-instances/calculate-exchange/post
 func (r *ExchangeableReservation) sameAppliedScope(o *ExchangeableReservation) bool {
 	if r.AppliedScopeType != o.AppliedScopeType {
 		return false

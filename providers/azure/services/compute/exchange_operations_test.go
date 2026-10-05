@@ -204,9 +204,10 @@ func TestCalculateExchange_PreservesSingleScopeOfSources(t *testing.T) {
 	}
 }
 
-// Azure ignores appliedScopes for Shared, so stray scopes reported on a Shared
-// source must neither block a mixed batch nor reach the wire.
-func TestCalculateExchange_SharedIgnoresStrayScopes(t *testing.T) {
+// The Calculate Exchange docs say not to specify appliedScopes when
+// appliedScopeType is Shared, so stray scopes reported on a Shared source must
+// neither block a mixed batch nor reach the wire.
+func TestCalculateExchange_SharedOmitsAppliedScopes(t *testing.T) {
 	c := compute.NewClient(nil, "sub-1", "")
 	var captured armreservations.CalculateExchangeRequest
 	c.SetCalculateExchangeCaller(func(_ context.Context, body armreservations.CalculateExchangeRequest) (armreservations.CalculateExchangeOperationResultResponse, error) {
