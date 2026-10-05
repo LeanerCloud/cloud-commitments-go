@@ -2,6 +2,7 @@ package recfilter
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"math/big"
 	"testing"
@@ -87,37 +88,76 @@ func TestApplyTargetCoverageExactBoundaries(t *testing.T) {
 	}
 }
 
-func TestApplyTargetCoverageExactInvalidPassThrough(t *testing.T) {
+func TestApplyTargetCoverageInvalidInputDrops(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name        string
-		avg, target float64
-		percent     *big.Rat
+		name                  string
+		avg, existing, target float64
 	}{
-		{"nan average", math.NaN(), 80, big.NewRat(0, 1)},
-		{"infinite average", math.Inf(1), 80, big.NewRat(0, 1)},
-		{"nan target", 15, math.NaN(), big.NewRat(0, 1)},
-		{"negative exact coverage", 15, 80, big.NewRat(-1, 1)},
-		{"count overflow", math.MaxFloat64, 80, big.NewRat(0, 1)},
+		{"nan average", math.NaN(), 0, 80},
+		{"positive infinite average", math.Inf(1), 0, 80},
+		{"negative infinite average", math.Inf(-1), 0, 80},
+		{"max float average", math.MaxFloat64, 0, 80},
+		{"finite count overflow", 1e300, 0, 80},
+		{"nan target", 15, 0, math.NaN()},
+		{"positive infinite target", 15, 0, math.Inf(1)},
+		{"negative infinite target", 15, 0, math.Inf(-1)},
+		{"nan existing coverage", 15, math.NaN(), 80},
+		{"positive infinite existing coverage", 15, math.Inf(1), 80},
+		{"negative infinite existing coverage", 15, math.Inf(-1), 80},
+		{"negative existing coverage", 15, -1, 80},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			existing, _ := tc.percent.Float64()
-			rec := mkRI(30, tc.avg, existing)
-			rec.ExistingCoveragePercentExact = tc.percent
-			var logs []string
-			out := ApplyTargetCoverage([]common.Recommendation{rec}, tc.target, captureLogf(&logs), nil)
-			require.Len(t, out, 1)
-			assert.Equal(t, rec.Count, out[0].Count)
-			assert.Equal(t, rec.CommitmentCost, out[0].CommitmentCost)
-			assert.Equal(t, rec.OnDemandCost, out[0].OnDemandCost)
-			assert.Equal(t, rec.EstimatedSavings, out[0].EstimatedSavings)
-			assert.Same(t, rec.ExistingCoveragePercentExact, out[0].ExistingCoveragePercentExact)
-			require.Len(t, logs, 1)
-			assert.Contains(t, logs[0], "WARNING: exact target-coverage sizing")
-			assert.Contains(t, logs[0], "target compliance unknown")
-		})
+		for _, exact := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/exact=%t", tc.name, exact), func(t *testing.T) {
+				t.Parallel()
+				rec := mkRI(30, tc.avg, tc.existing)
+				if exact && !math.IsNaN(tc.existing) && !math.IsInf(tc.existing, 0) {
+					rec.ExistingCoveragePercentExact = new(big.Rat).SetFloat64(tc.existing)
+				}
+				assertInvalidInputDropped(t, rec, tc.target)
+			})
+		}
 	}
+	t.Run("negative exact coverage rounding to zero", func(t *testing.T) {
+		t.Parallel()
+		rec := mkRI(30, 15, 0)
+		rec.ExistingCoveragePercentExact = new(big.Rat).SetFrac(big.NewInt(-1), new(big.Int).Lsh(big.NewInt(1), 1100))
+		assertInvalidInputDropped(t, rec, 80)
+	})
+}
+
+func TestApplyTargetCoverageNonFiniteTargetOnlyDropsRIs(t *testing.T) {
+	t.Parallel()
+	for _, target := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		for _, exact := range []bool{false, true} {
+			t.Run(fmt.Sprintf("target=%v/exact=%t", target, exact), func(t *testing.T) {
+				t.Parallel()
+				ri := mkRI(30, 15, 60)
+				if exact {
+					ri.ExistingCoveragePercentExact = big.NewRat(60, 1)
+				}
+				sp := mkSP(95, 2)
+				other := common.Recommendation{CommitmentType: common.CommitmentCUD, Count: 7}
+				drops := common.NewDropSummary()
+				out := ApplyTargetCoverage([]common.Recommendation{ri, sp, other}, target, nil, drops)
+				require.Len(t, out, 2)
+				assert.Equal(t, sp, out[0])
+				assert.Equal(t, other, out[1])
+				assert.Equal(t, "Dropped 1 recs: "+common.DropTargetInputInvalid+"=1", drops.FormatOneLine())
+			})
+		}
+	}
+}
+
+func assertInvalidInputDropped(t *testing.T, rec common.Recommendation, target float64) {
+	t.Helper()
+	var logs []string
+	drops := common.NewDropSummary()
+	out := ApplyTargetCoverage([]common.Recommendation{rec}, target, captureLogf(&logs), drops)
+	assert.Empty(t, out)
+	assert.Equal(t, "Dropped 1 recs: "+common.DropTargetInputInvalid+"=1", drops.FormatOneLine())
+	require.Len(t, logs, 1)
+	assert.Contains(t, logs[0], "WARNING: --target-coverage")
 }
 
 func TestApplyTargetCoverageExactStateLifetime(t *testing.T) {
