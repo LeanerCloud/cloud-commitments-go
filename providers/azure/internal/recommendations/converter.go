@@ -375,38 +375,28 @@ func strDeref(s *string) string {
 	return *s
 }
 
-// termToMonths maps a normalised term string ("1yr", "3yr") to the number of
-// months it spans. Unknown terms default to 12 so the monthly-cost arithmetic
-// stays valid rather than dividing by zero.
-func termToMonths(term string) int {
-	switch term {
-	case "3yr":
-		return 36
-	default:
-		return 12
-	}
-}
-
 // ExpandPaymentVariants fans out a single Azure reservation recommendation
 // into two variants that differ only in payment schedule:
 //
-//   - "upfront"  — the full reservation cost is paid today; no monthly
+//   - "upfront": the full reservation cost is paid today; no monthly
 //     recurring charge (RecurringMonthlyCost = pointer to 0).
-//   - "monthly"  — nothing is paid today; the same total reservation cost
-//     is spread evenly across the term months (RecurringMonthlyCost =
-//     CommitmentCost / termMonths).
+//   - "monthly": nothing is paid today; the recurring charge is the base's
+//     RecurringMonthlyCost, the covered monthly run-rate from Extract.
+//
+// CommitmentCost, OnDemandCost and EstimatedSavings are monthly run-rates
+// over Azure's lookback period (see ExtractedFields), so the monthly charge is
+// the run-rate itself and is not divided by the term length.
 //
 // Azure charges the same total reservation price for both billing plans
 // (unlike AWS, which prices partial-upfront separately), so EstimatedSavings
 // and SavingsPercentage vs on-demand are identical between the two variants;
 // only the cashflow split changes.
 //
-// The base recommendation must already have PaymentOption set to "upfront"
-// and a valid CommitmentCost (total reservation price) and OnDemandCost (total
-// on-demand cost over the same period). If OnDemandCost is zero the savings
-// fields are forced to zero to avoid a divide-by-zero; if CommitmentCost is
-// zero both variants are still emitted with zero costs (caller's responsibility
-// to validate upstream).
+// Savings are OnDemandCost - CommitmentCost when both are known. A zero
+// CommitmentCost means TotalCostWithReservedInstances was absent, so the
+// provider-reported EstimatedSavings is kept instead of claiming the whole
+// on-demand cost as savings. A zero OnDemandCost forces both savings fields
+// to zero to avoid a divide-by-zero.
 func ExpandPaymentVariants(base common.Recommendation) []common.Recommendation {
 	totalReservation := base.CommitmentCost
 	totalOnDemand := base.OnDemandCost
@@ -414,29 +404,20 @@ func ExpandPaymentVariants(base common.Recommendation) []common.Recommendation {
 	var savingsPct float64
 	var savings float64
 	if totalOnDemand != 0 {
-		savings = totalOnDemand - totalReservation
+		savings = base.EstimatedSavings
+		if totalReservation != 0 {
+			savings = totalOnDemand - totalReservation
+		}
 		savingsPct = savings / totalOnDemand * 100
 	}
 
-	months := termToMonths(base.Term)
-
-	// RecurringMonthlyCost semantics:
-	//   - nil   : CommitmentCost was absent from the provider response; the
-	//             frontend renders "-" (data not available) rather than "$0".
-	//   - &0.0  : all-upfront variant with a known non-zero CommitmentCost; the
-	//             full charge was already paid upfront, so the recurring charge
-	//             is a known zero.
-	//   - &N    : monthly variant; CommitmentCost spread evenly over term months.
-	//
-	// When CommitmentCost is 0 it means data was absent from the provider, NOT
-	// that the reservation is free. Using float64Ptr(0) in that case fabricates
-	// a non-nil &0.0 that the frontend renders as "$0" instead of "-", which is
-	// incorrect. Guard: only set non-nil pointers when we have real cost data.
+	// nil RecurringMonthlyCost on the base means the provider returned no
+	// covered cost; both variants stay nil (rendered "-") rather than a
+	// fabricated $0.
 	var upfrontRecurring, monthlyRecurring *float64
-	if totalReservation != 0 {
+	if base.RecurringMonthlyCost != nil {
 		upfrontRecurring = float64Ptr(0)
-		monthly := totalReservation / float64(months)
-		monthlyRecurring = float64Ptr(monthly)
+		monthlyRecurring = float64Ptr(*base.RecurringMonthlyCost)
 	}
 
 	allUpfront := base
