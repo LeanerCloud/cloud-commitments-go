@@ -50,7 +50,7 @@ type ServerConfig struct {
 
 // yamlConfig mirrors Config for YAML unmarshalling (snake_case keys).
 type yamlConfig struct {
-	DryRun            bool       `yaml:"dry_run"`
+	DryRun            *bool      `yaml:"dry_run"` // nil when absent, so the safe default survives
 	AutoApprove       bool       `yaml:"auto_approve"`
 	AuditLog          string     `yaml:"audit_log"`
 	EnabledClouds     []string   `yaml:"enabled_clouds"`

@@ -111,8 +111,8 @@ func applyYAML(cfg *Config, path string, explicit bool) error {
 
 // applyYAMLBase merges top-level YAML fields into cfg.
 func applyYAMLBase(cfg *Config, yc yamlConfig) error {
-	if yc.DryRun != cfg.DryRun {
-		cfg.DryRun = yc.DryRun
+	if yc.DryRun != nil {
+		cfg.DryRun = *yc.DryRun
 	}
 	if yc.AutoApprove {
 		cfg.AutoApprove = yc.AutoApprove
