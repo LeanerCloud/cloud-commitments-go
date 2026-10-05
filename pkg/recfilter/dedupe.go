@@ -3,6 +3,7 @@ package recfilter
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -117,10 +118,11 @@ func dedupeKey(resourceType, region, engine, deployment string) string {
 }
 
 const (
-	elastiCacheEnginePrefix  = "elasticache:"
-	unknownElastiCacheEngine = elastiCacheEnginePrefix + "*"
-	elastiCacheRedisEngine   = elastiCacheEnginePrefix + "redis"
-	elastiCacheValkeyEngine  = elastiCacheEnginePrefix + "valkey"
+	elastiCacheEnginePrefix    = "elasticache:"
+	unknownElastiCacheEngine   = elastiCacheEnginePrefix + "*"
+	elastiCacheRedisEngine     = elastiCacheEnginePrefix + "redis"
+	elastiCacheValkeyEngine    = elastiCacheEnginePrefix + "valkey"
+	elastiCacheMemcachedEngine = elastiCacheEnginePrefix + "memcached"
 )
 
 func dedupeEngine(providerType common.ProviderType, service common.ServiceType, engine string) (string, bool) {
@@ -134,17 +136,58 @@ func dedupeEngine(providerType common.ProviderType, service common.ServiceType, 
 	return elastiCacheEnginePrefix + engine, true
 }
 
+// elastiCacheCover is a reservation engine that covers a node, with the nodes of
+// the covered engine one reserved node pays for as the ratio nodes/reserved.
+type elastiCacheCover struct {
+	engine          string
+	nodes, reserved int
+}
+
+// valkeyPerRedisNodes and redisPerValkeyNodes are the ratio of the normalized units of
+// a Redis OSS node (4 for large) to a Valkey node (3.2 for large), which is the same
+// 5:4 for every node size: https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/CacheNodes.Reserved.html#reserved-nodes-size.normalized
+const (
+	valkeyPerRedisNodes = 5
+	redisPerValkeyNodes = 4
+)
+
 // coveringElastiCacheEngines lists the reservation engines that cover a node of engine, in consumption order.
-// Redis OSS reservations also cover Valkey nodes, never the reverse: https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/CacheNodes.Reserved.html#reserved-nodes-upgrade-to-valkey
-func coveringElastiCacheEngines(engine string) []string {
+// Redis OSS reservations also cover Valkey nodes, never the reverse, and each Redis OSS node covers 1.25 Valkey nodes:
+// https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/CacheNodes.Reserved.html#reserved-nodes-upgrade-to-valkey
+func coveringElastiCacheEngines(engine string) []elastiCacheCover {
 	switch engine {
 	case unknownElastiCacheEngine:
-		return []string{unknownElastiCacheEngine}
+		return []elastiCacheCover{{unknownElastiCacheEngine, 1, 1}}
 	case elastiCacheValkeyEngine:
-		return []string{elastiCacheValkeyEngine, elastiCacheRedisEngine, unknownElastiCacheEngine}
+		return []elastiCacheCover{
+			{elastiCacheValkeyEngine, 1, 1},
+			{elastiCacheRedisEngine, valkeyPerRedisNodes, redisPerValkeyNodes},
+			{unknownElastiCacheEngine, 1, 1},
+		}
 	default:
-		return []string{engine, unknownElastiCacheEngine}
+		return []elastiCacheCover{{engine, 1, 1}, {unknownElastiCacheEngine, 1, 1}}
 	}
+}
+
+// consume takes up to want nodes from the available reserved nodes and returns how many
+// nodes were covered and how many reserved nodes that used. Both directions round toward
+// less coverage: the covered nodes round down, the reserved nodes spent round up, so a
+// fractional remainder is never credited and a needed purchase is never skipped.
+func (c elastiCacheCover) consume(available, want int) (covered, spent int) {
+	covered = min(available*c.nodes/c.reserved, want)
+	spent = (covered*c.reserved + c.nodes - 1) / c.nodes
+	return covered, spent
+}
+
+// warnUnrecognizedElastiCacheEngine logs an engine that is neither redis, valkey, memcached
+// nor the empty wildcard: it gets a budget of its own that covers and is covered by nothing else.
+func warnUnrecognizedElastiCacheEngine(engine string, logf Logf) {
+	switch engine {
+	case unknownElastiCacheEngine, elastiCacheRedisEngine, elastiCacheValkeyEngine, elastiCacheMemcachedEngine:
+		return
+	}
+	logf.printf("    [DuplicateChecker] WARNING: unrecognized ElastiCache engine %q; it is deduplicated only against itself",
+		strings.TrimPrefix(engine, elastiCacheEnginePrefix))
 }
 
 // buildExistingCommitmentsMap builds a map of commitments by resource type, region, engine, and deployment.
@@ -153,7 +196,10 @@ func buildExistingCommitmentsMap(commitments []common.Commitment, logf Logf) map
 
 	for _rvc := range commitments {
 		c := commitments[_rvc]
-		normalizedEngine, _ := dedupeEngine(c.Provider, c.Service, c.Engine)
+		normalizedEngine, isElastiCache := dedupeEngine(c.Provider, c.Service, c.Engine)
+		if isElastiCache {
+			warnUnrecognizedElastiCacheEngine(normalizedEngine, logf)
+		}
 		normalizedDeployment := common.NormalizeDeploymentName(c.Deployment)
 		key := dedupeKey(c.ResourceType, c.Region, normalizedEngine, normalizedDeployment)
 		existingMap[key] += c.Count
@@ -191,17 +237,18 @@ func adjustSingleRecommendation(rec common.Recommendation, existingMap map[strin
 	engine, isElastiCache := dedupeEngine(rec.Provider, rec.Service, common.EngineFromDetails(rec.Details))
 	deployment := common.NormalizeDeploymentName(common.DeploymentFromDetails(rec.Details))
 	key := dedupeKey(rec.ResourceType, rec.Region, engine, deployment)
-	engines := []string{engine}
+	covers := []elastiCacheCover{{engine, 1, 1}}
 	if isElastiCache {
-		engines = coveringElastiCacheEngines(engine)
+		covers = coveringElastiCacheEngines(engine)
+		warnUnrecognizedElastiCacheEngine(engine, logf)
 	}
 	remaining := rec.Count
-	for _, coveringEngine := range engines {
-		candidate := dedupeKey(rec.ResourceType, rec.Region, coveringEngine, deployment)
+	for _, cover := range covers {
+		candidate := dedupeKey(rec.ResourceType, rec.Region, cover.engine, deployment)
 		if available := existingMap[candidate]; available > 0 {
-			used := min(available, remaining)
-			remaining -= used
-			existingMap[candidate] -= used
+			covered, spent := cover.consume(available, remaining)
+			remaining -= covered
+			existingMap[candidate] -= spent
 		}
 	}
 

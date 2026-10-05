@@ -44,35 +44,43 @@ func (f *fakeServiceClient) GetValidResourceTypes(ctx context.Context) ([]string
 func TestElastiCacheEngineBudgets(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
-		name       string
-		engines    []string
-		counts     []int
-		recEngines []string
-		recCounts  []int
-		wantCounts []int
+		name        string
+		engines     []string
+		counts      []int
+		recEngines  []string
+		recCounts   []int
+		wantCounts  []int
+		wantEngines []string
 	}{
-		{"redis covers valkey", []string{"ReDiS"}, []int{1}, []string{"VaLkEy"}, []int{1}, nil},
+		{"redis covers valkey", []string{"ReDiS"}, []int{1}, []string{"VaLkEy"}, []int{1}, nil, nil},
 		// Redis OSS reservations cover Valkey nodes, Valkey reservations cover only Valkey:
 		// https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/CacheNodes.Reserved.html#reserved-nodes-upgrade-to-valkey
-		{"valkey does not cover redis", []string{"valkey"}, []int{1}, []string{"redis"}, []int{1}, []int{1}},
-		{"valkey covers valkey", []string{"valkey"}, []int{1}, []string{"valkey"}, []int{1}, nil},
-		{"valkey and wildcard partial redis", []string{"valkey", ""}, []int{1, 1}, []string{"redis"}, []int{2}, []int{1}},
-		{"valkey before redis for valkey", []string{"valkey", "redis"}, []int{1, 1}, []string{"valkey", "redis"}, []int{1, 1}, nil},
-		{"redis rec first keeps valkey for valkey", []string{"valkey", "redis"}, []int{1, 1}, []string{"redis", "valkey"}, []int{1, 1}, nil},
-		{"valkey overflow onto redis", []string{"valkey", "redis"}, []int{1, 1}, []string{"valkey", "redis"}, []int{2, 1}, []int{1}},
-		{"redis not memcached", []string{"redis"}, []int{1}, []string{"memcached"}, []int{1}, []int{1}},
-		{"valkey not memcached", []string{"valkey"}, []int{1}, []string{"memcached"}, []int{1}, []int{1}},
-		{"unknown covers redis", []string{""}, []int{1}, []string{"redis"}, []int{1}, nil},
-		{"unknown covers valkey", []string{""}, []int{1}, []string{"valkey"}, []int{1}, nil},
-		{"unknown covers memcached", []string{""}, []int{1}, []string{"memcached"}, []int{1}, nil},
-		{"combined partial", []string{"redis", ""}, []int{1, 1}, []string{"valkey"}, []int{3}, []int{1}},
-		{"combined full", []string{"redis", ""}, []int{1, 1}, []string{"valkey"}, []int{2}, nil},
-		{"wildcard consumed once", []string{""}, []int{1}, []string{"redis", "memcached"}, []int{1, 1}, []int{1}},
-		{"exact before wildcard", []string{"redis", ""}, []int{1, 1}, []string{"valkey", "memcached"}, []int{1, 1}, nil},
-		{"family consumed once", []string{"redis"}, []int{1}, []string{"valkey", "redis"}, []int{1, 1}, []int{1}},
-		{"empty rec one", []string{""}, []int{1}, []string{""}, []int{3}, []int{2}},
-		{"empty rec two", []string{""}, []int{2}, []string{""}, []int{3}, []int{1}},
-		{"empty rec repeated", []string{""}, []int{2}, []string{"", ""}, []int{1, 2}, []int{1}},
+		{"valkey does not cover redis", []string{"valkey"}, []int{1}, []string{"redis"}, []int{1}, []int{1}, []string{"redis"}},
+		{"valkey covers valkey", []string{"valkey"}, []int{1}, []string{"valkey"}, []int{1}, nil, nil},
+		{"valkey and wildcard partial redis", []string{"valkey", ""}, []int{1, 1}, []string{"redis"}, []int{2}, []int{1}, []string{"redis"}},
+		{"valkey before redis for valkey", []string{"valkey", "redis"}, []int{1, 1}, []string{"valkey", "redis"}, []int{1, 1}, nil, nil},
+		{"redis rec first keeps valkey for valkey", []string{"valkey", "redis"}, []int{1, 1}, []string{"redis", "valkey"}, []int{1, 1}, nil, nil},
+		{"valkey overflow onto redis", []string{"valkey", "redis"}, []int{1, 1}, []string{"valkey", "redis"}, []int{2, 1}, []int{1}, []string{"redis"}},
+		{"redis not memcached", []string{"redis"}, []int{1}, []string{"memcached"}, []int{1}, []int{1}, []string{"memcached"}},
+		{"valkey not memcached", []string{"valkey"}, []int{1}, []string{"memcached"}, []int{1}, []int{1}, []string{"memcached"}},
+		{"unknown covers redis", []string{""}, []int{1}, []string{"redis"}, []int{1}, nil, nil},
+		{"unknown covers valkey", []string{""}, []int{1}, []string{"valkey"}, []int{1}, nil, nil},
+		{"unknown covers memcached", []string{""}, []int{1}, []string{"memcached"}, []int{1}, nil, nil},
+		{"combined partial", []string{"redis", ""}, []int{1, 1}, []string{"valkey"}, []int{3}, []int{1}, []string{"valkey"}},
+		{"combined full", []string{"redis", ""}, []int{1, 1}, []string{"valkey"}, []int{2}, nil, nil},
+		{"wildcard consumed once", []string{""}, []int{1}, []string{"redis", "memcached"}, []int{1, 1}, []int{1}, []string{"memcached"}},
+		{"exact before wildcard", []string{"redis", ""}, []int{1, 1}, []string{"valkey", "memcached"}, []int{1, 1}, nil, nil},
+		{"family consumed once", []string{"redis"}, []int{1}, []string{"valkey", "redis"}, []int{1, 1}, []int{1}, []string{"redis"}},
+		{"empty rec one", []string{""}, []int{1}, []string{""}, []int{3}, []int{2}, []string{""}},
+		{"empty rec two", []string{""}, []int{2}, []string{""}, []int{3}, []int{1}, []string{""}},
+		{"empty rec repeated", []string{""}, []int{2}, []string{"", ""}, []int{1, 2}, []int{1}, []string{""}},
+		// Normalized units: a Redis OSS large node is 4 units, a Valkey large node 3.2, so one Redis node covers 1.25 Valkey nodes.
+		{"four redis cover five valkey", []string{"redis"}, []int{4}, []string{"valkey"}, []int{5}, nil, nil},
+		{"four redis leave one of six valkey", []string{"redis"}, []int{4}, []string{"valkey"}, []int{6}, []int{1}, []string{"valkey"}},
+		{"one redis covers one of two valkey", []string{"redis"}, []int{1}, []string{"valkey"}, []int{2}, []int{1}, []string{"valkey"}},
+		{"fractional redis leftover is not credited", []string{"redis"}, []int{2}, []string{"valkey"}, []int{3}, []int{1}, []string{"valkey"}},
+		{"redis spent rounds up across recs", []string{"redis"}, []int{4}, []string{"valkey", "valkey"}, []int{2, 3}, []int{1}, []string{"valkey"}},
+		{"redis for redis stays one to one", []string{"redis"}, []int{4}, []string{"redis"}, []int{5}, []int{1}, []string{"redis"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -93,8 +101,50 @@ func TestElastiCacheEngineBudgets(t *testing.T) {
 			require.Len(t, passed, len(tt.wantCounts))
 			for i, rec := range passed {
 				assert.Equal(t, tt.wantCounts[i], rec.Count)
+				assert.Equal(t, tt.wantEngines[i], common.EngineFromDetails(rec.Details))
 			}
 			assert.Len(t, filtered, len(recs)-len(passed))
+		})
+	}
+}
+
+func TestElastiCacheUnrecognizedEngineWarns(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name       string
+		commitment string
+		rec        string
+		want       []string
+	}{
+		{"unrecognized rec engine", "redis", "dragonfly", []string{`unrecognized ElastiCache engine "dragonfly"`}},
+		{"unrecognized commitment engine", "dragonfly", "redis", []string{`unrecognized ElastiCache engine "dragonfly"`}},
+		{"recognized engines do not warn", "redis", "valkey", nil},
+		{"memcached does not warn", "memcached", "memcached", nil},
+		{"empty wildcard does not warn", "", "redis", nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			client := &fakeServiceClient{commitments: []common.Commitment{{
+				Provider: common.ProviderAWS, Service: common.ServiceCache, ResourceType: "cache.r6g.large", Region: "us-east-1",
+				Engine: tt.commitment, Count: 1, State: common.CommitmentStateActive, StartDate: time.Now(),
+			}}}
+			recs := []common.Recommendation{{Provider: common.ProviderAWS, Service: common.ServiceElastiCache,
+				ResourceType: "cache.r6g.large", Region: "us-east-1", Count: 1, Details: &common.CacheDetails{Engine: tt.rec}}}
+			var lines []string
+			checker := NewDuplicateChecker(0)
+			checker.Logf = func(format string, args ...any) { lines = append(lines, fmt.Sprintf(format, args...)) }
+			_, _, err := checker.AdjustRecommendationsForExisting(context.Background(), recs, client)
+			require.NoError(t, err)
+			var warnings []string
+			for _, line := range lines {
+				if strings.Contains(line, "WARNING") {
+					warnings = append(warnings, line)
+				}
+			}
+			require.Len(t, warnings, len(tt.want))
+			for i, want := range tt.want {
+				assert.Contains(t, warnings[i], want)
+			}
 		})
 	}
 }
