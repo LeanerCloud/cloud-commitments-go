@@ -2,6 +2,8 @@ package recfilter
 
 import (
 	"math"
+	"math/big"
+	"strconv"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
@@ -254,7 +256,13 @@ func applyTargetCoverageRI(rec common.Recommendation, targetPct float64, logf Lo
 	// later) so whole-percent values don't lose precision to float
 	// rounding at integer boundaries.
 	gapPct := targetPct - rec.ExistingCoveragePct
-	if gapPct <= 0 {
+	nTarget, alreadyMet, valid := targetCoverageRICount(rec, targetPct)
+	if !valid {
+		logf.printf("WARNING: exact target-coverage sizing has invalid or out-of-range inputs for %s/%s/%s; passed through unchanged, target compliance unknown\n",
+			rec.Service, rec.Region, rec.ResourceType)
+		return rec, true, ""
+	}
+	if alreadyMet {
 		// Existing commitments already meet or exceed the target; no purchase
 		// needed in this pool. Drop with an info log so operators can see what
 		// the flag did. Returning (_, false) with avg > 0 signals "drop, don't
@@ -268,8 +276,6 @@ func applyTargetCoverageRI(rec common.Recommendation, targetPct float64, logf Lo
 	// least 80%". Floor under-covers small/odd pools (e.g. avg=2, target=80
 	// gives 1 RI = 50% rather than 2 RIs = 100%); pools too small to
 	// approximate target are best filtered out via --min-pool-size upstream.
-	nTarget := int(math.Floor(avg * gapPct / 100.0))
-
 	if nTarget == 0 {
 		// Floor produces zero when avg × gap% < 100 (small pools or thin
 		// gaps). Drop — buying 1 RI would over-shoot target and the
@@ -318,6 +324,32 @@ func applyTargetCoverageRI(rec common.Recommendation, targetPct float64, logf Lo
 	adjusted.ProjectedUtilization = projUtil
 	adjusted.ProjectedCoverage = projCov
 	return adjusted, true, ""
+}
+
+func targetCoverageRICount(rec common.Recommendation, targetPct float64) (count int, alreadyMet, valid bool) {
+	if exact := rec.ExistingCoveragePercentExact; exact != nil {
+		percent, _ := exact.Float64()
+		if percent == rec.ExistingCoveragePct {
+			avg := new(big.Rat).SetFloat64(rec.AverageInstancesUsedPerHour)
+			target := new(big.Rat).SetFloat64(targetPct)
+			if avg == nil || target == nil || exact.Sign() < 0 {
+				return 0, false, false
+			}
+			gap := target.Sub(target, exact)
+			if gap.Sign() <= 0 {
+				return 0, true, true
+			}
+			quantity := gap.Mul(gap, avg)
+			quantity.Quo(quantity, big.NewRat(100, 1))
+			whole := new(big.Int).Quo(quantity.Num(), quantity.Denom())
+			if whole.BitLen() >= strconv.IntSize {
+				return 0, false, false
+			}
+			return int(whole.Int64()), false, true
+		}
+	}
+	gap := targetPct - rec.ExistingCoveragePct
+	return int(math.Floor(rec.AverageInstancesUsedPerHour * gap / 100.0)), gap <= 0, true
 }
 
 // applyTargetCoverageSP is the SP branch of ApplyTargetCoverage. Returns

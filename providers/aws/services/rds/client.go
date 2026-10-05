@@ -17,6 +17,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/reservationexpiry"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/reservationstate"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/tagging"
 )
@@ -87,12 +88,6 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 				continue
 			}
 
-			duration := aws.ToInt32(instance.Duration)
-			termMonths := 12
-			if duration == ThreeYearSeconds {
-				termMonths = 36
-			}
-
 			// Deployment carries the same vocabulary as DatabaseDetails.AZConfig
 			// on Recommendation so pool-key matching aligns deployment-wise
 			// between recs and existing commitments (used by expiry adjustment).
@@ -114,7 +109,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 				Count:          int(aws.ToInt32(instance.DBInstanceCount)),
 				State:          state,
 				StartDate:      aws.ToTime(instance.StartTime),
-				EndDate:        aws.ToTime(instance.StartTime).AddDate(0, termMonths, 0),
+				EndDate:        reservationexpiry.EndDate(aws.ToTime(instance.StartTime), aws.ToInt32(instance.Duration)),
 			}
 
 			commitments = append(commitments, commitment)
