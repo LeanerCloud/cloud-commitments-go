@@ -4,7 +4,6 @@ package savingsplans
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -153,84 +152,56 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 	}
 
 	commitments := make([]common.Commitment, 0)
-	var skipped skippedPlans
-
-	for pager.More() {
+	for pageIndex := 1; pager.More(); pageIndex++ {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list savings plans: %w", err)
 		}
-		commitments = c.appendOwnedPlans(commitments, page.Value, &skipped)
+		commitments, err = c.appendOwnedPlans(commitments, page.Value)
+		if err != nil {
+			return nil, fmt.Errorf("incomplete savings plan inventory for subscription %s, page %d: %w", c.subscriptionID, pageIndex, err)
+		}
 	}
-
-	if skipped.total > 0 {
-		log.Printf("WARNING: skipped %d savings plans not attributable to subscription %s (showing up to %d): %s",
-			skipped.total, c.subscriptionID, maxLoggedSkippedPlans, strings.Join(skipped.details, "; "))
-	}
-
 	return commitments, nil
 }
 
-const (
-	subscriptionScopePrefix = "/subscriptions/"
-	maxLoggedSkippedPlans   = 20
-)
+const subscriptionScopePrefix = "/subscriptions/"
 
-type skippedPlans struct {
-	total   int
-	details []string
-}
-
-func (s *skippedPlans) add(sp *armbillingbenefits.SavingsPlanModel) {
-	s.total++
-	if len(s.details) >= maxLoggedSkippedPlans {
-		return
-	}
-	var billingScope, appliedScope string
-	if p := sp.Properties; p != nil {
-		if p.BillingScopeID != nil {
-			billingScope = *p.BillingScopeID
-		}
-		if p.AppliedScopeType != nil {
-			appliedScope = string(*p.AppliedScopeType)
-		}
-	}
-	s.details = append(s.details, fmt.Sprintf("%s (billing scope %q, applied scope %q)", *sp.ID, billingScope, appliedScope))
-}
-
-// appendOwnedPlans keeps the plans attributable to this subscription; ListAll is tenant-wide
-// (issue #40). A plan is ours when it is billed to this subscription, or when it is billed to a
-// billing account or profile (EA/MCA list responses) and applied to this subscription alone.
-// Shared plans billed to a billing account cannot be attributed to one subscription and are skipped.
-func (c *Client) appendOwnedPlans(dst []common.Commitment, plans []*armbillingbenefits.SavingsPlanModel, skipped *skippedPlans) []common.Commitment {
+func (c *Client) appendOwnedPlans(dst []common.Commitment, plans []*armbillingbenefits.SavingsPlanModel) ([]common.Commitment, error) {
 	ownScope := c.billingScopeID()
-	for _, sp := range plans {
-		if sp == nil || sp.ID == nil {
-			continue
+	for i, sp := range plans {
+		owned, err := planOwnedBy(sp, ownScope)
+		if err != nil {
+			return nil, fmt.Errorf("row %d: %w", i+1, err)
 		}
-		if planOwnedBy(sp.Properties, ownScope) {
+		if owned {
 			dst = append(dst, *convertSavingsPlan(sp, c.subscriptionID))
-		} else {
-			skipped.add(sp)
 		}
 	}
-	return dst
+	return dst, nil
 }
 
-func planOwnedBy(p *armbillingbenefits.SavingsPlanModelProperties, ownScope string) bool {
-	if p == nil || p.BillingScopeID == nil || *p.BillingScopeID == "" {
-		return false
+func planOwnedBy(sp *armbillingbenefits.SavingsPlanModel, ownScope string) (bool, error) {
+	if sp == nil || sp.Properties == nil || sp.Properties.BillingScopeID == nil {
+		return false, fmt.Errorf("missing billing scope")
 	}
-	billingScope := *p.BillingScopeID
-	if strings.EqualFold(billingScope, ownScope) {
-		return true
+	billingScope := *sp.Properties.BillingScopeID
+	if !hasPrefixFold(billingScope, subscriptionScopePrefix) {
+		return false, fmt.Errorf("billing scope does not identify a subscription")
 	}
-	if hasPrefixFold(billingScope, subscriptionScopePrefix) {
-		return false
+	subscription := billingScope[len(subscriptionScopePrefix):]
+	if subscription == "" || strings.IndexFunc(subscription, func(r rune) bool {
+		return !strings.ContainsRune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-", r)
+	}) >= 0 {
+		return false, fmt.Errorf("malformed billing subscription scope")
 	}
-	return p.AppliedScopeType != nil && *p.AppliedScopeType == armbillingbenefits.AppliedScopeTypeSingle &&
-		p.AppliedScopeProperties != nil && p.AppliedScopeProperties.SubscriptionID != nil &&
-		strings.EqualFold(*p.AppliedScopeProperties.SubscriptionID, ownScope)
+	if !strings.EqualFold(billingScope, ownScope) {
+		return false, nil
+	}
+	if sp.ID == nil || strings.TrimSpace(*sp.ID) == "" {
+		return false, fmt.Errorf("owned savings plan has no ID")
+	}
+	return true, nil
 }
 
 func hasPrefixFold(s, prefix string) bool {
