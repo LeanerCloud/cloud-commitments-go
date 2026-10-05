@@ -104,6 +104,7 @@ func createMockHTTPResponse(statusCode int, body string) *http.Response {
 	}
 }
 
+// This vCore catalog row is synthetic; it tests selection, not live SKU availability.
 func createSampleSQLPricingResponse() string {
 	return `{
 		"Items": [
@@ -113,13 +114,13 @@ func createSampleSQLPricingResponse() string {
 				"unitPrice": 750.0,
 				"armRegionName": "eastus",
 				"location": "US East",
-				"meterName": "S0 DTUs",
-				"skuName": "Standard",
+				"meterName": "Gen5 vCores",
+				"skuName": "General Purpose",
 				"productName": "SQL Database",
 				"serviceName": "SQL Database",
-				"unitOfMeasure": "1 DTU/Hour",
+				"unitOfMeasure": "1/Hour",
 				"type": "Reservation",
-				"armSkuName": "Standard_S0",
+				"armSkuName": "GeneralPurpose_Gen5_2",
 				"reservationTerm": "1 Year"
 			},
 			{
@@ -128,24 +129,14 @@ func createSampleSQLPricingResponse() string {
 				"unitPrice": 1800.0,
 				"armRegionName": "eastus",
 				"location": "US East",
-				"meterName": "S0 DTUs",
-				"skuName": "Standard",
+				"meterName": "Gen5 vCores",
+				"skuName": "General Purpose",
 				"productName": "SQL Database",
 				"serviceName": "SQL Database",
-				"unitOfMeasure": "1 DTU/Hour",
+				"unitOfMeasure": "1 Hour",
 				"type": "Reservation",
-				"armSkuName": "Standard_S0",
+				"armSkuName": "GeneralPurpose_Gen5_2",
 				"reservationTerm": "3 Years"
-			},
-			{
-				"currencyCode": "USD",
-				"retailPrice": 0.096,
-				"unitPrice": 0.096,
-				"armRegionName": "eastus",
-				"productName": "SQL Database",
-				"serviceName": "SQL Database",
-				"armSkuName": "Standard_S0",
-				"type": "Consumption"
 			}
 		]
 	}`
@@ -221,13 +212,13 @@ func TestAzureRetailPriceStructure(t *testing.T) {
 				UnitPrice:       480.0,
 				ArmRegionName:   "eastus",
 				Location:        "US East",
-				MeterName:       "S0 DTUs",
-				SKUName:         "Standard",
+				MeterName:       "Gen5 vCores",
+				SKUName:         "General Purpose",
 				ProductName:     "SQL Database",
 				ServiceName:     "SQL Database",
-				UnitOfMeasure:   "1 DTU/Hour",
+				UnitOfMeasure:   "1/Hour",
 				Type:            "Reservation",
-				ArmSKUName:      "Standard_S0",
+				ArmSKUName:      "GeneralPurpose_Gen5_2",
 				ReservationTerm: "1 Year",
 			},
 		},
@@ -235,7 +226,7 @@ func TestAzureRetailPriceStructure(t *testing.T) {
 
 	require.Len(t, price.Items, 1)
 	assert.Equal(t, "USD", price.Items[0].CurrencyCode)
-	assert.Equal(t, "Standard_S0", price.Items[0].ArmSKUName)
+	assert.Equal(t, "GeneralPurpose_Gen5_2", price.Items[0].ArmSKUName)
 	assert.Equal(t, "1 Year", price.Items[0].ReservationTerm)
 }
 
@@ -272,7 +263,7 @@ func TestDatabaseClient_GetOfferingDetails_WithMock(t *testing.T) {
 	)
 
 	rec := common.Recommendation{
-		ResourceType:  "Standard_S0",
+		ResourceType:  "GeneralPurpose_Gen5_2",
 		Term:          "1yr",
 		PaymentOption: "upfront",
 	}
@@ -280,9 +271,14 @@ func TestDatabaseClient_GetOfferingDetails_WithMock(t *testing.T) {
 	details, err := client.GetOfferingDetails(ctx, rec)
 	require.NoError(t, err)
 	require.NotNil(t, details)
-	assert.Equal(t, "Standard_S0", details.ResourceType)
+	assert.Equal(t, "GeneralPurpose_Gen5_2", details.ResourceType)
 	assert.Equal(t, "1yr", details.Term)
 	assert.Equal(t, "USD", details.Currency)
+	assert.Equal(t, "azure-sql-GeneralPurpose_Gen5_2-eastus-1yr", details.OfferingID)
+	assert.Equal(t, 750.0, details.TotalCost)
+	assert.Equal(t, 750.0, details.UpfrontCost)
+	assert.Zero(t, details.RecurringCost)
+	assert.Equal(t, 750.0/8760.0, details.EffectiveHourlyRate)
 }
 
 func TestDatabaseClient_GetOfferingDetails_3YearTerm(t *testing.T) {
@@ -299,7 +295,7 @@ func TestDatabaseClient_GetOfferingDetails_3YearTerm(t *testing.T) {
 	)
 
 	rec := common.Recommendation{
-		ResourceType:  "Standard_S0",
+		ResourceType:  "GeneralPurpose_Gen5_2",
 		Term:          "3yr",
 		PaymentOption: "monthly",
 	}
@@ -309,6 +305,10 @@ func TestDatabaseClient_GetOfferingDetails_3YearTerm(t *testing.T) {
 	require.NotNil(t, details)
 	assert.Equal(t, "3yr", details.Term)
 	assert.Equal(t, "monthly", details.PaymentOption)
+	assert.Equal(t, 1800.0, details.TotalCost)
+	assert.Zero(t, details.UpfrontCost)
+	assert.Equal(t, 50.0, details.RecurringCost)
+	assert.Equal(t, 1800.0/(8760.0*3), details.EffectiveHourlyRate)
 }
 
 func TestDatabaseClient_GetOfferingDetails_NoUpfront(t *testing.T) {
@@ -325,7 +325,7 @@ func TestDatabaseClient_GetOfferingDetails_NoUpfront(t *testing.T) {
 	)
 
 	rec := common.Recommendation{
-		ResourceType:  "Standard_S0",
+		ResourceType:  "GeneralPurpose_Gen5_2",
 		Term:          "1yr",
 		PaymentOption: "no-upfront",
 	}
@@ -334,7 +334,8 @@ func TestDatabaseClient_GetOfferingDetails_NoUpfront(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, details)
 	assert.Equal(t, float64(0), details.UpfrontCost)
-	assert.Greater(t, details.RecurringCost, float64(0))
+	assert.Equal(t, 62.5, details.RecurringCost)
+	assert.Equal(t, 750.0, details.TotalCost)
 }
 
 func TestDatabaseClient_GetOfferingDetails_APIError(t *testing.T) {
@@ -423,6 +424,228 @@ func TestDatabaseClient_GetOfferingDetails_NoReservationPricing(t *testing.T) {
 	_, err := client.GetOfferingDetails(ctx, rec)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no reservation pricing found")
+}
+
+func TestDatabaseClient_GetOfferingDetails_SelectsSyntheticVCoreRow(t *testing.T) {
+	base := azpricing.RetailPriceItem{
+		CurrencyCode: "EUR", RetailPrice: 1200, UnitPrice: 1200,
+		ServiceName: "SQL Database", ProductName: "SQL Database", ArmRegionName: "eastus",
+		ArmSKUName: "GeneralPurpose_Gen5_2", SKUName: "General Purpose", MeterName: "Gen5 vCores",
+		UnitOfMeasure: "1/Hour", Type: "Reservation", ReservationTerm: "1 Year",
+	}
+	consumption := base
+	consumption.Type, consumption.ReservationTerm = "Consumption", ""
+	consumption.RetailPrice, consumption.UnitPrice = 0.2, 0.2
+	wrongService := base
+	wrongService.ServiceName, wrongService.CurrencyCode, wrongService.RetailPrice = "Other", "USD", 2100
+	wrongService.UnitOfMeasure = ""
+	wrongRegion := base
+	wrongRegion.ArmRegionName, wrongRegion.RetailPrice = "westus", 2200
+	wrongSKU := base
+	wrongSKU.ArmSKUName, wrongSKU.RetailPrice = "GeneralPurpose_Gen5_20", 2300
+	wrongType := base
+	wrongType.Type, wrongType.RetailPrice = "Consumption", 9000
+	wrongTerm := base
+	wrongTerm.ReservationTerm, wrongTerm.RetailPrice = "3 Years", 3000
+	badUnit := base
+	badUnit.UnitOfMeasure = "1 DTU/Hour"
+	dtu := badUnit
+	dtu.ArmSKUName, dtu.SKUName, dtu.MeterName = "Standard_S0", "Standard", "S0 DTUs"
+	missingUnit := base
+	missingUnit.UnitOfMeasure = ""
+	missingCurrency := base
+	missingCurrency.CurrencyCode = ""
+	zeroPrice := base
+	zeroPrice.RetailPrice = 0
+	negativePrice := base
+	negativePrice.RetailPrice = -1
+	otherPrice := base
+	otherPrice.RetailPrice = 1300
+	otherCurrency := base
+	otherCurrency.CurrencyCode = "USD"
+	otherDisplay := base
+	otherDisplay.SKUName = "Business Critical"
+	otherMeter := base
+	otherMeter.MeterName = "Other vCores"
+	equivalent := base
+	equivalent.UnitOfMeasure, equivalent.UnitPrice = "1 Hour", 1
+
+	tests := []struct {
+		name    string
+		items   []azpricing.RetailPriceItem
+		sku     string
+		term    string
+		payment string
+		want    float64
+		wantErr string
+	}{
+		{name: "reservation only", items: []azpricing.RetailPriceItem{base}, want: 1200},
+		{name: "foreign rows before valid", items: []azpricing.RetailPriceItem{wrongService, wrongRegion, wrongSKU, wrongType, wrongTerm, consumption, base}, want: 1200},
+		{name: "foreign rows after valid", items: []azpricing.RetailPriceItem{base, consumption, wrongTerm, wrongType, wrongSKU, wrongRegion, wrongService}, want: 1200},
+		{name: "wrong service alone", items: []azpricing.RetailPriceItem{wrongService, consumption}, wantErr: "no reservation pricing"},
+		{name: "wrong region alone", items: []azpricing.RetailPriceItem{wrongRegion, consumption}, wantErr: "no reservation pricing"},
+		{name: "wrong ARM SKU alone", items: []azpricing.RetailPriceItem{wrongSKU, consumption}, wantErr: "no reservation pricing"},
+		{name: "wrong type alone", items: []azpricing.RetailPriceItem{wrongType, consumption}, wantErr: "no reservation pricing"},
+		{name: "wrong term alone", items: []azpricing.RetailPriceItem{wrongTerm, consumption}, wantErr: "no reservation pricing"},
+		{name: "unsupported selected unit", items: []azpricing.RetailPriceItem{badUnit, consumption}, wantErr: "unsupported reservation unit"},
+		{name: "DTU reservation is unsupported", items: []azpricing.RetailPriceItem{dtu, consumption}, sku: "Standard_S0", wantErr: "unsupported reservation unit"},
+		{name: "missing selected unit", items: []azpricing.RetailPriceItem{missingUnit, consumption}, wantErr: "unsupported reservation unit"},
+		{name: "missing selected currency", items: []azpricing.RetailPriceItem{missingCurrency, consumption}, wantErr: "reservation currency is missing"},
+		{name: "zero retail price despite unit price", items: []azpricing.RetailPriceItem{zeroPrice, consumption}, wantErr: "invalid reservation retail price"},
+		{name: "negative retail price", items: []azpricing.RetailPriceItem{negativePrice, consumption}, wantErr: "invalid reservation retail price"},
+		{name: "equivalent unit and unconsumed unitPrice", items: []azpricing.RetailPriceItem{base, equivalent}, want: 1200},
+		{name: "conflicting price", items: []azpricing.RetailPriceItem{base, otherPrice, consumption}, wantErr: "ambiguous reservation pricing"},
+		{name: "conflicting price reversed", items: []azpricing.RetailPriceItem{otherPrice, base, consumption}, wantErr: "ambiguous reservation pricing"},
+		{name: "conflicting currency", items: []azpricing.RetailPriceItem{base, otherCurrency, consumption}, wantErr: "ambiguous reservation pricing"},
+		{name: "conflicting display SKU", items: []azpricing.RetailPriceItem{base, otherDisplay, consumption}, wantErr: "ambiguous reservation pricing"},
+		{name: "conflicting meter", items: []azpricing.RetailPriceItem{base, otherMeter, consumption}, wantErr: "ambiguous reservation pricing"},
+		{name: "requested one year amid both terms", items: []azpricing.RetailPriceItem{base, wrongTerm, consumption}, want: 1200},
+		{name: "requested one year amid both terms reversed", items: []azpricing.RetailPriceItem{wrongTerm, base, consumption}, want: 1200},
+		{name: "requested three years amid both terms", items: []azpricing.RetailPriceItem{base, wrongTerm, consumption}, term: "3yr", payment: "monthly", want: 3000},
+		{name: "requested three years amid both terms reversed", items: []azpricing.RetailPriceItem{wrongTerm, base, consumption}, term: "3yr", payment: "monthly", want: 3000},
+		{name: "all upfront ignores quantity", items: []azpricing.RetailPriceItem{base}, payment: "all-upfront", want: 1200},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, err := json.Marshal(AzureRetailPrice{Items: tt.items})
+			require.NoError(t, err)
+			mockHTTP := &MockHTTPClient{}
+			response := createMockHTTPResponse(http.StatusOK, string(body))
+			t.Cleanup(func() {
+				require.NoError(t, response.Body.Close())
+			})
+			mockHTTP.On("Do", mock.Anything).Return(response, nil).Once()
+			term, payment := tt.term, tt.payment
+			if term == "" {
+				term = "1yr"
+			}
+			if payment == "" {
+				payment = "upfront"
+			}
+			years := 1
+			if term == "3yr" {
+				years = 3
+			}
+			sku := tt.sku
+			if sku == "" {
+				sku = "GeneralPurpose_Gen5_2"
+			}
+			rec := common.Recommendation{ResourceType: sku, Term: term, PaymentOption: payment, Count: 7}
+			details, err := NewClientWithHTTP(nil, "sub", "eastus", mockHTTP).GetOfferingDetails(context.Background(), rec)
+			mockHTTP.AssertExpectations(t)
+			if tt.wantErr != "" {
+				require.ErrorContains(t, err, tt.wantErr)
+				assert.Nil(t, details)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, details)
+			assert.Equal(t, "azure-sql-"+sku+"-eastus-"+term, details.OfferingID)
+			assert.Equal(t, rec.ResourceType, details.ResourceType)
+			assert.Equal(t, term, details.Term)
+			assert.Equal(t, payment, details.PaymentOption)
+			assert.Equal(t, tt.want, details.TotalCost)
+			assert.Equal(t, tt.want/float64(8760*years), details.EffectiveHourlyRate)
+			assert.Equal(t, "EUR", details.Currency)
+			if payment == "monthly" || payment == "no-upfront" {
+				assert.Zero(t, details.UpfrontCost)
+				assert.Equal(t, tt.want/float64(12*years), details.RecurringCost)
+			} else {
+				assert.Equal(t, tt.want, details.UpfrontCost)
+				assert.Zero(t, details.RecurringCost)
+			}
+		})
+	}
+}
+
+func TestDatabaseClient_GetOfferingDetails_ExactEscapedReservationFilter(t *testing.T) {
+	const region, sku = "east'us", "GeneralPurpose_Gen5_'2"
+	row := azpricing.RetailPriceItem{
+		ServiceName: "SQL Database", ArmRegionName: region, ArmSKUName: sku,
+		Type: "Reservation", ReservationTerm: "1 Year", UnitOfMeasure: "1 Hour",
+		CurrencyCode: "EUR", RetailPrice: 1200,
+	}
+	body, err := json.Marshal(AzureRetailPrice{Items: []azpricing.RetailPriceItem{row}})
+	require.NoError(t, err)
+	mockHTTP := &MockHTTPClient{}
+	response := createMockHTTPResponse(http.StatusOK, string(body))
+	t.Cleanup(func() {
+		require.NoError(t, response.Body.Close())
+	})
+	mockHTTP.On("Do", mock.Anything).Return(response, nil).Run(func(args mock.Arguments) {
+		req := args.Get(0).(*http.Request)
+		assert.Equal(t, http.MethodGet, req.Method)
+		assert.Equal(t, "https", req.URL.Scheme)
+		assert.Equal(t, "prices.azure.com", req.URL.Host)
+		assert.Equal(t, "/api/retail/prices", req.URL.Path)
+		assert.Equal(t, "2023-01-01-preview", req.URL.Query().Get("api-version"))
+		assert.Equal(t, "serviceName eq 'SQL Database' and armRegionName eq 'east''us' and armSkuName eq 'GeneralPurpose_Gen5_''2' and priceType eq 'Reservation'", req.URL.Query().Get("$filter"))
+	}).Once()
+	details, err := NewClientWithHTTP(nil, "sub", region, mockHTTP).GetOfferingDetails(context.Background(), common.Recommendation{
+		ResourceType: sku, Term: "1yr", PaymentOption: "upfront",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, details)
+	assert.Equal(t, 1200.0, details.TotalCost)
+	assert.Equal(t, "EUR", details.Currency)
+	mockHTTP.AssertExpectations(t)
+}
+
+func TestDatabaseClient_GetOfferingDetails_ReservationAcrossPages(t *testing.T) {
+	var sample AzureRetailPrice
+	require.NoError(t, json.Unmarshal([]byte(createSampleSQLPricingResponse()), &sample))
+	selected := sample.Items[0]
+	consumption := selected
+	consumption.Type, consumption.ReservationTerm = "Consumption", ""
+	conflict := selected
+	conflict.RetailPrice = 9000
+	const nextURL = "https://prices.azure.com/api/retail/prices?$skip=1000"
+
+	for _, tt := range []struct {
+		name      string
+		first     azpricing.RetailPriceItem
+		second    azpricing.RetailPriceItem
+		wantError bool
+	}{
+		{name: "selected only on second page", first: consumption, second: selected},
+		{name: "conflict on second page", first: selected, second: conflict, wantError: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			firstBody, err := json.Marshal(AzureRetailPrice{NextPageLink: nextURL, Items: []azpricing.RetailPriceItem{tt.first}})
+			require.NoError(t, err)
+			secondBody, err := json.Marshal(AzureRetailPrice{Items: []azpricing.RetailPriceItem{tt.second}})
+			require.NoError(t, err)
+			mockHTTP := &MockHTTPClient{}
+			firstResponse := createMockHTTPResponse(http.StatusOK, string(firstBody))
+			t.Cleanup(func() {
+				require.NoError(t, firstResponse.Body.Close())
+			})
+			secondResponse := createMockHTTPResponse(http.StatusOK, string(secondBody))
+			t.Cleanup(func() {
+				require.NoError(t, secondResponse.Body.Close())
+			})
+			mockHTTP.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+				return req.URL.Query().Get("$skip") == ""
+			})).Return(firstResponse, nil).Once()
+			mockHTTP.On("Do", mock.MatchedBy(func(req *http.Request) bool {
+				return req.URL.String() == nextURL
+			})).Return(secondResponse, nil).Once()
+			details, err := NewClientWithHTTP(nil, "sub", "eastus", mockHTTP).GetOfferingDetails(context.Background(), common.Recommendation{
+				ResourceType: "GeneralPurpose_Gen5_2", Term: "1yr", PaymentOption: "upfront",
+			})
+			mockHTTP.AssertExpectations(t)
+			mockHTTP.AssertNumberOfCalls(t, "Do", 2)
+			if tt.wantError {
+				require.ErrorContains(t, err, "ambiguous reservation pricing")
+				assert.Nil(t, details)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, details)
+			assert.Equal(t, 750.0, details.TotalCost)
+			assert.Equal(t, "USD", details.Currency)
+		})
+	}
 }
 
 func TestDatabaseClient_GetExistingCommitments_Empty(t *testing.T) {
