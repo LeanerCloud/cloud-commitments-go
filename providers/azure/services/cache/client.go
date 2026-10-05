@@ -531,49 +531,13 @@ type RedisPricing struct {
 	SavingsPercentage float64
 }
 
-// getRedisPricing gets real pricing from Azure Retail Prices API.
 func (c *Client) getRedisPricing(ctx context.Context, sku, region string, termYears int) (*RedisPricing, error) {
-	priceData, err := c.fetchAzurePricing(ctx, "Azure Cache for Redis", sku, region)
+	identity, err := pricing.ParseRedisIdentity(sku)
 	if err != nil {
 		return nil, err
 	}
-
-	if len(priceData.Items) == 0 {
-		return nil, fmt.Errorf("no pricing data found for Redis Cache SKU %s in region %s", sku, region)
-	}
-
-	onDemandPrice, reservationPrice, currency := extractRedisPricing(priceData.Items, termYears)
-	if onDemandPrice == 0 {
-		return nil, fmt.Errorf("no on-demand pricing found for Redis Cache SKU %s", sku)
-	}
-
-	hoursInTerm := 8760.0 * float64(termYears)
-	// Return an error rather than fabricating a reservation price from a
-	// hardcoded discount multiplier (issue #1020 H4). Presenting an
-	// estimated figure as a real TotalCost/SavingsPercentage is misleading
-	// and can justify uneconomical purchases. managedredis already uses
-	// this pattern as the model.
-	if reservationPrice == 0 {
-		return nil, fmt.Errorf("no reservation pricing found for Redis Cache SKU %s (%d year) in region %s", sku, termYears, region)
-	}
-
-	savingsPercentage := ((onDemandPrice*hoursInTerm - reservationPrice) / (onDemandPrice * hoursInTerm)) * 100
-
-	return &RedisPricing{
-		HourlyRate:        reservationPrice / hoursInTerm,
-		ReservationPrice:  reservationPrice,
-		OnDemandPrice:     onDemandPrice * hoursInTerm,
-		Currency:          currency,
-		SavingsPercentage: savingsPercentage,
-	}, nil
-}
-
-// fetchAzurePricing fetches pricing data from Azure Retail Prices API,
-// following NextPageLink until exhausted; hitting the shared page cap is an error.
-// Delegates pagination to pricing.FetchAll.
-func (c *Client) fetchAzurePricing(ctx context.Context, serviceName, sku, region string) (*AzureRetailPrice, error) {
-	filter := fmt.Sprintf("serviceName eq '%s' and armRegionName eq '%s' and contains(armSkuName, '%s')",
-		serviceName, region, sku)
+	filter := fmt.Sprintf("serviceName eq 'Redis Cache' and armRegionName eq '%s' and armSkuName eq '%s' and priceType eq 'Reservation'",
+		strings.ReplaceAll(region, "'", "''"), identity.ArmSKUName)
 
 	params := url.Values{}
 	params.Add("$filter", filter)
@@ -584,38 +548,20 @@ func (c *Client) fetchAzurePricing(ctx context.Context, serviceName, sku, region
 	if err != nil {
 		return nil, err
 	}
-	return &AzureRetailPrice{Items: items}, nil
-}
-
-// azureTermString returns the Retail Prices API ReservationTerm string for the
-// given number of years. The API uses the singular form "1 Year" for one year
-// and the plural form "N Years" for two or more years.
-func azureTermString(termYears int) string {
-	if termYears == 1 {
-		return "1 Year"
+	if len(items) == 0 {
+		return nil, fmt.Errorf("no pricing data found for Redis Cache SKU %s in region %s", sku, region)
 	}
-	return fmt.Sprintf("%d Years", termYears)
-}
-
-// extractRedisPricing extracts on-demand and reservation pricing from price items.
-func extractRedisPricing(items []pricing.RetailPriceItem, termYears int) (onDemand, reservation float64, currency string) {
-	currency = "USD"
-	termStr := azureTermString(termYears)
-
-	for i := range items {
-		item := &items[i]
-		if item.CurrencyCode != "" {
-			currency = item.CurrencyCode
-		}
-
-		if item.ReservationTerm == termStr {
-			reservation = item.RetailPrice
-		} else if item.Type == "Consumption" {
-			onDemand = item.UnitPrice
-		}
+	selected, err := pricing.SelectReservation(items, termYears, func(item pricing.RetailPriceItem) bool {
+		return identity.Matches(item, region)
+	})
+	if err != nil {
+		return nil, err
 	}
-
-	return onDemand, reservation, currency
+	return &RedisPricing{
+		HourlyRate:       selected.RetailPrice / (8760 * float64(termYears)),
+		ReservationPrice: selected.RetailPrice,
+		Currency:         selected.CurrencyCode,
+	}, nil
 }
 
 // convertAzureRedisRecommendation converts Azure Redis Cache reservation recommendation to common format.
