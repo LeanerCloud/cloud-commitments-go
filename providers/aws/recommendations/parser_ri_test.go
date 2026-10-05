@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -117,7 +118,7 @@ func TestParseRecommendedQuantity(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := client.parseRecommendedQuantity(tt.details)
+			result, _, err := client.parseRecommendedQuantity(tt.details)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -129,14 +130,16 @@ func TestParseRecommendedQuantity(t *testing.T) {
 	}
 }
 
-func TestParseRecommendedQuantity_WarnsWhenFractionRoundsToZero(t *testing.T) {
+func TestParseRecommendationDetail_WarnsWhenFractionRoundsToZero(t *testing.T) {
 	client := &Client{}
 	for _, tt := range []struct {
 		qty      string
 		expected int
 		warns    bool
 	}{
+		{"0.05", 0, true},
 		{"0.4", 0, true},
+		{"0.4999", 0, true},
 		{"0.5", 1, false}, // math.Round rounds half away from zero
 		{"2.4", 2, false},
 		{"0", 0, false},
@@ -148,13 +151,39 @@ func TestParseRecommendedQuantity_WarnsWhenFractionRoundsToZero(t *testing.T) {
 			log.SetOutput(&logBuf)
 			defer log.SetOutput(prevOut)
 
-			got, err := client.parseRecommendedQuantity(&types.ReservationPurchaseRecommendationDetail{
+			rec, err := client.parseRecommendationDetail(context.Background(), &types.ReservationPurchaseRecommendationDetail{
 				RecommendedNumberOfInstancesToPurchase: aws.String(tt.qty),
+				AccountId:                              aws.String("123456789012"),
+				InstanceDetails: &types.InstanceDetails{
+					EC2InstanceDetails: &types.EC2InstanceDetails{
+						InstanceType: aws.String("m5.large"),
+						Platform:     aws.String("Linux/UNIX"),
+						Region:       aws.String("us-east-1"),
+						Tenancy:      aws.String("shared"),
+					},
+				},
+			}, common.RecommendationParams{
+				Service:        common.ServiceEC2,
+				PaymentOption:  "partial-upfront",
+				Term:           "1yr",
+				LookbackPeriod: "7d",
 			})
 			require.NoError(t, err)
-			assert.Equal(t, tt.expected, got)
+			assert.Equal(t, tt.expected, rec.Count)
 			if tt.warns {
-				assert.Contains(t, logBuf.String(), "rounds to 0")
+				out := logBuf.String()
+				require.Contains(t, out, "rounds to 0")
+				// Assert on the rounding line only: the missing-on-demand-cost
+				// warning also carries account= and would mask a dropped field.
+				for _, line := range strings.Split(out, "\n") {
+					if strings.Contains(line, "rounds to 0") {
+						out = line
+					}
+				}
+				assert.Contains(t, out, tt.qty)
+				assert.Contains(t, out, "account=123456789012")
+				assert.Contains(t, out, "instance_type=m5.large")
+				assert.Contains(t, out, "region=us-east-1")
 			} else {
 				assert.NotContains(t, logBuf.String(), "rounds to 0")
 			}
