@@ -388,7 +388,7 @@ func validateExchangeSources(sources []ExchangeableReservation) error {
 			return fmt.Errorf("azure: CalculateExchange: sources[%d]: %w", i, err)
 		}
 		if !s.sameAppliedScope(&sources[0]) {
-			return fmt.Errorf("azure: CalculateExchange: sources[%d] has a different applied scope than sources[0]; exchange them separately so each keeps its scope", i)
+			return fmt.Errorf("azure: CalculateExchange: sources[%d] has a different applied scope than sources[0]; exchange them separately so each keeps its scope: %w", i, ErrUnsupportedAppliedScope)
 		}
 	}
 	return nil
@@ -448,6 +448,13 @@ func buildCalculateExchangeRequest(sources []ExchangeableReservation, targets []
 		})
 	}
 
+	// Azure takes appliedScopes only for Single; an empty slice on Shared would
+	// still be serialized as "appliedScopes":[].
+	var appliedScopes []*string
+	if scope.AppliedScopeType == armreservations.AppliedScopeTypeSingle {
+		appliedScopes = to.SliceOfPtrs(scope.AppliedScopes...)
+	}
+
 	toPurchase := make([]*armreservations.PurchaseRequest, 0, len(targets))
 	for i := range targets {
 		tgt := targets[i]
@@ -456,7 +463,7 @@ func buildCalculateExchangeRequest(sources []ExchangeableReservation, targets []
 			SKU:      &armreservations.SKUName{Name: to.Ptr(tgt.SKU)},
 			Properties: &armreservations.PurchaseRequestProperties{
 				AppliedScopeType:     to.Ptr(scope.AppliedScopeType),
-				AppliedScopes:        to.SliceOfPtrs(scope.AppliedScopes...),
+				AppliedScopes:        appliedScopes,
 				BillingPlan:          to.Ptr(armreservations.ReservationBillingPlanUpfront),
 				BillingScopeID:       to.Ptr(tgt.BillingScopeID),
 				Quantity:             to.Ptr(tgt.Quantity),

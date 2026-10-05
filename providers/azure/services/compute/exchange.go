@@ -16,6 +16,7 @@ package compute
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -270,6 +271,11 @@ func convertToExchangeableReservation(item *armreservations.ReservationResponse)
 	}
 }
 
+// ErrUnsupportedAppliedScope marks a source whose applied scope cannot be
+// carried onto the exchange's purchased reservations. Callers should treat it
+// as a client error rather than an Azure failure.
+var ErrUnsupportedAppliedScope = errors.New("unsupported applied scope")
+
 // validateAppliedScope refuses a scope the exchange cannot reproduce on the
 // purchased reservation instead of letting Azure fall back to Shared.
 func (r *ExchangeableReservation) validateAppliedScope() error {
@@ -277,21 +283,25 @@ func (r *ExchangeableReservation) validateAppliedScope() error {
 	case armreservations.AppliedScopeTypeShared:
 		return nil
 	case armreservations.AppliedScopeTypeSingle:
-		if len(r.AppliedScopes) == 0 {
-			return fmt.Errorf("applied_scopes is required when applied_scope_type is %s", r.AppliedScopeType)
+		if len(r.AppliedScopes) != 1 {
+			return fmt.Errorf("%w: applied_scopes must hold exactly one scope when applied_scope_type is %s, got %d", ErrUnsupportedAppliedScope, r.AppliedScopeType, len(r.AppliedScopes))
 		}
 		return nil
 	case "":
-		return fmt.Errorf("applied_scope_type is required; pass the reservation as returned by ListExchangeableReservations")
+		return fmt.Errorf("%w: applied_scope_type is required; pass the reservation as returned by ListExchangeableReservations", ErrUnsupportedAppliedScope)
 	default:
-		return fmt.Errorf("applied_scope_type %q cannot be carried through an exchange", r.AppliedScopeType)
+		return fmt.Errorf("%w: applied_scope_type %q cannot be carried through an exchange", ErrUnsupportedAppliedScope, r.AppliedScopeType)
 	}
 }
 
-// sameAppliedScope compares scope sets case-insensitively and order-free,
-// since ARM resource IDs are case-insensitive.
+// sameAppliedScope compares the scope type, and the scope set only for
+// Single, case-insensitively and order-free since ARM resource IDs are
+// case-insensitive. Azure ignores appliedScopes for Shared.
 func (r *ExchangeableReservation) sameAppliedScope(o *ExchangeableReservation) bool {
-	return r.AppliedScopeType == o.AppliedScopeType &&
+	if r.AppliedScopeType != o.AppliedScopeType {
+		return false
+	}
+	return r.AppliedScopeType != armreservations.AppliedScopeTypeSingle ||
 		slices.Equal(normalizedScopes(r.AppliedScopes), normalizedScopes(o.AppliedScopes))
 }
 

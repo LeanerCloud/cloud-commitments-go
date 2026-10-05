@@ -2,6 +2,7 @@ package compute_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -61,25 +62,29 @@ func TestCalculateExchange_ValidationSources(t *testing.T) {
 		name    string
 		sources []compute.ExchangeableReservation
 		wantErr string
+		// scopeRefusal marks refusals that must wrap ErrUnsupportedAppliedScope.
+		scopeRefusal bool
 	}{
-		{"no sources", nil, "at least one source reservation is required"},
-		{"empty reservation id", []compute.ExchangeableReservation{{ReservationID: "", Quantity: 1}}, "sources[0].reservation_id is required"},
-		{"zero quantity", []compute.ExchangeableReservation{{ReservationID: "res-1", Quantity: 0}}, "sources[0].quantity must be >= 1"},
-		{"negative quantity", []compute.ExchangeableReservation{{ReservationID: "res-1", Quantity: -1}}, "sources[0].quantity must be >= 1"},
-		{"unreported scope", []compute.ExchangeableReservation{{ReservationID: "res-1", Quantity: 1}}, "sources[0]: applied_scope_type is required"},
-		{"unknown scope type", []compute.ExchangeableReservation{{ReservationID: "res-1", Quantity: 1, AppliedScopeType: "ManagementGroup"}}, `sources[0]: applied_scope_type "ManagementGroup" cannot be carried`},
-		{"single without scopes", []compute.ExchangeableReservation{{ReservationID: "res-1", Quantity: 1, AppliedScopeType: armreservations.AppliedScopeTypeSingle}}, "sources[0]: applied_scopes is required"},
-		{"shared mixed with single", []compute.ExchangeableReservation{validSource(), singleScopedSource("res-2", "/subscriptions/sub-prod")}, "sources[1] has a different applied scope than sources[0]"},
+		{"no sources", nil, "at least one source reservation is required", false},
+		{"empty reservation id", []compute.ExchangeableReservation{{ReservationID: "", Quantity: 1}}, "sources[0].reservation_id is required", false},
+		{"zero quantity", []compute.ExchangeableReservation{{ReservationID: "res-1", Quantity: 0}}, "sources[0].quantity must be >= 1", false},
+		{"negative quantity", []compute.ExchangeableReservation{{ReservationID: "res-1", Quantity: -1}}, "sources[0].quantity must be >= 1", false},
+		{"unreported scope", []compute.ExchangeableReservation{{ReservationID: "res-1", Quantity: 1}}, "sources[0]: unsupported applied scope: applied_scope_type is required", true},
+		{"unknown scope type", []compute.ExchangeableReservation{{ReservationID: "res-1", Quantity: 1, AppliedScopeType: "ManagementGroup"}}, `sources[0]: unsupported applied scope: applied_scope_type "ManagementGroup" cannot be carried`, true},
+		{"single without scopes", []compute.ExchangeableReservation{{ReservationID: "res-1", Quantity: 1, AppliedScopeType: armreservations.AppliedScopeTypeSingle}}, "sources[0]: unsupported applied scope: applied_scopes must hold exactly one scope", true},
+		{"single with two scopes", []compute.ExchangeableReservation{{ReservationID: "res-1", Quantity: 1, AppliedScopeType: armreservations.AppliedScopeTypeSingle, AppliedScopes: []string{"/subscriptions/a", "/subscriptions/b"}}}, "applied_scopes must hold exactly one scope", true},
+		{"shared mixed with single", []compute.ExchangeableReservation{validSource(), singleScopedSource("res-2", "/subscriptions/sub-prod")}, "sources[1] has a different applied scope than sources[0]", true},
 		{"single on different subscriptions", []compute.ExchangeableReservation{
 			singleScopedSource("res-1", "/subscriptions/sub-prod"),
 			singleScopedSource("res-2", "/subscriptions/sub-dev"),
-		}, "sources[1] has a different applied scope than sources[0]"},
+		}, "sources[1] has a different applied scope than sources[0]", true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			preview, offerings, err := c.CalculateExchange(context.Background(), tt.sources, []compute.ExchangeTarget{validTarget()})
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tt.wantErr)
+			assert.Equal(t, tt.scopeRefusal, errors.Is(err, compute.ErrUnsupportedAppliedScope))
 			assert.Nil(t, preview)
 			assert.Nil(t, offerings)
 			assert.False(t, callerInvoked, "caller must not be invoked when source validation fails")
@@ -160,7 +165,10 @@ func TestCalculateExchange_RequestBuilderWiring(t *testing.T) {
 	assert.Equal(t, target.SKU, *toPurchase.SKU.Name)
 	require.NotNil(t, toPurchase.Properties)
 	assert.Equal(t, armreservations.AppliedScopeTypeShared, *toPurchase.Properties.AppliedScopeType)
-	assert.Empty(t, toPurchase.Properties.AppliedScopes)
+	assert.Nil(t, toPurchase.Properties.AppliedScopes, "Shared must not send appliedScopes, not even an empty list")
+	body, err := json.Marshal(captured)
+	require.NoError(t, err)
+	assert.NotContains(t, string(body), "appliedScopes")
 	assert.Equal(t, armreservations.ReservationBillingPlanUpfront, *toPurchase.Properties.BillingPlan)
 	assert.Equal(t, target.BillingScopeID, *toPurchase.Properties.BillingScopeID)
 	assert.Equal(t, target.Quantity, *toPurchase.Properties.Quantity)
@@ -194,6 +202,24 @@ func TestCalculateExchange_PreservesSingleScopeOfSources(t *testing.T) {
 		assert.Equal(t, armreservations.AppliedScopeTypeSingle, *p.Properties.AppliedScopeType, "target %d", i)
 		assert.Equal(t, []*string{to.Ptr("/subscriptions/sub-prod")}, p.Properties.AppliedScopes, "target %d", i)
 	}
+}
+
+// Azure ignores appliedScopes for Shared, so stray scopes reported on a Shared
+// source must neither block a mixed batch nor reach the wire.
+func TestCalculateExchange_SharedIgnoresStrayScopes(t *testing.T) {
+	c := compute.NewClient(nil, "sub-1", "")
+	var captured armreservations.CalculateExchangeRequest
+	c.SetCalculateExchangeCaller(func(_ context.Context, body armreservations.CalculateExchangeRequest) (armreservations.CalculateExchangeOperationResultResponse, error) {
+		captured = body
+		return succeededResult(&armreservations.CalculateExchangeResponseProperties{SessionID: to.Ptr("session-abc")}), nil
+	})
+	a, b := validSource(), validSource()
+	a.AppliedScopes = []string{"/subscriptions/x"}
+	b.AppliedScopes = []string{"/subscriptions/y"}
+
+	_, _, err := c.CalculateExchange(context.Background(), []compute.ExchangeableReservation{a, b}, []compute.ExchangeTarget{validTarget()})
+	require.NoError(t, err)
+	assert.Nil(t, captured.Properties.ReservationsToPurchase[0].Properties.AppliedScopes)
 }
 
 // --- CalculateExchange response handling ---
