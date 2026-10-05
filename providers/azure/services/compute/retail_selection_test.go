@@ -196,3 +196,136 @@ func TestGetOfferingDetails_ValidReservationShapesSynthetic(t *testing.T) {
 		})
 	}
 }
+
+func TestGetOfferingDetails_UnrelatedMalformedPricesSynthetic(t *testing.T) {
+	for _, kind := range []string{"other SKU reservation", "Windows Spot consumption"} {
+		t.Run(kind, func(t *testing.T) {
+			decoy := reservationRow()
+			decoy.Currency, decoy.Unit, decoy.Price, decoy.UnitPrice = "EUR", "100 Hours", 9900, 9900
+			if kind == "other SKU reservation" {
+				decoy.ARM = "Standard_D20s_v3"
+			} else {
+				decoy.Type, decoy.Term = "Consumption", ""
+				decoy.Product += " Windows"
+				decoy.Meter += " Spot"
+			}
+			q, err := quoteRows(t, [][]retailRow{{consumptionRow(), reservationRow()}, {decoy}}, "1yr", "upfront", false)
+			require.NoError(t, err)
+			assertQuote(t, q, 1200, "USD", "1yr", "upfront", 1)
+		})
+	}
+}
+
+func TestGetOfferingDetails_SelectedReservationValidationSynthetic(t *testing.T) {
+	cases := map[string]func(*retailRow){
+		"missing currency":  func(r *retailRow) { r.Currency = "" },
+		"missing unit":      func(r *retailRow) { r.Unit = "" },
+		"100 Hours":         func(r *retailRow) { r.Unit = "100 Hours" },
+		"DTU unit":          func(r *retailRow) { r.Unit = "1 DTU/Hour" },
+		"zero retail price": func(r *retailRow) { r.Price = 0 },
+		"negative price":    func(r *retailRow) { r.Price = -1 },
+	}
+	for name, edit := range cases {
+		t.Run(name, func(t *testing.T) {
+			r := reservationRow()
+			edit(&r)
+			q, err := quoteRows(t, [][]retailRow{{consumptionRow(), r}}, "1yr", "upfront", false)
+			require.Error(t, err)
+			assert.Nil(t, q)
+		})
+	}
+}
+
+func TestGetOfferingDetails_ReservationIdentitySynthetic(t *testing.T) {
+	cases := map[string]func(*retailRow){
+		"wrong ARM SKU":                     func(r *retailRow) { r.ARM = "Standard_D20s_v3" },
+		"wrong region":                      func(r *retailRow) { r.Region = "westus" },
+		"wrong service":                     func(r *retailRow) { r.Service = "SQL Database" },
+		"missing product":                   func(r *retailRow) { r.Product = "" },
+		"missing meter":                     func(r *retailRow) { r.Meter = "" },
+		"missing display SKU":               func(r *retailRow) { r.SKU = "" },
+		"Windows product":                   func(r *retailRow) { r.Product += " Windows" },
+		"Spot meter":                        func(r *retailRow) { r.Meter += " Spot" },
+		"Spot display SKU":                  func(r *retailRow) { r.SKU += " Spot" },
+		"Low Priority meter":                func(r *retailRow) { r.Meter += " Low Priority" },
+		"Low Priority display SKU":          func(r *retailRow) { r.SKU += " Low Priority" },
+		"consumption with reservation term": func(r *retailRow) { r.Type = "Consumption" },
+		"DevTest with reservation term":     func(r *retailRow) { r.Type = "DevTestConsumption" },
+		"substring term":                    func(r *retailRow) { r.Term = "11 Year" },
+		"other term":                        func(r *retailRow) { r.Term = "3 Years" },
+	}
+	for name, edit := range cases {
+		t.Run(name, func(t *testing.T) {
+			bad := reservationRow()
+			bad.Price, bad.UnitPrice = 9900, 9900
+			edit(&bad)
+			for _, includeValid := range []bool{false, true} {
+				for _, badLast := range []bool{false, true} {
+					t.Run(fmt.Sprintf("valid=%t/badLast=%t", includeValid, badLast), func(t *testing.T) {
+						first, second := []retailRow{consumptionRow()}, []retailRow{bad}
+						if includeValid {
+							first = append(first, reservationRow())
+						}
+						if !badLast {
+							first, second = second, first
+						}
+						q, err := quoteRows(t, [][]retailRow{first, second}, "1yr", "upfront", false)
+						if !includeValid {
+							require.Error(t, err)
+							assert.Nil(t, q)
+							return
+						}
+						require.NoError(t, err)
+						assertQuote(t, q, 1200, "USD", "1yr", "upfront", 1)
+					})
+				}
+			}
+		})
+	}
+}
+
+func TestGetOfferingDetails_ReservationAmbiguitySynthetic(t *testing.T) {
+	cases := map[string]func(*retailRow){
+		"price":                 func(r *retailRow) { r.Price, r.UnitPrice = 2400, 2400 },
+		"currency":              func(r *retailRow) { r.Currency = "EUR" },
+		"product at same price": func(r *retailRow) { r.Product = "Virtual Machines Alternate Product" },
+		"meter at same price":   func(r *retailRow) { r.Meter = "Alternate compute capacity" },
+		"SKU at same price":     func(r *retailRow) { r.SKU = "Alternate display" },
+	}
+	for name, edit := range cases {
+		for _, reverse := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/reverse=%t", name, reverse), func(t *testing.T) {
+				r := reservationRow()
+				edit(&r)
+				first, second := reservationRow(), r
+				if reverse {
+					first, second = second, first
+				}
+				q, err := quoteRows(t, [][]retailRow{{consumptionRow(), first}, {second}}, "1yr", "upfront", false)
+				require.Error(t, err)
+				assert.Nil(t, q)
+			})
+		}
+	}
+}
+
+func TestGetOfferingDetails_EquivalentReservationMetadataSynthetic(t *testing.T) {
+	for _, conflictingPrice := range []bool{false, true} {
+		t.Run(fmt.Sprintf("conflictingPrice=%t", conflictingPrice), func(t *testing.T) {
+			r := reservationRow()
+			r.MeterID, r.ProductID, r.SKUID = "other-meter", "other-product", "other-SKU"
+			r.Effective, r.Primary, r.Unit = "2020-01-01T00:00:00Z", false, "1/Hour"
+			if conflictingPrice {
+				r.Price, r.UnitPrice = 2000, 2000
+			}
+			q, err := quoteRows(t, [][]retailRow{{consumptionRow(), reservationRow()}, {r}}, "1yr", "upfront", false)
+			if conflictingPrice {
+				require.Error(t, err)
+				assert.Nil(t, q)
+				return
+			}
+			require.NoError(t, err)
+			assertQuote(t, q, 1200, "USD", "1yr", "upfront", 1)
+		})
+	}
+}
