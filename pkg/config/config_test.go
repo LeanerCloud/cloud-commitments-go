@@ -291,7 +291,7 @@ func TestLoad_OtherFlags(t *testing.T) {
 				"--yes=true",
 				"--audit-log", "flag-audit",
 				"--profile", "flag-profile",
-				"--idempotency-window", "0s",
+				"--idempotency-window", "1h",
 			}))
 
 			cfg, err := Load(path, fs)
@@ -299,7 +299,7 @@ func TestLoad_OtherFlags(t *testing.T) {
 			assert.True(t, cfg.AutoApprove)
 			assert.Equal(t, "flag-audit", cfg.AuditLog)
 			assert.Equal(t, "flag-profile", cfg.AWS.Profile)
-			assert.Equal(t, time.Duration(0), cfg.IdempotencyWindow)
+			assert.Equal(t, time.Hour, cfg.IdempotencyWindow)
 		})
 
 		t.Run("explicit false and empty overrides", func(t *testing.T) {
@@ -309,7 +309,7 @@ func TestLoad_OtherFlags(t *testing.T) {
 				"--yes=false",
 				"--audit-log=",
 				"--profile=",
-				"--idempotency-window=0s",
+				"--idempotency-window=1h",
 			}))
 
 			cfg, err := Load(path, fs)
@@ -317,7 +317,7 @@ func TestLoad_OtherFlags(t *testing.T) {
 			assert.False(t, cfg.AutoApprove)
 			assert.Empty(t, cfg.AuditLog)
 			assert.Empty(t, cfg.AWS.Profile)
-			assert.Equal(t, time.Duration(0), cfg.IdempotencyWindow)
+			assert.Equal(t, time.Hour, cfg.IdempotencyWindow)
 		})
 
 		t.Run("omitted values preserve prior layers", func(t *testing.T) {
@@ -453,4 +453,53 @@ gcp:
 	assert.Equal(t, "org-1", cfg.GCP.OrgID)
 	assert.Equal(t, []string{"proj-a"}, cfg.GCP.Projects)
 	assert.Equal(t, []string{"us-central1"}, cfg.GCP.Regions)
+}
+
+func TestApplyYAMLScorer_ExplicitZeroOverridesNonZero(t *testing.T) {
+	cfg := defaults()
+	cfg.Scorer.MinSavingsPct = 5
+	cfg.Scorer.MaxBreakEvenMonths = 6
+	cfg.Scorer.MinCount = 2
+	path := writeYAML(t, "scorer:\n  min_savings_pct: 0\n  max_break_even_months: 0\n  min_count: 0\n")
+
+	require.NoError(t, applyYAML(&cfg, path, true))
+
+	assert.Zero(t, cfg.Scorer.MinSavingsPct)
+	assert.Zero(t, cfg.Scorer.MaxBreakEvenMonths)
+	assert.Zero(t, cfg.Scorer.MinCount)
+}
+
+func TestApplyYAMLScorer_AbsentKeepsExisting(t *testing.T) {
+	cfg := defaults()
+	cfg.Scorer.MinSavingsPct = 5
+	path := writeYAML(t, "scorer:\n  min_count: 3\n")
+
+	require.NoError(t, applyYAML(&cfg, path, true))
+
+	assert.Equal(t, 5.0, cfg.Scorer.MinSavingsPct)
+	assert.Equal(t, 3, cfg.Scorer.MinCount)
+}
+
+func TestLoad_NonPositiveIdempotencyWindow_Error(t *testing.T) {
+	t.Run("yaml", func(t *testing.T) {
+		for _, v := range []string{"0s", "-1h"} {
+			path := writeYAML(t, "idempotency_window: "+v+"\n")
+			_, err := Load(path, newFlags())
+			require.Error(t, err, v)
+			assert.Contains(t, err.Error(), "idempotency_window")
+		}
+	})
+	t.Run("env", func(t *testing.T) {
+		t.Setenv("CUDLY_IDEMPOTENCY_WINDOW", "0s")
+		_, err := Load(writeYAML(t, ""), newFlags())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "idempotency_window")
+	})
+	t.Run("flag", func(t *testing.T) {
+		fs := newFlags()
+		require.NoError(t, fs.Set("idempotency-window", "-5m"))
+		_, err := Load(writeYAML(t, ""), fs)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "idempotency_window")
+	})
 }

@@ -135,14 +135,14 @@ func applyYAMLBase(cfg *Config, yc yamlConfig) error {
 
 // applyYAMLScorer merges scorer YAML fields into cfg.
 func applyYAMLScorer(cfg *Config, yc yamlConfig) {
-	if yc.Scorer.MinSavingsPct != 0 {
-		cfg.Scorer.MinSavingsPct = yc.Scorer.MinSavingsPct
+	if yc.Scorer.MinSavingsPct != nil {
+		cfg.Scorer.MinSavingsPct = *yc.Scorer.MinSavingsPct
 	}
-	if yc.Scorer.MaxBreakEvenMonths != 0 {
-		cfg.Scorer.MaxBreakEvenMonths = yc.Scorer.MaxBreakEvenMonths
+	if yc.Scorer.MaxBreakEvenMonths != nil {
+		cfg.Scorer.MaxBreakEvenMonths = *yc.Scorer.MaxBreakEvenMonths
 	}
-	if yc.Scorer.MinCount != 0 {
-		cfg.Scorer.MinCount = yc.Scorer.MinCount
+	if yc.Scorer.MinCount != nil {
+		cfg.Scorer.MinCount = *yc.Scorer.MinCount
 	}
 	if len(yc.Scorer.EnabledServices) > 0 {
 		cfg.Scorer.EnabledServices = yc.Scorer.EnabledServices
@@ -374,6 +374,9 @@ func validate(cfg Config) error {
 	}
 	if len(cfg.EnabledClouds) == 0 {
 		return fmt.Errorf("at least one cloud must be enabled")
+	}
+	if cfg.IdempotencyWindow <= 0 {
+		return fmt.Errorf("idempotency_window must be positive, got %s", cfg.IdempotencyWindow)
 	}
 	if cfg.Scorer.MinSavingsPct < 0 {
 		return fmt.Errorf("min_savings_pct must be ≥ 0")
