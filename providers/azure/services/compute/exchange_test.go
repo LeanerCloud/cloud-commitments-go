@@ -297,3 +297,29 @@ func TestListExchangeableReservations_BillingScopeIDExtracted(t *testing.T) {
 	assert.Empty(t, result[1].BillingScopeID,
 		"an unreported billing scope must stay empty so callers can fail closed on unknown ownership")
 }
+
+// Issue #57: the listing must surface each reservation's applied scope so an
+// exchange can purchase the replacement with the same scope.
+func TestListExchangeableReservations_AppliedScopeExtracted(t *testing.T) {
+	t.Parallel()
+	single := makeReservation(vmID1, "Standard_D2s_v3", 2, provStateSuc(), resTypeVM(), ifOn())
+	single.Properties.AppliedScopeType = to.Ptr(armreservations.AppliedScopeTypeSingle)
+	single.Properties.AppliedScopes = []*string{to.Ptr("/subscriptions/sub-prod")}
+
+	unreported := makeReservation(vmID2, "Standard_F4s_v2", 1, provStateSuc(), resTypeVM(), ifOn())
+
+	c := newClient()
+	c.SetExchangeablePager(&staticExchangeablePager{
+		pages: []*armreservations.ListResult{
+			{Value: []*armreservations.ReservationResponse{single, unreported}},
+		},
+	})
+
+	result, err := c.ListExchangeableReservations(context.Background())
+	require.NoError(t, err)
+	require.Len(t, result, 2)
+	assert.Equal(t, armreservations.AppliedScopeTypeSingle, result[0].AppliedScopeType)
+	assert.Equal(t, []string{"/subscriptions/sub-prod"}, result[0].AppliedScopes)
+	assert.Empty(t, result[1].AppliedScopeType, "an unreported scope must stay empty, not become Shared")
+	assert.Empty(t, result[1].AppliedScopes)
+}
