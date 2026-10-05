@@ -47,9 +47,44 @@ var metadataPrefixes = []netip.Prefix{
 // override it to resolve names to metadata addresses.
 var resolver *net.Resolver
 
+// embeddedIPv4Prefixes are IPv6 ranges that carry an IPv4 address in their
+// last 32 bits (NAT64 and the deprecated IPv4-compatible form) or in bits
+// 16-47 (6to4). Hosts with a NAT64 gateway or 6to4 relay forward these to the
+// embedded IPv4 address, so it must pass the same metadata check.
+var embeddedIPv4Prefixes = []struct {
+	prefix netip.Prefix
+	offset int // byte offset of the embedded IPv4 address in the 16-byte form
+}{
+	{netip.MustParsePrefix("64:ff9b::/96"), 12},
+	{netip.MustParsePrefix("2002::/16"), 2},
+	{netip.MustParsePrefix("::/96"), 12},
+}
+
+// embeddedIPv4 returns the IPv4 address ip carries, if any.
+func embeddedIPv4(ip netip.Addr) (netip.Addr, bool) {
+	b := ip.As16()
+	for _, e := range embeddedIPv4Prefixes {
+		if e.prefix.Contains(ip) {
+			return netip.AddrFrom4([4]byte(b[e.offset : e.offset+4])), true
+		}
+	}
+	return netip.Addr{}, false
+}
+
+func isMetadata(ip netip.Addr) bool {
+	for _, p := range metadataPrefixes {
+		if p.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
 // blockMetadata is a net.Dialer Control hook. It runs after name resolution
 // with the exact IP about to be connected, so hostnames, alternate IPv4
-// spellings, IPv4-mapped IPv6 and redirects cannot bypass it.
+// spellings, IPv4-mapped IPv6, NAT64/6to4 forms and redirects cannot bypass
+// it. Unspecified addresses (0.0.0.0, ::) are refused too: they connect to
+// local services on Linux and macOS.
 func blockMetadata(_, address string, _ syscall.RawConn) error {
 	ap, err := netip.ParseAddrPort(address)
 	if err != nil {
@@ -57,10 +92,14 @@ func blockMetadata(_, address string, _ syscall.RawConn) error {
 	}
 	// Prefix.Contains never matches a zoned address, so drop the zone.
 	ip := ap.Addr().Unmap().WithZone("")
-	for _, p := range metadataPrefixes {
-		if p.Contains(ip) {
-			return fmt.Errorf("connection to metadata endpoint %s is blocked", ip)
-		}
+	if ip.IsUnspecified() {
+		return fmt.Errorf("connection to unspecified address %s is blocked", ip)
+	}
+	if isMetadata(ip) {
+		return fmt.Errorf("connection to metadata endpoint %s is blocked", ip)
+	}
+	if v4, ok := embeddedIPv4(ip); ok && isMetadata(v4) {
+		return fmt.Errorf("connection to metadata endpoint %s (embedded in %s) is blocked", v4, ip)
 	}
 	return nil
 }
