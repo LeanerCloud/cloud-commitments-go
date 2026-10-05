@@ -671,11 +671,6 @@ func isResourceExhausted(err error) bool {
 // idempotent name but differs from the requested purchase.
 var errExistingCommitmentMismatch = errors.New("existing GCP commitment does not match the requested purchase")
 
-// errExistingCommitmentCreating reports that the commitment holding the
-// idempotent name is still CREATING, so the purchase is not yet confirmed.
-// Re-driving the purchase later resolves it.
-var errExistingCommitmentCreating = errors.New("existing GCP commitment is still being created")
-
 // isAlreadyExists reports whether the Compute REST API rejected a create because
 // the resource exists: ALREADY_EXISTS maps to HTTP 409 (google/rpc/code.proto).
 func isAlreadyExists(err error) bool {
@@ -684,9 +679,8 @@ func isAlreadyExists(err error) bool {
 }
 
 // adoptExistingCommitment returns nil only when insertErr is a re-drive's name
-// collision with a commitment whose plan, type and resources equal the request
-// and whose status is not CREATING. Every error it returns keeps the original
-// 409 in its chain.
+// collision with a commitment whose plan, type and resources equal the request.
+// Every error it returns for a 409 keeps the original conflict first in its chain.
 func adoptExistingCommitment(ctx context.Context, svc CommitmentsService, req *computepb.InsertRegionCommitmentRequest, token string, insertErr error) error {
 	if token == "" || !isAlreadyExists(insertErr) {
 		return stripPermanentPrefix(insertErr)
@@ -703,13 +697,9 @@ func adoptExistingCommitment(ctx context.Context, svc CommitmentsService, req *c
 	}
 	gotRes, wantRes := resourceAmounts(got), resourceAmounts(want)
 	if got.GetPlan() != want.GetPlan() || got.GetType() != want.GetType() || !maps.Equal(gotRes, wantRes) {
-		return fmt.Errorf("%w: commitment %s in %s has plan=%s type=%s resources=%v, requested plan=%s type=%s resources=%v: %w",
-			errExistingCommitmentMismatch, want.GetName(), req.GetRegion(),
-			got.GetPlan(), got.GetType(), gotRes, want.GetPlan(), want.GetType(), wantRes, conflict)
-	}
-	if got.GetStatus() == computepb.Commitment_CREATING.String() {
-		return fmt.Errorf("%w: commitment %s in %s matches the request but is CREATING and could still fail: %w",
-			errExistingCommitmentCreating, want.GetName(), req.GetRegion(), conflict)
+		return fmt.Errorf("%w: commitment %s already exists in %s with plan=%s type=%s resources=%v but this purchase requested plan=%s type=%s resources=%v: %w",
+			conflict, want.GetName(), req.GetRegion(),
+			got.GetPlan(), got.GetType(), gotRes, want.GetPlan(), want.GetType(), wantRes, errExistingCommitmentMismatch)
 	}
 	log.Printf("GCP CUD %s for token %s already exists and matches the request; treating the re-drive as the earlier purchase (issue #44)",
 		want.GetName(), common.MaskToken(token))

@@ -740,9 +740,8 @@ func TestComputeEngineClient_PurchaseCommitment_ReDriveAlreadyExists(t *testing.
 				c.Resources = append(c.Resources, &computepb.ResourceCommitment{Type: stringPtr("LOCAL_SSD"), Amount: int64Ptr(375)})
 			},
 			wantErrIs: errExistingCommitmentMismatch},
-		{name: "matching commitment still CREATING is not a completed purchase", opts: tokenOpts, getStatus: http.StatusOK, wantGets: 1,
-			existing:  func(c *computepb.Commitment) { c.Status = stringPtr(computepb.Commitment_CREATING.String()) },
-			wantErrIs: errExistingCommitmentCreating, wantErr: "CREATING"},
+		{name: "matching commitment still CREATING is adopted", opts: tokenOpts, getStatus: http.StatusOK, wantGets: 1,
+			existing: func(c *computepb.Commitment) { c.Status = stringPtr(computepb.Commitment_CREATING.String()) }},
 		{name: "unreadable existing commitment stays a failure", opts: tokenOpts, getStatus: http.StatusForbidden, wantGets: 1,
 			wantErr: "could not be read to confirm"},
 		{name: "no token keeps the conflict a failure", opts: common.PurchaseOptions{}, getStatus: http.StatusOK,
