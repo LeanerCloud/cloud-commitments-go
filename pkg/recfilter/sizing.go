@@ -121,6 +121,7 @@ func ApplyCoverage(recs []common.Recommendation, coverage float64, logf Logf, dr
 //	in the per-run skip summary.
 //	If avg, existing% or target is NaN/Inf, existing% is negative, or
 //	n_target overflows int → drop with WARNING log (target-input-invalid).
+//	If n_target > 0 but rec.Count <= 0 (no per-unit cost) → same drop.
 //	Projected coverage = ExistingCoveragePct + n_target/avg * 100 (total
 //	coverage after the purchase, clamped to 100). Projected utilization =
 //	avg/n_target * 100 clamped to 100.
@@ -311,14 +312,14 @@ func applyTargetCoverageRI(rec common.Recommendation, targetPct float64, logf Lo
 	// coverage-anchored nTarget exceeds rec.Count (AWS sized below full
 	// coverage), the ratio scales costs up linearly — accurate when per-RI
 	// pricing is constant, which it is within a single pool/term/payment
-	// combination. Guarded against rec.Count==0 (malformed rec) by falling
-	// back to nTarget so a zero-cost rec stays zero-cost rather than NaN.
-	var ratio float64
-	if rec.Count > 0 {
-		ratio = float64(nTarget) / float64(rec.Count)
-	} else {
-		ratio = float64(nTarget)
+	// combination. A rec with no positive Count has no per-unit cost to
+	// derive, so it is dropped rather than scaled by an invented ratio.
+	if rec.Count <= 0 {
+		logf.printf("WARNING: --target-coverage=%.1f%% cannot scale costs for %s/%s/%s with count=%d; dropped recommendation\n",
+			targetPct, rec.Service, rec.Region, rec.ResourceType, rec.Count)
+		return rec, false, common.DropTargetInputInvalid
 	}
+	ratio := float64(nTarget) / float64(rec.Count)
 	adjusted := common.ScaleRecommendationCosts(rec, ratio)
 	adjusted.Count = nTarget
 
