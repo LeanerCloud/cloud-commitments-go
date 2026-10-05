@@ -3,7 +3,7 @@
 Status: proposed. Refs issue #78 (part d). Docs only: no production code is
 changed by this document.
 
-All code references are to `main` at `c79fbcd`. Consumer-repo references are
+All code references are to `main` at `5acf38b`. Consumer-repo references are
 to the default branches of `cloud-commitments-platform`, `-cli` and `-mcp` as
 cloned on 2026-10-05.
 
@@ -47,17 +47,25 @@ cloned on 2026-10-05.
   console". The covered services include Memorystore and Cloud SQL, not Cloud
   Storage. Viewing them requires roles on the Cloud Billing account:
   <https://docs.cloud.google.com/docs/cuds-recommender>.
-- Recommender `google.cloudbilling.commitment.SpendBasedCommitmentRecommender`
-  is listed with resource type "Billing accounts":
-  <https://docs.cloud.google.com/recommender/docs/recommenders>. The Go SDK
-  accepts a `billingAccounts/[BILLING_ACCOUNT_ID]/locations/[LOCATION]/recommenders/[RECOMMENDER_ID]`
+- The recommenders page lists `google.cloudbilling.commitment.SpendBasedCommitmentRecommender`
+  ("Spend-based committed use discount recommender") in one table with columns
+  Category, Name, ID, Description and BigQuery export; the ID appears twice
+  and the table has no resource-type or scope column:
+  <https://docs.cloud.google.com/recommender/docs/recommenders>. The
+  billing-account scope is inferred, not documented there: it rests on the
+  `google.cloudbilling` ID namespace and on the Go SDK accepting a
+  `billingAccounts/[BILLING_ACCOUNT_ID]/locations/[LOCATION]/recommenders/[RECOMMENDER_ID]`
   parent (`cloud.google.com/go/recommender@v1.13.6/apiv1/recommenderpb/recommender_service.pb.go:344`).
+  That pattern is generic to all recommenders.
 - The recommendation body that would carry the commitment amount is
   `RecommendationContent.Overview`, typed `*structpb.Struct`
   (`recommenderpb/recommendation.pb.go:486`). Its keys for this recommender are
-  not documented. The cost impact is typed:
-  `CostProjection.Cost` is a `google.type.Money` with a currency code
-  (`recommendation.pb.go:869-882`). The generic operation contract is at
+  not documented. The cost impact is typed. `CostProjection.Cost` is a
+  `google.type.Money` with a currency code, and "negative cost units indicate
+  cost savings and positive cost units indicate increase"; `CostProjection`
+  also has `CostInLocalCurrency`, "the approximate cost savings in the billing
+  account's local currency" (`recommendation.pb.go:869-885`). The generic
+  operation contract is at
   <https://docs.cloud.google.com/recommender/docs/key-concepts>.
 - Spend-based commitments are bought per billing account with
   `billingAccounts/BILLING_ACCOUNT_ID/orders:place`, choosing an offer per
@@ -206,13 +214,13 @@ Where each value lives on a spend rec:
 | Value | Field | Absent |
 | --- | --- | --- |
 | Billing account | `Scope{Kind: ScopeBillingAccount, ID}` | parser error, no rec |
-| Project that collected it | `Account` stays empty | not a placeholder: the scope is `Scope` |
+| Billing account ID (bare) | `Account` | parser error; see "Account and filters" in section 5 |
 | Service | `Service` (spend slug) | `ErrUnsupportedSpendService` |
 | Region | `Region` | parser error (regional commitments only at first) |
 | Term | `Term` ("1yr"/"3yr") | parser error; no "1yr" default |
 | Hourly amount | `Details.HourlyAmount` | parser error |
-| Currency | `Details.Currency` | parser error; never assumed USD |
-| Savings | `EstimatedSavings` from typed `CostProjection.Cost` | parser error |
+| Currency | `Details.Currency` | parser error; never assumed USD. `Cost` and `CostInLocalCurrency` may differ in currency, so the parser must pick one explicitly (open question 2) |
+| Savings | `EstimatedSavings` from typed `CostProjection.Cost`, negated (negative units are savings) | parser error |
 | Offer | `Details.OfferID` | nil, purchase refused |
 | Instance tier | `ResourceType` stays empty | by design, as for Savings Plans |
 
@@ -270,31 +278,41 @@ fixture tests. The types in section 3, the client, the collector and every
 consumer stay as they are.
 
 While `parseOverview` returns `ErrOverviewSchemaUnverified`, the client
-returns that error from `GetRecommendations` rather than an empty slice, so
-the platform records a collection error for the billing account instead of
-"no recommendations". This is the honest state until evidence exists.
+returns that error from `GetRecommendations` rather than an empty slice. Spend
+collection is a separate call, not one more leg of the per-region errgroup in
+`providers/gcp/recommendations.go`: there `collectRegion` (`:296-345`) logs
+each per-service error at WARN and `mergeRegionResults` (`:191-214`) errors
+only when every service call failed, so the unverified error would be
+swallowed whenever Compute Engine succeeded. The separate call returns its
+error to the caller, which must surface it instead of reporting "no
+recommendations". This is the honest state until evidence exists.
 
 ### Evidence still needed (parser is blocked)
 
-1. A real `ListRecommendations` response for
+1. The recommender parent scope: that
+   `SpendBasedCommitmentRecommender` is served under
+   `billingAccounts/...` (inferred today, see section 1), and not, for
+   example, under projects or organizations. The same capture confirms it.
+2. A real `ListRecommendations` response for
    `SpendBasedCommitmentRecommender` from a billing account with Cloud SQL or
    Memorystore spend, captured as JSON (`protojson`), with account IDs
    redacted. A capture tool in `ci_cd_sanity_tests` (cloud-backed, run only on
    purpose) is step 4 below. Alternatively, written confirmation of the
    schema from Google.
-2. From that sample, or from Google:
+3. From that sample, or from Google:
    - the `Overview` keys for service, region, term, hourly amount and
      currency, and whether the amount is hourly or a different grain;
    - which `[LOCATION]` the recommender uses (`global` or per region);
    - whether the API returns these at all, given the console-only statement;
    - whether one recommendation can cover several regions or services;
-   - whether `CostProjection.Cost` is savings or cost, and over what
-     `Duration`;
+   - over what `Duration` `CostProjection.Cost` applies, and whether `Cost`
+     or `CostInLocalCurrency` matches the currency of the amount in
+     `Overview`;
    - the IAM role needed on the billing account;
    - how a recommendation maps to a Consumer Procurement offer (by product
      and term, per the purchasing page tables) and which currency
      `commitment_amount` uses.
-3. Whether Memorystore's recommendations are Redis-only or also cover
+4. Whether Memorystore's recommendations are Redis-only or also cover
    Valkey or Memcached, since only "Memorystore for Redis" is on the purchase
    list.
 
@@ -315,7 +333,8 @@ the platform records a collection error for the billing account instead of
 | `pkg/common/audit.go:293-297` | record scope ID and currency |
 | `pkg/provider/interface.go:91` | billing account source (see open question 1) |
 | `providers/gcp/provider.go:472-485` | route spend slugs to `spendcud` |
-| `providers/gcp/recommendations.go:291` | collect spend recs once per billing account, not per region |
+| `providers/gcp/recommendations.go:291` | collect spend recs once per billing account, not per region, as a separate call whose error propagates |
+| `pkg/recfilter/filters.go:55-65` `Filters.IncludesInstanceType` | decision below: spend recs bypass the instance-type filter |
 | `memorystore`, `cloudsql`, `cloudstorage` clients | stop emitting recs from non-commitment recommenders once the spend path is live |
 | AWS and Azure | no change; Savings Plans keep their slugs and details |
 
@@ -345,7 +364,11 @@ the platform records a collection error for the billing account instead of
   `resource_type: string`; the UI needs scope, currency and an hourly-amount
   column for spend rows. Email templates render `{{.Count}}x {{.ResourceType}}`,
   which prints an empty type for spend recs. Spend caps and dashboard totals
-  assume USD. OpenAPI schemas were not checked.
+  assume USD. In `internal/api/openapi.yaml` (platform main `115ff70`)
+  `resource_type` is an optional string with no `minLength` in
+  `RecommendationRecord` (`:2665`), `PlannedPurchase` (`:3015`) and
+  `PurchaseHistoryRecord` (`:3092`), so an empty value is valid. Scope and
+  currency fields still need adding.
 
 ### cloud-commitments-cli
 
@@ -353,6 +376,27 @@ The CSV header (`cmd/multi_service_csv.go:244-247`) needs scope, currency and
 hourly-amount columns; the cap sort key (`cmd/multi_service_csv_cap.go:108`)
 needs the scope; `IsSavingsPlan` branches such as the count override
 (`cmd/helpers_count_override.go:49`) should use `IsSpendDenominated`.
+
+`passesDimensionFilters` (`cmd/multi_service_filters.go:95-105`) calls
+`shouldIncludeInstanceType(rec.ResourceType, cfg)` and
+`shouldIncludeAccount(rec.AccountName, cfg)`. With `--include-instance-types`
+or `--include-accounts`, every spend rec (empty `ResourceType`, empty account)
+is silently dropped; `recfilter.Filters.IncludesInstanceType` has the same
+behaviour for any caller. `AccountName` is filled from `Account` through the
+alias cache (`cmd/multi_service_helpers.go:203`, `:499`).
+
+### Account and filters (decision)
+
+AWS Savings Plans recommendations set `Account` (`parser_sp.go:245`). Leaving
+`Account` empty for spend recs would depart from that pattern. Decision:
+populate `Account` with the billing account ID (the bare ID, `Scope.ID` keeps
+the resource name), so name-based account filters and the alias cache keep
+working, and keep `Scope` as the authoritative purchase scope. Consumers that
+group by `Account` must key spend recs on `Scope` (section 5). The instance
+type filter does not apply to spend recs, since they have no instance type:
+`IncludesInstanceType` and the CLI check skip them via `IsSpendDenominated`,
+and `--exclude-instance-types` likewise cannot match them. Step 2 covers both,
+with a test that an include-instance-types filter keeps a spend rec.
 
 ### cloud-commitments-mcp
 
@@ -378,14 +422,22 @@ Each step is one PR under about 400 lines and can ship alone.
 2. **Shared consumers in this module.** Sizing, scaling, dedupe, matching,
    scorer tie-break, reporter currency, audit fields. Verify: table tests
    with a spend rec through `ApplyCoverage` (amount scaled, not dropped),
+   an include-instance-types filter that keeps the rec,
    `ApplyTargetCoverage`, `AdjustRecommendationsForExisting`, reporter output
    with a non-USD currency; a deletion probe on each branch.
 3. **`spendcud` client with the blocked parser.** Billing-account fetch,
    `parseSpendRecommendation` on typed fields, `parseOverview` returning
    `ErrOverviewSchemaUnverified`, `PurchaseCommitment` returning
-   `ErrCommitmentPurchaseNotSupported`, provider routing. Verify: fake
-   recommender tests for pagination, state filter, error propagation, and
-   that the client returns the unverified error rather than an empty slice.
+   `ErrCommitmentPurchaseNotSupported`, provider routing. Depends on open
+   question 1: `GetServiceClient` has only a project and a region
+   (`providers/gcp/provider.go:472-485`), so routing cannot ship until the
+   billing account source is decided. That decision changes
+   `pkg/provider/interface.go:91` (`ProviderConfig`, if a config field is
+   chosen) and the collection entry in `providers/gcp/recommendations.go:291`.
+   Verify: fake recommender tests for pagination, state filter, error
+   propagation, that the client returns the unverified error rather than an
+   empty slice, and a provider-level test proving the error reaches the caller
+   of spend collection while another service succeeds.
 4. **Evidence capture.** A diagnostic in `ci_cd_sanity_tests` that lists the
    recommender for a given billing account and writes redacted `protojson`.
    Run once against a billing account with Cloud SQL or Memorystore spend,
