@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -201,6 +202,92 @@ func TestCosmosOffering_UnknownAliasesAvoidHTTP(t *testing.T) {
 			require.Error(t, err)
 			assert.Nil(t, q)
 		})
+	}
+}
+
+func TestCosmosOffering_IdentityAndOrderSynthetic(t *testing.T) {
+	for field, value := range map[string]any{
+		"serviceName": "Other", "productName": "Azure Cosmos DB for PostgreSQL", "armRegionName": "eastus",
+		"armSkuName": "Cosmos_DB_1000_RUs", "type": "Consumption", "reservationTerm": "11 Year",
+	} {
+		for _, valid := range []bool{false, true} {
+			for _, reverse := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/valid=%t/reverse=%t", field, valid, reverse), func(t *testing.T) {
+					bad := cosmosCatalog()[0].row(1)
+					bad[field], bad["retailPrice"], bad["unitPrice"] = value, 99999, 99999
+					first, second := []map[string]any{cosmosConsumption()}, []map[string]any{bad}
+					if valid {
+						first = append(first, cosmosCatalog()[0].row(1))
+					}
+					if reverse {
+						first, second = second, first
+					}
+					q, err := cosmosQuote(t, "Cosmos_DB_100_RUs", [][]map[string]any{first, second})
+					if !valid {
+						require.Error(t, err)
+						assert.Nil(t, q)
+						return
+					}
+					require.NoError(t, err)
+					assertCosmosQuote(t, q, "Cosmos_DB_100_RUs", "eastus", "1yr", "upfront", "USD", 56, 1)
+				})
+			}
+		}
+	}
+}
+
+func TestCosmosOffering_SelectedValidationSynthetic(t *testing.T) {
+	for _, bad := range []struct {
+		field string
+		value any
+	}{
+		{"unitOfMeasure", ""}, {"unitOfMeasure", "100 Hours"}, {"unitOfMeasure", "100 RU/s"}, {"currencyCode", ""},
+		{"retailPrice", 0}, {"retailPrice", -1}, {"retailPrice", nil},
+	} {
+		t.Run(fmt.Sprintf("%s/%v", bad.field, bad.value), func(t *testing.T) {
+			r := cosmosCatalog()[0].row(1)
+			r[bad.field] = bad.value
+			q, err := cosmosQuote(t, "Cosmos_DB_100_RUs", [][]map[string]any{{cosmosConsumption(), r}})
+			require.Error(t, err)
+			assert.Nil(t, q)
+		})
+	}
+}
+
+func TestCosmosOffering_EquivalentAndConflictingQuotesSynthetic(t *testing.T) {
+	for _, change := range []string{"equivalent", "price", "currency", "meter", "display", "invalid unit"} {
+		for _, reverse := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/%t", change, reverse), func(t *testing.T) {
+				first := cosmosCatalog()[0].row(1)
+				first["meterId"], first["effectiveStartDate"], first["isPrimaryMeterRegion"] = "first", "2026-01-01", true
+				second := maps.Clone(first)
+				second["unitOfMeasure"], second["meterId"], second["productId"], second["skuId"] = "1 Hour", "second", "other-product-id", "other-sku-id"
+				second["effectiveStartDate"], second["isPrimaryMeterRegion"], second["unitPrice"] = "2026-02-01", false, 5
+				switch change {
+				case "price":
+					second["retailPrice"] = 60
+				case "currency":
+					second["currencyCode"] = "EUR"
+				case "meter":
+					second["meterName"] = "different meter"
+				case "display":
+					second["skuName"] = "different display"
+				case "invalid unit":
+					second["unitOfMeasure"] = "100 Hours"
+				}
+				if reverse {
+					first, second = second, first
+				}
+				q, err := cosmosQuote(t, "Cosmos_DB_100_RUs", [][]map[string]any{{cosmosConsumption(), first}, {second}})
+				if change != "equivalent" {
+					require.Error(t, err)
+					assert.Nil(t, q)
+					return
+				}
+				require.NoError(t, err)
+				assertCosmosQuote(t, q, "Cosmos_DB_100_RUs", "eastus", "1yr", "upfront", "USD", 56, 1)
+			})
+		}
 	}
 }
 
