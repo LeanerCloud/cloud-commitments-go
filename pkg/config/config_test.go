@@ -88,6 +88,38 @@ dry_run: false
 	assert.False(t, cfg.DryRun)
 }
 
+func TestLoad_YAMLDryRunPresence(t *testing.T) {
+	// NOT parallel: uses t.Setenv (process-wide env mutation panics with t.Parallel).
+	cases := []struct {
+		name        string
+		yaml        string
+		env         string
+		wantDryRun  bool
+		wantErrText string
+	}{
+		{name: "absent key keeps default", yaml: "enabled_clouds: [aws]\n", wantDryRun: true},
+		{name: "null value keeps default", yaml: "dry_run:\n", wantDryRun: true},
+		{name: "explicit false disables", yaml: "dry_run: false\n", wantDryRun: false},
+		{name: "explicit true enables", yaml: "dry_run: true\n", wantDryRun: true},
+		{name: "env false overrides absent key", yaml: "enabled_clouds: [aws]\n", env: "false", wantDryRun: false},
+		{name: "env true overrides explicit false", yaml: "dry_run: false\n", env: "true", wantDryRun: true},
+		{name: "malformed value fails", yaml: "dry_run: maybe\n", wantErrText: "parse config file"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("CUDLY_DRY_RUN", tc.env)
+			cfg, err := Load(writeYAML(t, tc.yaml), newFlags())
+			if tc.wantErrText != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantErrText)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantDryRun, cfg.DryRun)
+		})
+	}
+}
+
 func TestLoad_InvalidYAML_Error(t *testing.T) {
 	t.Parallel()
 	path := writeYAML(t, "dry_run: [not a bool")
