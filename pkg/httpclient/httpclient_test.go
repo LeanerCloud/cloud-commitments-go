@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
@@ -33,21 +32,10 @@ func TestNew_BlocksIMDS(t *testing.T) {
 		{name: "ipv6 AWS IMDS", url: "http://[fd00:ec2::254]/latest/meta-data/"},
 	}
 
-	c := New()
+	c := newContainedClient(t)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, tt.url, nil)
-			if err != nil {
-				t.Fatalf("build request: %v", err)
-			}
-			resp, err := c.Do(req)
-			if err == nil {
-				resp.Body.Close()
-				t.Fatalf("request to %s must be blocked", tt.url)
-			}
-			if !strings.Contains(err.Error(), "blocked") {
-				t.Fatalf("expected IMDS-blocked error, got: %v", err)
-			}
+			assertBlocked(t, c, tt.url)
 		})
 	}
 }
