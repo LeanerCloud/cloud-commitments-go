@@ -1532,3 +1532,98 @@ func TestListTargetOfferings_InvalidTenancyOrScope_ErrorsBeforeAPICall(t *testin
 		})
 	}
 }
+
+// validTenancyScopeCases are the accepted tenancy/scope spellings with the
+// values the exchange lookups must send to AWS.
+var validTenancyScopeCases = []struct {
+	name        string
+	tenancy     string
+	scope       string
+	wantTenancy types.Tenancy
+	wantScope   string
+}{
+	{"default_region", "default", "Region", types.TenancyDefault, "Region"},
+	{"dedicated_az", "dedicated", "Availability Zone", types.TenancyDedicated, "Availability Zone"},
+	{"legacy_shared_region", "shared", "region", types.TenancyDefault, "Region"},
+	{"legacy_az_hyphenated", "dedicated", "availability-zone", types.TenancyDedicated, "Availability Zone"},
+}
+
+// captureOfferingsInput returns a mock that records the request it receives
+// and answers with a single offering.
+func captureOfferingsInput(offeringID string, got **ec2.DescribeReservedInstancesOfferingsInput) *MockEC2Client {
+	mockEC2 := &MockEC2Client{}
+	mockEC2.On("DescribeReservedInstancesOfferings", mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			*got = args.Get(1).(*ec2.DescribeReservedInstancesOfferingsInput)
+		}).
+		Return(&ec2.DescribeReservedInstancesOfferingsOutput{
+			ReservedInstancesOfferings: []types.ReservedInstancesOffering{{
+				ReservedInstancesOfferingId: aws.String(offeringID),
+				InstanceType:                types.InstanceTypeM5Large,
+			}},
+		}, nil).Once()
+	return mockEC2
+}
+
+func filterValues(filters []types.Filter, name string) []string {
+	for _, f := range filters {
+		if aws.ToString(f.Name) == name {
+			return f.Values
+		}
+	}
+	return nil
+}
+
+func TestFindConvertibleOffering_TenancyScopeVariants_SendEnumValues(t *testing.T) {
+	t.Parallel()
+	for _, tc := range validTenancyScopeCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var got *ec2.DescribeReservedInstancesOfferingsInput
+			client := &Client{client: captureOfferingsInput("offering-"+tc.name, &got), region: "us-east-1"}
+
+			id, err := client.FindConvertibleOffering(context.Background(), FindConvertibleOfferingParams{
+				InstanceType:       "m5.large",
+				ProductDescription: "Linux/UNIX",
+				Tenancy:            tc.tenancy,
+				Scope:              tc.scope,
+				Duration:           OneYearSeconds,
+			})
+
+			require.NoError(t, err)
+			assert.Equal(t, "offering-"+tc.name, id)
+			require.NotNil(t, got)
+			assert.Equal(t, []string{string(tc.wantTenancy)}, filterValues(got.Filters, "instance-tenancy"))
+			assert.Equal(t, []string{tc.wantScope}, filterValues(got.Filters, "scope"))
+			assert.Equal(t, []string{"m5.large"}, filterValues(got.Filters, "instance-type"))
+			assert.Equal(t, []string{"convertible"}, filterValues(got.Filters, "offering-class"))
+		})
+	}
+}
+
+func TestListTargetOfferings_TenancyScopeVariants_SendEnumValues(t *testing.T) {
+	t.Parallel()
+	for _, tc := range validTenancyScopeCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var got *ec2.DescribeReservedInstancesOfferingsInput
+			client := &Client{client: captureOfferingsInput("offering-"+tc.name, &got), region: "us-east-1"}
+
+			offerings, err := client.ListTargetOfferings(context.Background(), ListTargetOfferingsParams{
+				ProductDescription: "Linux/UNIX",
+				Tenancy:            tc.tenancy,
+				Scope:              tc.scope,
+				Duration:           OneYearSeconds,
+			})
+
+			require.NoError(t, err)
+			require.Len(t, offerings, 1)
+			assert.Equal(t, "offering-"+tc.name, offerings[0].OfferingID)
+			assert.Equal(t, tc.wantScope, offerings[0].Scope)
+			require.NotNil(t, got)
+			assert.Equal(t, tc.wantTenancy, got.InstanceTenancy)
+			assert.Equal(t, []string{tc.wantScope}, filterValues(got.Filters, "scope"))
+			assert.Equal(t, types.OfferingClassTypeConvertible, got.OfferingClass)
+		})
+	}
+}
