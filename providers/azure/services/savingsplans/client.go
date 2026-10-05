@@ -163,42 +163,83 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 		commitments = c.appendOwnedPlans(commitments, page.Value, &skipped)
 	}
 
-	if skipped.billedElsewhere > 0 || skipped.unknownOwner > 0 {
-		log.Printf("WARNING: skipped savings plans not attributable to subscription %s: %d billed to another scope, %d with no billing scope",
-			c.subscriptionID, skipped.billedElsewhere, skipped.unknownOwner)
+	if skipped.total > 0 {
+		log.Printf("WARNING: skipped %d savings plans not attributable to subscription %s (showing up to %d): %s",
+			skipped.total, c.subscriptionID, maxLoggedSkippedPlans, strings.Join(skipped.details, "; "))
 	}
 
 	return commitments, nil
 }
 
+const (
+	subscriptionScopePrefix = "/subscriptions/"
+	maxLoggedSkippedPlans   = 20
+)
+
 type skippedPlans struct {
-	billedElsewhere int
-	unknownOwner    int
+	total   int
+	details []string
 }
 
-// appendOwnedPlans keeps the plans billed to this subscription. ListAll is tenant-wide, and a
-// plan is billed to exactly one scope even when its applied scope is Shared (issue #40).
+func (s *skippedPlans) add(sp *armbillingbenefits.SavingsPlanModel) {
+	s.total++
+	if len(s.details) >= maxLoggedSkippedPlans {
+		return
+	}
+	var billingScope, appliedScope string
+	if p := sp.Properties; p != nil {
+		if p.BillingScopeID != nil {
+			billingScope = *p.BillingScopeID
+		}
+		if p.AppliedScopeType != nil {
+			appliedScope = string(*p.AppliedScopeType)
+		}
+	}
+	s.details = append(s.details, fmt.Sprintf("%s (billing scope %q, applied scope %q)", *sp.ID, billingScope, appliedScope))
+}
+
+// appendOwnedPlans keeps the plans attributable to this subscription; ListAll is tenant-wide
+// (issue #40). A plan is ours when it is billed to this subscription, or when it is billed to a
+// billing account or profile (EA/MCA list responses) and applied to this subscription alone.
+// Shared plans billed to a billing account cannot be attributed to one subscription and are skipped.
 func (c *Client) appendOwnedPlans(dst []common.Commitment, plans []*armbillingbenefits.SavingsPlanModel, skipped *skippedPlans) []common.Commitment {
 	ownScope := c.billingScopeID()
 	for _, sp := range plans {
 		if sp == nil || sp.ID == nil {
 			continue
 		}
-		switch {
-		case sp.Properties == nil || sp.Properties.BillingScopeID == nil || *sp.Properties.BillingScopeID == "":
-			skipped.unknownOwner++
-		case !strings.EqualFold(*sp.Properties.BillingScopeID, ownScope):
-			skipped.billedElsewhere++
-		default:
+		if planOwnedBy(sp.Properties, ownScope) {
 			dst = append(dst, *convertSavingsPlan(sp, c.subscriptionID))
+		} else {
+			skipped.add(sp)
 		}
 	}
 	return dst
 }
 
+func planOwnedBy(p *armbillingbenefits.SavingsPlanModelProperties, ownScope string) bool {
+	if p == nil || p.BillingScopeID == nil || *p.BillingScopeID == "" {
+		return false
+	}
+	billingScope := *p.BillingScopeID
+	if strings.EqualFold(billingScope, ownScope) {
+		return true
+	}
+	if hasPrefixFold(billingScope, subscriptionScopePrefix) {
+		return false
+	}
+	return p.AppliedScopeType != nil && *p.AppliedScopeType == armbillingbenefits.AppliedScopeTypeSingle &&
+		p.AppliedScopeProperties != nil && p.AppliedScopeProperties.SubscriptionID != nil &&
+		strings.EqualFold(*p.AppliedScopeProperties.SubscriptionID, ownScope)
+}
+
+func hasPrefixFold(s, prefix string) bool {
+	return len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix)
+}
+
 // billingScopeID is the scope this client purchases under and owns plans by.
 func (c *Client) billingScopeID() string {
-	return fmt.Sprintf("/subscriptions/%s", c.subscriptionID)
+	return subscriptionScopePrefix + c.subscriptionID
 }
 
 // azureSavingsPlanState maps a savings plan provisioning state to the common

@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -183,7 +186,8 @@ func TestGetExistingCommitments_Happy(t *testing.T) {
 }
 
 // TestGetExistingCommitments_OnlyPlansBilledToSubscription replays a tenant-wide
-// ListAll page (issue #40): only plans billed to the client's subscription are ours.
+// ListAll page (issue #40): only plans billed to the client's subscription, or billed to a
+// billing account and applied to the client's subscription alone, are ours.
 func TestGetExistingCommitments_OnlyPlansBilledToSubscription(t *testing.T) {
 	plan := func(id string, billingScope *string, scopeType armbillingbenefits.AppliedScopeType, props *armbillingbenefits.AppliedScopeProperties) *armbillingbenefits.SavingsPlanModel {
 		return &armbillingbenefits.SavingsPlanModel{
@@ -205,6 +209,13 @@ func TestGetExistingCommitments_OnlyPlansBilledToSubscription(t *testing.T) {
 		plan("other-billed-applied-to-us", toPtr("/subscriptions/sub-b"), armbillingbenefits.AppliedScopeTypeSingle,
 			&armbillingbenefits.AppliedScopeProperties{SubscriptionID: toPtr("/subscriptions/sub-a")}),
 		plan("billing-account-scope", toPtr("/providers/Microsoft.Billing/billingAccounts/ba-1"), armbillingbenefits.AppliedScopeTypeShared, nil),
+		plan("billing-account-single-ours", toPtr("/providers/Microsoft.Billing/billingAccounts/ba-1"), armbillingbenefits.AppliedScopeTypeSingle,
+			&armbillingbenefits.AppliedScopeProperties{SubscriptionID: toPtr("/Subscriptions/SUB-A")}),
+		plan("billing-account-single-other", toPtr("/providers/Microsoft.Billing/billingAccounts/ba-1"), armbillingbenefits.AppliedScopeTypeSingle,
+			&armbillingbenefits.AppliedScopeProperties{SubscriptionID: toPtr("/subscriptions/sub-b")}),
+		plan("billing-account-single-no-props", toPtr("/providers/Microsoft.Billing/billingAccounts/ba-1"), armbillingbenefits.AppliedScopeTypeSingle, nil),
+		plan("billing-account-shared-names-us", toPtr("/providers/Microsoft.Billing/billingAccounts/ba-1"), armbillingbenefits.AppliedScopeTypeShared,
+			&armbillingbenefits.AppliedScopeProperties{SubscriptionID: toPtr("/subscriptions/sub-a")}),
 		plan("prefix-lookalike", toPtr("/subscriptions/sub-a-2"), armbillingbenefits.AppliedScopeTypeShared, nil),
 		plan("missing-scope", nil, armbillingbenefits.AppliedScopeTypeShared, nil),
 		plan("empty-scope", toPtr(""), armbillingbenefits.AppliedScopeTypeShared, nil),
@@ -222,7 +233,43 @@ func TestGetExistingCommitments_OnlyPlansBilledToSubscription(t *testing.T) {
 		assert.Equal(t, "sub-a", cm.Account)
 		ids = append(ids, cm.CommitmentID)
 	}
-	assert.Equal(t, []string{"own-single", "own-shared-mixed-case"}, ids)
+	assert.Equal(t, []string{"own-single", "own-shared-mixed-case", "billing-account-single-ours"}, ids)
+}
+
+// TestGetExistingCommitments_LogsSkippedPlanScopes checks the skip warning names each skipped
+// plan's ID and billing scope, capped at 20 entries, with the full count.
+func TestGetExistingCommitments_LogsSkippedPlanScopes(t *testing.T) {
+	const logCap = 20
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	page := []*armbillingbenefits.SavingsPlanModel{{
+		ID: toPtr("ba-shared"),
+		Properties: &armbillingbenefits.SavingsPlanModelProperties{
+			BillingScopeID:   toPtr("/providers/Microsoft.Billing/billingAccounts/ba-1"),
+			AppliedScopeType: toPtr(armbillingbenefits.AppliedScopeTypeShared),
+		},
+	}}
+	for i := 0; i < logCap+5; i++ {
+		page = append(page, &armbillingbenefits.SavingsPlanModel{
+			ID:         toPtr(fmt.Sprintf("other-%02d", i)),
+			Properties: &armbillingbenefits.SavingsPlanModelProperties{BillingScopeID: toPtr("/subscriptions/sub-b")},
+		})
+	}
+
+	c := NewClient(nil, "sub-a", "eastus")
+	c.SetListAllPager(&mockListAllPager{results: page})
+
+	commitments, err := c.GetExistingCommitments(context.Background())
+	require.NoError(t, err)
+	assert.Empty(t, commitments)
+
+	out := buf.String()
+	assert.Contains(t, out, fmt.Sprintf("skipped %d savings plans", logCap+6))
+	assert.Contains(t, out, `ba-shared (billing scope "/providers/Microsoft.Billing/billingAccounts/ba-1", applied scope "Shared")`)
+	assert.Contains(t, out, fmt.Sprintf("other-%02d", logCap-2))
+	assert.NotContains(t, out, fmt.Sprintf("other-%02d", logCap-1))
 }
 
 func TestGetExistingCommitments_NilModel(t *testing.T) {
