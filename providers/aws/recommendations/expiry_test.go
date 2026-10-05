@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/recfilter"
 )
 
 // TestAdjustExistingCoverageForExpiringCommitments covers the four cases:
@@ -248,4 +249,135 @@ func TestAdjustExistingCoverageForExpiringCommitments(t *testing.T) {
 		assert.Equal(t, 0, n)
 		assert.Equal(t, 50.0, recs[0].ExistingCoveragePct)
 	})
+}
+
+func TestExpiringCoverageUsesWholePoolDemand(t *testing.T) {
+	type expiryAdjust func([]common.Recommendation, []common.Commitment, int) int
+	adjust := expiryAdjust(AdjustExistingCoverageForExpiringCommitments)
+	apis := []struct {
+		name   string
+		adjust func([]common.Recommendation, []common.Commitment, int, PoolCoverageMap) (int, int)
+	}{
+		{"legacy", func(recs []common.Recommendation, commits []common.Commitment, days int, _ PoolCoverageMap) (int, int) {
+			return adjust(recs, commits, days), 0
+		}},
+		{"coverage", AdjustExistingCoverageForExpiringCommitmentsWithCoverage},
+	}
+	accounts := []string{"111111111111", "222222222222", "333333333333"}
+	for _, tc := range []struct {
+		name         string
+		rawAverages  []float64
+		wantAverages []float64
+		wantCounts   []int
+		expiryDays   int
+		wantCoverage float64
+		wantAdjusted int
+	}{
+		{
+			name: "three linked accounts", rawAverages: []float64{30, 30, 30},
+			wantAverages: []float64{30, 30, 30}, wantCounts: []int{12, 12, 12},
+			expiryDays: 15, wantCoverage: 40, wantAdjusted: 3,
+		},
+		{
+			name: "unequal demand shares", rawAverages: []float64{15, 30, 45},
+			wantAverages: []float64{15, 30, 45}, wantCounts: []int{6, 12, 18},
+			expiryDays: 15, wantCoverage: 40, wantAdjusted: 3,
+		},
+		{
+			name: "zero raw shares rebalance evenly", rawAverages: []float64{0, 0, 0},
+			wantAverages: []float64{30, 30, 30}, wantCounts: []int{12, 12, 12},
+			expiryDays: 15, wantCoverage: 40, wantAdjusted: 3,
+		},
+		{
+			name: "two surviving accounts rebalance before expiry", rawAverages: []float64{30, 30},
+			wantAverages: []float64{45, 45}, wantCounts: []int{18, 18},
+			expiryDays: 15, wantCoverage: 40, wantAdjusted: 2,
+		},
+		{
+			name: "single surviving account control", rawAverages: []float64{30},
+			wantAverages: []float64{90}, wantCounts: []int{36},
+			expiryDays: 15, wantCoverage: 40, wantAdjusted: 1,
+		},
+		{
+			name: "outside expiry window control", rawAverages: []float64{30, 30, 30},
+			wantAverages: []float64{30, 30, 30}, wantCounts: []int{6, 6, 6},
+			expiryDays: 180, wantCoverage: 60, wantAdjusted: 0,
+		},
+	} {
+		for _, api := range apis {
+			t.Run(tc.name+"/"+api.name, func(t *testing.T) {
+				recs := make([]common.Recommendation, len(tc.rawAverages))
+				for i, avg := range tc.rawAverages {
+					monthly := 300.0
+					recs[i] = common.Recommendation{
+						Service: common.ServiceEC2, Region: "us-east-1", ResourceType: "m5.large",
+						Account: accounts[i], CommitmentType: common.CommitmentReservedInstance,
+						Count: 30, RecommendedCount: 30, AverageInstancesUsedPerHour: avg,
+						CommitmentCost: 3000, OnDemandCost: 6000, EstimatedSavings: 3000,
+						RecurringMonthlyCost: &monthly,
+					}
+				}
+				coverage := PoolCoverageMap{
+					poolKey("us-east-1", "m5.large"): {Pct: 60, AvgInstancesPerHour: 90},
+				}
+				ApplyCoverageMapToRecommendations(recs, coverage)
+				for i := range recs {
+					assert.Equal(t, tc.wantAverages[i], recs[i].AverageInstancesUsedPerHour)
+					assert.Equal(t, 60.0, recs[i].ExistingCoveragePct)
+					assert.True(t, recs[i].ExistingCoverageKnown)
+				}
+				commits := []common.Commitment{{
+					Service: common.ServiceEC2, Region: "us-east-1", ResourceType: "m5.large",
+					Count: 18, State: "active", EndDate: time.Now().Add(time.Duration(tc.expiryDays) * 24 * time.Hour),
+				}}
+				adjusted, missing := api.adjust(recs, commits, 30, coverage)
+				assert.Equal(t, tc.wantAdjusted, adjusted)
+				assert.Zero(t, missing)
+				for i := range recs {
+					assert.InDelta(t, tc.wantCoverage, recs[i].ExistingCoveragePct, 0.001, "account %s", recs[i].Account)
+				}
+				sized := recfilter.ApplyTargetCoverage(recs, 80, nil, nil)
+				if !assert.Len(t, sized, len(recs)) {
+					return
+				}
+				for i, rec := range sized {
+					wantCount := tc.wantCounts[i]
+					assert.Equal(t, accounts[i], rec.Account)
+					assert.Equal(t, wantCount, rec.Count)
+					assert.Equal(t, 30, rec.RecommendedCount)
+					assert.InDelta(t, float64(wantCount)*100, rec.CommitmentCost, 0.001)
+					assert.InDelta(t, float64(wantCount)*200, rec.OnDemandCost, 0.001)
+					assert.InDelta(t, float64(wantCount)*100, rec.EstimatedSavings, 0.001)
+					if assert.NotNil(t, rec.RecurringMonthlyCost) {
+						assert.InDelta(t, float64(wantCount)*10, *rec.RecurringMonthlyCost, 0.001)
+						assert.NotSame(t, recs[i].RecurringMonthlyCost, rec.RecurringMonthlyCost)
+					}
+					assert.Equal(t, 300.0, *recs[i].RecurringMonthlyCost)
+					assert.InDelta(t, 80.0, rec.ProjectedCoverage, 0.001)
+					assert.Equal(t, 100.0, rec.ProjectedUtilization)
+				}
+			})
+		}
+	}
+}
+
+func TestExpiringCoveragePreservesZeroDemandShare(t *testing.T) {
+	recs := []common.Recommendation{
+		{Service: common.ServiceEC2, Region: "us-east-1", ResourceType: "m5.large", AverageInstancesUsedPerHour: 30},
+		{Service: common.ServiceEC2, Region: "us-east-1", ResourceType: "m5.large", AverageInstancesUsedPerHour: 0},
+		{Service: common.ServiceEC2, Region: "us-east-1", ResourceType: "m5.large", AverageInstancesUsedPerHour: 60},
+	}
+	coverage := PoolCoverageMap{
+		poolKey("us-east-1", "m5.large"): {Pct: 60, AvgInstancesPerHour: 90},
+	}
+	ApplyCoverageMapToRecommendations(recs, coverage)
+	zeroShare := recs[1]
+	commits := []common.Commitment{{
+		Service: common.ServiceEC2, Region: "us-east-1", ResourceType: "m5.large",
+		Count: 18, State: "active", EndDate: time.Now().Add(15 * 24 * time.Hour),
+	}}
+	assert.Equal(t, 2, AdjustExistingCoverageForExpiringCommitments(recs, commits, 30))
+	assert.Equal(t, zeroShare, recs[1])
+	assert.InDelta(t, 40.0, recs[0].ExistingCoveragePct, 0.001)
+	assert.InDelta(t, 40.0, recs[2].ExistingCoveragePct, 0.001)
 }

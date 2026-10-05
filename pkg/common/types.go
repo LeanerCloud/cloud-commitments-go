@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 	"time"
 )
@@ -246,6 +247,10 @@ type Recommendation struct {
 	RecommendedUtilization      float64 `json:"recommended_utilization,omitempty" csv:"RecommendedUtilization"`
 	RecommendedCount            int     `json:"recommended_count,omitempty" csv:"RecommendedCount"`
 	ExistingCoveragePct         float64 `json:"existing_coverage_pct,omitempty" csv:"ExistingCoveragePct"`
+	// ExistingCoveragePercentExact preserves expiry arithmetic until in-process sizing.
+	// Treat it as immutable; clear it when replacing coverage, even with the same percentage.
+	// Serialization drops this state and its exact-arithmetic guarantee.
+	ExistingCoveragePercentExact *big.Rat `json:"-" csv:"-"`
 	// ExistingCoverageKnown distinguishes "CE returned a value for this
 	// pool" (Known=true, Pct possibly 0.0 meaning the pool has running
 	// instances but no RI coverage yet) from "CE has no data for this
