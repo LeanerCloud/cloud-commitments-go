@@ -236,12 +236,9 @@ func TestPurchaseLayer_RIRecValidation(t *testing.T) {
 			r.Details = &common.ComputeDetails{InstanceType: "m5.large", Tenancy: "default", Scope: "regional"}
 		}, "Platform must not be empty"},
 		{"empty tenancy", func(r *common.Recommendation) {
-			// The ec2 client silently defaults empty Tenancy to "default"; a
-			// dedicated-tenancy rec would buy the wrong product (no-silent-fallback).
 			r.Details = &common.ComputeDetails{InstanceType: "m5.large", Platform: "linux", Scope: "regional"}
 		}, "Tenancy must not be empty"},
 		{"empty scope", func(r *common.Recommendation) {
-			// The ec2 client silently defaults empty Scope to "Regional".
 			r.Details = &common.ComputeDetails{InstanceType: "m5.large", Platform: "linux", Tenancy: "default"}
 		}, "Scope must not be empty"},
 		{"empty term", func(r *common.Recommendation) { r.Term = "" }, "Term must not be empty"},

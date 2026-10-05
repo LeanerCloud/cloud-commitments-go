@@ -75,8 +75,8 @@ func MarshalServiceDetails(details ServiceDetails) (json.RawMessage, error) {
 // Behavior:
 //   - raw is empty AND service maps to a known *Details type → returns a
 //     zero-valued typed pointer (the legacy / pre-#453 fallback). The
-//     downstream service client's buildOfferingFilters tolerates zero-
-//     valued Platform / Tenancy / Scope etc. by substituting defaults.
+//     downstream service client's type-assertion succeeds; the EC2 client
+//     rejects empty Platform / Tenancy / Scope rather than defaulting them.
 //   - raw is empty AND service maps to no *Details type (services we
 //     don't know about, plus AWS services whose clients don't currently
 //     type-assert Details and accept nil) → returns (nil, nil).
@@ -98,11 +98,10 @@ func DecodeServiceDetailsFor(service string, raw json.RawMessage) (ServiceDetail
 	if len(raw) == 0 || bytes.Equal(raw, jsonNullBytes) {
 		// Legacy row or genuinely absent payload — hand back a zero-
 		// valued typed pointer so the service client's type-assertion
-		// succeeds. buildOfferingFilters tolerates zero fields and
-		// substitutes Platform=Linux/UNIX, Tenancy=default, Scope=Region
-		// etc. This is documented as a known-degraded path; new rows
-		// always carry full details. See issue #453 § "graceful
-		// degradation for legacy rows".
+		// succeeds. The EC2 client rejects the empty Platform / Tenancy /
+		// Scope instead of defaulting them, so a legacy row fails the
+		// purchase loudly; new rows always carry full details. See
+		// issue #453 § "graceful degradation for legacy rows".
 		return target, nil
 	}
 	if err := json.Unmarshal(raw, target); err != nil {
