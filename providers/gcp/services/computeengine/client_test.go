@@ -740,6 +740,8 @@ func TestComputeEngineClient_PurchaseCommitment_ReDriveAlreadyExists(t *testing.
 				c.Resources = append(c.Resources, &computepb.ResourceCommitment{Type: stringPtr("LOCAL_SSD"), Amount: int64Ptr(375)})
 			},
 			wantErrIs: errExistingCommitmentMismatch},
+		{name: "matching commitment still CREATING is adopted", opts: tokenOpts, getStatus: http.StatusOK, wantGets: 1,
+			existing: func(c *computepb.Commitment) { c.Status = stringPtr(computepb.Commitment_CREATING.String()) }},
 		{name: "unreadable existing commitment stays a failure", opts: tokenOpts, getStatus: http.StatusForbidden, wantGets: 1,
 			wantErr: "could not be read to confirm"},
 		{name: "no token keeps the conflict a failure", opts: common.PurchaseOptions{}, getStatus: http.StatusOK,
@@ -810,6 +812,11 @@ func TestComputeEngineClient_PurchaseCommitment_ReDriveAlreadyExists(t *testing.
 				assert.ErrorIs(t, err, tt.wantErrIs)
 			}
 			assert.Contains(t, err.Error(), tt.wantErr)
+			if tt.insertStatus == 0 {
+				var gapiErr *googleapi.Error
+				require.ErrorAs(t, err, &gapiErr)
+				assert.Equal(t, http.StatusConflict, gapiErr.Code, "the original 409 must be the googleapi error in the chain")
+			}
 		})
 	}
 }

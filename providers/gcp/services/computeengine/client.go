@@ -680,6 +680,7 @@ func isAlreadyExists(err error) bool {
 
 // adoptExistingCommitment returns nil only when insertErr is a re-drive's name
 // collision with a commitment whose plan, type and resources equal the request.
+// Every error it returns for a 409 keeps the original conflict first in its chain.
 func adoptExistingCommitment(ctx context.Context, svc CommitmentsService, req *computepb.InsertRegionCommitmentRequest, token string, insertErr error) error {
 	if token == "" || !isAlreadyExists(insertErr) {
 		return stripPermanentPrefix(insertErr)
@@ -690,14 +691,15 @@ func adoptExistingCommitment(ctx context.Context, svc CommitmentsService, req *c
 		Region:     req.GetRegion(),
 		Commitment: want.GetName(),
 	})
+	conflict := stripPermanentPrefix(insertErr)
 	if err != nil {
-		return fmt.Errorf("commitment %s already exists but could not be read to confirm it matches this purchase: %w", want.GetName(), err)
+		return fmt.Errorf("%w: commitment %s already exists but could not be read to confirm it matches this purchase: %w", conflict, want.GetName(), err)
 	}
 	gotRes, wantRes := resourceAmounts(got), resourceAmounts(want)
 	if got.GetPlan() != want.GetPlan() || got.GetType() != want.GetType() || !maps.Equal(gotRes, wantRes) {
-		return fmt.Errorf("%w: commitment %s in %s has plan=%s type=%s resources=%v, requested plan=%s type=%s resources=%v",
-			errExistingCommitmentMismatch, want.GetName(), req.GetRegion(),
-			got.GetPlan(), got.GetType(), gotRes, want.GetPlan(), want.GetType(), wantRes)
+		return fmt.Errorf("%w: commitment %s already exists in %s with plan=%s type=%s resources=%v but this purchase requested plan=%s type=%s resources=%v: %w",
+			conflict, want.GetName(), req.GetRegion(),
+			got.GetPlan(), got.GetType(), gotRes, want.GetPlan(), want.GetType(), wantRes, errExistingCommitmentMismatch)
 	}
 	log.Printf("GCP CUD %s for token %s already exists and matches the request; treating the re-drive as the earlier purchase (issue #44)",
 		want.GetName(), common.MaskToken(token))
