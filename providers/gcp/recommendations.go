@@ -104,16 +104,16 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 	if p == nil {
 		return nil, fmt.Errorf("params cannot be nil")
 	}
-	params := *p
-	if params.Service == common.ServiceStorage {
-		return r.collectStorageRecs(ctx, params)
-	}
 	// Context cancellation is terminal: bail out before any API fan-out.
 	// Newer cloud.google.com/go/compute REST clients can complete a regions
 	// List call (and return a real 403) even when ctx is already canceled,
 	// which would otherwise be swallowed by the permission branch below.
 	if err := ctx.Err(); err != nil {
 		return nil, err
+	}
+	params := *p
+	if params.Service == common.ServiceStorage {
+		return r.collectStorageRecs(ctx, params)
 	}
 
 	// Get list of regions to check
@@ -260,10 +260,6 @@ func (r *RecommendationsClientAdapter) collectCacheRecs(ctx context.Context, par
 // collectStorageRecs returns the Cloud Storage client's not-supported error for
 // an explicit Cloud Storage request.
 func (r *RecommendationsClientAdapter) collectStorageRecs(ctx context.Context, params common.RecommendationParams) ([]common.Recommendation, error) {
-	if err := concurrency.Acquire(ctx); err != nil {
-		return nil, err
-	}
-	defer concurrency.Release(ctx)
 	client, err := cloudstorage.NewClient(ctx, r.projectID, "", r.clientOpts...)
 	if err != nil {
 		return nil, err

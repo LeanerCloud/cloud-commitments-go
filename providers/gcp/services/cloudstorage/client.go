@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"cloud.google.com/go/recommender/apiv1/recommenderpb"
 	"cloud.google.com/go/storage"
 	"google.golang.org/api/cloudbilling/v1"
 	"google.golang.org/api/option"
@@ -33,6 +34,21 @@ type BucketIterator interface {
 // BucketHandle interface for bucket operations (enables mocking).
 type BucketHandle interface {
 	Create(ctx context.Context, projectID string, attrs *storage.BucketAttrs) error
+}
+
+// RecommenderClient preserves the legacy injection API for source compatibility.
+//
+// Deprecated: Cloud Storage has no commitment recommender.
+type RecommenderClient interface {
+	ListRecommendations(ctx context.Context, req *recommenderpb.ListRecommendationsRequest) RecommenderIterator
+	Close() error
+}
+
+// RecommenderIterator preserves the legacy iteration API for source compatibility.
+//
+// Deprecated: Cloud Storage has no commitment recommender.
+type RecommenderIterator interface {
+	Next() (*recommenderpb.Recommendation, error)
 }
 
 // BillingService interface for billing operations (enables mocking).
@@ -64,6 +80,11 @@ func NewClient(ctx context.Context, projectID, region string, opts ...option.Cli
 func (c *Client) SetStorageService(svc StorageService) {
 	c.storageService = svc
 }
+
+// SetRecommenderClient ignores the supplied client and does not close it.
+//
+// Deprecated: Cloud Storage has no commitment recommender.
+func (c *Client) SetRecommenderClient(_ RecommenderClient) {}
 
 // SetBillingService sets the billing service (for testing).
 func (c *Client) SetBillingService(svc BillingService) {
