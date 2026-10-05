@@ -458,13 +458,13 @@ func convertGCPRegion(region *computepb.Region) *common.Region {
 	}
 }
 
-// GetSupportedServices returns the list of supported GCP services.
+// GetSupportedServices returns the GCP services that have commitment
+// recommendations. Cloud Storage is excluded: it has no commitment product.
 func (p *Provider) GetSupportedServices() []common.ServiceType {
 	return []common.ServiceType{
 		common.ServiceCompute,
 		common.ServiceRelationalDB,
 		common.ServiceCache,
-		common.ServiceStorage,
 	}
 }
 
