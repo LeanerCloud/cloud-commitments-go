@@ -429,20 +429,27 @@ func (r *RecommendationsClientAdapter) convertAdvisorRecommendation(advisorRec *
 
 	rec.Region = resolveAdvisorRegion(advisorRec)
 
-	populateFromExtendedProperties(rec, advisorRec.Properties.ExtendedProperties)
+	if err := populateFromExtendedProperties(rec, advisorRec.Properties.ExtendedProperties); err != nil {
+		logging.Warnf("Azure Advisor %s recommendation in %q dropped: %v", service, rec.Region, err)
+		return nil
+	}
 	return rec
 }
 
 // populateFromExtendedProperties fills savings, SKU, term, and count from
-// the Advisor recommendation's ExtendedProperties map.
-func populateFromExtendedProperties(rec *common.Recommendation, ext map[string]*string) {
-	if ext == nil {
-		return
+// the Advisor recommendation's ExtendedProperties map. It returns an error
+// when the savings figure is absent or unparsable, so the caller never ships
+// a fabricated zero.
+func populateFromExtendedProperties(rec *common.Recommendation, ext map[string]*string) error {
+	annualSavings, err := extFloat(ext, "annualSavingsAmount")
+	if err != nil {
+		return err
 	}
-	rec.EstimatedSavings = extFloat(ext, "annualSavingsAmount") / 12
+	rec.EstimatedSavings = annualSavings / 12
 	rec.ResourceType = extString(ext, "sku", rec.ResourceType)
 	rec.Term = extString(ext, "term", rec.Term)
 	rec.Count = extInt(ext, "qty", rec.Count)
+	return nil
 }
 
 func extString(m map[string]*string, key, fallback string) string {
@@ -452,13 +459,16 @@ func extString(m map[string]*string, key, fallback string) string {
 	return fallback
 }
 
-func extFloat(m map[string]*string, key string) float64 {
-	if v, ok := m[key]; ok && v != nil {
-		if f, err := strconv.ParseFloat(*v, 64); err == nil {
-			return f
-		}
+func extFloat(m map[string]*string, key string) (float64, error) {
+	v, ok := m[key]
+	if !ok || v == nil {
+		return 0, fmt.Errorf("%s is absent", key)
 	}
-	return 0
+	f, err := strconv.ParseFloat(*v, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s %q is not a number: %w", key, *v, err)
+	}
+	return f, nil
 }
 
 func extInt(m map[string]*string, key string, fallback int) int {

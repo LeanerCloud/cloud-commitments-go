@@ -488,6 +488,40 @@ func TestConvertAdvisorRecommendation_UnknownService(t *testing.T) {
 	assert.Nil(t, result)
 }
 
+// A real zero saving must survive conversion, while an absent or unparsable
+// annualSavingsAmount must drop the recommendation instead of shipping $0.
+func TestConvertAdvisorRecommendation_ZeroVersusAbsentSavings(t *testing.T) {
+	adapter := &RecommendationsClientAdapter{subscriptionID: "test-subscription"}
+	impactedField := "Microsoft.Compute/virtualMachines"
+	mkRec := func(ext map[string]*string) *armadvisor.ResourceRecommendationBase {
+		return &armadvisor.ResourceRecommendationBase{
+			Properties: &armadvisor.RecommendationProperties{
+				ImpactedField:      &impactedField,
+				ExtendedProperties: ext,
+			},
+		}
+	}
+
+	zero := adapter.convertAdvisorRecommendation(mkRec(map[string]*string{"annualSavingsAmount": strPtr("0")}))
+	require.NotNil(t, zero, "a real zero saving must be kept")
+	assert.Equal(t, 0.0, zero.EstimatedSavings)
+
+	populated := adapter.convertAdvisorRecommendation(mkRec(map[string]*string{"annualSavingsAmount": strPtr("1200")}))
+	require.NotNil(t, populated)
+	assert.Equal(t, 100.0, populated.EstimatedSavings)
+
+	for name, ext := range map[string]map[string]*string{
+		"key absent":          {"sku": strPtr("Standard_D2s_v3")},
+		"nil value":           {"annualSavingsAmount": nil},
+		"nil map":             nil,
+		"thousands separator": {"annualSavingsAmount": strPtr("1,234.00")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert.Nil(t, adapter.convertAdvisorRecommendation(mkRec(ext)))
+		})
+	}
+}
+
 func strPtr(s string) *string {
 	return &s
 }
