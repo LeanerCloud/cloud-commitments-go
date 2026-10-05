@@ -163,6 +163,20 @@ func TestNew_BlocksRoutableMetadataAddresses(t *testing.T) {
 	}
 }
 
+// GCP's IPv6 metadata server (fd20:ce::254) is a ULA, outside fe80::/10.
+func TestNew_BlocksGCPIPv6Metadata(t *testing.T) {
+	const target = "http://[fd20:ce::254]/computeMetadata/v1/instance/service-accounts/default/token"
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target, http.StatusFound)
+	}))
+	t.Cleanup(redirect.Close)
+
+	c := newContainedClient(t)
+	for _, url := range []string{target, redirect.URL} {
+		t.Run(url, func(t *testing.T) { assertBlocked(t, c, url) })
+	}
+}
+
 // A redirect from an allowed endpoint to a name resolving to IMDS must be
 // blocked when the redirect target is dialed.
 func TestNew_BlocksRedirectToIMDS(t *testing.T) {
