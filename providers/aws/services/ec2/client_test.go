@@ -625,62 +625,69 @@ func TestClient_GetDurationValue(t *testing.T) {
 	}
 }
 
-// TestCanonicalizeEC2Tenancy verifies that legacy lowercase/hyphenated tenancy
-// values written by pre-fix/598 parser versions are mapped to the canonical EC2
-// API enum values so that already-persisted recommendations still purchase correctly.
-func TestCanonicalizeEC2Tenancy(t *testing.T) {
+// TestParseEC2Tenancy verifies that legacy values written by pre-fix/598 parser
+// versions still map to the EC2 enum, and that empty or unsupported values error.
+func TestParseEC2Tenancy(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name     string
 		input    string
-		expected string
+		expected types.Tenancy
+		wantErr  bool
 	}{
-		// Legacy values from the old parser (CE "shared" passed through as-is)
-		{"legacy shared -> default", "shared", "default"},
-		// Already-canonical values must pass through unchanged
-		{"canonical default -> default", "default", "default"},
-		{"canonical dedicated -> dedicated", "dedicated", "dedicated"},
-		// Mixed-case inputs should also normalise
-		{"uppercase SHARED -> default", "SHARED", "default"},
-		{"uppercase DEFAULT -> default", "DEFAULT", "default"},
-		{"uppercase DEDICATED -> dedicated", "DEDICATED", "dedicated"},
-		// Unknown values are returned unchanged (defensive)
-		{"unknown host passthrough", "host", "host"},
+		{"legacy shared -> default", "shared", types.TenancyDefault, false},
+		{"canonical default", "default", types.TenancyDefault, false},
+		{"canonical dedicated", "dedicated", types.TenancyDedicated, false},
+		{"uppercase SHARED -> default", "SHARED", types.TenancyDefault, false},
+		{"uppercase DEFAULT -> default", "DEFAULT", types.TenancyDefault, false},
+		{"uppercase DEDICATED -> dedicated", "DEDICATED", types.TenancyDedicated, false},
+		{"empty errors", "", "", true},
+		{"host has no RI product", "host", "", true},
+		{"unknown errors", "unknown-tenancy", "", true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := canonicalizeEC2Tenancy(tt.input)
+			result, err := parseEC2Tenancy(tt.input)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "unsupported EC2 RI tenancy")
+				return
+			}
+			require.NoError(t, err)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
 
-// TestCanonicalizeEC2Scope verifies that legacy lowercase/hyphenated scope
-// values written by pre-fix/598 parser versions are mapped to the canonical EC2
-// API enum values so that already-persisted recommendations still purchase correctly.
-func TestCanonicalizeEC2Scope(t *testing.T) {
+// TestParseEC2Scope verifies that legacy values written by pre-fix/598 parser
+// versions still map to the EC2 enum, and that empty or unknown values error.
+func TestParseEC2Scope(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name     string
 		input    string
-		expected string
+		expected types.Scope
+		wantErr  bool
 	}{
-		// Legacy values from the old parser
-		{"legacy region -> Region", "region", "Region"},
-		{"legacy availability-zone -> Availability Zone", "availability-zone", "Availability Zone"},
-		// Already-canonical values must pass through unchanged
-		{"canonical Region -> Region", "Region", "Region"},
-		{"canonical Availability Zone -> Availability Zone", "Availability Zone", "Availability Zone"},
-		// Space-separated variant (defensive)
-		{"lowercase availability zone -> Availability Zone", "availability zone", "Availability Zone"},
-		// Unknown values are returned unchanged (defensive)
-		{"unknown passthrough", "unknown-scope", "unknown-scope"},
+		{"legacy region -> Region", "region", types.ScopeRegional, false},
+		{"legacy availability-zone", "availability-zone", types.ScopeAvailabilityZone, false},
+		{"canonical Region", "Region", types.ScopeRegional, false},
+		{"canonical Availability Zone", "Availability Zone", types.ScopeAvailabilityZone, false},
+		{"lowercase availability zone", "availability zone", types.ScopeAvailabilityZone, false},
+		{"empty errors", "", "", true},
+		{"unknown errors", "unknown-scope", "", true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := canonicalizeEC2Scope(tt.input)
+			result, err := parseEC2Scope(tt.input)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "unsupported EC2 RI scope")
+				return
+			}
+			require.NoError(t, err)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -1242,7 +1249,7 @@ func TestDescribeInputFromQuery_OfferingClass(t *testing.T) {
 		instanceType:     types.InstanceTypeT3Micro,
 		productDesc:      types.RIProductDescriptionLinuxUnix,
 		tenancy:          types.TenancyDefault,
-		scope:            string(types.ScopeRegional),
+		scope:            types.ScopeRegional,
 		duration:         94608000,
 		wantOfferingType: types.OfferingTypeValuesNoUpfront,
 	}
@@ -1410,4 +1417,213 @@ func TestFindOfferingID_EmptyStringTokenEndsPagination(t *testing.T) {
 		assert.Contains(t, err.Error(), "no offerings found")
 	}
 	mockEC2.AssertNumberOfCalls(t, "DescribeReservedInstancesOfferings", 1)
+}
+
+// invalidTenancyScopeCases are recommendation tenancy/scope pairs that must
+// abort an EC2 RI lookup instead of defaulting to shared tenancy or regional scope.
+var invalidTenancyScopeCases = []struct {
+	name, tenancy, scope string
+}{
+	{"empty tenancy", "", "Region"},
+	{"host tenancy", "host", "Region"},
+	{"unknown tenancy", "unknown-tenancy", "Region"},
+	{"empty scope", "dedicated", ""},
+	{"unknown scope", "dedicated", "unknown-scope"},
+}
+
+// matchingOfferingMock answers any offering search with a default-tenancy
+// offering, so a silent default would carry through to a purchase.
+func matchingOfferingMock() *MockEC2Client {
+	mockEC2 := &MockEC2Client{}
+	mockEC2.On("DescribeReservedInstancesOfferings", mock.Anything, mock.Anything).
+		Return(&ec2.DescribeReservedInstancesOfferingsOutput{
+			ReservedInstancesOfferings: []types.ReservedInstancesOffering{{
+				ReservedInstancesOfferingId: aws.String("offering-default-tenancy"),
+				InstanceType:                types.InstanceTypeM5Large,
+				Duration:                    aws.Int64(OneYearSeconds),
+				OfferingType:                types.OfferingTypeValuesNoUpfront,
+				ProductDescription:          types.RIProductDescriptionLinuxUnix,
+				InstanceTenancy:             types.TenancyDefault,
+			}},
+		}, nil).Maybe()
+	mockEC2.On("PurchaseReservedInstancesOffering", mock.Anything, mock.Anything).
+		Return(&ec2.PurchaseReservedInstancesOfferingOutput{ReservedInstancesId: aws.String("ri-wrong")}, nil).Maybe()
+	mockEC2.On("CreateTags", mock.Anything, mock.Anything).Return(&ec2.CreateTagsOutput{}, nil).Maybe()
+	return mockEC2
+}
+
+// Issue #23: an empty or unsupported tenancy/scope must fail before any AWS
+// call instead of buying a default-tenancy or regional RI.
+func TestPurchaseCommitment_InvalidTenancyOrScope_ErrorsBeforeAPICall(t *testing.T) {
+	t.Parallel()
+	for _, tc := range invalidTenancyScopeCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mockEC2 := matchingOfferingMock()
+			client := &Client{client: mockEC2, region: "us-east-1"}
+			rec := common.Recommendation{
+				ResourceType:  "m5.large",
+				Count:         1,
+				PaymentOption: "no-upfront",
+				Term:          "1yr",
+				Details: &common.ComputeDetails{
+					Platform: "Linux/UNIX",
+					Tenancy:  tc.tenancy,
+					Scope:    tc.scope,
+				},
+			}
+
+			result, err := client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "unsupported EC2 RI")
+			assert.False(t, result.Success)
+			mockEC2.AssertNotCalled(t, "DescribeReservedInstancesOfferings", mock.Anything, mock.Anything)
+			mockEC2.AssertNotCalled(t, "PurchaseReservedInstancesOffering", mock.Anything, mock.Anything)
+		})
+	}
+}
+
+// TestFindConvertibleOffering_InvalidTenancyOrScope_ErrorsBeforeAPICall covers
+// the exchange-target lookup, whose offering ID is then bought by an exchange.
+func TestFindConvertibleOffering_InvalidTenancyOrScope_ErrorsBeforeAPICall(t *testing.T) {
+	t.Parallel()
+	for _, tc := range invalidTenancyScopeCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mockEC2 := matchingOfferingMock()
+			client := &Client{client: mockEC2, region: "us-east-1"}
+
+			_, err := client.FindConvertibleOffering(context.Background(), FindConvertibleOfferingParams{
+				InstanceType:       "m5.large",
+				ProductDescription: "Linux/UNIX",
+				Tenancy:            tc.tenancy,
+				Scope:              tc.scope,
+				Duration:           OneYearSeconds,
+			})
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "unsupported EC2 RI")
+			mockEC2.AssertNotCalled(t, "DescribeReservedInstancesOfferings", mock.Anything, mock.Anything)
+		})
+	}
+}
+
+// The exchange-target picker must not list shared-tenancy or regional targets
+// for a source RI whose tenancy or scope is missing.
+func TestListTargetOfferings_InvalidTenancyOrScope_ErrorsBeforeAPICall(t *testing.T) {
+	t.Parallel()
+	for _, tc := range invalidTenancyScopeCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mockEC2 := matchingOfferingMock()
+			client := &Client{client: mockEC2, region: "us-east-1"}
+
+			_, err := client.ListTargetOfferings(context.Background(), ListTargetOfferingsParams{
+				ProductDescription: "Linux/UNIX",
+				Tenancy:            tc.tenancy,
+				Scope:              tc.scope,
+				Duration:           OneYearSeconds,
+			})
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "unsupported EC2 RI")
+			mockEC2.AssertNotCalled(t, "DescribeReservedInstancesOfferings", mock.Anything, mock.Anything)
+		})
+	}
+}
+
+// validTenancyScopeCases are the accepted tenancy/scope spellings with the
+// values the exchange lookups must send to AWS.
+var validTenancyScopeCases = []struct {
+	name        string
+	tenancy     string
+	scope       string
+	wantTenancy types.Tenancy
+	wantScope   string
+}{
+	{"default_region", "default", "Region", types.TenancyDefault, "Region"},
+	{"dedicated_az", "dedicated", "Availability Zone", types.TenancyDedicated, "Availability Zone"},
+	{"legacy_shared_region", "shared", "region", types.TenancyDefault, "Region"},
+	{"legacy_az_hyphenated", "dedicated", "availability-zone", types.TenancyDedicated, "Availability Zone"},
+}
+
+// captureOfferingsInput returns a mock that records the request it receives
+// and answers with a single offering.
+func captureOfferingsInput(offeringID string, got **ec2.DescribeReservedInstancesOfferingsInput) *MockEC2Client {
+	mockEC2 := &MockEC2Client{}
+	mockEC2.On("DescribeReservedInstancesOfferings", mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			*got = args.Get(1).(*ec2.DescribeReservedInstancesOfferingsInput)
+		}).
+		Return(&ec2.DescribeReservedInstancesOfferingsOutput{
+			ReservedInstancesOfferings: []types.ReservedInstancesOffering{{
+				ReservedInstancesOfferingId: aws.String(offeringID),
+				InstanceType:                types.InstanceTypeM5Large,
+			}},
+		}, nil).Once()
+	return mockEC2
+}
+
+func filterValues(filters []types.Filter, name string) []string {
+	for _, f := range filters {
+		if aws.ToString(f.Name) == name {
+			return f.Values
+		}
+	}
+	return nil
+}
+
+func TestFindConvertibleOffering_TenancyScopeVariants_SendEnumValues(t *testing.T) {
+	t.Parallel()
+	for _, tc := range validTenancyScopeCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var got *ec2.DescribeReservedInstancesOfferingsInput
+			client := &Client{client: captureOfferingsInput("offering-"+tc.name, &got), region: "us-east-1"}
+
+			id, err := client.FindConvertibleOffering(context.Background(), FindConvertibleOfferingParams{
+				InstanceType:       "m5.large",
+				ProductDescription: "Linux/UNIX",
+				Tenancy:            tc.tenancy,
+				Scope:              tc.scope,
+				Duration:           OneYearSeconds,
+			})
+
+			require.NoError(t, err)
+			assert.Equal(t, "offering-"+tc.name, id)
+			require.NotNil(t, got)
+			assert.Equal(t, []string{string(tc.wantTenancy)}, filterValues(got.Filters, "instance-tenancy"))
+			assert.Equal(t, []string{tc.wantScope}, filterValues(got.Filters, "scope"))
+			assert.Equal(t, []string{"m5.large"}, filterValues(got.Filters, "instance-type"))
+			assert.Equal(t, []string{"convertible"}, filterValues(got.Filters, "offering-class"))
+		})
+	}
+}
+
+func TestListTargetOfferings_TenancyScopeVariants_SendEnumValues(t *testing.T) {
+	t.Parallel()
+	for _, tc := range validTenancyScopeCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var got *ec2.DescribeReservedInstancesOfferingsInput
+			client := &Client{client: captureOfferingsInput("offering-"+tc.name, &got), region: "us-east-1"}
+
+			offerings, err := client.ListTargetOfferings(context.Background(), ListTargetOfferingsParams{
+				ProductDescription: "Linux/UNIX",
+				Tenancy:            tc.tenancy,
+				Scope:              tc.scope,
+				Duration:           OneYearSeconds,
+			})
+
+			require.NoError(t, err)
+			require.Len(t, offerings, 1)
+			assert.Equal(t, "offering-"+tc.name, offerings[0].OfferingID)
+			assert.Equal(t, tc.wantScope, offerings[0].Scope)
+			require.NotNil(t, got)
+			assert.Equal(t, tc.wantTenancy, got.InstanceTenancy)
+			assert.Equal(t, []string{tc.wantScope}, filterValues(got.Filters, "scope"))
+			assert.Equal(t, types.OfferingClassTypeConvertible, got.OfferingClass)
+		})
+	}
 }
