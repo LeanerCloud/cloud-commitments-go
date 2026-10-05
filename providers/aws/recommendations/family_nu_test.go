@@ -1,6 +1,7 @@
 package recommendations
 
 import (
+	"math/big"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -121,13 +122,16 @@ func TestApplyFamilyNUSizingRDS(t *testing.T) {
 				ResourceType:   "db.r7g.large",
 				Count:          15,
 				CommitmentCost: 1500, OnDemandCost: 3000, EstimatedSavings: 600,
-				Details: &common.DatabaseDetails{Engine: "aurora-mysql", AZConfig: "single-az"},
+				Details:                      &common.DatabaseDetails{Engine: "aurora-mysql", AZConfig: "single-az"},
+				ExistingCoveragePercentExact: big.NewRat(50, 1),
 			},
 		}
 		sized, nonRDS, drops := ApplyFamilyNUSizingRDS(recs, cov, 80)
 		require.Len(t, sized, 1, "RDS rec kept (target NU > 0)")
 		assert.Empty(t, nonRDS, "no non-RDS recs in this fixture")
 		assert.Equal(t, 15, sized[0].Count, "AWS-rec NU already matches target → count preserved")
+		assert.Nil(t, sized[0].ExistingCoveragePercentExact, "family overwrite clears stale precise coverage")
+		assert.Equal(t, big.NewRat(50, 1), recs[0].ExistingCoveragePercentExact, "input copy retains its state")
 		// Costs unchanged (ratio = 1)
 		assert.InDelta(t, 1500.0, sized[0].CommitmentCost, 0.01)
 		assert.Equal(t, 0, drops.AlreadyAtTarget+drops.NoNUSignal+drops.SizedToZero, "no drops expected")
