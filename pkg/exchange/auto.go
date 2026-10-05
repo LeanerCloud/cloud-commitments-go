@@ -293,7 +293,7 @@ func resolveOffering(ctx context.Context, params RunAutoExchangeParams, rec Resh
 }
 
 // getValidatedQuote fetches and validates an exchange quote. The returned
-// quote is valid, carries a PaymentDueUSD, and is within the per-exchange cap.
+// quote is valid, carries a USD PaymentDue, and is within the per-exchange cap.
 // Returns a SkippedRecommendation otherwise.
 func getValidatedQuote(ctx context.Context, params RunAutoExchangeParams, rec ReshapeRecommendation, offeringID string, perExchangeCap *big.Rat) (*ExchangeQuoteSummary, *SkippedRecommendation) {
 	quote, err := params.ExchangeClient.GetQuote(ctx, ExchangeQuoteRequest{
@@ -319,20 +319,21 @@ func getValidatedQuote(ctx context.Context, params RunAutoExchangeParams, rec Re
 		}
 	}
 
-	if quote.PaymentDueUSD == nil {
+	paymentDue, err := requireUSDPaymentDue(quote)
+	if err != nil {
 		return nil, &SkippedRecommendation{
 			SourceRIID:         rec.SourceRIID,
 			SourceInstanceType: rec.SourceInstanceType,
-			Reason:             "quote reported no PaymentDue; cannot enforce the per-exchange cap against an unknown amount",
+			Reason:             fmt.Sprintf("cannot enforce the per-exchange cap: %v", err),
 		}
 	}
 
-	if quote.PaymentDueUSD.Cmp(perExchangeCap) > 0 {
+	if paymentDue.Cmp(perExchangeCap) > 0 {
 		return nil, &SkippedRecommendation{
 			SourceRIID:         rec.SourceRIID,
 			SourceInstanceType: rec.SourceInstanceType,
 			Reason: fmt.Sprintf("exceeds per-exchange cap: payment $%s > cap $%.2f",
-				quote.PaymentDueUSD.FloatString(2), params.Config.MaxPaymentPerExchangeUSD),
+				paymentDue.FloatString(2), params.Config.MaxPaymentPerExchangeUSD),
 		}
 	}
 
