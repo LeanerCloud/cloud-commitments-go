@@ -464,8 +464,12 @@ type RedisPricing struct {
 }
 
 func (c *Client) getRedisPricing(ctx context.Context, sku, region string, termYears int) (*RedisPricing, error) {
-	filter := fmt.Sprintf("serviceName eq 'Redis Cache' and armRegionName eq '%s' and contains(armSkuName, '%s') and priceType eq 'Reservation'",
-		strings.ReplaceAll(region, "'", "''"), strings.ReplaceAll(sku, "'", "''"))
+	identity, err := pricing.ParseRedisIdentity(sku)
+	if err != nil {
+		return nil, err
+	}
+	filter := fmt.Sprintf("serviceName eq 'Redis Cache' and armRegionName eq '%s' and armSkuName eq '%s' and priceType eq 'Reservation'",
+		strings.ReplaceAll(region, "'", "''"), identity.ArmSKUName)
 
 	params := url.Values{}
 	params.Add("$filter", filter)
@@ -482,43 +486,17 @@ func (c *Client) getRedisPricing(ctx context.Context, sku, region string, termYe
 		return nil, fmt.Errorf("no pricing data found for Redis Cache SKU %s in region %s", sku, region)
 	}
 
-	reservationPrice, currency := parsePriceItems(items, termYears)
-
-	hoursInTerm := 8760.0 * float64(termYears)
-	if reservationPrice == 0 {
-		return nil, fmt.Errorf("no reservation pricing found for Redis Cache SKU %s (%d year) in region %s", sku, termYears, region)
+	selected, err := pricing.SelectReservation(items, termYears, func(item pricing.RetailPriceItem) bool {
+		return identity.Matches(item, region)
+	})
+	if err != nil {
+		return nil, err
 	}
-
 	return &RedisPricing{
-		HourlyRate:       reservationPrice / hoursInTerm,
-		ReservationPrice: reservationPrice,
-		Currency:         currency,
+		HourlyRate:       selected.RetailPrice / (8760 * float64(termYears)),
+		ReservationPrice: selected.RetailPrice,
+		Currency:         selected.CurrencyCode,
 	}, nil
-}
-
-// azureTermString returns the Retail Prices API ReservationTerm string for the
-// given number of years. The API uses the singular form "1 Year" for one year
-// and the plural form "N Years" for two or more years.
-func azureTermString(termYears int) string {
-	if termYears == 1 {
-		return "1 Year"
-	}
-	return fmt.Sprintf("%d Years", termYears)
-}
-
-func parsePriceItems(items []pricing.RetailPriceItem, termYears int) (reservation float64, currency string) {
-	currency = "USD"
-	termStr := azureTermString(termYears)
-	for i := range items {
-		item := &items[i]
-		if item.CurrencyCode != "" {
-			currency = item.CurrencyCode
-		}
-		if item.ReservationTerm == termStr {
-			reservation = item.RetailPrice
-		}
-	}
-	return
 }
 
 // convertRecommendation converts an Azure Consumption API recommendation to the common format.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -192,19 +193,139 @@ func TestRedisOffering_CapturedReservations(t *testing.T) {
 
 func TestRedisOffering_FilterAndEscaping(t *testing.T) {
 	for _, c := range redisClients() {
-		for _, input := range []struct{ sku, clause string }{
-			{"Premium_P1", "contains(armSkuName, 'Premium_P1')"},
-			{"Premium_P1'", "contains(armSkuName, 'Premium_P1''')"},
-		} {
-			t.Run(c.name+"/"+input.sku, func(t *testing.T) {
-				r := redisCatalog()[0].row(1)
-				r["armRegionName"] = "east'us"
-				filter := []string{"serviceName eq 'Redis Cache'", "armRegionName eq 'east''us'", input.clause, "priceType eq 'Reservation'"}
-				h, _ := redisHTTP(t, [][]map[string]any{{redisConsumption(), r}}, filter)
-				q, err := c.newClient("east'us", h).GetOfferingDetails(context.Background(), common.Recommendation{ResourceType: input.sku, Term: "1yr", PaymentOption: "upfront"})
-				require.NoError(t, err)
-				assert.Equal(t, 1553.0, q.TotalCost)
+		t.Run(c.name, func(t *testing.T) {
+			r := redisCatalog()[0].row(1)
+			r["armRegionName"] = "east'us"
+			filter := []string{"serviceName eq 'Redis Cache'", "armRegionName eq 'east''us'", "armSkuName eq 'Azure_Redis_Cache_Premium_P1_Cache'", "priceType eq 'Reservation'"}
+			h, _ := redisHTTP(t, [][]map[string]any{{redisConsumption(), r}}, filter)
+			q, err := c.newClient("east'us", h).GetOfferingDetails(context.Background(), common.Recommendation{ResourceType: "Premium_P1", Term: "1yr", PaymentOption: "upfront"})
+			require.NoError(t, err)
+			assert.Equal(t, 1553.0, q.TotalCost)
+		})
+	}
+}
+
+func TestRedisOffering_UnknownAliasesAvoidHTTP(t *testing.T) {
+	for _, c := range redisClients() {
+		for _, sku := range []string{"", "Premium_P10", "Premium_P1'", "premium_p1", " Premium_P1", "Standard_C1", "Enterprise_E1", "Azure_Redis_Cache_Enterprise_E", "Azure_Redis_Cache_Enterprise_E1x", "Azure_Redis_Cache_Enterprise_E１", "Azure_Redis_Cache_Enterprise_Flash_F", "Azure_Managed_Redis_Balanced_B1"} {
+			t.Run(c.name+"/"+sku, func(t *testing.T) {
+				q, err := redisQuote(t, c, sku, nil)
+				require.Error(t, err)
+				assert.Nil(t, q)
 			})
+		}
+	}
+}
+
+func TestRedisOffering_IdentityAndOrderSynthetic(t *testing.T) {
+	badFields := map[string]any{
+		"armSkuName": "Azure_Redis_Cache_Premium_P10_Cache", "armRegionName": "westus",
+		"serviceName": "Azure Cache for Redis", "productName": "Azure Redis Cache Enterprise",
+		"meterName": "P1 Cache", "skuName": "P10", "type": "Consumption", "reservationTerm": "11 Year",
+	}
+	for _, c := range redisClients() {
+		for field, value := range badFields {
+			for _, valid := range []bool{false, true} {
+				for _, reverse := range []bool{false, true} {
+					t.Run(fmt.Sprintf("%s/%s/valid=%t/reverse=%t", c.name, field, valid, reverse), func(t *testing.T) {
+						bad := redisCatalog()[0].row(1)
+						bad[field], bad["retailPrice"], bad["unitPrice"] = value, 99999, 99999
+						first, second := []map[string]any{redisConsumption()}, []map[string]any{bad}
+						if valid {
+							first = append(first, redisCatalog()[0].row(1))
+						}
+						if reverse {
+							first, second = second, first
+						}
+						q, err := redisQuote(t, c, "Premium_P1", [][]map[string]any{first, second})
+						if !valid {
+							require.Error(t, err)
+							assert.Nil(t, q)
+							return
+						}
+						require.NoError(t, err)
+						assertRedisQuote(t, c, q, "Premium_P1", "1yr", "upfront", "USD", 1553, 1)
+					})
+				}
+			}
+		}
+	}
+}
+
+func TestRedisOffering_SelectedValidationSynthetic(t *testing.T) {
+	for _, c := range redisClients() {
+		for _, bad := range []struct {
+			field string
+			value any
+		}{
+			{"unitOfMeasure", ""}, {"unitOfMeasure", "100 Hours"}, {"currencyCode", ""},
+			{"retailPrice", 0}, {"retailPrice", -1}, {"retailPrice", nil},
+		} {
+			t.Run(fmt.Sprintf("%s/%s/%v", c.name, bad.field, bad.value), func(t *testing.T) {
+				r := redisCatalog()[0].row(1)
+				r[bad.field] = bad.value
+				q, err := redisQuote(t, c, "Premium_P1", [][]map[string]any{{redisConsumption(), r}})
+				require.Error(t, err)
+				assert.Nil(t, q)
+			})
+		}
+	}
+}
+
+func TestRedisOffering_EquivalentAndConflictingQuotesSynthetic(t *testing.T) {
+	for _, c := range redisClients() {
+		for _, change := range []string{"equivalent", "price", "currency", "invalid selected unit"} {
+			for _, reverse := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/%t", c.name, change, reverse), func(t *testing.T) {
+					first := redisCatalog()[0].row(1)
+					second := maps.Clone(first)
+					second["unitOfMeasure"], second["meterId"], second["isPrimaryMeterRegion"], second["unitPrice"] = "1/Hour", "other", false, 5
+					switch change {
+					case "price":
+						second["retailPrice"] = 2000
+					case "currency":
+						second["currencyCode"] = "EUR"
+					case "invalid selected unit":
+						second["unitOfMeasure"] = "100 Hours"
+					}
+					if reverse {
+						first, second = second, first
+					}
+					q, err := redisQuote(t, c, "Premium_P1", [][]map[string]any{{redisConsumption(), first}, {second}})
+					if change != "equivalent" {
+						require.Error(t, err)
+						assert.Nil(t, q)
+						return
+					}
+					require.NoError(t, err)
+					assertRedisQuote(t, c, q, "Premium_P1", "1yr", "upfront", "USD", 1553, 1)
+				})
+			}
+		}
+	}
+}
+
+func TestRedisOffering_PrefixNeighborsAndMalformedRowsSynthetic(t *testing.T) {
+	for _, c := range redisClients() {
+		for _, selected := range redisCatalog() {
+			for _, reverse := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%s/%t", c.name, selected.sku, reverse), func(t *testing.T) {
+					first, second := []map[string]any{redisConsumption(), selected.row(1)}, []map[string]any{}
+					for _, neighbor := range redisCatalog() {
+						if neighbor.arm != selected.arm {
+							r := neighbor.row(1)
+							r["unitOfMeasure"], r["currencyCode"] = "invalid", ""
+							second = append(second, r)
+						}
+					}
+					if reverse {
+						first, second = second, first
+					}
+					q, err := redisQuote(t, c, selected.arm, [][]map[string]any{first, second})
+					require.NoError(t, err)
+					assertRedisQuote(t, c, q, selected.arm, "1yr", "upfront", "USD", selected.oneYear, 1)
+				})
+			}
 		}
 	}
 }
