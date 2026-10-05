@@ -16,7 +16,9 @@ package compute
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -51,6 +53,15 @@ type ExchangeableReservation struct {
 	// Empty when Azure did not report one. Callers must treat that as
 	// "ownership unknown" and refuse, never as "no restriction".
 	BillingScopeID string `json:"billing_scope_id,omitempty"`
+
+	// AppliedScopeType is who receives this reservation's discount. An
+	// exchange purchases its replacement with the same scope. Empty when
+	// Azure did not report one, which CalculateExchange refuses.
+	AppliedScopeType armreservations.AppliedScopeType `json:"applied_scope_type,omitempty"`
+
+	// AppliedScopes are the ARM scopes (e.g. "/subscriptions/{id}") a Single
+	// scoped reservation applies to. Empty for Shared.
+	AppliedScopes []string `json:"applied_scopes,omitempty"`
 
 	// SKU is the VM size (e.g. "Standard_D2s_v3").
 	SKU string `json:"sku"`
@@ -234,10 +245,22 @@ func convertToExchangeableReservation(item *armreservations.ReservationResponse)
 	if item.Properties.BillingScopeID != nil {
 		billingScopeID = *item.Properties.BillingScopeID
 	}
+	var appliedScopeType armreservations.AppliedScopeType
+	if item.Properties.AppliedScopeType != nil {
+		appliedScopeType = *item.Properties.AppliedScopeType
+	}
+	var appliedScopes []string
+	for _, s := range item.Properties.AppliedScopes {
+		if s != nil {
+			appliedScopes = append(appliedScopes, *s)
+		}
+	}
 	return &ExchangeableReservation{
 		ReservationOrderID:  orderID,
 		ReservationID:       f.id,
 		BillingScopeID:      billingScopeID,
+		AppliedScopeType:    appliedScopeType,
+		AppliedScopes:       appliedScopes,
 		SKU:                 f.sku,
 		Quantity:            f.quantity,
 		Region:              f.region,
@@ -246,6 +269,49 @@ func convertToExchangeableReservation(item *armreservations.ReservationResponse)
 		InstanceFlexibility: string(armreservations.InstanceFlexibilityOn),
 		DisplayName:         f.displayName,
 	}
+}
+
+// ErrUnsupportedAppliedScope marks a source whose applied scope cannot be
+// carried onto the exchange's purchased reservations. Callers should treat it
+// as a client error rather than an Azure failure.
+var ErrUnsupportedAppliedScope = errors.New("unsupported applied scope")
+
+// validateAppliedScope refuses a scope the exchange cannot reproduce on the
+// purchased reservation instead of letting Azure fall back to Shared.
+func (r *ExchangeableReservation) validateAppliedScope() error {
+	switch r.AppliedScopeType {
+	case armreservations.AppliedScopeTypeShared:
+		return nil
+	case armreservations.AppliedScopeTypeSingle:
+		if len(r.AppliedScopes) != 1 {
+			return fmt.Errorf("%w: applied_scopes must hold exactly one scope when applied_scope_type is %s, got %d", ErrUnsupportedAppliedScope, r.AppliedScopeType, len(r.AppliedScopes))
+		}
+		return nil
+	case "":
+		return fmt.Errorf("%w: applied_scope_type is required; pass the reservation as returned by ListExchangeableReservations", ErrUnsupportedAppliedScope)
+	default:
+		return fmt.Errorf("%w: applied_scope_type %q cannot be carried through an exchange", ErrUnsupportedAppliedScope, r.AppliedScopeType)
+	}
+}
+
+// sameAppliedScope compares the scope type, and the scope set only for
+// Single, case-insensitively and order-free since ARM resource IDs are
+// case-insensitive. Azure ignores appliedScopes for Shared.
+func (r *ExchangeableReservation) sameAppliedScope(o *ExchangeableReservation) bool {
+	if r.AppliedScopeType != o.AppliedScopeType {
+		return false
+	}
+	return r.AppliedScopeType != armreservations.AppliedScopeTypeSingle ||
+		slices.Equal(normalizedScopes(r.AppliedScopes), normalizedScopes(o.AppliedScopes))
+}
+
+func normalizedScopes(scopes []string) []string {
+	out := make([]string, len(scopes))
+	for i, s := range scopes {
+		out[i] = strings.ToLower(s)
+	}
+	slices.Sort(out)
+	return out
 }
 
 // parseReservationOrderID extracts the reservation order GUID from a
