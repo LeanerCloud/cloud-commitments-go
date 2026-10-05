@@ -35,6 +35,7 @@ func validQuoteOutput(paymentDue string) *ec2.GetReservedInstancesExchangeQuoteO
 	return &ec2.GetReservedInstancesExchangeQuoteOutput{
 		IsValidExchange: sdkaws.Bool(true),
 		PaymentDue:      sdkaws.String(paymentDue),
+		CurrencyCode:    sdkaws.String("USD"),
 	}
 }
 

@@ -419,6 +419,45 @@ func TestRunAutoExchange_MissingPaymentDue_RefusedBeforeAnyRecord(t *testing.T) 
 	}
 }
 
+// TestRunAutoExchange_NonUSDQuote_RefusedBeforeAnyRecord (#42): a 90 JPY or
+// currency-less quote under a 500 USD cap is skipped before Execute or approval.
+func TestRunAutoExchange_NonUSDQuote_RefusedBeforeAnyRecord(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"auto", "manual"} {
+		for _, currency := range []string{"JPY", ""} {
+			t.Run(fmt.Sprintf("%s/currency=%q", mode, currency), func(t *testing.T) {
+				t.Parallel()
+				due, _ := ParseDecimalRat("90.00")
+				store := &mockExchangeStore{dailySpend: "0"}
+				client := &mockExchangeClient{
+					quoteResult: &ExchangeQuoteSummary{
+						IsValidExchange:  true,
+						PaymentDueRaw:    "90.00",
+						PaymentDueUSD:    due,
+						PaymentDueUSDStr: "90.000000",
+						CurrencyCode:     currency,
+					},
+					executeResult: "exch-must-not-happen",
+				}
+				params := defaultParams(store, client)
+				params.Config.Mode = mode
+				params.Config.MaxPaymentPerExchangeUSD = 500.0
+
+				result, err := RunAutoExchange(context.Background(), params)
+				require.NoError(t, err)
+
+				assert.Zero(t, client.executeCalls, "Execute must not be called for a non-USD quote")
+				assert.Empty(t, store.savedRecords, "no record of any status may be written for a non-USD quote")
+				assert.Empty(t, result.Completed)
+				assert.Empty(t, result.Pending)
+				assert.Empty(t, result.Failed)
+				require.Len(t, result.Skipped, 1)
+				assert.Contains(t, result.Skipped[0].Reason, "USD")
+			})
+		}
+	}
+}
+
 // TestProcessAutoExchange_FreshQuoteWithoutAmount_LedgerKeepsInitialQuote
 // (#1964): when the fresh Execute quote carries no amount, the completed
 // ledger row must keep the initial quoted amount, never "0", so the daily

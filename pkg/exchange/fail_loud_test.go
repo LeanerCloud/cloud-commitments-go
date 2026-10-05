@@ -6,9 +6,11 @@ package exchange
 //   - M3: empty region returns an error (no us-east-1 default)
 //   - L2: Count <= 0 returns an error (no silent rewrite to 1)
 //   - #1964 / A09-004: a quote with no PaymentDue refuses before accept; an explicit zero proceeds
+//   - #42: a quote not denominated in USD refuses before accept
 
 import (
 	"context"
+	"errors"
 	"math/big"
 	"strings"
 	"testing"
@@ -46,9 +48,66 @@ func (f *sequentialFakeEC2) AcceptReservedInstancesExchangeQuote(_ context.Conte
 }
 
 func seqQuoteOut(paymentDue string) *ec2.GetReservedInstancesExchangeQuoteOutput {
+	return seqQuoteOutIn(paymentDue, sdkaws.String("USD"))
+}
+
+func seqQuoteOutIn(paymentDue string, currency *string) *ec2.GetReservedInstancesExchangeQuoteOutput {
 	return &ec2.GetReservedInstancesExchangeQuoteOutput{
 		IsValidExchange: sdkaws.Bool(true),
 		PaymentDue:      sdkaws.String(paymentDue),
+		CurrencyCode:    currency,
+	}
+}
+
+// TestExecute_NonUSDQuoteRefusedBeforeAccept (#42): 900 passes a 1000 USD cap
+// numerically, but a quote not in USD, or naming no currency, must never reach Accept.
+func TestExecute_NonUSDQuoteRefusedBeforeAccept(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name       string
+		quotes     []*ec2.GetReservedInstancesExchangeQuoteOutput
+		wantQuotes int
+		wantInErr  string
+	}{
+		{"initial EUR", []*ec2.GetReservedInstancesExchangeQuoteOutput{seqQuoteOutIn("900", sdkaws.String("EUR"))}, 1, `"EUR"`},
+		{"initial JPY", []*ec2.GetReservedInstancesExchangeQuoteOutput{seqQuoteOutIn("900", sdkaws.String("JPY"))}, 1, `"JPY"`},
+		{"initial absent currency", []*ec2.GetReservedInstancesExchangeQuoteOutput{seqQuoteOutIn("900", nil)}, 1, "no CurrencyCode"},
+		{"initial empty currency", []*ec2.GetReservedInstancesExchangeQuoteOutput{seqQuoteOutIn("900", sdkaws.String(""))}, 1, "no CurrencyCode"},
+		{"lowercase usd", []*ec2.GetReservedInstancesExchangeQuoteOutput{seqQuoteOutIn("900", sdkaws.String("usd"))}, 1, `"usd"`},
+		{"re-quote JPY", []*ec2.GetReservedInstancesExchangeQuoteOutput{seqQuoteOut("900"), seqQuoteOutIn("900", sdkaws.String("JPY"))}, 2, "accept time"},
+		{"re-quote absent currency", []*ec2.GetReservedInstancesExchangeQuoteOutput{seqQuoteOut("900"), seqQuoteOutIn("900", nil)}, 2, "accept time"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := &sequentialFakeEC2{
+				quoteOutputs: tc.quotes,
+				quoteErrors:  make([]error, len(tc.quotes)),
+				acceptOutput: &ec2.AcceptReservedInstancesExchangeQuoteOutput{ExchangeId: sdkaws.String("should-not-be-called")},
+			}
+			c := NewExchangeClientFromAPI(f)
+
+			_, _, err := c.Execute(context.Background(), ExchangeExecuteRequest{
+				ReservedIDs:      []string{"ri-1"},
+				TargetOfferingID: "off-A",
+				TargetCount:      1,
+				MaxPaymentDueUSD: new(big.Rat).SetInt64(1000),
+			})
+
+			if !errors.Is(err, ErrQuoteNotUSD) {
+				t.Fatalf("expected ErrQuoteNotUSD, got %v", err)
+			}
+			if !strings.Contains(err.Error(), tc.wantInErr) {
+				t.Errorf("error should contain %q; got: %v", tc.wantInErr, err)
+			}
+			if f.acceptInput != nil {
+				t.Fatalf("Accept was called for a non-USD quote; accept input: %+v", f.acceptInput)
+			}
+			if f.quoteCall != tc.wantQuotes {
+				t.Errorf("expected %d quote calls before refusal, got %d", tc.wantQuotes, f.quoteCall)
+			}
+		})
 	}
 }
 
