@@ -441,42 +441,40 @@ type Pricing struct {
 	SavingsPercentage float64
 }
 
+var searchDisplaySKUs = map[string]string{
+	"basic":                "Basic",
+	"standard":             "Standard S1",
+	"standard2":            "Standard S2",
+	"standard3":            "Standard S3",
+	"storage_optimized_l1": "Storage Optimized L1",
+	"storage_optimized_l2": "Storage Optimized L2",
+}
+
 // getSearchPricing gets real pricing from Azure Retail Prices API.
 func (c *Client) getSearchPricing(ctx context.Context, sku, region string, termYears int) (*Pricing, error) {
-	filter := fmt.Sprintf("serviceName eq 'Azure Cognitive Search' and armRegionName eq '%s'", region)
+	displaySKU, ok := searchDisplaySKUs[sku]
+	if !ok {
+		return nil, fmt.Errorf("unsupported Azure Search SKU %q", sku)
+	}
+	filter := fmt.Sprintf("serviceName eq 'Azure Cognitive Search' and armRegionName eq '%s' and skuName eq '%s' and priceType eq 'Reservation'", strings.ReplaceAll(region, "'", "''"), displaySKU)
 
 	priceData, err := c.fetchAzurePricing(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(priceData.Items) == 0 {
-		return nil, fmt.Errorf("no pricing data found for Azure Search in region %s", region)
-	}
-
-	onDemandPrice, reservationPrice, currency := extractSearchPricing(priceData.Items, termYears)
-	if onDemandPrice == 0 {
-		return nil, fmt.Errorf("no on-demand pricing found for Azure Search")
+	selected, err := pricing.SelectReservation(priceData.Items, termYears, func(item pricing.RetailPriceItem) bool {
+		return item.ServiceName == "Azure Cognitive Search" && item.ArmRegionName == region && item.SKUName == displaySKU
+	})
+	if err != nil {
+		return nil, fmt.Errorf("azure search SKU %s in region %s: %w", sku, region, err)
 	}
 
 	hoursInTerm := 8760.0 * float64(termYears)
-	// Return an error rather than fabricating a reservation price from a
-	// hardcoded discount multiplier (issue #1020 H4). Presenting an
-	// estimated figure as a real TotalCost/SavingsPercentage is misleading
-	// and can justify uneconomical purchases. managedredis already uses
-	// this pattern as the model.
-	if reservationPrice == 0 {
-		return nil, fmt.Errorf("no reservation pricing found for Azure Search SKU %s (%d year) in region %s", sku, termYears, region)
-	}
-
-	savingsPercentage := calculateSearchSavingsPercentage(onDemandPrice, hoursInTerm, reservationPrice)
-
 	return &Pricing{
-		HourlyRate:        reservationPrice / hoursInTerm,
-		ReservationPrice:  reservationPrice,
-		OnDemandPrice:     onDemandPrice * hoursInTerm,
-		Currency:          currency,
-		SavingsPercentage: savingsPercentage,
+		HourlyRate:       selected.RetailPrice / hoursInTerm,
+		ReservationPrice: selected.RetailPrice,
+		Currency:         selected.CurrencyCode,
 	}, nil
 }
 
@@ -493,43 +491,6 @@ func (c *Client) fetchAzurePricing(ctx context.Context, filter string) (*AzureRe
 		return nil, err
 	}
 	return &AzureRetailPrice{Items: items}, nil
-}
-
-// azureTermString returns the Retail Prices API ReservationTerm string for the
-// given number of years. The API uses the singular form "1 Year" for one year
-// and the plural form "N Years" for two or more years.
-func azureTermString(termYears int) string {
-	if termYears == 1 {
-		return "1 Year"
-	}
-	return fmt.Sprintf("%d Years", termYears)
-}
-
-// extractSearchPricing extracts on-demand and reservation pricing from price items.
-func extractSearchPricing(items []pricing.RetailPriceItem, termYears int) (onDemand, reservation float64, currency string) {
-	currency = "USD"
-	termStr := azureTermString(termYears)
-
-	for i := range items {
-		item := &items[i]
-		if item.CurrencyCode != "" {
-			currency = item.CurrencyCode
-		}
-
-		if item.ReservationTerm != "" && item.ReservationTerm == termStr {
-			reservation = item.RetailPrice
-		} else if item.Type == "Consumption" {
-			onDemand = item.UnitPrice
-		}
-	}
-
-	return onDemand, reservation, currency
-}
-
-// calculateSearchSavingsPercentage calculates the savings percentage.
-func calculateSearchSavingsPercentage(onDemandPrice, hoursInTerm, reservationPrice float64) float64 {
-	onDemandTotal := onDemandPrice * hoursInTerm
-	return ((onDemandTotal - reservationPrice) / onDemandTotal) * 100
 }
 
 // convertAzureSearchRecommendation converts Azure Search reservation recommendation to common format.
