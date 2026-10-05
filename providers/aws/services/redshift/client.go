@@ -17,6 +17,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/retry"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/reservationexpiry"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/reservationstate"
 )
 
@@ -108,8 +109,6 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 				continue
 			}
 
-			termMonths := getTermMonthsFromDuration(aws.ToInt32(node.Duration))
-
 			commitment := common.Commitment{
 				Provider:       common.ProviderAWS,
 				CommitmentID:   aws.ToString(node.ReservedNodeId),
@@ -120,7 +119,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 				Count:          int(aws.ToInt32(node.NodeCount)),
 				State:          state,
 				StartDate:      aws.ToTime(node.StartTime),
-				EndDate:        aws.ToTime(node.StartTime).AddDate(0, termMonths, 0),
+				EndDate:        reservationexpiry.EndDate(aws.ToTime(node.StartTime), aws.ToInt32(node.Duration)),
 			}
 
 			commitments = append(commitments, commitment)
@@ -682,15 +681,6 @@ func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	}
 	sort.Strings(types)
 	return types, nil
-}
-
-// getTermMonthsFromDuration converts duration in seconds to months.
-func getTermMonthsFromDuration(duration int32) int {
-	offeringMonths := duration / 2592000
-	if offeringMonths >= 30 {
-		return 36
-	}
-	return 12
 }
 
 // redshiftStatePendingPayment is how Redshift spells a just-purchased node whose

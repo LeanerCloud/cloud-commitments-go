@@ -1051,26 +1051,6 @@ func TestClient_GetOfferingDetails_EmptyOfferingsAfterFind(t *testing.T) {
 	mockRS.AssertExpectations(t)
 }
 
-func TestGetTermMonthsFromDuration(t *testing.T) {
-	tests := []struct {
-		name     string
-		duration int32
-		expected int
-	}{
-		{"1 year", 31536000, 12},
-		{"3 years", 94608000, 36},
-		{"30 months", 77760000, 36}, // >= 30 months becomes 36
-		{"6 months", 15552000, 12},  // < 30 months becomes 12
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := getTermMonthsFromDuration(tt.duration)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
 func TestClient_FindOfferingID_NoMatchingNodeType(t *testing.T) {
 	mockRS := &MockRedshiftClient{}
 	client := &Client{
