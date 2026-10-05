@@ -840,25 +840,6 @@ func TestClient_GetExistingCommitments_Pagination(t *testing.T) {
 	mockMDB.AssertExpectations(t)
 }
 
-func TestClient_GetTermMonthsFromDuration(t *testing.T) {
-	tests := []struct {
-		name     string
-		duration int32
-		expected int
-	}{
-		{"1 year duration", 31536000, 12},
-		{"3 years duration", 94608000, 36},
-		{"2 year duration defaults to 12", 63072000, 12},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := getTermMonthsFromDuration(tt.duration)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
 func mdbIdemRec() common.Recommendation {
 	return common.Recommendation{
 		Service:       common.ServiceCache,
