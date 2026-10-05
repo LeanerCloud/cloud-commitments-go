@@ -667,9 +667,9 @@ func isResourceExhausted(err error) bool {
 	return strings.Contains(s, "ResourceExhausted") || strings.Contains(s, "RESOURCE_EXHAUSTED") || strings.Contains(s, "429")
 }
 
-// ErrExistingCommitmentMismatch reports that a commitment already holds the
+// errExistingCommitmentMismatch reports that a commitment already holds the
 // idempotent name but differs from the requested purchase.
-var ErrExistingCommitmentMismatch = errors.New("existing GCP commitment does not match the requested purchase")
+var errExistingCommitmentMismatch = errors.New("existing GCP commitment does not match the requested purchase")
 
 // isAlreadyExists reports whether the Compute REST API rejected a create because
 // the resource exists: ALREADY_EXISTS maps to HTTP 409 (google/rpc/code.proto).
@@ -696,7 +696,7 @@ func adoptExistingCommitment(ctx context.Context, svc CommitmentsService, req *c
 	gotRes, wantRes := resourceAmounts(got), resourceAmounts(want)
 	if got.GetPlan() != want.GetPlan() || got.GetType() != want.GetType() || !maps.Equal(gotRes, wantRes) {
 		return fmt.Errorf("%w: commitment %s in %s has plan=%s type=%s resources=%v, requested plan=%s type=%s resources=%v",
-			ErrExistingCommitmentMismatch, want.GetName(), req.GetRegion(),
+			errExistingCommitmentMismatch, want.GetName(), req.GetRegion(),
 			got.GetPlan(), got.GetType(), gotRes, want.GetPlan(), want.GetType(), wantRes)
 	}
 	log.Printf("GCP CUD %s for token %s already exists and matches the request; treating the re-drive as the earlier purchase (issue #44)",

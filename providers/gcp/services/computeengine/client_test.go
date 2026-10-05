@@ -715,22 +715,31 @@ func TestComputeEngineClient_PurchaseCommitment_ReDriveAlreadyExists(t *testing.
 		opts      common.PurchaseOptions
 		existing  func(*computepb.Commitment)
 		getStatus int
-		wantGets  int
-		wantErrIs error
-		wantErr   string
+		// insertStatus is the Insert response status; zero means 409.
+		insertStatus int
+		wantGets     int
+		wantErrIs    error
+		wantErr      string
 	}{
 		{name: "matching commitment is the earlier purchase", opts: tokenOpts, getStatus: http.StatusOK, wantGets: 1},
 		{name: "different vCPU amount stays a failure", opts: tokenOpts, getStatus: http.StatusOK, wantGets: 1,
 			existing:  func(c *computepb.Commitment) { c.Resources[0].Amount = int64Ptr(4) },
-			wantErrIs: ErrExistingCommitmentMismatch},
+			wantErrIs: errExistingCommitmentMismatch},
 		{name: "different plan stays a failure", opts: tokenOpts, getStatus: http.StatusOK, wantGets: 1,
 			existing:  func(c *computepb.Commitment) { c.Plan = stringPtr(computepb.Commitment_TWELVE_MONTH.String()) },
-			wantErrIs: ErrExistingCommitmentMismatch},
+			wantErrIs: errExistingCommitmentMismatch},
+		{name: "different type stays a failure", opts: tokenOpts, getStatus: http.StatusOK, wantGets: 1,
+			existing:  func(c *computepb.Commitment) { c.Type = stringPtr(computepb.Commitment_COMPUTE_OPTIMIZED.String()) },
+			wantErrIs: errExistingCommitmentMismatch},
+		{name: "non-409 insert error 400 is not adopted", opts: tokenOpts, insertStatus: http.StatusBadRequest,
+			getStatus: http.StatusOK, wantErr: "insert rejected 400"},
+		{name: "non-409 insert error 500 is not adopted", opts: tokenOpts, insertStatus: http.StatusInternalServerError,
+			getStatus: http.StatusOK, wantErr: "insert rejected 500"},
 		{name: "extra resource stays a failure", opts: tokenOpts, getStatus: http.StatusOK, wantGets: 1,
 			existing: func(c *computepb.Commitment) {
 				c.Resources = append(c.Resources, &computepb.ResourceCommitment{Type: stringPtr("LOCAL_SSD"), Amount: int64Ptr(375)})
 			},
-			wantErrIs: ErrExistingCommitmentMismatch},
+			wantErrIs: errExistingCommitmentMismatch},
 		{name: "unreadable existing commitment stays a failure", opts: tokenOpts, getStatus: http.StatusForbidden, wantGets: 1,
 			wantErr: "could not be read to confirm"},
 		{name: "no token keeps the conflict a failure", opts: common.PurchaseOptions{}, getStatus: http.StatusOK,
@@ -756,6 +765,11 @@ func TestComputeEngineClient_PurchaseCommitment_ReDriveAlreadyExists(t *testing.
 				switch {
 				case r.Method == http.MethodPost && r.URL.Path == collection:
 					inserts++
+					if tt.insertStatus != 0 {
+						w.WriteHeader(tt.insertStatus)
+						_, _ = fmt.Fprintf(w, `{"error":{"code":%[1]d,"message":"insert rejected %[1]d"}}`, tt.insertStatus)
+						return
+					}
 					w.WriteHeader(http.StatusConflict)
 					_, _ = fmt.Fprintf(w, `{"error":{"code":409,"message":"The resource 'projects/test-project/regions/us-central1/commitments/%[1]s' already exists","errors":[{"message":"The resource 'projects/test-project/regions/us-central1/commitments/%[1]s' already exists","domain":"global","reason":"alreadyExists"}]}}`, name)
 				case r.Method == http.MethodGet && r.URL.Path == collection+"/"+name:
