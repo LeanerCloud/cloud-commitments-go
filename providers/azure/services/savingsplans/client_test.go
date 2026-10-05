@@ -153,6 +153,7 @@ func TestGetExistingCommitments_Happy(t *testing.T) {
 		ID:   &spID,
 		Name: &spName,
 		Properties: &armbillingbenefits.SavingsPlanModelProperties{
+			BillingScopeID:    toPtr("/subscriptions/sub-abc"),
 			ProvisioningState: &prov,
 			EffectiveDateTime: &now,
 			ExpiryDateTime:    &expiry,
@@ -179,6 +180,49 @@ func TestGetExistingCommitments_Happy(t *testing.T) {
 	assert.Equal(t, spName, got.ResourceType)
 	assert.Equal(t, common.CommitmentStateActive, got.State)
 	assert.Equal(t, amount, got.Cost)
+}
+
+// TestGetExistingCommitments_OnlyPlansBilledToSubscription replays a tenant-wide
+// ListAll page (issue #40): only plans billed to the client's subscription are ours.
+func TestGetExistingCommitments_OnlyPlansBilledToSubscription(t *testing.T) {
+	plan := func(id string, billingScope *string, scopeType armbillingbenefits.AppliedScopeType, props *armbillingbenefits.AppliedScopeProperties) *armbillingbenefits.SavingsPlanModel {
+		return &armbillingbenefits.SavingsPlanModel{
+			ID: toPtr(id),
+			Properties: &armbillingbenefits.SavingsPlanModelProperties{
+				BillingScopeID:         billingScope,
+				AppliedScopeType:       toPtr(scopeType),
+				AppliedScopeProperties: props,
+			},
+		}
+	}
+	page := []*armbillingbenefits.SavingsPlanModel{
+		plan("own-single", toPtr("/subscriptions/sub-a"), armbillingbenefits.AppliedScopeTypeSingle,
+			&armbillingbenefits.AppliedScopeProperties{SubscriptionID: toPtr("/subscriptions/sub-a")}),
+		plan("own-shared-mixed-case", toPtr("/Subscriptions/SUB-A"), armbillingbenefits.AppliedScopeTypeShared, nil),
+		plan("other-single", toPtr("/subscriptions/sub-b"), armbillingbenefits.AppliedScopeTypeSingle,
+			&armbillingbenefits.AppliedScopeProperties{SubscriptionID: toPtr("/subscriptions/sub-b")}),
+		plan("other-shared", toPtr("/subscriptions/sub-b"), armbillingbenefits.AppliedScopeTypeShared, nil),
+		plan("other-billed-applied-to-us", toPtr("/subscriptions/sub-b"), armbillingbenefits.AppliedScopeTypeSingle,
+			&armbillingbenefits.AppliedScopeProperties{SubscriptionID: toPtr("/subscriptions/sub-a")}),
+		plan("billing-account-scope", toPtr("/providers/Microsoft.Billing/billingAccounts/ba-1"), armbillingbenefits.AppliedScopeTypeShared, nil),
+		plan("prefix-lookalike", toPtr("/subscriptions/sub-a-2"), armbillingbenefits.AppliedScopeTypeShared, nil),
+		plan("missing-scope", nil, armbillingbenefits.AppliedScopeTypeShared, nil),
+		plan("empty-scope", toPtr(""), armbillingbenefits.AppliedScopeTypeShared, nil),
+		{ID: toPtr("no-properties")},
+	}
+
+	c := NewClient(nil, "sub-a", "eastus")
+	c.SetListAllPager(&mockListAllPager{results: page})
+
+	commitments, err := c.GetExistingCommitments(context.Background())
+	require.NoError(t, err)
+
+	ids := make([]string, 0, len(commitments))
+	for _, cm := range commitments {
+		assert.Equal(t, "sub-a", cm.Account)
+		ids = append(ids, cm.CommitmentID)
+	}
+	assert.Equal(t, []string{"own-single", "own-shared-mixed-case"}, ids)
 }
 
 func TestGetExistingCommitments_NilModel(t *testing.T) {

@@ -4,8 +4,10 @@ package savingsplans
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -136,7 +138,7 @@ func (c *Client) GetRecommendations(_ context.Context, _ *common.RecommendationP
 	return []common.Recommendation{}, nil
 }
 
-// GetExistingCommitments retrieves all active Azure Savings Plans.
+// GetExistingCommitments retrieves the Azure Savings Plans billed to this client's subscription.
 func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	var pager SavingsPlanListAllPager
 
@@ -151,22 +153,52 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 	}
 
 	commitments := make([]common.Commitment, 0)
+	var skipped skippedPlans
 
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list savings plans: %w", err)
 		}
+		commitments = c.appendOwnedPlans(commitments, page.Value, &skipped)
+	}
 
-		for _, sp := range page.Value {
-			commitment := convertSavingsPlan(sp, c.subscriptionID)
-			if commitment != nil {
-				commitments = append(commitments, *commitment)
-			}
-		}
+	if skipped.billedElsewhere > 0 || skipped.unknownOwner > 0 {
+		log.Printf("WARNING: skipped savings plans not attributable to subscription %s: %d billed to another scope, %d with no billing scope",
+			c.subscriptionID, skipped.billedElsewhere, skipped.unknownOwner)
 	}
 
 	return commitments, nil
+}
+
+type skippedPlans struct {
+	billedElsewhere int
+	unknownOwner    int
+}
+
+// appendOwnedPlans keeps the plans billed to this subscription. ListAll is tenant-wide, and a
+// plan is billed to exactly one scope even when its applied scope is Shared (issue #40).
+func (c *Client) appendOwnedPlans(dst []common.Commitment, plans []*armbillingbenefits.SavingsPlanModel, skipped *skippedPlans) []common.Commitment {
+	ownScope := c.billingScopeID()
+	for _, sp := range plans {
+		if sp == nil || sp.ID == nil {
+			continue
+		}
+		switch {
+		case sp.Properties == nil || sp.Properties.BillingScopeID == nil || *sp.Properties.BillingScopeID == "":
+			skipped.unknownOwner++
+		case !strings.EqualFold(*sp.Properties.BillingScopeID, ownScope):
+			skipped.billedElsewhere++
+		default:
+			dst = append(dst, *convertSavingsPlan(sp, c.subscriptionID))
+		}
+	}
+	return dst
+}
+
+// billingScopeID is the scope this client purchases under and owns plans by.
+func (c *Client) billingScopeID() string {
+	return fmt.Sprintf("/subscriptions/%s", c.subscriptionID)
 }
 
 // azureSavingsPlanState maps a savings plan provisioning state to the common
@@ -265,7 +297,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	}
 
 	grain := armbillingbenefits.CommitmentGrainHourly
-	billingScopeID := fmt.Sprintf("/subscriptions/%s", c.subscriptionID)
+	billingScopeID := c.billingScopeID()
 	appliedScope := armbillingbenefits.AppliedScopeTypeShared
 	hourlyAmount := spDetails.HourlyCommitment
 	displayName := fmt.Sprintf("cudly-%s-%s", spDetails.PlanType, rec.Term)
@@ -357,7 +389,7 @@ func (c *Client) buildValidateBody(rec common.Recommendation) (armbillingbenefit
 	}
 
 	grain := armbillingbenefits.CommitmentGrainHourly
-	billingScopeID := fmt.Sprintf("/subscriptions/%s", c.subscriptionID)
+	billingScopeID := c.billingScopeID()
 	appliedScope := armbillingbenefits.AppliedScopeTypeShared
 	hourlyAmount := spDetails.HourlyCommitment
 	displayName := "cudly-validate"
