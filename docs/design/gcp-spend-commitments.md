@@ -3,7 +3,7 @@
 Status: proposed. Refs issue #78 (part d). Docs only: no production code is
 changed by this document.
 
-All code references are to `main` at `b655b73`. Consumer-repo references are
+All code references are to `main` at `c79fbcd`. Consumer-repo references are
 to the default branches of `cloud-commitments-platform`, `-cli` and `-mcp` as
 cloned on 2026-10-05.
 
@@ -14,7 +14,7 @@ cloned on 2026-10-05.
 - `common.Recommendation` is per-resource. Identity is
   `Provider`/`Account`/`Service`/`Region`/`ResourceType`, and `ResourceType` is
   documented as "Instance type, node type, VM size, etc."
-  (`pkg/common/types.go:190-272`, field at `:201`). There is no currency field
+  (`pkg/common/types.go:191-277`, field at `:202`). There is no currency field
   and no field that names a scope other than `Account`.
 - The GCP Memorystore, Cloud SQL and Cloud Storage clients set `ResourceType`
   from the last path segment of the first operation resource
@@ -92,8 +92,8 @@ implementation that carries the hourly amount and currency.
 This is the existing Savings Plans precedent, generalised. AWS Savings Plans
 are already a `Recommendation` with `Count: 1`, no `ResourceType`, and the
 dollar quantity in `Details` (`providers/aws/recommendations/parser_sp.go:231-254`).
-`ScaleRecommendationCosts` (`pkg/common/types.go:312-331`) and `ApplyCoverage`
-(`pkg/recfilter/sizing.go:45-53`) already special-case that shape.
+`ScaleRecommendationCosts` (`pkg/common/types.go:317-336`) and `ApplyCoverage`
+(`pkg/recfilter/sizing.go:47-55`) already special-case that shape.
 
 Every `[]common.Recommendation` signature stays
 (`pkg/provider/interface.go:38-66`) and the details codec already dispatches
@@ -112,7 +112,7 @@ outcome as Option A.
 ### Option C: reuse `SavingsPlanDetails` and the Savings Plans slugs as they are
 
 `SavingsPlanDetails` is AWS-shaped (`PlanType`, `InstanceFamily`,
-`OfferingID` from Cost Explorer; `pkg/common/types.go:640-662`), and
+`OfferingID` from Cost Explorer; `pkg/common/types.go:645-667`), and
 `IsSavingsPlan` drives AWS-only branches (MCP
 `tools/search_recommendations.go:205,351`). It has no scope and no currency,
 so the billing account would go in `Account` and USD would be implied. The
@@ -135,7 +135,7 @@ What breaks without it:
   billing account, and its identity would name a project that cannot buy it.
 - Without a spend-denominated branch in sizing, `ApplyCoverage` sends a
   `Count: 1` rec down the RI path, where `int(1 * ratio)` is 0 and the rec is
-  dropped (`pkg/recfilter/sizing.go:66-75`).
+  dropped (`pkg/recfilter/sizing.go:68-77`).
 - Without a currency, a non-USD billing account's savings would be summed as
   dollars (`pkg/reporter/reporter.go:36`, `:100` print `$`).
 
@@ -304,11 +304,11 @@ the platform records a collection error for the billing account instead of
 
 | Site | Change |
 | --- | --- |
-| `pkg/common/types.go:190-272` | add `Scope`; add constants, details type, errors |
-| `pkg/common/types.go:312-331` `ScaleRecommendationCosts` | scale `SpendCommitmentDetails.HourlyAmount` |
+| `pkg/common/types.go:191-277` | add `Scope`; add constants, details type, errors |
+| `pkg/common/types.go:317-336` `ScaleRecommendationCosts` | scale `SpendCommitmentDetails.HourlyAmount` |
 | `pkg/common/service_details_codec.go:121` | map the spend slugs to `SpendCommitmentDetails` |
 | `pkg/common/matches.go:7-21` `Matches` | spend recs match on scope, service, region, term |
-| `pkg/recfilter/sizing.go:45-53`, `:200` | branch on `IsSpendDenominated` instead of `IsSavingsPlan` |
+| `pkg/recfilter/sizing.go:47-55`, `:202` | branch on `IsSpendDenominated` instead of `IsSavingsPlan` |
 | `pkg/recfilter/dedupe.go:178` | spend recs skip the `ResourceType` pool key |
 | `pkg/scorer/scorer.go:65-66` | tie-break includes scope ID and hourly amount |
 | `pkg/reporter/reporter.go:36`, `:100` | print the currency instead of `$` for spend recs |
