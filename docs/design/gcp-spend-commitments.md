@@ -220,9 +220,15 @@ Where each value lives on a spend rec:
 | Term | `Term` ("1yr"/"3yr") | parser error; no "1yr" default |
 | Hourly amount | `Details.HourlyAmount` | parser error |
 | Currency | `Details.Currency` | parser error; never assumed USD. `Cost` and `CostInLocalCurrency` may differ in currency, so the parser must pick one explicitly (open question 2) |
-| Savings | `EstimatedSavings` from typed `CostProjection.Cost`, negated (negative units are savings) | parser error |
+| Savings | Monthly `EstimatedSavings` from the negated selected typed cost projection after validated duration normalization; mapping blocked pending evidence | parser error for missing/invalid duration or currency mismatch |
 | Offer | `Details.OfferID` | nil, purchase refused |
 | Instance tier | `ResourceType` stays empty | by design, as for Savings Plans |
+
+`CostProjection.Duration` is the period covered by the projected cost, not
+necessarily a month. Define and verify the monthly-normalization rule before
+mapping savings; reject missing, nonpositive or invalid duration. The selected
+projection's currency must match `Details.Currency`; do not guess a month
+length or an exchange rate while these contracts remain unverified.
 
 A missing required value yields a `*SpendPayloadError` and no
 `Recommendation`; a run where every payload fails is a failure, not "no
@@ -253,7 +259,7 @@ type Client struct {
 func (c *Client) GetRecommendations(ctx context.Context, p *common.RecommendationParams) ([]common.Recommendation, error)
 
 // parseSpendRecommendation reads the typed parts of the proto (name, state,
-// CostProjection.Cost and its currency) and delegates the untyped Overview to
+// the selected cost projection, duration and currency) and delegates Overview to
 // parseOverview.
 func parseSpendRecommendation(scope common.CommitmentScope, rec *recommenderpb.Recommendation) (common.Recommendation, error)
 
@@ -273,9 +279,11 @@ func parseOverview(o *structpb.Struct) (overviewFields, error)
 var ErrOverviewSchemaUnverified = errors.New("spend CUD overview schema not yet verified against a real payload")
 ```
 
-Wiring a real payload later changes only `parseOverview` and its golden
-fixture tests. The types in section 3, the client, the collector and every
-consumer stay as they are.
+The intended boundary isolates verified Overview keys in `parseOverview` and
+its golden fixtures. It does not freeze the surrounding design: if captured
+scope, location, multi-service/region shape, amount or currency contracts differ
+from these assumptions, revisit the affected types, client, collector and
+consumers before implementation.
 
 While `parseOverview` returns `ErrOverviewSchemaUnverified`, the client
 returns that error from `GetRecommendations` rather than an empty slice. Spend
@@ -444,8 +452,10 @@ Each step is one PR under about 400 lines and can ship alone.
    with the owner's go-ahead. Verify: the captured file is attached to #78.
 5. **Real `parseOverview`.** Implement against the captured keys only, with
    the sample as a golden fixture and negative fixtures for each missing
-   field. Verify: fixture tests; a live run of the step 4 tool that parses
-   every returned recommendation. Blocked on step 4.
+   field. Verify: fixture tests, including a non-monthly cost projection with
+   the verified monthly-normalization rule, invalid durations and mismatched
+   currencies; a live run of the step 4 tool that parses every returned
+   recommendation. Blocked on step 4 and the duration/currency evidence.
 6. **Retire the non-commitment GCP paths.** Remove the Performance and Cost
    recommender queries from Memorystore, Cloud SQL and Cloud Storage
    recommendation collection, so issue #78's defect cannot recur. Verify:
