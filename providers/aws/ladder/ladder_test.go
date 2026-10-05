@@ -605,9 +605,8 @@ func TestGetLayerStates_SPLayers_NilSPInterfaces_GiveNilCovUtil(t *testing.T) {
 	assert.Nil(t, sp.UtilizationPct, "UtilizationPct must be nil when spUtilizationSource is not wired")
 }
 
-func TestGetLayerStates_SPLayers_SharedCovPct_BothLayersGetSameValue(t *testing.T) {
-	// When spCoverageSource is wired, both SP layers must share the same CoveragePct
-	// (CE API limitation: GetSavingsPlansCoverage does not support plan-type filtering).
+func TestGetLayerStates_SPLayers_EqualGeographyCoverage(t *testing.T) {
+	// Distinct geographical scopes can have equal aggregate coverage.
 	covPct := 75.0
 	spCov := &fakeSPCoverageSource{summary: SPCoverageSummary{CoveragePct: &covPct}}
 
@@ -628,7 +627,7 @@ func TestGetLayerStates_SPLayers_SharedCovPct_BothLayersGetSameValue(t *testing.
 	require.NotNil(t, ec2SP.CoveragePct)
 	require.NotNil(t, computeSP.CoveragePct)
 	assert.InDelta(t, 75.0, *ec2SP.CoveragePct, 1e-9, "EC2Instance SP layer coverage")
-	assert.InDelta(t, 75.0, *computeSP.CoveragePct, 1e-9, "Compute SP layer coverage must equal EC2Instance SP (CE API limitation)")
+	assert.InDelta(t, 75.0, *computeSP.CoveragePct, 1e-9, "Compute SP layer coverage")
 }
 
 func TestGetLayerStates_SPUtilization_CorrectCEEnum(t *testing.T) {
