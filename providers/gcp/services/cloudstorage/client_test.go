@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"cloud.google.com/go/recommender/apiv1/recommenderpb"
 	"cloud.google.com/go/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -316,6 +317,46 @@ func TestCloudStorageClient_GetRecommendations_NotSupported(t *testing.T) {
 	recs, err := client.GetRecommendations(ctx, &common.RecommendationParams{})
 	require.ErrorIs(t, err, common.ErrCommitmentPurchaseNotSupported)
 	assert.Nil(t, recs)
+}
+
+type countingRecommender struct {
+	listCalls  int
+	nextCalls  int
+	closeCalls int
+}
+
+var _ RecommenderClient = (*countingRecommender)(nil)
+var _ RecommenderIterator = (*countingRecommender)(nil)
+
+func (m *countingRecommender) ListRecommendations(context.Context, *recommenderpb.ListRecommendationsRequest) RecommenderIterator {
+	m.listCalls++
+	return m
+}
+
+func (m *countingRecommender) Next() (*recommenderpb.Recommendation, error) {
+	m.nextCalls++
+	return nil, iterator.Done
+}
+
+func (m *countingRecommender) Close() error {
+	m.closeCalls++
+	return nil
+}
+
+func TestCloudStorageClient_DeprecatedRecommenderClientIsNotCalled(t *testing.T) {
+	ctx := context.Background()
+	client, err := NewClient(ctx, "test-project", "us-central1")
+	require.NoError(t, err)
+	mock := &countingRecommender{}
+	client.SetRecommenderClient(mock)
+
+	recs, err := client.GetRecommendations(ctx, &common.RecommendationParams{})
+
+	assert.Nil(t, recs)
+	assert.ErrorIs(t, err, common.ErrCommitmentPurchaseNotSupported)
+	assert.Zero(t, mock.listCalls)
+	assert.Zero(t, mock.nextCalls)
+	assert.Zero(t, mock.closeCalls)
 }
 
 // storageMockSkus returns a slice with both an on-demand and a commitment SKU for

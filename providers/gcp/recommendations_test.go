@@ -8,11 +8,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"cloud.google.com/go/recommender/apiv1/recommenderpb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sync/semaphore"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -21,6 +24,7 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
 )
 
 func TestShouldIncludeService(t *testing.T) {
@@ -328,9 +332,17 @@ func TestMergeRegionResults_NoAttemptsIsNotAFailure(t *testing.T) {
 	assert.Empty(t, recs)
 }
 
-func deniedSDKAdapter(t *testing.T) *RecommendationsClientAdapter {
+type deniedSDKCalls struct {
+	httpRequests atomic.Int64
+	grpcDials    atomic.Int64
+	listRPCs     atomic.Int64
+}
+
+func deniedSDKAdapter(t *testing.T) (*RecommendationsClientAdapter, *deniedSDKCalls) {
 	t.Helper()
+	calls := &deniedSDKCalls{}
 	regions := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.httpRequests.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"items":[{"name":"us-central1","status":"UP"},{"name":"europe-west1","status":"UP"}]}`)
 	}))
@@ -339,6 +351,7 @@ func deniedSDKAdapter(t *testing.T) *RecommendationsClientAdapter {
 	server := grpc.NewServer()
 	recommenderpb.RegisterRecommenderServer(server, &recommendationSDKServer{
 		list: func(context.Context, *recommenderpb.ListRecommendationsRequest) (*recommenderpb.ListRecommendationsResponse, error) {
+			calls.listRPCs.Add(1)
 			return nil, status.Error(codes.PermissionDenied, "recommendations permission denied")
 		},
 	})
@@ -349,15 +362,16 @@ func deniedSDKAdapter(t *testing.T) *RecommendationsClientAdapter {
 		option.WithEndpoint(regions.URL),
 		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
 		option.WithGRPCDialOption(grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			calls.grpcDials.Add(1)
 			return listener.DialContext(ctx)
 		})),
 	).GetRecommendationsClient(context.Background())
 	require.NoError(t, err)
-	return adapter.(*RecommendationsClientAdapter)
+	return adapter.(*RecommendationsClientAdapter), calls
 }
 
 func TestGetAllRecommendations_TotalFailureKeepsRealCause(t *testing.T) {
-	adapter := deniedSDKAdapter(t)
+	adapter, calls := deniedSDKAdapter(t)
 
 	recs, err := adapter.GetAllRecommendations(context.Background())
 
@@ -366,10 +380,13 @@ func TestGetAllRecommendations_TotalFailureKeepsRealCause(t *testing.T) {
 	assert.True(t, IsPermissionError(err), "aggregate error must keep the PermissionDenied cause: %v", err)
 	assert.NotErrorIs(t, err, common.ErrCommitmentPurchaseNotSupported)
 	assert.Contains(t, err.Error(), "all 6 GCP recommendation service calls failed across 2 regions")
+	assert.Greater(t, calls.httpRequests.Load(), int64(0))
+	assert.Greater(t, calls.grpcDials.Load(), int64(0))
+	assert.Greater(t, calls.listRPCs.Load(), int64(0))
 }
 
 func TestCollectRegion_DefaultFanOutSkipsCloudStorage(t *testing.T) {
-	adapter := deniedSDKAdapter(t)
+	adapter, _ := deniedSDKAdapter(t)
 
 	res := adapter.collectRegion(context.Background(), common.RecommendationParams{}, "us-central1")
 
@@ -380,12 +397,61 @@ func TestCollectRegion_DefaultFanOutSkipsCloudStorage(t *testing.T) {
 }
 
 func TestGetRecommendations_ExplicitCloudStorageIsNotSupported(t *testing.T) {
-	adapter := deniedSDKAdapter(t)
+	adapter, calls := deniedSDKAdapter(t)
 
-	recs, err := adapter.GetRecommendations(context.Background(), &common.RecommendationParams{Service: common.ServiceStorage})
+	recs, err := adapter.GetRecommendationsForService(context.Background(), common.ServiceStorage)
 
 	require.Error(t, err)
 	assert.Nil(t, recs)
 	assert.ErrorIs(t, err, common.ErrCommitmentPurchaseNotSupported)
 	assert.NotContains(t, err.Error(), "GCP recommendation service calls failed")
+	assert.Zero(t, calls.httpRequests.Load())
+	assert.Zero(t, calls.grpcDials.Load())
+	assert.Zero(t, calls.listRPCs.Load())
+}
+
+func TestGetRecommendations_ExplicitCloudStoragePreCanceled(t *testing.T) {
+	adapter, calls := deniedSDKAdapter(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	recs, err := adapter.GetRecommendationsForService(ctx, common.ServiceStorage)
+
+	assert.Nil(t, recs)
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Zero(t, calls.httpRequests.Load())
+	assert.Zero(t, calls.grpcDials.Load())
+	assert.Zero(t, calls.listRPCs.Load())
+}
+
+func TestGetRecommendations_NilParamsBeforeCancellation(t *testing.T) {
+	adapter, calls := deniedSDKAdapter(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	recs, err := adapter.GetRecommendations(ctx, nil)
+
+	assert.Nil(t, recs)
+	require.EqualError(t, err, "params cannot be nil")
+	assert.Zero(t, calls.httpRequests.Load())
+	assert.Zero(t, calls.grpcDials.Load())
+	assert.Zero(t, calls.listRPCs.Load())
+}
+
+func TestGetRecommendations_ExplicitCloudStorageIgnoresOccupiedSemaphore(t *testing.T) {
+	adapter, calls := deniedSDKAdapter(t)
+	sem := semaphore.NewWeighted(1)
+	require.NoError(t, sem.Acquire(context.Background(), 1))
+	defer sem.Release(1)
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	ctx = concurrency.WithSharedSemaphore(ctx, sem)
+
+	recs, err := adapter.GetRecommendationsForService(ctx, common.ServiceStorage)
+
+	assert.Nil(t, recs)
+	assert.ErrorIs(t, err, common.ErrCommitmentPurchaseNotSupported)
+	assert.Zero(t, calls.httpRequests.Load())
+	assert.Zero(t, calls.grpcDials.Load())
+	assert.Zero(t, calls.listRPCs.Load())
 }
