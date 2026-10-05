@@ -68,7 +68,7 @@ func (c *Client) parseRecommendationDetail(ctx context.Context, details *types.R
 	// count so the CSV can show what AWS proposed alongside what --coverage /
 	// --target-coverage chose; Count is the working value the sizing step
 	// mutates.
-	count, err := c.parseRecommendedQuantity(details)
+	count, roundedFromFraction, err := c.parseRecommendedQuantity(details)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse recommended quantity: %w", err)
 	}
@@ -99,6 +99,11 @@ func (c *Client) parseRecommendationDetail(ctx context.Context, details *types.R
 		return nil, err
 	}
 
+	if roundedFromFraction {
+		log.Printf("Warning: fractional recommended quantity %q rounds to 0 instances (service=%s account=%s region=%s instance_type=%s)",
+			aws.ToString(details.RecommendedNumberOfInstancesToPurchase), rec.Service, rec.Account, rec.Region, rec.ResourceType)
+	}
+
 	return rec, nil
 }
 
@@ -122,33 +127,35 @@ func (c *Client) parseRIUtilizationSignals(rec *common.Recommendation, details *
 		"AverageUtilization ("+ctx+")", details.AverageUtilization)
 }
 
-// parseRecommendedQuantity extracts the recommended quantity from details.
-func (c *Client) parseRecommendedQuantity(details *types.ReservationPurchaseRecommendationDetail) (int, error) {
+// parseRecommendedQuantity extracts the recommended quantity from details. The
+// bool reports that a positive fractional quantity rounded down to 0; the
+// caller warns once the recommendation's identity is known.
+func (c *Client) parseRecommendedQuantity(details *types.ReservationPurchaseRecommendationDetail) (rounded int, fractionRoundedToZero bool, err error) {
 	if details.RecommendedNumberOfInstancesToPurchase == nil {
-		return 0, fmt.Errorf("recommended quantity not found")
+		return 0, false, fmt.Errorf("recommended quantity not found")
 	}
 
 	qty := *details.RecommendedNumberOfInstancesToPurchase
 
 	var count float64
-	_, err := fmt.Sscanf(qty, "%f", &count)
-	if err != nil {
+	if _, err = fmt.Sscanf(qty, "%f", &count); err != nil {
 		if intCount, atoiErr := strconv.Atoi(qty); atoiErr == nil {
 			if intCount < 0 {
-				return 0, fmt.Errorf("recommended quantity %q is negative", qty)
+				return 0, false, fmt.Errorf("recommended quantity %q is negative", qty)
 			}
-			return intCount, nil
+			return intCount, false, nil
 		}
-		return 0, fmt.Errorf("failed to parse quantity '%s' as float or int", qty)
+		return 0, false, fmt.Errorf("failed to parse quantity '%s' as float or int", qty)
 	}
 	// Sscanf %f accepts "NaN"/"Inf"; a non-finite quantity would corrupt the
 	// purchase count (int(math.Round(NaN)) is undefined). A negative count is
 	// likewise invalid for a purchase quantity. Fail loud on both.
 	if math.IsNaN(count) || math.IsInf(count, 0) || count < 0 {
-		return 0, fmt.Errorf("recommended quantity %q is not a finite non-negative number", qty)
+		return 0, false, fmt.Errorf("recommended quantity %q is not a finite non-negative number", qty)
 	}
 
-	return int(math.Round(count)), nil
+	rounded = int(math.Round(count))
+	return rounded, rounded == 0 && count > 0, nil
 }
 
 // parseCostInformation extracts cost and savings information.
