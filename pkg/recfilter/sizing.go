@@ -158,7 +158,7 @@ func ApplyCoverage(recs []common.Recommendation, coverage float64, logf Logf, dr
 // nil to skip tracking. logf receives WARNING/INFO lines (nil-safe; pass nil
 // to disable logging).
 func ApplyTargetCoverage(recs []common.Recommendation, targetPct float64, logf Logf, drops *common.DropSummary) []common.Recommendation {
-	if targetPct <= 0 || targetPct > 100 {
+	if finiteTargetOutOfRange(targetPct) {
 		// Validation ensures we never get here in production, but be defensive
 		// so a buggy caller doesn't divide by zero.
 		logf.printf("WARNING: ApplyTargetCoverage called with targetPct=%.2f outside (0,100]; returning recs unchanged\n", targetPct)
@@ -189,6 +189,17 @@ func ApplyTargetCoverage(recs []common.Recommendation, targetPct float64, logf L
 	return result
 }
 
+// finiteTargetOutOfRange reports whether targetPct is a finite number outside
+// (0,100]. Non-finite targets are not out of range: they are invalid input
+// that the RI branch drops, while SPs and other types pass through.
+func finiteTargetOutOfRange(targetPct float64) bool {
+	return isFiniteTarget(targetPct) && (targetPct <= 0 || targetPct > 100)
+}
+
+func isFiniteTarget(targetPct float64) bool {
+	return !math.IsNaN(targetPct) && !math.IsInf(targetPct, 0)
+}
+
 // applyTargetCoverageOne dispatches a single recommendation through the
 // appropriate branch. Returns (rec, kept, missingSignal, dropReason):
 //   - kept=true → caller appends `rec` (the adjusted or pass-through value).
@@ -202,6 +213,10 @@ func ApplyTargetCoverage(recs []common.Recommendation, targetPct float64, logf L
 func applyTargetCoverageOne(rec common.Recommendation, targetPct float64, unsupportedSeen map[common.CommitmentType]bool, logf Logf) (result common.Recommendation, kept, missingSignal bool, drop string) {
 	switch {
 	case common.IsSavingsPlan(rec.Service):
+		if !isFiniteTarget(targetPct) {
+			// A NaN or infinite target must never scale an SP.
+			return rec, true, false, ""
+		}
 		adjusted, ok := applyTargetCoverageSP(rec, targetPct, logf)
 		if !ok {
 			// SP no-signal: pass through unchanged.

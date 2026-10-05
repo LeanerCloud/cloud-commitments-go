@@ -100,6 +100,8 @@ func TestApplyTargetCoverageInvalidInputDrops(t *testing.T) {
 		{"max float average", math.MaxFloat64, 0, 80},
 		{"finite count overflow", 1e300, 0, 80},
 		{"nan target", 15, 0, math.NaN()},
+		{"positive infinite target", 15, 0, math.Inf(1)},
+		{"negative infinite target", 15, 0, math.Inf(-1)},
 		{"nan existing coverage", 15, math.NaN(), 80},
 		{"positive infinite existing coverage", 15, math.Inf(1), 80},
 		{"negative infinite existing coverage", 15, math.Inf(-1), 80},
@@ -122,6 +124,29 @@ func TestApplyTargetCoverageInvalidInputDrops(t *testing.T) {
 		rec.ExistingCoveragePercentExact = new(big.Rat).SetFrac(big.NewInt(-1), new(big.Int).Lsh(big.NewInt(1), 1100))
 		assertInvalidInputDropped(t, rec, 80)
 	})
+}
+
+func TestApplyTargetCoverageNonFiniteTargetOnlyDropsRIs(t *testing.T) {
+	t.Parallel()
+	for _, target := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		for _, exact := range []bool{false, true} {
+			t.Run(fmt.Sprintf("target=%v/exact=%t", target, exact), func(t *testing.T) {
+				t.Parallel()
+				ri := mkRI(30, 15, 60)
+				if exact {
+					ri.ExistingCoveragePercentExact = big.NewRat(60, 1)
+				}
+				sp := mkSP(95, 2)
+				other := common.Recommendation{CommitmentType: common.CommitmentCUD, Count: 7}
+				drops := common.NewDropSummary()
+				out := ApplyTargetCoverage([]common.Recommendation{ri, sp, other}, target, nil, drops)
+				require.Len(t, out, 2)
+				assert.Equal(t, sp, out[0])
+				assert.Equal(t, other, out[1])
+				assert.Equal(t, "Dropped 1 recs: "+common.DropTargetInputInvalid+"=1", drops.FormatOneLine())
+			})
+		}
+	}
 }
 
 func assertInvalidInputDropped(t *testing.T, rec common.Recommendation, target float64) {
