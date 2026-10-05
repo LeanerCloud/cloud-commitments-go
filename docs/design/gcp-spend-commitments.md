@@ -157,8 +157,8 @@ type ScopeKind string
 
 const ScopeBillingAccount ScopeKind = "billing-account"
 
-// CommitmentScope is set only on recommendations whose purchase scope is not
-// Recommendation.Account. nil means the existing per-account meaning.
+// CommitmentScope gives spend recommendations typed purchase scope even when
+// Account mirrors the billing ID. A nil Scope retains per-account scope.
 type CommitmentScope struct {
     Kind ScopeKind `json:"kind"`
     // ID is the provider resource name, e.g. "billingAccounts/012345-6789AB-CDEF01".
@@ -215,7 +215,7 @@ Where each value lives on a spend rec:
 | --- | --- | --- |
 | Billing account | `Scope{Kind: ScopeBillingAccount, ID}` | parser error, no rec |
 | Billing account ID (bare) | `Account` | parser error; see "Account and filters" in section 5 |
-| Service | `Service` (spend slug) | `ErrUnsupportedSpendService` |
+| Service | `Service` (spend slug) | `SpendPayloadError` if absent; `ErrUnsupportedSpendService` if unsupported |
 | Region | `Region` | parser error (regional commitments only at first) |
 | Term | `Term` ("1yr"/"3yr") | parser error; no "1yr" default |
 | Hourly amount | `Details.HourlyAmount` | parser error |
