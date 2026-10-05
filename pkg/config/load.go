@@ -289,24 +289,16 @@ func applyFlags(cfg *Config, flags *pflag.FlagSet) error {
 	return applyFlagsOther(cfg, flags)
 }
 
-// applyFlagsDryRun handles the --dry-run / --purchase conflict and sets DryRun.
+// applyFlagsDryRun sets DryRun from --purchase, the CLI's only purchase-gating flag.
 func applyFlagsDryRun(cfg *Config, flags *pflag.FlagSet) error {
-	dryRunChanged := flags.Changed("dry-run")
-	purchaseChanged := flags.Changed("purchase")
-
-	if dryRunChanged && purchaseChanged {
-		return fmt.Errorf("cannot specify both --dry-run and --purchase simultaneously")
+	if !flags.Changed("purchase") {
+		return nil
 	}
-	if dryRunChanged {
-		v, err := flags.GetBool("dry-run")
-		if err != nil {
-			return fmt.Errorf("--dry-run: %w", err)
-		}
-		cfg.DryRun = v
+	v, err := flags.GetBool("purchase")
+	if err != nil {
+		return fmt.Errorf("--purchase: %w", err)
 	}
-	if purchaseChanged {
-		cfg.DryRun = false
-	}
+	cfg.DryRun = !v
 	return nil
 }
 
