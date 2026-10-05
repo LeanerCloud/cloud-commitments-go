@@ -4,6 +4,7 @@ package azure
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -467,6 +468,12 @@ func extFloat(m map[string]*string, key string) (float64, error) {
 	f, err := strconv.ParseFloat(*v, 64)
 	if err != nil {
 		return 0, fmt.Errorf("%s %q is not a number: %w", key, *v, err)
+	}
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0, fmt.Errorf("%s %q is not finite", key, *v)
+	}
+	if f < 0 {
+		return 0, fmt.Errorf("%s %q is negative", key, *v)
 	}
 	return f, nil
 }

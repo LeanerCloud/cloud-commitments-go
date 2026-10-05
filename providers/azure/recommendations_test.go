@@ -515,6 +515,12 @@ func TestConvertAdvisorRecommendation_ZeroVersusAbsentSavings(t *testing.T) {
 		"nil value":           {"annualSavingsAmount": nil},
 		"nil map":             nil,
 		"thousands separator": {"annualSavingsAmount": strPtr("1,234.00")},
+		"empty string":        {"annualSavingsAmount": strPtr("")},
+		"NaN":                 {"annualSavingsAmount": strPtr("NaN")},
+		"nan":                 {"annualSavingsAmount": strPtr("nan")},
+		"Inf":                 {"annualSavingsAmount": strPtr("Inf")},
+		"-Inf":                {"annualSavingsAmount": strPtr("-Inf")},
+		"negative":            {"annualSavingsAmount": strPtr("-1200")},
 	} {
 		t.Run(name, func(t *testing.T) {
 			assert.Nil(t, adapter.convertAdvisorRecommendation(mkRec(ext)))
