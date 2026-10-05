@@ -1215,7 +1215,9 @@ func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommend
 		return nil, err
 	}
 	rec.Count = count
-	extractMemoryMBFromRecommendation(gcpRec, rec)
+	if err := extractMemoryMBFromRecommendation(gcpRec, rec); err != nil {
+		return nil, err
+	}
 
 	c.enrichRecWithPricing(ctx, rec)
 
@@ -1351,21 +1353,6 @@ func extractCostImpactFromRecommendation(gcpRec *recommenderpb.Recommendation, r
 	}
 }
 
-// Retain the legacy MEMORY_MB spelling accepted by existing memory fixtures.
-func isMemoryAmountOp(op *recommenderpb.Operation) bool {
-	for filterKey, filterVal := range op.GetPathFilters() {
-		if !strings.Contains(strings.ToLower(filterKey), "type") {
-			continue
-		}
-		if sv, ok := filterVal.GetKind().(*structpb.Value_StringValue); ok {
-			if strings.EqualFold(sv.StringValue, "MEMORY") || strings.EqualFold(sv.StringValue, "MEMORY_MB") {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 func vcpuCountFromOperationGroups(content *recommenderpb.RecommendationContent) (int, error) {
 	count, amounts := 0, false
 	for _, group := range content.GetOperationGroups() {
@@ -1431,74 +1418,100 @@ func recommendationAmountType(op *recommenderpb.Operation) (string, error) {
 }
 
 func recommendationVCPUAmount(value *structpb.Value) (int, error) {
-	var amount int64
-	switch v := value.GetKind().(type) {
-	case *structpb.Value_StringValue:
-		parsed, err := strconv.ParseInt(v.StringValue, 10, 64)
-		if err != nil {
-			return 0, fmt.Errorf("invalid VCPU amount %q: %w", v.StringValue, err)
-		}
-		amount = parsed
-	case *structpb.Value_NumberValue:
-		// Larger JSON numbers may have lost integer precision before reaching this parser.
-		const maxExactInteger = 1<<53 - 1
-		if math.IsNaN(v.NumberValue) || v.NumberValue <= 0 || v.NumberValue > maxExactInteger || math.Trunc(v.NumberValue) != v.NumberValue {
-			return 0, fmt.Errorf("VCPU amount must be a positive exact integer")
-		}
-		amount = int64(v.NumberValue)
-	default:
-		return 0, fmt.Errorf("VCPU amount must be a decimal string or number")
+	amount, err := recommendationAmount(value, "VCPU")
+	if err != nil {
+		return 0, err
 	}
-	if amount <= 0 || amount > math.MaxInt {
+	if amount > math.MaxInt {
 		return 0, fmt.Errorf("VCPU amount must be positive and fit int")
 	}
 	return int(amount), nil
 }
 
-// memoryMBFromOperationGroups walks the commitment operation groups and returns
-// the MEMORY resource amount (in MB) encoded in the operation's numeric value,
-// or 0 if none is found. It is the sibling of vcpuCountFromOperationGroups:
-// both look at "compute.googleapis.com/Commitment" operations whose Path
-// contains "amount", but this function selects only those where isMemoryAmountOp
-// returns true (i.e. the path_filter type is MEMORY or MEMORY_MB).
-func memoryMBFromOperationGroups(content *recommenderpb.RecommendationContent) int64 {
-	for _, opGroup := range content.GetOperationGroups() {
-		for _, op := range opGroup.GetOperations() {
-			if !strings.Contains(strings.ToLower(op.GetResourceType()), "commitment") {
+// maxExactAmount is the largest integer a float64 (JSON number, or the
+// ComputeDetails.MemoryGB downstream) represents exactly.
+const maxExactAmount = 1<<53 - 1
+
+// recommendationAmount parses a resource amount that the Recommender may
+// carry as a decimal int64 string or as an exact positive JSON number (at most
+// 2^53-1, beyond which a JSON number has already lost precision).
+func recommendationAmount(value *structpb.Value, name string) (int64, error) {
+	var amount int64
+	switch v := value.GetKind().(type) {
+	case *structpb.Value_StringValue:
+		parsed, err := strconv.ParseInt(v.StringValue, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid %s amount %q: %w", name, v.StringValue, err)
+		}
+		amount = parsed
+	case *structpb.Value_NumberValue:
+		if math.IsNaN(v.NumberValue) || v.NumberValue > maxExactAmount || math.Trunc(v.NumberValue) != v.NumberValue {
+			return 0, fmt.Errorf("%s amount must be a positive exact integer", name)
+		}
+		amount = int64(v.NumberValue)
+	default:
+		return 0, fmt.Errorf("%s amount must be a decimal string or number", name)
+	}
+	if amount <= 0 {
+		return 0, fmt.Errorf("%s amount must be positive", name)
+	}
+	return amount, nil
+}
+
+// memoryMBFromOperationGroups returns the MEMORY resource amount (in MB) from
+// the add/replace commitment operations, or 0 if there is none. Operations are
+// selected exactly as in vcpuCountFromOperationGroups (recommendationAmountType),
+// so other actions are skipped, a duplicate MEMORY amount is an error, and a
+// MEMORY amount that cannot be parsed is an error.
+func memoryMBFromOperationGroups(content *recommenderpb.RecommendationContent) (int64, error) {
+	var memMB int64
+	found := false
+	for _, group := range content.GetOperationGroups() {
+		for _, op := range group.GetOperations() {
+			kind, err := recommendationAmountType(op)
+			if err != nil {
+				return 0, fmt.Errorf("MEMORY extraction: %w", err)
+			}
+			if kind != computepb.ResourceCommitment_MEMORY.String() {
 				continue
 			}
-			if !strings.Contains(strings.ToLower(op.GetPath()), "amount") {
-				continue
+			if found {
+				return 0, fmt.Errorf("multiple MEMORY amounts in recommendation")
 			}
-			if !isMemoryAmountOp(op) {
-				continue
+			found = true
+			memMB, err = recommendationAmount(op.GetValue(), "MEMORY")
+			if err != nil {
+				return 0, err
 			}
-			if v := op.GetValue(); v != nil {
-				if nv, ok := v.GetKind().(*structpb.Value_NumberValue); ok && nv.NumberValue > 0 {
-					return int64(nv.NumberValue)
-				}
+			// MemoryGB is a float64, so larger string amounts would not survive the round trip.
+			if memMB > maxExactAmount {
+				return 0, fmt.Errorf("MEMORY amount must be at most 2^53-1")
 			}
 		}
 	}
-	return 0
+	return memMB, nil
 }
 
 // extractMemoryMBFromRecommendation extracts the MEMORY resource amount (in MB)
 // from the Recommender payload and stores it in rec.Details as ComputeDetails.MemoryGB.
 // This allows buildInsertRequest to use the payload-sourced amount rather than the
 // general-purpose ratio approximation. No-op when the payload carries no MEMORY op.
-func extractMemoryMBFromRecommendation(gcpRec *recommenderpb.Recommendation, rec *common.Recommendation) {
+func extractMemoryMBFromRecommendation(gcpRec *recommenderpb.Recommendation, rec *common.Recommendation) error {
 	if gcpRec.Content == nil {
-		return
+		return nil
 	}
-	memMB := memoryMBFromOperationGroups(gcpRec.Content)
+	memMB, err := memoryMBFromOperationGroups(gcpRec.Content)
+	if err != nil {
+		return err
+	}
 	if memMB <= 0 {
-		return
+		return nil
 	}
-	// Store as ComputeDetails.MemoryGB (MB -> GB conversion). GCP memory amounts
-	// are always whole multiples of at least 256 MB, so the float64 roundtrip is
-	// exact: memMB / 1024 * 1024 == memMB for any value divisible by 1.
+	// Store as ComputeDetails.MemoryGB (MB -> GB conversion). The amount is capped
+	// at 2^53-1, and dividing and multiplying by 1024 only shifts the exponent, so
+	// the float64 roundtrip is exact.
 	rec.Details = common.ComputeDetails{MemoryGB: float64(memMB) / 1024.0}
+	return nil
 }
 
 // memoryMBFromDetails reads the MEMORY amount (in MB) from rec.Details when it

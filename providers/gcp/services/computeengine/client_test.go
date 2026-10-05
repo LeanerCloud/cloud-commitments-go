@@ -1692,27 +1692,46 @@ func TestRecommendationVCPUAmountRejectsInvalidQuantities(t *testing.T) {
 	assert.Equal(t, math.MaxInt, count)
 }
 
-// TestIsMemoryAmountOp_MatchesBothSpellings asserts that the inbound Recommender
-// memory-op detector skips both the canonical "MEMORY" and legacy "MEMORY_MB"
-// path_filter spellings, so the VCPU extractor never mistakes the memory sibling
-// for the vCPU amount (issue #1022).
-func TestIsMemoryAmountOp_MatchesBothSpellings(t *testing.T) {
-	for _, typeVal := range []string{"MEMORY", "MEMORY_MB", "memory"} {
-		sv, _ := structpb.NewValue(typeVal)
-		op := &recommenderpb.Operation{
-			PathFilters: map[string]*structpb.Value{
-				"/resources/*/type": sv,
-			},
-		}
-		assert.True(t, isMemoryAmountOp(op), "isMemoryAmountOp must skip memory op with type %q", typeVal)
+func TestConvertGCPRecommendationMemoryAmountRepresentations(t *testing.T) {
+	cases := []struct {
+		name    string
+		value   *structpb.Value
+		wantMB  int64
+		wantErr string
+	}{
+		{name: "numeric control", value: structpb.NewNumberValue(6144), wantMB: 6144},
+		{name: "decimal string", value: structpb.NewStringValue("6144"), wantMB: 6144},
+		{name: "unparseable string", value: structpb.NewStringValue("6Gi"), wantErr: "invalid MEMORY amount"},
+		{name: "empty string", value: structpb.NewStringValue(""), wantErr: "invalid MEMORY amount"},
+		{name: "zero string", value: structpb.NewStringValue("0"), wantErr: "MEMORY amount"},
+		{name: "fractional number", value: structpb.NewNumberValue(1.5), wantErr: "MEMORY amount"},
+		{name: "unsafe number", value: structpb.NewNumberValue(1 << 53), wantErr: "MEMORY amount"},
+		{name: "bool", value: structpb.NewBoolValue(true), wantErr: "MEMORY amount"},
+		{name: "absent", value: nil, wantErr: "MEMORY amount"},
+		{name: "negative string", value: structpb.NewStringValue("-6144"), wantErr: "MEMORY amount must be positive"},
+		{name: "negative number", value: structpb.NewNumberValue(-6144), wantErr: "MEMORY amount must be positive"},
+		{name: "int64 max string", value: structpb.NewStringValue("9223372036854775807"), wantErr: "MEMORY amount must be at most 2^53-1"},
+		{name: "2^53 string", value: structpb.NewStringValue("9007199254740992"), wantErr: "MEMORY amount must be at most 2^53-1"},
+		{name: "2^53-1 string", value: structpb.NewStringValue("9007199254740991"), wantMB: 1<<53 - 1},
 	}
-
-	// A VCPU op (or an op with no type filter) must NOT be treated as memory.
-	svVCPU, _ := structpb.NewValue("VCPU")
-	vcpuOp := &recommenderpb.Operation{
-		PathFilters: map[string]*structpb.Value{"/resources/*/type": svVCPU},
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := commitmentOnlyCUDRecommendation()
+			input.Content.OperationGroups[0].Operations[1].PathValue = &recommenderpb.Operation_Value{Value: tc.value}
+			rec, err := (&Client{}).convertGCPRecommendation(context.Background(), input, common.RecommendationParams{})
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				assert.Nil(t, rec)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, rec)
+			assert.Equal(t, 4, rec.Count)
+			amount, memErr := memoryMBFromDetails(*rec)
+			require.NoError(t, memErr)
+			assert.Equal(t, tc.wantMB, amount)
+		})
 	}
-	assert.False(t, isMemoryAmountOp(vcpuOp), "isMemoryAmountOp must not skip a VCPU op")
 }
 
 // TestBuildInsertRequest_RefusesMissingMemory is the regression test for the
@@ -2314,4 +2333,66 @@ func TestGCPCommitmentState(t *testing.T) {
 	for status, want := range cases {
 		assert.Equal(t, want, gcpCommitmentState(status), "status %q", status)
 	}
+}
+
+func memoryOpOf(rec *recommenderpb.Recommendation) *recommenderpb.Operation {
+	return rec.Content.OperationGroups[0].Operations[1]
+}
+
+func TestConvertGCPRecommendationSkipsNonAddReplaceMemoryOps(t *testing.T) {
+	for _, action := range []string{"remove", "test"} {
+		t.Run(action, func(t *testing.T) {
+			input := commitmentOnlyCUDRecommendation()
+			op := memoryOpOf(input)
+			op.Action = action
+			op.PathValue = nil
+			rec, err := (&Client{}).convertGCPRecommendation(context.Background(), input, common.RecommendationParams{})
+			require.NoError(t, err)
+			require.NotNil(t, rec)
+			assert.Equal(t, 4, rec.Count)
+			assert.Nil(t, rec.Details)
+		})
+	}
+}
+
+func TestConvertGCPRecommendationRejectsDuplicateMemoryOp(t *testing.T) {
+	input := commitmentOnlyCUDRecommendation()
+	dup := proto.Clone(memoryOpOf(input)).(*recommenderpb.Operation)
+	ops := &input.Content.OperationGroups[0].Operations
+	*ops = append(*ops, dup)
+	rec, err := (&Client{}).convertGCPRecommendation(context.Background(), input, common.RecommendationParams{})
+	require.ErrorContains(t, err, "multiple MEMORY")
+	assert.Nil(t, rec)
+}
+
+func TestConvertGCPRecommendationVCPUOnlyKeepsNilDetails(t *testing.T) {
+	input := commitmentOnlyCUDRecommendation()
+	input.Content.OperationGroups[0].Operations = input.Content.OperationGroups[0].Operations[:1]
+	rec, err := (&Client{}).convertGCPRecommendation(context.Background(), input, common.RecommendationParams{})
+	require.NoError(t, err)
+	require.NotNil(t, rec)
+	assert.Equal(t, 4, rec.Count)
+	assert.Nil(t, rec.Details)
+}
+
+func TestGetRecommendationsStringMemoryAmountEndToEnd(t *testing.T) {
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "test-project", "us-central1")
+	input := commitmentOnlyCUDRecommendation()
+	input.StateInfo = &recommenderpb.RecommendationStateInfo{State: recommenderpb.RecommendationStateInfo_ACTIVE}
+	memoryOpOf(input).PathValue = &recommenderpb.Operation_Value{Value: structpb.NewStringValue("6144")}
+	input.Content.OperationGroups[0].Operations = append(input.Content.OperationGroups[0].Operations, &recommenderpb.Operation{
+		Action:   "add",
+		Resource: "projects/test/zones/us-central1-a/machineTypes/n1-standard-4",
+	})
+	client.SetRecommenderClient(&MockRecommenderClient{iterator: &MockRecommenderIterator{
+		recommendations: []*recommenderpb.Recommendation{input},
+	}})
+
+	recs, err := client.GetRecommendations(ctx, &common.RecommendationParams{})
+	require.NoError(t, err)
+	require.Len(t, recs, 1)
+	amount, err := memoryMBFromDetails(recs[0])
+	require.NoError(t, err)
+	assert.Equal(t, int64(6144), amount)
 }
