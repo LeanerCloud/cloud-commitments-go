@@ -2,7 +2,6 @@ package recfilter
 
 import (
 	"fmt"
-	"math"
 	"strings"
 	"testing"
 
@@ -264,30 +263,20 @@ func TestApplyTargetCoverage_ProjectionsClampTo100(t *testing.T) {
 	})
 }
 
-// TestApplyTargetCoverage_CountZeroNoNaNOrInf covers the rec.Count==0
-// fallback (`ratio = float64(nTarget)` instead of nTarget/rec.Count) that
-// guards against a division by zero producing NaN/Inf in every scaled money
-// field.
-func TestApplyTargetCoverage_CountZeroNoNaNOrInf(t *testing.T) {
+// A rec with no Count has no per-unit cost to scale, so it is dropped rather
+// than scaled by nTarget (which turned a 1000 commitment into 3000, #98).
+func TestApplyTargetCoverage_NonPositiveCount_Drops(t *testing.T) {
 	t.Parallel()
-	monthly := 20.0
-	rec := mkRI(0, 10, 0) // Count=0, avg=10, existing=0
-	rec.RecurringMonthlyCost = &monthly
-
-	out := ApplyTargetCoverage([]common.Recommendation{rec}, 80, nil, nil)
-
-	require.Len(t, out, 1)
-	got := out[0]
-	for name, v := range map[string]float64{
-		"CommitmentCost":       got.CommitmentCost,
-		"OnDemandCost":         got.OnDemandCost,
-		"EstimatedSavings":     got.EstimatedSavings,
-		"RecurringMonthlyCost": *got.RecurringMonthlyCost,
-		"ProjectedUtilization": got.ProjectedUtilization,
-		"ProjectedCoverage":    got.ProjectedCoverage,
-	} {
-		assert.False(t, math.IsNaN(v), "%s is NaN", name)
-		assert.False(t, math.IsInf(v, 0), "%s is Inf", name)
+	for _, count := range []int{0, -1} {
+		// avg=4, target=75, existing=0: nTarget=floor(4*75/100)=3.
+		rec := mkRI(count, 4, 0)
+		var logs []string
+		d := common.NewDropSummary()
+		out := ApplyTargetCoverage([]common.Recommendation{rec}, 75, captureLogf(&logs), d)
+		assert.Empty(t, out, "count=%d", count)
+		assert.Equal(t, "Dropped 1 recs: "+common.DropTargetInputInvalid+"=1", d.FormatOneLine(), "count=%d", count)
+		require.Len(t, logs, 1, "count=%d", count)
+		assert.Contains(t, logs[0], fmt.Sprintf("count=%d", count))
 	}
 }
 
