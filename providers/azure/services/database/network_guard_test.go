@@ -18,7 +18,7 @@ import (
 
 // externalRequests counts requests that reached the loopback proxy that
 // TestMain installs. The Azure SDK builds its own http.Transport, so swapping
-// http.DefaultTransport would not see its calls; that transport honours
+// http.DefaultTransport would not see its calls; that transport honors
 // HTTPS_PROXY, which does.
 var externalRequests atomic.Int64
 
