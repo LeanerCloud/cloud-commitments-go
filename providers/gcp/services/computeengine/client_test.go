@@ -2486,3 +2486,32 @@ func TestGetRecommendations_StructuralErrorsStillAbort(t *testing.T) {
 		})
 	}
 }
+
+func TestConvertGCPRecommendationRejectsCrossResourceAmounts(t *testing.T) {
+	t.Run("same operation group", func(t *testing.T) {
+		input := commitmentOnlyCUDRecommendation()
+		memoryOpOf(input).Resource += "-other"
+		rec, err := (&Client{}).convertGCPRecommendation(context.Background(), input, common.RecommendationParams{})
+		require.ErrorContains(t, err, "different resources")
+		assert.Nil(t, rec)
+	})
+	t.Run("separate operation groups", func(t *testing.T) {
+		input := commitmentOnlyCUDRecommendation()
+		mem := memoryOpOf(input)
+		mem.Resource += "-other"
+		group := input.Content.OperationGroups[0]
+		group.Operations = group.Operations[:1]
+		input.Content.OperationGroups = append(input.Content.OperationGroups,
+			&recommenderpb.OperationGroup{Operations: []*recommenderpb.Operation{mem}})
+		rec, err := (&Client{}).convertGCPRecommendation(context.Background(), input, common.RecommendationParams{})
+		require.ErrorContains(t, err, "different resources")
+		assert.Nil(t, rec)
+	})
+	t.Run("fails the batch instead of skipping the row", func(t *testing.T) {
+		input := commitmentOnlyCUDRecommendation()
+		memoryOpOf(input).Resource += "-other"
+		rec, err := (&Client{}).convertOrSkipBadAmount(context.Background(), input, common.RecommendationParams{})
+		require.ErrorContains(t, err, "different resources")
+		assert.Nil(t, rec)
+	})
+}
