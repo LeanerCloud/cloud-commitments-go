@@ -229,6 +229,7 @@ func TestSkuMatchesStorageClass(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			sku := &cloudbilling.Sku{
 				Description:    tt.description,
+				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 				ServiceRegions: tt.regions,
 			}
 			result := skuMatchesStorageClass(sku, tt.storageClass, tt.region)
@@ -325,6 +326,7 @@ func storageMockSkus(storageClass string, onDemandNanos, commitmentNanos int64) 
 	return []*cloudbilling.Sku{
 		{
 			Description:    storageClass + " Storage in " + region,
+			Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 			ServiceRegions: []string{region},
 			PricingInfo: []*cloudbilling.PricingInfo{
 				{
@@ -345,6 +347,7 @@ func storageMockSkus(storageClass string, onDemandNanos, commitmentNanos int64) 
 		},
 		{
 			Description:    storageClass + " Storage commitment in " + region,
+			Category:       &cloudbilling.Category{UsageType: "Commit1Yr"},
 			ServiceRegions: []string{region},
 			PricingInfo: []*cloudbilling.PricingInfo{
 				{
@@ -519,6 +522,7 @@ func TestCloudStorageClient_GetStoragePricing_3Year(t *testing.T) {
 func TestSkuMatchesStorageClass_CaseInsensitive(t *testing.T) {
 	sku := &cloudbilling.Sku{
 		Description:    "STANDARD Storage in Americas",
+		Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 		ServiceRegions: []string{"us-central1"},
 	}
 	assert.True(t, skuMatchesStorageClass(sku, "standard", "us-central1"))

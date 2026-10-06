@@ -201,6 +201,7 @@ func TestSkuMatchesTier(t *testing.T) {
 			name: "SKU matches tier and region",
 			sku: &cloudbilling.Sku{
 				Description:    "db-n1-standard-1 Cloud SQL",
+				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 				ServiceRegions: []string{"us-central1"},
 			},
 			tier:     "db-n1-standard-1",
@@ -211,6 +212,7 @@ func TestSkuMatchesTier(t *testing.T) {
 			name: "SKU matches tier but not region",
 			sku: &cloudbilling.Sku{
 				Description:    "db-n1-standard-1 Cloud SQL",
+				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 				ServiceRegions: []string{"us-east1"},
 			},
 			tier:     "db-n1-standard-1",
@@ -221,6 +223,7 @@ func TestSkuMatchesTier(t *testing.T) {
 			name: "SKU does not match tier",
 			sku: &cloudbilling.Sku{
 				Description:    "db-n1-highmem-2 Cloud SQL",
+				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 				ServiceRegions: []string{"us-central1"},
 			},
 			tier:     "db-n1-standard-1",
@@ -231,6 +234,7 @@ func TestSkuMatchesTier(t *testing.T) {
 			name: "SKU with nil service regions matches no region",
 			sku: &cloudbilling.Sku{
 				Description:    "db-n1-standard-1 Cloud SQL",
+				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 				ServiceRegions: nil,
 			},
 			tier:     "db-n1-standard-1",
@@ -241,6 +245,7 @@ func TestSkuMatchesTier(t *testing.T) {
 			name: "SKU for a larger tier that starts with the same text is a decoy",
 			sku: &cloudbilling.Sku{
 				Description:    "db-n1-standard-16 Cloud SQL",
+				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 				ServiceRegions: []string{"us-central1"},
 			},
 			tier:     "db-n1-standard-1",
@@ -251,6 +256,7 @@ func TestSkuMatchesTier(t *testing.T) {
 			name: "Case insensitive tier match",
 			sku: &cloudbilling.Sku{
 				Description:    "DB-N1-Standard-1 Cloud SQL",
+				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 				ServiceRegions: []string{"us-central1"},
 			},
 			tier:     "db-n1-standard-1",
@@ -461,6 +467,7 @@ func TestCloudSQLClient_PurchaseCommitment_NotSupported(t *testing.T) {
 func sqlMockSkus(tier, region string) []*cloudbilling.Sku {
 	onDemandSKU := &cloudbilling.Sku{
 		Description:    tier + " Cloud SQL",
+		Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 		ServiceRegions: []string{region},
 		PricingInfo: []*cloudbilling.PricingInfo{
 			{
@@ -480,6 +487,7 @@ func sqlMockSkus(tier, region string) []*cloudbilling.Sku {
 	}
 	commitmentSKU := &cloudbilling.Sku{
 		Description:    tier + " Cloud SQL commitment 1yr",
+		Category:       &cloudbilling.Category{UsageType: "Commit1Yr"},
 		ServiceRegions: []string{region},
 		PricingInfo: []*cloudbilling.PricingInfo{
 			{
@@ -794,6 +802,7 @@ func TestGetSQLPricing_CommitmentPriceIsTermTotal(t *testing.T) {
 			Skus: []*cloudbilling.Sku{
 				{
 					Description:    "db-n1-standard-1 Cloud SQL",
+					Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 					ServiceRegions: []string{"us-central1"},
 					PricingInfo: []*cloudbilling.PricingInfo{
 						{
@@ -813,6 +822,7 @@ func TestGetSQLPricing_CommitmentPriceIsTermTotal(t *testing.T) {
 				},
 				{
 					Description:    "db-n1-standard-1 Cloud SQL commitment",
+					Category:       &cloudbilling.Category{UsageType: "Commit1Yr"},
 					ServiceRegions: []string{"us-central1"},
 					PricingInfo: []*cloudbilling.PricingInfo{
 						{
@@ -867,6 +877,7 @@ func TestCloudSQLClient_ConvertGCPRecommendation_RecurringMonthlyCost(t *testing
 			Skus: []*cloudbilling.Sku{
 				{
 					Description:    "db-n1-standard-1 Cloud SQL",
+					Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 					ServiceRegions: []string{"us-central1"},
 					PricingInfo: []*cloudbilling.PricingInfo{
 						{
@@ -888,6 +899,7 @@ func TestCloudSQLClient_ConvertGCPRecommendation_RecurringMonthlyCost(t *testing
 					// Commitment SKU required by getSQLPricing: without a
 					// "commitment" SKU it errors and RecurringMonthlyCost stays nil.
 					Description:    "db-n1-standard-1 Cloud SQL commitment 1yr",
+					Category:       &cloudbilling.Category{UsageType: "Commit1Yr"},
 					ServiceRegions: []string{"us-central1"},
 					PricingInfo: []*cloudbilling.PricingInfo{
 						{
@@ -972,6 +984,7 @@ func TestExtractSQLPricingFromSKUs_IgnoresLargerTierAndRegionlessSKUs(t *testing
 	sku := func(description string, regions []string, units int64) *cloudbilling.Sku {
 		return &cloudbilling.Sku{
 			Description:    description,
+			Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 			ServiceRegions: regions,
 			PricingInfo: []*cloudbilling.PricingInfo{{
 				PricingExpression: &cloudbilling.PricingExpression{

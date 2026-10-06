@@ -9,10 +9,11 @@ import (
 	"google.golang.org/api/cloudbilling/v1"
 )
 
-func currencySKU(id, description, region, currency string, nanos int64) *cloudbilling.Sku {
+func currencySKU(id, description, usageType, region, currency string, nanos int64) *cloudbilling.Sku {
 	return &cloudbilling.Sku{
 		SkuId:          id,
 		Description:    description,
+		Category:       &cloudbilling.Category{UsageType: usageType},
 		ServiceRegions: []string{region},
 		PricingInfo: []*cloudbilling.PricingInfo{{
 			PricingExpression: &cloudbilling.PricingExpression{
@@ -45,8 +46,8 @@ func TestGetSQLPricing_Currency(t *testing.T) {
 			client, err := NewClient(ctx, "test-project", region)
 			require.NoError(t, err)
 			client.SetBillingService(&MockBillingService{skus: &cloudbilling.ListSkusResponse{Skus: []*cloudbilling.Sku{
-				currencySKU("od", tier+" Cloud SQL", region, tt.onDemandCur, 50000000),
-				currencySKU("cud", tier+" Cloud SQL commitment 1yr", region, tt.commitCur, 42000000),
+				currencySKU("od", tier+" Cloud SQL", "OnDemand", region, tt.onDemandCur, 50000000),
+				currencySKU("cud", tier+" Cloud SQL commitment 1yr", "Commit1Yr", region, tt.commitCur, 42000000),
 			}}})
 
 			got, err := client.getSQLPricing(ctx, tier, region, 1)

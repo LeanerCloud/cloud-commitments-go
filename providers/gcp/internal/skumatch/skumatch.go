@@ -3,6 +3,7 @@
 package skumatch
 
 import (
+	"fmt"
 	"strings"
 
 	"google.golang.org/api/cloudbilling/v1"
@@ -53,4 +54,41 @@ func HasToken(description, token string) bool {
 
 func isTokenChar(b byte) bool {
 	return b >= 'a' && b <= 'z' || b >= '0' && b <= '9' || b == '_' || b == '-'
+}
+
+// PriceSlot says which price a SKU feeds.
+type PriceSlot int
+
+const (
+	SlotOnDemand PriceSlot = iota
+	SlotCommitment
+	// SlotNone marks SKUs that are neither on-demand nor committed-use prices.
+	SlotNone
+)
+
+// Category.UsageType values the catalog uses.
+const (
+	usageOnDemand    = "OnDemand"
+	usageCommit1Yr   = "Commit1Yr"
+	usageCommit3Yr   = "Commit3Yr"
+	usagePreemptible = "Preemptible"
+	usageSpot        = "Spot"
+)
+
+// Slot classifies the SKU by Category.UsageType. Preemptible and Spot SKUs
+// are SlotNone. A missing category or any other usage type is an error rather
+// than a guess, because a wrong slot silently mislabels the commitment price.
+func Slot(sku *cloudbilling.Sku) (PriceSlot, error) {
+	if sku.Category == nil {
+		return 0, fmt.Errorf("sku %s has no category, cannot tell commitment from on-demand", sku.SkuId)
+	}
+	switch sku.Category.UsageType {
+	case usageOnDemand:
+		return SlotOnDemand, nil
+	case usageCommit1Yr, usageCommit3Yr:
+		return SlotCommitment, nil
+	case usagePreemptible, usageSpot:
+		return SlotNone, nil
+	}
+	return 0, fmt.Errorf("sku %s has unrecognized usage type %q", sku.SkuId, sku.Category.UsageType)
 }
