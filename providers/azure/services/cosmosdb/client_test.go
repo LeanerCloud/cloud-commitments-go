@@ -1413,9 +1413,9 @@ func TestCosmosDBClient_ConvertAzureCosmosRecommendation_PopulatesAllFields(t *t
 	assert.Equal(t, "westus2", out.Region)
 	assert.Equal(t, "CosmosDB_RU_1000", out.ResourceType)
 	assert.Equal(t, 3, out.Count)
-	assert.InDelta(t, 300.0, out.OnDemandCost, 1e-9)
-	assert.InDelta(t, 210.0, out.CommitmentCost, 1e-9)
-	assert.InDelta(t, 90.0, out.EstimatedSavings, 1e-9)
+	assert.InDelta(t, 300.0*30.4375/7, out.OnDemandCost, 1e-9)
+	assert.Zero(t, out.CommitmentCost, "commitment is priced from the retail row at variant expansion")
+	assert.InDelta(t, 90.0*30.4375/7, out.EstimatedSavings, 1e-9)
 	assert.Equal(t, common.CommitmentReservedInstance, out.CommitmentType)
 	assert.Equal(t, "1yr", out.Term)
 	assert.Equal(t, "upfront", out.PaymentOption)
@@ -1511,6 +1511,7 @@ func TestCosmosDBClient_ConvertAzureCosmosRecommendation_PopulatesAPIType(t *tes
 			rec := mocks.BuildLegacyReservationRecommendation(
 				mocks.WithRegion("eastus"),
 				mocks.WithNormalizedSize("100RU"),
+				mocks.WithCosts(100, 70, 30),
 			)
 			out := client.convertAzureCosmosRecommendation(context.Background(), rec)
 			require.NotNil(t, out)
@@ -1542,6 +1543,7 @@ func TestCosmosDBClient_ConvertAzureCosmosRecommendation_AmbiguousAPIType(t *tes
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithRegion("eastus"),
 		mocks.WithNormalizedSize("100RU"),
+		mocks.WithCosts(100, 70, 30),
 	)
 	out := client.convertAzureCosmosRecommendation(context.Background(), rec)
 	require.NotNil(t, out)
@@ -1563,6 +1565,7 @@ func TestCosmosDBClient_ConvertAzureCosmosRecommendation_PagerErrorFallsBack(t *
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithRegion("eastus"),
 		mocks.WithNormalizedSize("100RU"),
+		mocks.WithCosts(100, 70, 30),
 	)
 	out := client.convertAzureCosmosRecommendation(context.Background(), rec)
 	require.NotNil(t, out, "conversion must NOT fail on accounts-listing error")

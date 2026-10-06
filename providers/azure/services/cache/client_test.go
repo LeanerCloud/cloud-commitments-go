@@ -896,9 +896,9 @@ func TestCacheClient_ConvertAzureRedisRecommendation_PopulatesAllFields(t *testi
 	assert.Equal(t, "eastus", out.Region)
 	assert.Equal(t, "Premium_P3", out.ResourceType)
 	assert.Equal(t, 1, out.Count)
-	assert.InDelta(t, 50.0, out.OnDemandCost, 1e-9)
-	assert.InDelta(t, 35.0, out.CommitmentCost, 1e-9)
-	assert.InDelta(t, 15.0, out.EstimatedSavings, 1e-9)
+	assert.InDelta(t, 50.0*30.4375/7, out.OnDemandCost, 1e-9)
+	assert.Zero(t, out.CommitmentCost, "commitment is priced from the retail row at variant expansion")
+	assert.InDelta(t, 15.0*30.4375/7, out.EstimatedSavings, 1e-9)
 	assert.Equal(t, common.CommitmentReservedInstance, out.CommitmentType)
 	assert.Equal(t, "3yr", out.Term)
 	assert.Equal(t, "upfront", out.PaymentOption)
@@ -954,6 +954,7 @@ func TestCacheClient_ConvertAzureRedisRecommendation_PopulatesShardsFromSKUCache
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithRegion("eastus"),
 		mocks.WithNormalizedSize("Premium_P3"),
+		mocks.WithCosts(100, 70, 30),
 	)
 	out := client.convertAzureRedisRecommendation(context.Background(), rec)
 	require.NotNil(t, out)
@@ -980,6 +981,7 @@ func TestCacheClient_ConvertAzureRedisRecommendation_PagerErrorFallsBack(t *test
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithRegion("eastus"),
 		mocks.WithNormalizedSize("Premium_P3"),
+		mocks.WithCosts(100, 70, 30),
 	)
 	out := client.convertAzureRedisRecommendation(context.Background(), rec)
 	require.NotNil(t, out, "conversion must NOT fail on catalog-fetch error")

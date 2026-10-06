@@ -26,8 +26,10 @@ func BuildLegacyReservationRecommendation(opts ...LegacyOpt) *armconsumption.Leg
 	qty := float64(1)
 
 	normQty := float32(qty)
+	lookBack := string(armconsumption.LookBackPeriodLast07Days)
 
 	props := &armconsumption.LegacyReservationRecommendationProperties{
+		LookBackPeriod:                &lookBack,
 		Scope:                         &scope,
 		Term:                          &term,
 		RecommendedQuantity:           &qty,
@@ -178,8 +180,10 @@ func BuildModernReservationRecommendation(opts ...ModernOpt) *armconsumption.Mod
 	qty := float64(1)
 
 	normQty := float32(qty)
+	lookBack := int32(7)
 
 	props := &armconsumption.ModernReservationRecommendationProperties{
+		LookBackPeriod:                &lookBack,
 		Scope:                         &scope,
 		Term:                          &term,
 		RecommendedQuantity:           &qty,
@@ -284,5 +288,41 @@ func WithModernCosts(onDemand, commitment, savings float64) ModernOpt {
 func WithModernNilProperties() ModernOpt {
 	return func(rec *armconsumption.ModernReservationRecommendation, _ *armconsumption.ModernReservationRecommendationProperties) {
 		rec.Properties = nil
+	}
+}
+
+// WithLookBack sets the legacy lookBackPeriod string (for example "Last30Days").
+// An empty string clears the field, exercising the missing-lookback guard.
+func WithLookBack(period string) LegacyOpt {
+	return func(_ *armconsumption.LegacyReservationRecommendation, props *armconsumption.LegacyReservationRecommendationProperties) {
+		if period == "" {
+			props.LookBackPeriod = nil
+			return
+		}
+		props.LookBackPeriod = &period
+	}
+}
+
+// WithModernLookBack sets the modern integer lookBackPeriod. A nil value
+// clears the field, exercising the missing-lookback guard.
+func WithModernLookBack(days *int32) ModernOpt {
+	return func(_ *armconsumption.ModernReservationRecommendation, props *armconsumption.ModernReservationRecommendationProperties) {
+		props.LookBackPeriod = days
+	}
+}
+
+// WithModernCurrency rewrites the currency on every cost Amount already set
+// (apply after WithModernCosts). An empty currency clears it.
+func WithModernCurrency(currency string) ModernOpt {
+	return func(_ *armconsumption.ModernReservationRecommendation, props *armconsumption.ModernReservationRecommendationProperties) {
+		c := &currency
+		if currency == "" {
+			c = nil
+		}
+		for _, a := range []*armconsumption.Amount{props.CostWithNoReservedInstances, props.TotalCostWithReservedInstances, props.NetSavings} {
+			if a != nil {
+				a.Currency = c
+			}
+		}
 	}
 }

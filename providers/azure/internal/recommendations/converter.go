@@ -40,6 +40,9 @@ type ExtractedFields struct {
 	CommitmentCost   float64
 	EstimatedSavings float64
 	Term             string
+	// LookBackDays is the lookback window the cost fields were computed over;
+	// set only by ExtractConsumption (0 from plain Extract).
+	LookBackDays int
 	// Scope is populated from the API response ("Shared" or a subscription ID)
 	// but is not yet threaded into the purchase body. All service clients
 	// currently hardcode "appliedScopeType": "Shared", which is correct because

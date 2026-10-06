@@ -109,6 +109,26 @@ func newTestClient() *Client {
 	}
 }
 
+// newPricedTestClient serves hand-built 1y/3y reservation retail rows for the
+// SKUs the recommendation tests use. Prices are synthetic, not live quotes.
+func newPricedTestClient() *Client {
+	c := newTestClient()
+	c.httpClient = &mocks.PricingHTTP{Items: synapseRows("eastus", "DW500c", 500, 1200, "DW1000c", 1000, 2400, "DW2000c", 2000, 4800)}
+	return c
+}
+
+// synapseRows builds rows from (sku, price1y, price3y) triples.
+func synapseRows(region string, triples ...any) []map[string]any {
+	var rows []map[string]any
+	for i := 0; i < len(triples); i += 3 {
+		sku := triples[i].(string)
+		for term, price := range map[string]int{"1 Year": triples[i+1].(int), "3 Years": triples[i+2].(int)} {
+			rows = append(rows, mocks.ReservationRow("Azure Synapse Analytics", "Azure Synapse Analytics Dedicated SQL Pool", region, sku, sku, sku, term, float64(price)))
+		}
+	}
+	return rows
+}
+
 // ---- GetServiceType / GetRegion -------------------------------------------
 
 func TestGetServiceType(t *testing.T) {
@@ -145,7 +165,7 @@ func TestGetRecommendations_empty(t *testing.T) {
 }
 
 func TestGetRecommendations_singlePage(t *testing.T) {
-	c := newTestClient()
+	c := newPricedTestClient()
 
 	azRec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithRegion("eastus"),
@@ -165,7 +185,7 @@ func TestGetRecommendations_singlePage(t *testing.T) {
 
 	recs, err := c.GetRecommendations(context.Background(), &common.RecommendationParams{})
 	require.NoError(t, err)
-	require.Len(t, recs, 1)
+	require.Len(t, recs, 2, "one recommendation expands to an upfront and a monthly variant")
 
 	r := recs[0]
 	assert.Equal(t, common.ServiceDataWarehouse, r.Service)
@@ -175,12 +195,16 @@ func TestGetRecommendations_singlePage(t *testing.T) {
 	assert.Equal(t, common.CommitmentReservedInstance, r.CommitmentType)
 	assert.Equal(t, "1yr", r.Term)
 	assert.Equal(t, "upfront", r.PaymentOption)
-	assert.InDelta(t, 5000.0, r.OnDemandCost, 0.01)
-	assert.InDelta(t, 3500.0, r.CommitmentCost, 0.01)
-	assert.InDelta(t, 1500.0, r.EstimatedSavings, 0.01)
-	// Covered/effective cost (paid WITH the reservation) = CommitmentCost.
+	assert.InDelta(t, 5000.0*30.4375/7, r.OnDemandCost, 0.01)
+	assert.InDelta(t, 1500.0*30.4375/7, r.EstimatedSavings, 0.01)
+	// 2 x DW1000c at the $1,000 1-year reservation price, paid upfront.
+	assert.InDelta(t, 2000.0, r.CommitmentCost, 0.01)
 	require.NotNil(t, r.RecurringMonthlyCost)
-	assert.InDelta(t, 3500.0, *r.RecurringMonthlyCost, 0.01)
+	assert.Zero(t, *r.RecurringMonthlyCost)
+	assert.Equal(t, "monthly", recs[1].PaymentOption)
+	assert.Zero(t, recs[1].CommitmentCost)
+	require.NotNil(t, recs[1].RecurringMonthlyCost)
+	assert.InDelta(t, 2000.0/12, *recs[1].RecurringMonthlyCost, 0.01)
 
 	details, ok := r.Details.(common.DataWarehouseDetails)
 	require.True(t, ok, "Details should be DataWarehouseDetails")
@@ -189,15 +213,17 @@ func TestGetRecommendations_singlePage(t *testing.T) {
 }
 
 func TestGetRecommendations_multiPage(t *testing.T) {
-	c := newTestClient()
+	c := newPricedTestClient()
 
 	rec1 := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithNormalizedSize("DW500c"),
 		mocks.WithQuantity(1),
+		mocks.WithCosts(100, 70, 30),
 	)
 	rec2 := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithNormalizedSize("DW2000c"),
 		mocks.WithQuantity(3),
+		mocks.WithCosts(100, 70, 30),
 	)
 
 	c.SetRecommendationsPager(&fakeRecommendationsPager{
@@ -217,7 +243,7 @@ func TestGetRecommendations_multiPage(t *testing.T) {
 
 	recs, err := c.GetRecommendations(context.Background(), &common.RecommendationParams{})
 	require.NoError(t, err)
-	assert.Len(t, recs, 2)
+	assert.Len(t, recs, 4)
 }
 
 func TestGetRecommendations_pagerError(t *testing.T) {
@@ -229,18 +255,20 @@ func TestGetRecommendations_pagerError(t *testing.T) {
 }
 
 func TestGetRecommendations_regionFilter(t *testing.T) {
-	c := newTestClient() // region = "eastus"
+	c := newPricedTestClient() // region = "eastus"
 
 	// One rec in "eastus", one in "westus"; only the matching one should survive.
 	recMatch := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithRegion("eastus"),
 		mocks.WithNormalizedSize("DW500c"),
 		mocks.WithQuantity(1),
+		mocks.WithCosts(100, 70, 30),
 	)
 	recOther := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithRegion("westus"),
 		mocks.WithNormalizedSize("DW1000c"),
 		mocks.WithQuantity(2),
+		mocks.WithCosts(100, 70, 30),
 	)
 
 	c.SetRecommendationsPager(&fakeRecommendationsPager{
@@ -255,18 +283,19 @@ func TestGetRecommendations_regionFilter(t *testing.T) {
 
 	recs, err := c.GetRecommendations(context.Background(), &common.RecommendationParams{})
 	require.NoError(t, err)
-	require.Len(t, recs, 1)
+	require.Len(t, recs, 2)
 	assert.Equal(t, "DW500c", recs[0].ResourceType)
 	assert.Equal(t, "eastus", recs[0].Region)
 }
 
 func TestGetRecommendations_modernShape(t *testing.T) {
-	c := newTestClient() // region = "eastus"
+	c := newPricedTestClient() // region = "eastus"
 
 	azRec := mocks.BuildModernReservationRecommendation(
 		mocks.WithModernRegion("eastus"),
 		mocks.WithModernSKUName("DW2000c"),
 		mocks.WithModernQuantity(3),
+		mocks.WithModernCosts(100, 70, 30),
 	)
 
 	c.SetRecommendationsPager(&fakeRecommendationsPager{
@@ -281,7 +310,7 @@ func TestGetRecommendations_modernShape(t *testing.T) {
 
 	recs, err := c.GetRecommendations(context.Background(), &common.RecommendationParams{})
 	require.NoError(t, err)
-	require.Len(t, recs, 1)
+	require.Len(t, recs, 2)
 	assert.Equal(t, "DW2000c", recs[0].ResourceType)
 	assert.Equal(t, common.ProviderAzure, recs[0].Provider)
 	assert.Equal(t, common.ServiceDataWarehouse, recs[0].Service)

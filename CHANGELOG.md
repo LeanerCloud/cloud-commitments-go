@@ -40,6 +40,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Units change (Azure Consumption recommendations):** the cost fields were
+  amounts over the API's lookback window but were treated as monthly figures
+  and term totals (#267). For recommendations from the Consumption
+  ReservationRecommendations API (compute, database, cache, cosmosdb,
+  synapse, managedredis; the Advisor path is unchanged):
+  `OnDemandCost` and `EstimatedSavings` are now monthly run-rates
+  (window amount x 30.4375 / lookback days; savings is net of overage);
+  `CommitmentCost` is now Count x the reservation retail price for the term
+  (upfront variant) or 0 (monthly variant); `RecurringMonthlyCost` is now 0
+  (upfront) or Count x price / term months (monthly), never the window total.
+  The lookback is requested explicitly (`Last7Days`) and read from the
+  response. A recommendation with a missing or unknown lookback or term, a
+  non-USD modern currency, or no resolvable reservation price is skipped with
+  an error log instead of being returned with guessed figures. Consumers that
+  cache or compare these fields (caps, payback, savings thresholds) will see
+  different magnitudes after upgrading
 - Remove debug console.log from frontend recommendation handler
 - Align pre-commit gocyclo threshold (10) with CI pipeline
 - Pin tool versions in GitHub Actions for reproducible builds

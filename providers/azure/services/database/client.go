@@ -174,6 +174,13 @@ type AzureRetailPrice = pricing.Page[pricing.RetailPriceItem]
 // GetRecommendations gets SQL Database reservation recommendations from Azure Consumption API.
 func (c *Client) GetRecommendations(ctx context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	recommendations := make([]common.Recommendation, 0)
+	pricer := azrecs.NewPricer("database", func(ctx context.Context, sku, region string, termYears int) (azrecs.ReservationPrice, error) {
+		p, err := c.getSQLPricing(ctx, sku, region, termYears)
+		if err != nil {
+			return azrecs.ReservationPrice{}, err
+		}
+		return azrecs.ReservationPrice{Total: p.ReservationPrice, Currency: p.Currency}, nil
+	})
 
 	// Use injected pager if available (for testing)
 	var pager RecommendationsPager
@@ -188,7 +195,7 @@ func (c *Client) GetRecommendations(ctx context.Context, _ *common.Recommendatio
 		// filter — see the parallel comment in compute/client.go for the
 		// failure mode that the wrong shape produced.
 		scope := fmt.Sprintf("/subscriptions/%s", c.subscriptionID)
-		filter := "properties/scope eq 'Shared' and properties/resourceType eq '" + reservationResourceTypeSQLDB + "'"
+		filter := azrecs.ConsumptionFilter(reservationResourceTypeSQLDB)
 		pager = client.NewListPager(scope, &armconsumption.ReservationRecommendationsClientListOptions{Filter: &filter})
 	}
 
@@ -207,7 +214,7 @@ func (c *Client) GetRecommendations(ctx context.Context, _ *common.Recommendatio
 		for _, rec := range page.Value {
 			converted := c.convertAzureSQLRecommendation(ctx, rec)
 			if converted != nil {
-				recommendations = append(recommendations, azrecs.ExpandPaymentVariants(*converted)...)
+				recommendations = azrecs.AppendConsumptionVariants(ctx, "database", recommendations, *converted, pricer)
 			}
 		}
 	}
@@ -609,7 +616,7 @@ func (c *Client) fetchAzurePricing(ctx context.Context, filter string) (*AzureRe
 // lazily-cached subscription-wide server/managed-instance lists;
 // both stay empty when the fetch fails or the subscription is ambiguous.
 func (c *Client) convertAzureSQLRecommendation(ctx context.Context, azureRec armconsumption.ReservationRecommendationClassification) *common.Recommendation {
-	f := azrecs.Extract(azureRec)
+	f := azrecs.ExtractConsumptionOrSkip("database", azureRec)
 	if f == nil {
 		return nil
 	}

@@ -81,7 +81,7 @@ type Client struct {
 // real Azure client (the injected mock pager bypasses NewListPager entirely).
 func (c *Client) recommendationsListArgs() (string, *armconsumption.ReservationRecommendationsClientListOptions) {
 	scope := fmt.Sprintf("/subscriptions/%s", c.subscriptionID)
-	filter := "properties/scope eq 'Shared' and properties/resourceType eq 'RedisCache'"
+	filter := recommendations.ConsumptionFilter("RedisCache")
 	return scope, &armconsumption.ReservationRecommendationsClientListOptions{Filter: &filter}
 }
 
@@ -141,6 +141,13 @@ type AzureRetailPrice = pricing.Page[pricing.RetailPriceItem]
 // GetRecommendations gets Redis Cache reservation recommendations from the Azure Consumption API.
 func (c *Client) GetRecommendations(ctx context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	recs := make([]common.Recommendation, 0)
+	pricer := recommendations.NewPricer("managedredis", func(ctx context.Context, sku, region string, termYears int) (recommendations.ReservationPrice, error) {
+		p, err := c.getRedisPricing(ctx, sku, region, termYears)
+		if err != nil {
+			return recommendations.ReservationPrice{}, err
+		}
+		return recommendations.ReservationPrice{Total: p.ReservationPrice, Currency: p.Currency}, nil
+	})
 
 	var pager RecommendationsPager
 	if c.recommendationsPager != nil {
@@ -169,7 +176,7 @@ func (c *Client) GetRecommendations(ctx context.Context, _ *common.Recommendatio
 		for _, rec := range page.Value {
 			converted := c.convertRecommendation(ctx, rec)
 			if converted != nil {
-				recs = append(recs, *converted)
+				recs = recommendations.AppendConsumptionVariants(ctx, "managedredis", recs, *converted, pricer)
 			}
 		}
 	}
@@ -522,7 +529,7 @@ func (c *Client) getRedisPricing(ctx context.Context, sku, region string, termYe
 // convertRecommendation converts an Azure Consumption API recommendation to the common format.
 // Returns nil when the input is nil or cannot be parsed (e.g. an unsupported SDK Kind).
 func (c *Client) convertRecommendation(_ context.Context, rec armconsumption.ReservationRecommendationClassification) *common.Recommendation {
-	f := recommendations.Extract(rec)
+	f := recommendations.ExtractConsumptionOrSkip("managedredis", rec)
 	if f == nil {
 		return nil
 	}
