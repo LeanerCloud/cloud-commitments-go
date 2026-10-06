@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/pricing"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/mocks"
 )
 
@@ -231,8 +232,10 @@ func TestAppendConsumptionVariants_SkipsOnlyTheUnpriceable(t *testing.T) {
 
 	p := NewPricer("compute", stub.lookup)
 	var recs []common.Recommendation
-	recs = AppendConsumptionVariants(context.Background(), "compute", recs, bad, p)
-	recs = AppendConsumptionVariants(context.Background(), "compute", recs, good, p)
+	recs, err := AppendConsumptionVariants(context.Background(), "compute", recs, bad, p)
+	require.NoError(t, err, "an unresolvable price skips only that recommendation")
+	recs, err = AppendConsumptionVariants(context.Background(), "compute", recs, good, p)
+	require.NoError(t, err)
 	require.Len(t, recs, 2)
 	assert.Equal(t, "Standard_D2as_v4", recs[0].ResourceType)
 }
@@ -241,4 +244,48 @@ func TestConsumptionFilter_SetsLookBackExplicitly(t *testing.T) {
 	assert.Equal(t,
 		"properties/scope eq 'Shared' and properties/resourceType eq 'VirtualMachines' and properties/lookBackPeriod eq 'Last7Days'",
 		ConsumptionFilter("VirtualMachines"))
+}
+
+func TestPricer_ZeroPriceIsUnresolvable(t *testing.T) {
+	base := extractedBase(t, consumptionRecs(7, "P1Y")["legacy"])
+	p := NewPricer("compute", func(context.Context, string, string, int) (ReservationPrice, error) {
+		return ReservationPrice{Total: 0, Currency: "USD"}, nil
+	})
+	var recs []common.Recommendation
+	recs, err := AppendConsumptionVariants(context.Background(), "compute", recs, base, p)
+	require.NoError(t, err)
+	assert.Empty(t, recs, "a zero price must skip the recommendation, not yield a free commitment")
+
+	_, err = ExpandConsumptionVariants(context.Background(), base, p)
+	assert.ErrorContains(t, err, "not positive")
+}
+
+// A lookup that fails to complete must fail the collection and must not be
+// cached as if the SKU had no price.
+func TestAppendConsumptionVariants_LookupFailureFailsCollection(t *testing.T) {
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	cases := map[string]error{
+		"fetch failure":     fmt.Errorf("%w: pricing API returned status 500", pricing.ErrFetch),
+		"context canceled":  context.Canceled,
+		"deadline exceeded": context.DeadlineExceeded,
+		"canceled context":  canceled.Err(),
+	}
+	for name, lookupErr := range cases {
+		t.Run(name, func(t *testing.T) {
+			calls := 0
+			p := NewPricer("compute", func(context.Context, string, string, int) (ReservationPrice, error) {
+				calls++
+				return ReservationPrice{}, lookupErr
+			})
+			base := extractedBase(t, consumptionRecs(7, "P1Y")["legacy"])
+			for range 2 {
+				recs, err := AppendConsumptionVariants(context.Background(), "compute", nil, base, p)
+				require.Error(t, err)
+				assert.True(t, IsCollectionFailure(err))
+				assert.Empty(t, recs)
+			}
+			assert.Equal(t, 2, calls, "a failed fetch is not cached")
+		})
+	}
 }

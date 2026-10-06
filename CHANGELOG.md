@@ -53,9 +53,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   The lookback is requested explicitly (`Last7Days`) and read from the
   response. A recommendation with a missing or unknown lookback or term, a
   non-USD modern currency, or no resolvable reservation price is skipped with
-  an error log instead of being returned with guessed figures. Consumers that
-  cache or compare these fields (caps, payback, savings thresholds) will see
-  different magnitudes after upgrading
+  an error log instead of being returned with guessed figures. A price lookup
+  that fails to complete (transport error, HTTP error status, cancelled or
+  expired context) instead fails the whole service's `GetRecommendations` call.
+  Consumers that cache or compare these fields (caps, payback, savings
+  thresholds) will see different magnitudes after upgrading. In this repo,
+  `pkg/reporter/reporter.go` (lines 44, 96) and `pkg/common/audit.go` (line
+  301) use `CommitmentCost` and will now see 0 for monthly variants; the
+  platform's `recTotalCommitment` must add `RecurringMonthlyCost` x term
+  months to get the true total commitment of a monthly variant. Those
+  consumers are not changed here
 - Remove debug console.log from frontend recommendation handler
 - Align pre-commit gocyclo threshold (10) with CI pipeline
 - Pin tool versions in GitHub Actions for reproducible builds

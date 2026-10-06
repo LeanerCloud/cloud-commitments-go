@@ -16,6 +16,8 @@ import (
 type PricingHTTP struct {
 	Items     []map[string]any
 	FailMatch string
+	// Err, when set, is returned from every request (a transport failure).
+	Err error
 
 	mu    sync.Mutex
 	calls int
@@ -26,6 +28,9 @@ func (p *PricingHTTP) Do(req *http.Request) (*http.Response, error) {
 	p.mu.Lock()
 	p.calls++
 	p.mu.Unlock()
+	if p.Err != nil {
+		return nil, p.Err
+	}
 	if p.FailMatch != "" && strings.Contains(req.URL.RawQuery, p.FailMatch) {
 		return CreateMockHTTPResponse(http.StatusInternalServerError, "boom"), nil
 	}

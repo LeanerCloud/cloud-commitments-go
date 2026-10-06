@@ -219,15 +219,31 @@ func (c *Client) GetRecommendations(ctx context.Context, _ *common.Recommendatio
 			return nil, fmt.Errorf("failed to get VM recommendations: %w", err)
 		}
 
-		for _, rec := range page.Value {
-			converted := c.convertAzureVMRecommendation(ctx, rec)
-			if converted != nil {
-				recommendations = azrecs.AppendConsumptionVariants(ctx, "compute", recommendations, *converted, pricer)
-			}
+		recommendations, err = c.appendPage(ctx, pricer, recommendations, page.Value)
+		if err != nil {
+			return recommendations, err
 		}
 	}
 
 	return recommendations, nil
+}
+
+// appendPage converts one page of recommendations and appends their priced
+// variants. It is split out of GetRecommendations to keep that function under
+// the cyclomatic limit.
+func (c *Client) appendPage(ctx context.Context, pricer *azrecs.Pricer, recs []common.Recommendation, page []armconsumption.ReservationRecommendationClassification) ([]common.Recommendation, error) {
+	for _, rec := range page {
+		converted := c.convertAzureVMRecommendation(ctx, rec)
+		if converted == nil {
+			continue
+		}
+		var err error
+		recs, err = azrecs.AppendConsumptionVariants(ctx, "compute", recs, *converted, pricer)
+		if err != nil {
+			return recs, err
+		}
+	}
+	return recs, nil
 }
 
 // GetExistingCommitments retrieves existing VM Reserved Instances.

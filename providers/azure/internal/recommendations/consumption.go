@@ -2,6 +2,7 @@ package recommendations
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -9,6 +10,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/pricing"
 )
 
 // DaysPerMonth is the average month length (365.25 / 12) used to convert
@@ -188,8 +190,9 @@ type priceResult struct {
 }
 
 // Pricer resolves reservation unit prices through lookup, once per distinct
-// (service, SKU, region, term). Failures are cached too, so a SKU with no
-// retail row costs one HTTP lookup, not one per recommendation. It is meant
+// (service, SKU, region, term). A SKU with no usable retail row is cached, so
+// it costs one HTTP lookup, not one per recommendation; a failure to reach the
+// catalog (see IsCollectionFailure) is never cached. It is meant
 // to live for one GetRecommendations call and is not safe for concurrent use.
 type Pricer struct {
 	service string
@@ -209,8 +212,18 @@ func (p *Pricer) UnitPrice(ctx context.Context, resourceType, region string, ter
 		return r.price, r.err
 	}
 	r := p.resolve(ctx, key)
-	p.cache[key] = r
+	if !IsCollectionFailure(r.err) {
+		p.cache[key] = r
+	}
 	return r.price, r.err
+}
+
+// IsCollectionFailure reports whether err means the price lookup itself
+// failed (transport error, HTTP error status, canceled or expired context),
+// so the whole collection is unreliable, rather than the catalog having no
+// usable price for one recommendation.
+func IsCollectionFailure(err error) bool {
+	return errors.Is(err, pricing.ErrFetch) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)
 }
 
 func (p *Pricer) resolve(ctx context.Context, key priceKey) priceResult {
@@ -284,13 +297,18 @@ func ExtractConsumptionOrSkip(service string, rec armconsumption.ReservationReco
 }
 
 // AppendConsumptionVariants appends the variants of base to recs. A
-// recommendation that cannot be priced is logged as an error and skipped,
-// leaving recs unchanged.
-func AppendConsumptionVariants(ctx context.Context, service string, recs []common.Recommendation, base common.Recommendation, p *Pricer) []common.Recommendation {
+// recommendation the catalog has no usable price for is logged as an error and
+// skipped, leaving recs unchanged. A price lookup that fails to complete
+// returns the error (see IsCollectionFailure): the caller must fail the
+// collection rather than return a silently partial result.
+func AppendConsumptionVariants(ctx context.Context, service string, recs []common.Recommendation, base common.Recommendation, p *Pricer) ([]common.Recommendation, error) {
 	variants, err := ExpandConsumptionVariants(ctx, base, p)
 	if err != nil {
+		if IsCollectionFailure(err) {
+			return recs, fmt.Errorf("azure %s: %w", service, err)
+		}
 		logging.Errorf("azure %s: skipping recommendation: %v", service, err)
-		return recs
+		return recs, nil
 	}
-	return append(recs, variants...)
+	return append(recs, variants...), nil
 }
