@@ -817,12 +817,14 @@ func TestComputeEngineClient_PurchaseCommitment_ReDriveAlreadyExists(t *testing.
 				require.NoError(t, err)
 				assert.True(t, result.Success)
 				assert.Equal(t, name, result.CommitmentID)
+				assert.True(t, result.ExistingCommitment, "an adopted commitment must be flagged")
 				require.NotNil(t, result.Cost)
 				assert.Zero(t, *result.Cost)
 				return
 			}
 			require.Error(t, err)
 			assert.False(t, result.Success)
+			assert.False(t, result.ExistingCommitment)
 			assert.Empty(t, result.CommitmentID)
 			assert.Equal(t, err, result.Error)
 			if tt.wantErrIs != nil {
@@ -859,6 +861,22 @@ func TestComputeEngineClient_PurchaseCommitment_ReDriveAlreadyExistsOnWait(t *te
 	require.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.Equal(t, name, result.CommitmentID)
+	assert.True(t, result.ExistingCommitment)
+}
+
+// A first purchase that succeeds outright is not an adoption, even with a token.
+func TestComputeEngineClient_PurchaseCommitment_FreshPurchaseNotExisting(t *testing.T) {
+	client, err := NewClient(context.Background(), "test-project", "us-central1")
+	require.NoError(t, err)
+	client.SetCommitmentsService(&MockCommitmentsService{operation: &MockOperation{}})
+	rec := common.Recommendation{ResourceType: "n1-standard-1", Term: "1yr", Count: 2,
+		Details: common.ComputeDetails{MemoryGB: 8}}
+	opts := common.PurchaseOptions{IdempotencyToken: common.DeriveIdempotencyToken("exec-211-gcp", 0)}
+
+	result, err := client.PurchaseCommitment(context.Background(), rec, opts)
+	require.NoError(t, err)
+	assert.True(t, result.Success)
+	assert.False(t, result.ExistingCommitment)
 }
 
 func TestComputeEngineClient_PurchaseCommitment_3Year(t *testing.T) {

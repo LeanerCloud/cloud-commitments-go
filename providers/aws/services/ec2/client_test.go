@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -1620,4 +1621,95 @@ func TestListTargetOfferings_TenancyScopeVariants_SendEnumValues(t *testing.T) {
 			assert.Equal(t, types.OfferingClassTypeConvertible, got.OfferingClass)
 		})
 	}
+}
+
+// Issue #211: a re-drive that adopts the RI an earlier attempt bought must say
+// so, or the caller cannot tell it from a fresh purchase.
+func TestPurchaseCommitment_ExistingCommitmentFlag(t *testing.T) {
+	t.Parallel()
+	token := common.DeriveIdempotencyToken("exec-211-ec2", 0)
+	rec := common.Recommendation{
+		ResourceType:  "t3.micro",
+		Count:         1,
+		PaymentOption: "all-upfront",
+		Term:          "1yr",
+		Details:       &common.ComputeDetails{Platform: "Linux/UNIX", Tenancy: "default", Scope: "Region"},
+	}
+	tokenLookup := mock.MatchedBy(func(in *ec2.DescribeReservedInstancesInput) bool {
+		for _, f := range in.Filters {
+			if aws.ToString(f.Name) == "tag:"+common.IdempotencyTagKey {
+				return true
+			}
+		}
+		return false
+	})
+	offerings := &ec2.DescribeReservedInstancesOfferingsOutput{
+		ReservedInstancesOfferings: []types.ReservedInstancesOffering{{
+			ReservedInstancesOfferingId: aws.String("offering-211"),
+			InstanceType:                types.InstanceTypeT3Micro,
+			Duration:                    aws.Int64(31536000),
+			OfferingType:                types.OfferingTypeValuesAllUpfront,
+			ProductDescription:          types.RIProductDescriptionLinuxUnix,
+			InstanceTenancy:             types.TenancyDefault,
+			FixedPrice:                  aws.Float32(100.0),
+		}},
+	}
+
+	t.Run("fresh purchase is not flagged", func(t *testing.T) {
+		t.Parallel()
+		m := &MockEC2Client{}
+		client := &Client{client: m, region: "us-east-1"}
+		m.On("DescribeReservedInstances", mock.Anything, tokenLookup).
+			Return(&ec2.DescribeReservedInstancesOutput{}, nil).Once()
+		m.On("DescribeReservedInstancesOfferings", mock.Anything, mock.Anything).Return(offerings, nil)
+		m.On("PurchaseReservedInstancesOffering", mock.Anything, mock.Anything).
+			Return(&ec2.PurchaseReservedInstancesOfferingOutput{ReservedInstancesId: aws.String("ri-fresh-211")}, nil)
+		m.On("CreateTags", mock.Anything, mock.Anything).Return(&ec2.CreateTagsOutput{}, nil)
+
+		result, err := client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{IdempotencyToken: token})
+		require.NoError(t, err)
+		assert.True(t, result.Success)
+		assert.Equal(t, "ri-fresh-211", result.CommitmentID)
+		assert.False(t, result.ExistingCommitment)
+		m.AssertExpectations(t)
+	})
+
+	t.Run("failed purchase is not flagged", func(t *testing.T) {
+		t.Parallel()
+		m := &MockEC2Client{}
+		client := &Client{client: m, region: "us-east-1"}
+		m.On("DescribeReservedInstances", mock.Anything, tokenLookup).
+			Return(&ec2.DescribeReservedInstancesOutput{}, nil).Once()
+		m.On("DescribeReservedInstancesOfferings", mock.Anything, mock.Anything).Return(offerings, nil)
+		m.On("PurchaseReservedInstancesOffering", mock.Anything, mock.Anything).
+			Return((*ec2.PurchaseReservedInstancesOfferingOutput)(nil), errors.New("boom"))
+
+		result, err := client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{IdempotencyToken: token})
+		require.Error(t, err)
+		assert.False(t, result.Success)
+		assert.False(t, result.ExistingCommitment)
+	})
+
+	// The wrong-class incident: the RI an earlier attempt bought is Standard but
+	// the operator has since configured Convertible. The re-drive still adopts it
+	// (no offering lookup, no second purchase), and the flag is what lets the
+	// caller avoid recording the configured class for it.
+	t.Run("re-drive with a different configured class is flagged", func(t *testing.T) {
+		t.Parallel()
+		m := &MockEC2Client{}
+		client := &Client{client: m, region: "us-east-1"}
+		m.On("DescribeReservedInstances", mock.Anything, tokenLookup).
+			Return(&ec2.DescribeReservedInstancesOutput{ReservedInstances: []types.ReservedInstances{
+				{ReservedInstancesId: aws.String("ri-standard-211"), OfferingClass: types.OfferingClassTypeStandard},
+			}}, nil).Once()
+
+		result, err := client.PurchaseCommitment(context.Background(), rec,
+			common.PurchaseOptions{IdempotencyToken: token, OfferingClass: "convertible"})
+		require.NoError(t, err)
+		assert.True(t, result.Success)
+		assert.Equal(t, "ri-standard-211", result.CommitmentID)
+		assert.True(t, result.ExistingCommitment)
+		m.AssertExpectations(t)
+		m.AssertNotCalled(t, "PurchaseReservedInstancesOffering", mock.Anything, mock.Anything)
+	})
 }
