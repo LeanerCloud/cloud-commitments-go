@@ -2515,3 +2515,37 @@ func TestConvertGCPRecommendationRejectsCrossResourceAmounts(t *testing.T) {
 		assert.Nil(t, rec)
 	})
 }
+
+func TestConvertGCPRecommendationEmptyAmountResources(t *testing.T) {
+	t.Run("empty memory resource next to a populated VCPU resource is different", func(t *testing.T) {
+		input := commitmentOnlyCUDRecommendation()
+		memoryOpOf(input).Resource = ""
+		rec, err := (&Client{}).convertGCPRecommendation(context.Background(), input, common.RecommendationParams{})
+		require.ErrorContains(t, err, "different resources")
+		assert.Nil(t, rec)
+	})
+	t.Run("both empty are accepted as the same resource, as before the check existed", func(t *testing.T) {
+		input := commitmentOnlyCUDRecommendation()
+		input.Content.OperationGroups[0].Operations[0].Resource = ""
+		memoryOpOf(input).Resource = ""
+		rec, err := (&Client{}).convertGCPRecommendation(context.Background(), input, common.RecommendationParams{})
+		require.NoError(t, err)
+		assert.Equal(t, 4, rec.Count)
+	})
+}
+
+func TestGetRecommendationsRejectsCrossResourceAmounts(t *testing.T) {
+	input := commitmentOnlyCUDRecommendation()
+	input.StateInfo = &recommenderpb.RecommendationStateInfo{State: recommenderpb.RecommendationStateInfo_ACTIVE}
+	memoryOpOf(input).Resource += "-other"
+
+	client, err := NewClient(context.Background(), "test-project", "us-central1")
+	require.NoError(t, err)
+	client.SetRecommenderClient(&MockRecommenderClient{iterator: &MockRecommenderIterator{
+		recommendations: []*recommenderpb.Recommendation{input},
+	}})
+
+	recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{})
+	require.ErrorContains(t, err, "different resources")
+	assert.Nil(t, recs)
+}
