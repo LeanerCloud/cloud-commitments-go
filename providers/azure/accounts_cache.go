@@ -10,6 +10,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 )
 
 // accountsCacheSFKeyPrefix prefixes the singleflight.Group key this cache
@@ -227,15 +228,22 @@ func (p *Provider) fetchAccounts(ctx context.Context) ([]common.Account, error) 
 		}
 
 		for _, sub := range page.Value {
-			if sub.SubscriptionID == nil || sub.DisplayName == nil {
+			if sub.SubscriptionID == nil {
 				continue
+			}
+
+			name := *sub.SubscriptionID
+			if sub.DisplayName != nil {
+				name = *sub.DisplayName
+			} else {
+				logging.Warnf("azure provider: subscription %s has no display name, using its ID as the name", name)
 			}
 
 			accounts = append(accounts, common.Account{
 				Provider:    common.ProviderAzure,
 				ID:          *sub.SubscriptionID,
-				Name:        *sub.DisplayName,
-				DisplayName: *sub.DisplayName,
+				Name:        name,
+				DisplayName: name,
 				// IsDefault resolved below once the full list is available.
 				IsDefault: false,
 			})
