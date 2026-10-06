@@ -1877,6 +1877,125 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_AZConfigPagerErrorFallsBac
 	assert.Empty(t, details.AZConfig, "AZConfig empty on pager error")
 }
 
+// failingSecondPageMIPager serves pages in order and returns err on the
+// call after the last page, with More() still true.
+type failingSecondPageMIPager struct {
+	pages []armsql.ManagedInstancesClientListResponse
+	index int
+	err   error
+}
+
+func (f *failingSecondPageMIPager) More() bool { return true }
+
+func (f *failingSecondPageMIPager) NextPage(_ context.Context) (armsql.ManagedInstancesClientListResponse, error) {
+	if f.index >= len(f.pages) {
+		return armsql.ManagedInstancesClientListResponse{}, f.err
+	}
+	page := f.pages[f.index]
+	f.index++
+	return page, nil
+}
+
+// TestDatabaseClient_ConvertAzureSQLRecommendation_MidWalkPageErrorLeavesSignalsEmpty
+// asserts that a page error after a successful first page does not derive
+// AZConfig or Deployment from the partial sample.
+func TestDatabaseClient_ConvertAzureSQLRecommendation_MidWalkPageErrorLeavesSignalsEmpty(t *testing.T) {
+	client := NewClient(nil, "test-subscription", "eastus")
+	client.SetCapabilitiesClient(&MockCapabilitiesClient{})
+	client.SetManagedInstancesPager(&failingSecondPageMIPager{
+		pages: []armsql.ManagedInstancesClientListResponse{buildMIPage(true, true)},
+		err:   errors.New("page two failed"),
+	})
+	client.SetServersPager(&MockSQLServersPager{})
+
+	rec := mocks.BuildLegacyReservationRecommendation(
+		mocks.WithNormalizedSize("GeneralPurpose_Gen5_2"),
+	)
+	out := client.convertAzureSQLRecommendation(context.Background(), rec)
+	require.NotNil(t, out, "conversion must NOT fail on a page error")
+	details, ok := out.Details.(*common.DatabaseDetails)
+	require.True(t, ok)
+	assert.Empty(t, details.AZConfig, "partial walk must not derive AZConfig")
+	assert.Empty(t, details.Deployment, "partial walk must not derive Deployment")
+}
+
+// TestDatabaseClient_ConvertAzureSQLRecommendation_IncompleteWalkLeavesSignalsEmpty
+// covers the cases where regular servers exist and the managed-instance
+// walk stops early: Deployment must not become "single" and AZConfig must
+// stay empty.
+func TestDatabaseClient_ConvertAzureSQLRecommendation_IncompleteWalkLeavesSignalsEmpty(t *testing.T) {
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	tests := []struct {
+		name  string
+		ctx   context.Context
+		pager SQLManagedInstancesPager
+	}{
+		{
+			name:  "page error on first page",
+			ctx:   context.Background(),
+			pager: &failingSecondPageMIPager{err: errors.New("page one failed")},
+		},
+		{
+			name: "page error after instances",
+			ctx:  context.Background(),
+			pager: &failingSecondPageMIPager{
+				pages: []armsql.ManagedInstancesClientListResponse{buildMIPage(true, true)},
+				err:   errors.New("page two failed"),
+			},
+		},
+		{
+			name: "context canceled mid-walk",
+			ctx:  canceled,
+			pager: &failingSecondPageMIPager{
+				pages: []armsql.ManagedInstancesClientListResponse{buildMIPage(true, true)},
+				err:   context.Canceled,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := NewClient(nil, "test-subscription", "eastus")
+			client.SetCapabilitiesClient(&MockCapabilitiesClient{})
+			client.SetManagedInstancesPager(tt.pager)
+			client.SetServersPager(&MockSQLServersPager{
+				pages: []armsql.ServersClientListResponse{buildServerPage(2)},
+			})
+
+			rec := mocks.BuildLegacyReservationRecommendation(
+				mocks.WithNormalizedSize("GeneralPurpose_Gen5_2"),
+			)
+			out := client.convertAzureSQLRecommendation(tt.ctx, rec)
+			require.NotNil(t, out)
+			details, ok := out.Details.(*common.DatabaseDetails)
+			require.True(t, ok)
+			assert.Empty(t, details.AZConfig)
+			assert.Empty(t, details.Deployment)
+		})
+	}
+}
+
+// TestDatabaseClient_ConvertAzureSQLRecommendation_MultiPageWalkDerivesAZConfig
+// is the control: a fully paginated walk still derives AZConfig.
+func TestDatabaseClient_ConvertAzureSQLRecommendation_MultiPageWalkDerivesAZConfig(t *testing.T) {
+	client := NewClient(nil, "test-subscription", "eastus")
+	client.SetCapabilitiesClient(&MockCapabilitiesClient{})
+	client.SetManagedInstancesPager(&MockSQLManagedInstancesPager{
+		pages: []armsql.ManagedInstancesClientListResponse{buildMIPage(true, true), buildMIPage(true)},
+	})
+	client.SetServersPager(&MockSQLServersPager{})
+
+	rec := mocks.BuildLegacyReservationRecommendation(
+		mocks.WithNormalizedSize("GeneralPurpose_Gen5_2"),
+	)
+	out := client.convertAzureSQLRecommendation(context.Background(), rec)
+	require.NotNil(t, out)
+	details, ok := out.Details.(*common.DatabaseDetails)
+	require.True(t, ok)
+	assert.Equal(t, "zoneRedundant", details.AZConfig)
+	assert.Equal(t, "managed", details.Deployment)
+}
+
 // TestDatabaseClient_ConvertAzureSQLRecommendation_PopulatesDeployment asserts
 // that a subscription with only managed instances produces
 // Deployment="managed".
