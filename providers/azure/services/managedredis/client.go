@@ -32,6 +32,10 @@ const maxRecsPages = 10
 // maxReservationsPages caps reservation-detail pagination.
 const maxReservationsPages = 50
 
+// maxCachesPages caps the subscription-wide Redis cache list walked to
+// discover SKUs (matches cache/client.go).
+const maxCachesPages = 20
+
 // HTTPClient interface for HTTP operations (enables mocking).
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
@@ -424,7 +428,13 @@ func (c *Client) redisCacheListPager() (RedisCachesPager, error) {
 // fall back, so the returned set must be considered invalid when err != nil.
 func collectSKUsFromPager(ctx context.Context, pager RedisCachesPager) (map[string]bool, error) {
 	skuSet := make(map[string]bool)
-	for pager.More() {
+	for pageIdx := 0; pager.More(); pageIdx++ {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("managedredis: list caches: context canceled during pagination: %w", err)
+		}
+		if pageIdx >= maxCachesPages {
+			return nil, fmt.Errorf("managedredis: list caches: pagination cap (%d pages) reached", maxCachesPages)
+		}
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, err

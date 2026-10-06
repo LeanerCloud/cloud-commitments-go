@@ -19,6 +19,11 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
 )
 
+// maxLocationsPages caps the locations list walked by GetRegions. Azure has
+// on the order of 100 locations, returned in a single page in practice; the
+// cap matches the 20-page cap on the other catalog walks.
+const maxLocationsPages = 20
+
 // SubscriptionsClient interface for subscription operations (enables mocking).
 type SubscriptionsClient interface {
 	NewListPager(options *armsubscriptions.ClientListOptions) SubscriptionsPager
@@ -475,32 +480,45 @@ func (p *Provider) GetRegions(ctx context.Context) ([]common.Region, error) {
 	regions := make([]common.Region, 0)
 	pager := subClient.NewListLocationsPager(subscriptionID, nil)
 
-	for pager.More() {
+	for pageIdx := 0; pager.More(); pageIdx++ {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("failed to list Azure locations: context canceled during pagination: %w", err)
+		}
+		if pageIdx >= maxLocationsPages {
+			return nil, fmt.Errorf("failed to list Azure locations: pagination cap (%d pages) reached", maxLocationsPages)
+		}
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list Azure locations: %w", err)
 		}
 
-		for _, location := range page.Value {
-			if location.Name == nil {
-				continue
-			}
-
-			displayName := *location.Name
-			if location.DisplayName != nil {
-				displayName = *location.DisplayName
-			}
-
-			regions = append(regions, common.Region{
-				Provider:    common.ProviderAzure,
-				ID:          *location.Name,
-				Name:        *location.Name,
-				DisplayName: displayName,
-			})
-		}
+		regions = appendLocationRegions(regions, page.Value)
 	}
 
 	return regions, nil
+}
+
+// appendLocationRegions converts one locations page into regions, skipping
+// locations without a name.
+func appendLocationRegions(regions []common.Region, locations []*armsubscriptions.Location) []common.Region {
+	for _, location := range locations {
+		if location.Name == nil {
+			continue
+		}
+
+		displayName := *location.Name
+		if location.DisplayName != nil {
+			displayName = *location.DisplayName
+		}
+
+		regions = append(regions, common.Region{
+			Provider:    common.ProviderAzure,
+			ID:          *location.Name,
+			Name:        *location.Name,
+			DisplayName: displayName,
+		})
+	}
+	return regions
 }
 
 // GetDefaultRegion returns the default Azure region.

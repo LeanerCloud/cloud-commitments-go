@@ -184,6 +184,11 @@ func (p *Provider) invalidateAccountsCacheLocked() {
 	p.accountsGen++
 }
 
+// maxSubscriptionPages caps the subscriptions list. A tenant can expose
+// hundreds of subscriptions, so this is deliberately well above the 20-page
+// catalog caps.
+const maxSubscriptionPages = 100
+
 // fetchAccounts performs the actual ARM subscriptions.List call and resolves
 // the default subscription. It holds no lock across the network round-trip and
 // runs on the caller's goroutine; getOrFetchAccounts serializes concurrent
@@ -209,7 +214,13 @@ func (p *Provider) fetchAccounts(ctx context.Context) ([]common.Account, error) 
 	accounts := make([]common.Account, 0)
 	pager := subClient.NewListPager(nil)
 
-	for pager.More() {
+	for pageIdx := 0; pager.More(); pageIdx++ {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("failed to list subscriptions: context canceled during pagination: %w", err)
+		}
+		if pageIdx >= maxSubscriptionPages {
+			return nil, fmt.Errorf("failed to list subscriptions: pagination cap (%d pages) reached", maxSubscriptionPages)
+		}
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list subscriptions: %w", err)
