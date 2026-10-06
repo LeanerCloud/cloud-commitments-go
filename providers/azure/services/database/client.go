@@ -742,7 +742,10 @@ func (c *Client) cachedDominantDeployment(ctx context.Context) string {
 // AZConfig: "zoneRedundant" / "none" / "" (ambiguous or no signal).
 // Deployment: "managed" / "single" / "" (mixed or no signal).
 func (c *Client) fetchServerInfo(ctx context.Context) (azConfig, deployment string) {
-	zoneRedundantCount, nonZoneRedundantCount, managedCount := c.walkManagedInstances(ctx)
+	zoneRedundantCount, nonZoneRedundantCount, managedCount, complete := c.walkManagedInstances(ctx)
+	if !complete {
+		return "", ""
+	}
 	hasServers := c.hasRegularServers(ctx)
 
 	// Derive AZConfig from zone-redundancy counts.
@@ -775,21 +778,22 @@ func (c *Client) fetchServerInfo(ctx context.Context) (azConfig, deployment stri
 // walkManagedInstances walks the managed-instances pager once and
 // returns the count of zone-redundant, non-zone-redundant, and total
 // managed instances observed. Stops immediately on context cancellation
-// or unrecoverable page error.
-func (c *Client) walkManagedInstances(ctx context.Context) (zoneRedundant, nonZoneRedundant, total int) {
+// or unrecoverable page error, in which case complete is false and the
+// counts are a partial sample that callers must not derive signals from.
+func (c *Client) walkManagedInstances(ctx context.Context) (zoneRedundant, nonZoneRedundant, total int, complete bool) {
 	pager, err := c.createManagedInstancesPager()
 	if err != nil {
 		logging.Warnf("azure database: managed instances pager create failed: %v; AZConfig/Deployment signal unavailable", err)
-		return 0, 0, 0
+		return 0, 0, 0, false
 	}
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
-				return zoneRedundant, nonZoneRedundant, total
+				return 0, 0, 0, false
 			}
 			logging.Warnf("azure database: managed instances page fetch failed: %v; AZConfig/Deployment signal unavailable", err)
-			return zoneRedundant, nonZoneRedundant, total
+			return 0, 0, 0, false
 		}
 		for _, mi := range page.Value {
 			total++
@@ -803,7 +807,7 @@ func (c *Client) walkManagedInstances(ctx context.Context) (zoneRedundant, nonZo
 			}
 		}
 	}
-	return zoneRedundant, nonZoneRedundant, total
+	return zoneRedundant, nonZoneRedundant, total, true
 }
 
 // createManagedInstancesPager returns the injected pager or creates a real one.
