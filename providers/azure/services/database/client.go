@@ -38,6 +38,9 @@ const maxRecsPages = 10
 // maxReservationsPages caps reservation-detail pagination.
 const maxReservationsPages = 50
 
+// maxSQLListPages caps the SQL server and managed-instance list pagination.
+const maxSQLListPages = 20
+
 // sqlSKUEntry holds the SKU-catalog-derived fields the converter
 // wants for each Azure SQL SKU. Sourced from the
 // armsql.CapabilitiesClient.ListByLocation response which embeds the
@@ -746,7 +749,10 @@ func (c *Client) fetchServerInfo(ctx context.Context) (azConfig, deployment stri
 	if !complete {
 		return "", ""
 	}
-	hasServers := c.hasRegularServers(ctx)
+	hasServers, serversComplete := c.hasRegularServers(ctx)
+	if !serversComplete {
+		return "", ""
+	}
 
 	// Derive AZConfig from zone-redundancy counts.
 	total := zoneRedundantCount + nonZoneRedundantCount
@@ -786,7 +792,14 @@ func (c *Client) walkManagedInstances(ctx context.Context) (zoneRedundant, nonZo
 		logging.Warnf("azure database: managed instances pager create failed: %v; AZConfig/Deployment signal unavailable", err)
 		return 0, 0, 0, false
 	}
-	for pager.More() {
+	for pageIdx := 0; pager.More(); pageIdx++ {
+		if ctx.Err() != nil {
+			return zoneRedundant, nonZoneRedundant, total, false
+		}
+		if pageIdx >= maxSQLListPages {
+			logging.Warnf("azure database: managed instances pagination cap (%d pages) reached; AZConfig/Deployment signal unavailable", maxSQLListPages)
+			return zoneRedundant, nonZoneRedundant, total, false
+		}
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -795,19 +808,30 @@ func (c *Client) walkManagedInstances(ctx context.Context) (zoneRedundant, nonZo
 			logging.Warnf("azure database: managed instances page fetch failed: %v; AZConfig/Deployment signal unavailable", err)
 			return zoneRedundant, nonZoneRedundant, total, false
 		}
-		for _, mi := range page.Value {
-			total++
-			if mi == nil || mi.Properties == nil || mi.Properties.ZoneRedundant == nil {
-				continue
-			}
-			if *mi.Properties.ZoneRedundant {
-				zoneRedundant++
-			} else {
-				nonZoneRedundant++
-			}
-		}
+		zr, nzr, n := tallyManagedInstances(page.Value)
+		zoneRedundant += zr
+		nonZoneRedundant += nzr
+		total += n
 	}
 	return zoneRedundant, nonZoneRedundant, total, true
+}
+
+// tallyManagedInstances counts zone-redundant, non-zone-redundant and total
+// instances on one page. Instances without a ZoneRedundant value count only
+// toward the total.
+func tallyManagedInstances(instances []*armsql.ManagedInstance) (zoneRedundant, nonZoneRedundant, total int) {
+	for _, mi := range instances {
+		total++
+		if mi == nil || mi.Properties == nil || mi.Properties.ZoneRedundant == nil {
+			continue
+		}
+		if *mi.Properties.ZoneRedundant {
+			zoneRedundant++
+		} else {
+			nonZoneRedundant++
+		}
+	}
+	return zoneRedundant, nonZoneRedundant, total
 }
 
 // createManagedInstancesPager returns the injected pager or creates a real one.
@@ -822,28 +846,37 @@ func (c *Client) createManagedInstancesPager() (SQLManagedInstancesPager, error)
 	return client.NewListPager(nil), nil
 }
 
-// hasRegularServers returns true when at least one SQL server exists in
-// the subscription. Stops after the first non-empty page.
-func (c *Client) hasRegularServers(ctx context.Context) bool {
+// hasRegularServers reports whether at least one SQL server exists in the
+// subscription, stopping after the first non-empty page. complete is false
+// when the walk ended early (cancellation, page error, page cap) without
+// finding a server, in which case found must not be read as "no servers".
+func (c *Client) hasRegularServers(ctx context.Context) (found, complete bool) {
 	pager, err := c.createServersPager()
 	if err != nil {
 		logging.Warnf("azure database: servers pager create failed: %v; Deployment signal unavailable", err)
-		return false
+		return false, false
 	}
-	for pager.More() {
+	for pageIdx := 0; pager.More(); pageIdx++ {
+		if ctx.Err() != nil {
+			return false, false
+		}
+		if pageIdx >= maxSQLListPages {
+			logging.Warnf("azure database: servers pagination cap (%d pages) reached; Deployment signal unavailable", maxSQLListPages)
+			return false, false
+		}
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
-				return false
+				return false, false
 			}
 			logging.Warnf("azure database: servers page fetch failed: %v; Deployment signal unavailable", err)
-			return false
+			return false, false
 		}
 		if len(page.Value) > 0 {
-			return true
+			return true, true
 		}
 	}
-	return false
+	return false, true
 }
 
 // createServersPager returns the injected pager or creates a real one.

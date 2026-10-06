@@ -651,7 +651,14 @@ func (c *Client) fetchDominantAPIType(ctx context.Context) string {
 		return ""
 	}
 	observed := make(map[string]struct{})
-	for pager.More() {
+	for pageIdx := 0; pager.More(); pageIdx++ {
+		if ctx.Err() != nil {
+			return ""
+		}
+		if pageIdx >= maxAccountsPages {
+			logging.Warnf("azure cosmosdb: account listing pagination cap (%d pages) reached for region %s; Details.APIType left empty", maxAccountsPages, c.region)
+			return ""
+		}
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			logging.Warnf("azure cosmosdb: account listing page fetch failed for region %s: %v — Details.APIType left empty", c.region, err)
