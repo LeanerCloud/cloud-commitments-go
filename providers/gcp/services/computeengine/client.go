@@ -1217,6 +1217,9 @@ func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommend
 	}
 
 	extractCostImpactFromRecommendation(gcpRec, rec)
+	if err := requireSingleAmountResource(gcpRec.GetContent()); err != nil {
+		return nil, err
+	}
 	count, err := vcpuCountFromOperationGroups(gcpRec.GetContent())
 	if err != nil {
 		return nil, err
@@ -1358,6 +1361,30 @@ func extractCostImpactFromRecommendation(gcpRec *recommenderpb.Recommendation, r
 		savings := -(float64(cost.Units) + float64(cost.Nanos)/1e9)
 		rec.EstimatedSavings = savings
 	}
+}
+
+// requireSingleAmountResource rejects a payload whose VCPU and MEMORY amounts
+// target different resources, since the converter pairs them into one
+// recommendation and cannot tell which commitment each belongs to. This is a
+// structural error, not errBadAmount, so it fails the batch.
+func requireSingleAmountResource(content *recommenderpb.RecommendationContent) error {
+	var first string
+	seen := false
+	for _, group := range content.GetOperationGroups() {
+		for _, op := range group.GetOperations() {
+			// A malformed selector or type is reported by the VCPU and MEMORY
+			// extractors, which run next with their own messages.
+			kind, err := recommendationAmountType(op)
+			if err != nil || (kind != computepb.ResourceCommitment_VCPU.String() && kind != computepb.ResourceCommitment_MEMORY.String()) {
+				continue
+			}
+			if seen && op.GetResource() != first {
+				return fmt.Errorf("VCPU and MEMORY amounts target different resources: %q and %q", first, op.GetResource())
+			}
+			first, seen = op.GetResource(), true
+		}
+	}
+	return nil
 }
 
 func vcpuCountFromOperationGroups(content *recommenderpb.RecommendationContent) (int, error) {
