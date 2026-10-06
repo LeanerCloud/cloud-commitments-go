@@ -18,6 +18,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/billingcurrency"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skumatch"
 )
 
 // maxRecsPages caps GCP Recommender API iteration.
@@ -451,22 +452,7 @@ func calculateSQLSavingsPercentage(onDemandPrice, hoursInTerm, commitmentPrice f
 
 // skuMatchesTier checks if a SKU matches the tier and region.
 func skuMatchesTier(sku *cloudbilling.Sku, tier, region string) bool {
-	// Check if the SKU description contains the tier
-	if !strings.Contains(strings.ToLower(sku.Description), strings.ToLower(tier)) {
-		return false
-	}
-
-	// Check if the SKU is available in the region
-	if sku.ServiceRegions != nil {
-		for _, serviceRegion := range sku.ServiceRegions {
-			if strings.EqualFold(serviceRegion, region) {
-				return true
-			}
-		}
-		return false
-	}
-
-	return true
+	return skumatch.HasToken(sku.Description, tier) && skumatch.InRegion(sku, region)
 }
 
 // extractGCPResourceType returns the last path segment of the first non-empty
