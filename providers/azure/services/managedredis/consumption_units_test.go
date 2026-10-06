@@ -2,11 +2,14 @@ package managedredis
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/pricing"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/mocks"
 )
 
@@ -33,4 +36,17 @@ func TestRecommendationsListArgs_SetsLookBackExplicitly(t *testing.T) {
 	_, opts := NewClient(nil, "sub", "eastus").recommendationsListArgs()
 	require.NotNil(t, opts.Filter)
 	require.Equal(t, "properties/scope eq 'Shared' and properties/resourceType eq 'RedisCache' and properties/lookBackPeriod eq 'Last7Days'", *opts.Filter)
+}
+
+// A retail price outage must fail the collection, not return a partial list.
+func TestGetRecommendations_ConsumptionPriceFetchFailureFailsCollection(t *testing.T) {
+	client := NewClientWithHTTP(nil, "sub", "eastus", &mocks.PricingHTTP{Err: errors.New("connection reset")})
+	client.SetRecommendationsPager(&mocks.MockRecommendationsPager{
+		Results: mocks.ConsumptionUnitFixtures("Premium_P1", "eastus"),
+		HasMore: true,
+	})
+
+	_, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, pricing.ErrFetch)
 }
