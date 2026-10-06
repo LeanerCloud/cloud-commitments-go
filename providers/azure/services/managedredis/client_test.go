@@ -246,6 +246,7 @@ func TestGetRegion(t *testing.T) {
 
 func TestGetValidResourceTypes_Fallback(t *testing.T) {
 	c := NewClient(nil, "invalid-sub", "eastus")
+	c.SetRedisCachesPager(&mockRedisPager{})
 	skus, err := c.GetValidResourceTypes(context.Background())
 	require.NoError(t, err)
 	require.NotEmpty(t, skus)
@@ -322,12 +323,14 @@ func TestGetValidResourceTypes_MultipleCaches(t *testing.T) {
 
 func TestValidateOffering_ValidSKU(t *testing.T) {
 	c := NewClient(nil, "sub", "eastus")
+	c.SetRedisCachesPager(&mockRedisPager{})
 	err := c.ValidateOffering(context.Background(), common.Recommendation{ResourceType: "Premium_P1"})
 	assert.NoError(t, err)
 }
 
 func TestValidateOffering_InvalidSKU(t *testing.T) {
 	c := NewClient(nil, "sub", "eastus")
+	c.SetRedisCachesPager(&mockRedisPager{})
 	err := c.ValidateOffering(context.Background(), common.Recommendation{ResourceType: "Bogus_Z99"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid Azure Cache for Redis SKU")

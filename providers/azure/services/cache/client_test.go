@@ -204,6 +204,7 @@ func TestCacheClient_GetRegion(t *testing.T) {
 func TestCacheClient_GetValidResourceTypes_Fallback(t *testing.T) {
 	// When API calls fail, GetValidResourceTypes should return common SKUs
 	client := NewClient(nil, "invalid-subscription", "eastus")
+	client.SetRedisCachesPager(&MockRedisCachesPager{})
 
 	skus, err := client.GetValidResourceTypes(context.Background())
 	require.NoError(t, err)
@@ -217,6 +218,7 @@ func TestCacheClient_GetValidResourceTypes_Fallback(t *testing.T) {
 
 func TestCacheClient_ValidateOffering_InvalidSKU(t *testing.T) {
 	client := NewClient(nil, "sub", "eastus")
+	client.SetRedisCachesPager(&MockRedisCachesPager{})
 	rec := common.Recommendation{
 		ResourceType: "InvalidSKU_X99",
 	}
@@ -462,6 +464,7 @@ func TestCacheClient_GetExistingCommitments_Empty(t *testing.T) {
 func TestCacheClient_ValidateOffering_ValidSKU(t *testing.T) {
 	ctx := context.Background()
 	client := NewClient(nil, "test-subscription", "eastus")
+	client.SetRedisCachesPager(&MockRedisCachesPager{})
 
 	rec := common.Recommendation{
 		ResourceType: "Premium_P1",
@@ -477,6 +480,7 @@ func TestCacheClient_ValidateOffering_CaseInsensitive(t *testing.T) {
 
 	t.Run("case_insensitive", func(t *testing.T) {
 		client := NewClient(nil, "test-subscription", "eastus")
+		client.SetRedisCachesPager(&MockRedisCachesPager{})
 		rec := common.Recommendation{ResourceType: "premium_p1"}
 		err := client.ValidateOffering(ctx, rec)
 		assert.NoError(t, err)
@@ -484,6 +488,7 @@ func TestCacheClient_ValidateOffering_CaseInsensitive(t *testing.T) {
 
 	t.Run("whitespace_trimmed", func(t *testing.T) {
 		client := NewClient(nil, "test-subscription", "eastus")
+		client.SetRedisCachesPager(&MockRedisCachesPager{})
 		rec := common.Recommendation{ResourceType: "  Premium_P1  "}
 		err := client.ValidateOffering(ctx, rec)
 		assert.NoError(t, err)
