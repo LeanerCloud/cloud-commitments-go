@@ -448,7 +448,7 @@ func (c *Client) GetRecommendations(ctx context.Context, p *common.Recommendatio
 			continue
 		}
 
-		converted, err := c.convertGCPRecommendation(ctx, rec, params)
+		converted, err := c.convertOrSkipBadAmount(ctx, rec, params)
 		if err != nil {
 			return nil, fmt.Errorf("computeengine: recommendation %q: %w", rec.GetName(), err)
 		}
@@ -456,6 +456,19 @@ func (c *Client) GetRecommendations(ctx context.Context, p *common.Recommendatio
 			recommendations = append(recommendations, *converted)
 		}
 	}
+}
+
+// convertOrSkipBadAmount converts rec, returning nil with a logged warning when
+// its amount is malformed so one bad row does not discard the rest of the
+// project's recommendations (same policy as the AWS and Azure paths).
+// Structural payload errors are still returned and abort the batch.
+func (c *Client) convertOrSkipBadAmount(ctx context.Context, rec *recommenderpb.Recommendation, params common.RecommendationParams) (*common.Recommendation, error) {
+	converted, err := c.convertGCPRecommendation(ctx, rec, params)
+	if errors.Is(err, errBadAmount) {
+		log.Printf("computeengine: skipping recommendation %q: %v", rec.GetName(), err)
+		return nil, nil
+	}
+	return converted, err
 }
 
 // GetExistingCommitments retrieves existing Compute Engine CUDs.
@@ -1417,37 +1430,45 @@ func recommendationVCPUAmount(value *structpb.Value) (int, error) {
 		return 0, err
 	}
 	if amount > math.MaxInt {
-		return 0, fmt.Errorf("VCPU amount must be positive and fit int")
+		return 0, fmt.Errorf("%w: VCPU amount must fit int", errBadAmount)
 	}
 	return int(amount), nil
 }
+
+// errBadAmount marks a malformed or out-of-range resource amount, which makes
+// GetRecommendations skip that one recommendation instead of failing the batch.
+var errBadAmount = errors.New("bad recommendation amount")
 
 // maxExactAmount is the largest integer a float64 (JSON number, or the
 // ComputeDetails.MemoryGB downstream) represents exactly.
 const maxExactAmount = 1<<53 - 1
 
 // recommendationAmount parses a resource amount that the Recommender may
-// carry as a decimal int64 string or as an exact positive JSON number (at most
-// 2^53-1, beyond which a JSON number has already lost precision).
+// carry as a decimal int64 string or as an exact positive JSON number. Both
+// forms are capped at 2^53-1: beyond it a JSON number has already lost
+// precision, and ComputeDetails.MemoryGB (float64) cannot hold a larger value.
 func recommendationAmount(value *structpb.Value, name string) (int64, error) {
 	var amount int64
 	switch v := value.GetKind().(type) {
 	case *structpb.Value_StringValue:
 		parsed, err := strconv.ParseInt(v.StringValue, 10, 64)
 		if err != nil {
-			return 0, fmt.Errorf("invalid %s amount %q: %w", name, v.StringValue, err)
+			return 0, fmt.Errorf("%w: invalid %s amount %q: %v", errBadAmount, name, v.StringValue, err)
+		}
+		if parsed > maxExactAmount {
+			return 0, fmt.Errorf("%w: %s amount must be at most 2^53-1", errBadAmount, name)
 		}
 		amount = parsed
 	case *structpb.Value_NumberValue:
 		if math.IsNaN(v.NumberValue) || v.NumberValue > maxExactAmount || math.Trunc(v.NumberValue) != v.NumberValue {
-			return 0, fmt.Errorf("%s amount must be a positive exact integer", name)
+			return 0, fmt.Errorf("%w: %s amount must be a positive exact integer", errBadAmount, name)
 		}
 		amount = int64(v.NumberValue)
 	default:
-		return 0, fmt.Errorf("%s amount must be a decimal string or number", name)
+		return 0, fmt.Errorf("%w: %s amount must be a decimal string or number", errBadAmount, name)
 	}
 	if amount <= 0 {
-		return 0, fmt.Errorf("%s amount must be positive", name)
+		return 0, fmt.Errorf("%w: %s amount must be positive", errBadAmount, name)
 	}
 	return amount, nil
 }
@@ -1476,10 +1497,6 @@ func memoryMBFromOperationGroups(content *recommenderpb.RecommendationContent) (
 			memMB, err = recommendationAmount(op.GetValue(), "MEMORY")
 			if err != nil {
 				return 0, err
-			}
-			// MemoryGB is a float64, so larger string amounts would not survive the round trip.
-			if memMB > maxExactAmount {
-				return 0, fmt.Errorf("MEMORY amount must be at most 2^53-1")
 			}
 		}
 	}

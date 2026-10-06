@@ -1704,13 +1704,14 @@ func TestRecommendationVCPUAmountRejectsInvalidQuantities(t *testing.T) {
 		structpb.NewNumberValue(math.Inf(-1)), structpb.NewNumberValue(1 << 53), structpb.NewNumberValue(float64(math.MaxInt)),
 		structpb.NewStringValue(""), structpb.NewStringValue("0"), structpb.NewStringValue("-1"),
 		structpb.NewStringValue("1.5"), structpb.NewStringValue("1e3"), structpb.NewStringValue("9223372036854775808"),
+		structpb.NewStringValue("9007199254740992"), structpb.NewStringValue(strconv.FormatInt(int64(math.MaxInt), 10)),
 	} {
 		_, err := recommendationVCPUAmount(value)
 		require.Error(t, err, "value %v", value)
 	}
-	count, err := recommendationVCPUAmount(structpb.NewStringValue(strconv.FormatInt(int64(math.MaxInt), 10)))
+	count, err := recommendationVCPUAmount(structpb.NewStringValue("9007199254740991"))
 	require.NoError(t, err)
-	assert.Equal(t, math.MaxInt, count)
+	assert.Equal(t, 1<<53-1, count)
 }
 
 func TestConvertGCPRecommendationMemoryAmountRepresentations(t *testing.T) {
@@ -2416,4 +2417,42 @@ func TestGetRecommendationsStringMemoryAmountEndToEnd(t *testing.T) {
 	amount, err := memoryMBFromDetails(recs[0])
 	require.NoError(t, err)
 	assert.Equal(t, int64(6144), amount)
+}
+
+func badAmountRecommendation(name, vcpu, memory string) *recommenderpb.Recommendation {
+	rec := commitmentOnlyCUDRecommendation()
+	rec.Name = name
+	rec.StateInfo = &recommenderpb.RecommendationStateInfo{State: recommenderpb.RecommendationStateInfo_ACTIVE}
+	ops := rec.Content.OperationGroups[0].Operations
+	ops[0].PathValue = &recommenderpb.Operation_Value{Value: structpb.NewStringValue(vcpu)}
+	ops[1].PathValue = &recommenderpb.Operation_Value{Value: structpb.NewStringValue(memory)}
+	return rec
+}
+
+func TestGetRecommendations_SkipsBadAmountRowKeepsOthers(t *testing.T) {
+	cases := []struct{ name, vcpu, memory string }{
+		{"malformed vcpu", "abc", "6144"},
+		{"malformed memory", "4", "6Gi"},
+		{"oversized vcpu string", "9007199254740992", "6144"},
+		{"oversized memory string", "4", "9223372036854775807"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			client, _ := NewClient(ctx, "test-project", "us-central1")
+			client.SetRecommenderClient(&MockRecommenderClient{iterator: &MockRecommenderIterator{
+				recommendations: []*recommenderpb.Recommendation{
+					badAmountRecommendation("good-before", "4", "6144"),
+					badAmountRecommendation("bad", tc.vcpu, tc.memory),
+					badAmountRecommendation("good-after", "8", "12288"),
+				},
+			}})
+
+			recs, err := client.GetRecommendations(ctx, &common.RecommendationParams{})
+			require.NoError(t, err)
+			require.Len(t, recs, 2)
+			assert.Equal(t, 4, recs[0].Count)
+			assert.Equal(t, 8, recs[1].Count)
+		})
+	}
 }
