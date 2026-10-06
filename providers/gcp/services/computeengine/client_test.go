@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"cloud.google.com/go/compute/apiv1/computepb"
@@ -2574,9 +2575,33 @@ func TestPurchaseCommitment_RejectsNonHexIdempotencyToken(t *testing.T) {
 
 			result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{IdempotencyToken: token})
 			require.Error(t, err)
+			assert.ErrorIs(t, err, errInvalidIdempotencyToken)
 			assert.Contains(t, err.Error(), "lowercase hex digest")
 			assert.False(t, result.Success)
 			assert.Empty(t, mockSvc.insertReqs, "Insert must not be called for an invalid token")
 		})
 	}
+}
+
+func TestBuildInsertRequest_RejectedTokenWrapsSentinel(t *testing.T) {
+	client, _ := NewClient(context.Background(), "test-project", "us-central1")
+	rec := common.Recommendation{
+		ResourceType: "n1-standard-1",
+		Term:         "1yr",
+		Count:        5,
+		Details:      common.ComputeDetails{MemoryGB: 20.0},
+	}
+	_, _, err := client.buildInsertRequest(rec, common.PurchaseOptions{IdempotencyToken: "NOT-HEX"})
+	require.ErrorIs(t, err, errInvalidIdempotencyToken)
+}
+
+// A full 64-char SHA-256 digest must be truncated so the name stays within
+// GCP's 63-char limit.
+func TestIdempotentCommitmentName_TruncatesFullDigest(t *testing.T) {
+	token := common.DeriveIdempotencyToken("exec-1", 0)
+	require.Len(t, token, 64)
+	name, err := idempotentCommitmentName(token)
+	require.NoError(t, err)
+	assert.Len(t, name, 36)
+	assert.True(t, strings.HasPrefix(name, "cud-"))
 }

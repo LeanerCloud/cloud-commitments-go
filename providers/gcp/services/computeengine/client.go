@@ -1599,21 +1599,25 @@ const idempotentNameTokenLen = 32
 // CUD. An empty token preserves the prior non-idempotent timestamp-based name
 // (the CLI path, which has no owning execution).
 //
-// The token must be a lowercase hex digest (as common.DeriveIdempotencyToken
-// produces) so its leading chars are valid RFC1035 name characters; any other
-// token is rejected rather than turned into a name GCP would refuse.
+// The token must be a lowercase hex digest, as common.DeriveIdempotencyToken
+// (the only supported producer) returns, so its leading chars are valid RFC1035
+// name characters. Behavior change: uppercase hex and UUID-style tokens used to
+// be lowercased and truncated; they are now intentionally rejected rather than
+// turned into a name GCP would refuse.
 func idempotentCommitmentName(token string) (string, error) {
 	if token == "" {
 		return fmt.Sprintf("cud-%d", time.Now().Unix()), nil
 	}
 	if !idempotencyTokenPattern.MatchString(token) {
-		return "", fmt.Errorf("idempotency token must be a lowercase hex digest to derive a GCP commitment name (got %d chars)", len(token))
+		return "", fmt.Errorf("%w: must be a lowercase hex digest to derive a GCP commitment name (got %d chars)", errInvalidIdempotencyToken, len(token))
 	}
 	if len(token) > idempotentNameTokenLen {
 		token = token[:idempotentNameTokenLen]
 	}
 	return "cud-" + token, nil
 }
+
+var errInvalidIdempotencyToken = errors.New("invalid idempotency token")
 
 var idempotencyTokenPattern = regexp.MustCompile(`^[0-9a-f]+$`)
 
