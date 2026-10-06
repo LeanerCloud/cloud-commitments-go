@@ -498,7 +498,12 @@ func TestFindReservationOrderByIdempotencyToken_NoMatch(t *testing.T) {
 // tag MUST NOT short-circuit a legitimate fresh purchase. Mirrors the AWS EC2
 // findRIByIdempotencyToken filter (state in active|payment-pending).
 func TestFindReservationOrderByIdempotencyToken_SkipsTerminalFailed(t *testing.T) {
-	for _, state := range []string{string(armreservations.ProvisioningStateCancelled), "Failed", "Expired"} {
+	for _, st := range []armreservations.ProvisioningState{
+		armreservations.ProvisioningStateCancelled,
+		armreservations.ProvisioningStateFailed,
+		armreservations.ProvisioningStateExpired,
+	} {
+		state := string(st)
 		t.Run(state, func(t *testing.T) {
 			m := &mockHTTPClient{}
 			ctx := context.Background()
@@ -527,12 +532,22 @@ func TestFindReservationOrderByIdempotencyToken_SkipsTerminalFailed(t *testing.T
 }
 
 // TestFindReservationOrderByIdempotencyToken_AcceptsInFlightStates verifies
-// that orders in non-terminal states (Succeeded, Pending, Creating,
+// that orders in non-terminal states (Succeeded, Creating, PendingBilling,
 // ConfirmedBilling) DO short-circuit the purchase: those orders are either
 // already-paid-for or currently being processed and a re-drive would create
 // a duplicate.
 func TestFindReservationOrderByIdempotencyToken_AcceptsInFlightStates(t *testing.T) {
-	for _, state := range []string{"Succeeded", "Pending", "Creating", "ConfirmedBilling", ""} {
+	for _, state := range []string{
+		string(armreservations.ProvisioningStateSucceeded),
+		string(armreservations.ProvisioningStateCreated),
+		string(armreservations.ProvisioningStateCreating),
+		string(armreservations.ProvisioningStatePendingBilling),
+		string(armreservations.ProvisioningStateConfirmedBilling),
+		string(armreservations.ProvisioningStatePendingResourceHold),
+		string(armreservations.ProvisioningStateConfirmedResourceHold),
+		string(armreservations.ProvisioningStateMerged),
+		string(armreservations.ProvisioningStateSplit),
+	} {
 		t.Run(state, func(t *testing.T) {
 			m := &mockHTTPClient{}
 			ctx := context.Background()
@@ -558,6 +573,143 @@ func TestFindReservationOrderByIdempotencyToken_AcceptsInFlightStates(t *testing
 			assert.Equal(t, "order-live", orderID)
 		})
 	}
+}
+
+// TestReservationOrderDispositions_CoversEverySDKState forces a decision for
+// every ProvisioningState the SDK defines, so a newly added state cannot
+// silently fall into the adopt default.
+func TestReservationOrderDispositions_CoversEverySDKState(t *testing.T) {
+	for _, state := range armreservations.PossibleProvisioningStateValues() {
+		_, classified := reservationOrderDispositions[state]
+		assert.True(t, classified, "ProvisioningState %q has no entry in reservationOrderDispositions", state)
+	}
+}
+
+// TestFindReservationOrderByIdempotencyToken_UnrecognizedStateIsBlocked: a
+// non-empty state outside the SDK enum is neither adopted nor skipped.
+func TestFindReservationOrderByIdempotencyToken_UnrecognizedStateIsBlocked(t *testing.T) {
+	m := &mockHTTPClient{}
+	body := orderListJSON([]struct {
+		Name              string
+		IdempotencyToken  string
+		ProvisioningState string
+		OtherTags         map[string]string
+	}{
+		{Name: "order-future", IdempotencyToken: "wanted-tok", ProvisioningState: "SomeFutureState"},
+	}, "")
+	resp := fakeResp(http.StatusOK, body)
+	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
+	m.On("Do", mock.Anything).Return(resp, nil).Once()
+
+	orderID, found, err := FindReservationOrderByIdempotencyToken(context.Background(), m, "tok", "wanted-tok")
+	require.ErrorIs(t, err, ErrReservationOrderBlocked)
+	assert.Contains(t, err.Error(), "order-future")
+	assert.Contains(t, err.Error(), "SomeFutureState")
+	assert.False(t, found)
+	assert.Empty(t, orderID)
+}
+
+// TestDoIdempotentPurchaseTwoStep_UnrecognizedState_DoesNotPurchase: zero POSTs.
+func TestDoIdempotentPurchaseTwoStep_UnrecognizedState_DoesNotPurchase(t *testing.T) {
+	m := &mockHTTPClient{}
+	body := orderListJSON([]struct {
+		Name              string
+		IdempotencyToken  string
+		ProvisioningState string
+		OtherTags         map[string]string
+	}{
+		{Name: "order-future", IdempotencyToken: "redrive-tok", ProvisioningState: "SomeFutureState"},
+	}, "")
+	resp := fakeResp(http.StatusOK, body)
+	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
+	m.On("Do", mock.MatchedBy(func(r *http.Request) bool {
+		return r.Method == http.MethodGet && r.URL.String() == listURL
+	})).Return(resp, nil).Once()
+
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), m, calcURL, []byte(testBody), "tok", "redrive-tok")
+	require.ErrorIs(t, err, ErrReservationOrderBlocked)
+	assert.False(t, existing)
+	assert.Empty(t, orderID)
+	m.AssertNotCalled(t, "Do", mock.MatchedBy(func(r *http.Request) bool {
+		return r.Method == http.MethodPost
+	}))
+	m.AssertExpectations(t)
+}
+
+// TestFindReservationOrderByIdempotencyToken_BillingFailedIsBlocked pins issue
+// #72: a BillingFailed order is neither adopted (false success) nor skipped
+// (possible double-buy); the lookup returns an error.
+func TestFindReservationOrderByIdempotencyToken_BillingFailedIsBlocked(t *testing.T) {
+	m := &mockHTTPClient{}
+	body := orderListJSON([]struct {
+		Name              string
+		IdempotencyToken  string
+		ProvisioningState string
+		OtherTags         map[string]string
+	}{
+		{Name: "order-billing-failed", IdempotencyToken: "wanted-tok", ProvisioningState: string(armreservations.ProvisioningStateBillingFailed)},
+	}, "")
+	resp := fakeResp(http.StatusOK, body)
+	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
+	m.On("Do", mock.Anything).Return(resp, nil).Once()
+
+	orderID, found, err := FindReservationOrderByIdempotencyToken(context.Background(), m, "tok", "wanted-tok")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "BillingFailed")
+	assert.Contains(t, err.Error(), "order-billing-failed")
+	require.ErrorIs(t, err, ErrReservationOrderBlocked)
+	assert.False(t, found)
+	assert.Empty(t, orderID)
+}
+
+// TestDoIdempotentPurchaseTwoStep_BillingFailed_NeitherAdoptsNorPurchases is the
+// end-to-end form: no success, no existing flag, and zero POSTs.
+func TestDoIdempotentPurchaseTwoStep_BillingFailed_NeitherAdoptsNorPurchases(t *testing.T) {
+	m := &mockHTTPClient{}
+	body := orderListJSON([]struct {
+		Name              string
+		IdempotencyToken  string
+		ProvisioningState string
+		OtherTags         map[string]string
+	}{
+		{Name: "order-billing-failed", IdempotencyToken: "redrive-tok", ProvisioningState: string(armreservations.ProvisioningStateBillingFailed)},
+	}, "")
+	resp := fakeResp(http.StatusOK, body)
+	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
+	m.On("Do", mock.MatchedBy(func(r *http.Request) bool {
+		return r.Method == http.MethodGet && r.URL.String() == listURL
+	})).Return(resp, nil).Once()
+
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), m, calcURL, []byte(testBody), "tok", "redrive-tok")
+	require.ErrorIs(t, err, ErrReservationOrderBlocked)
+	assert.False(t, existing)
+	assert.Empty(t, orderID)
+	m.AssertNotCalled(t, "Do", mock.MatchedBy(func(r *http.Request) bool {
+		return r.Method == http.MethodPost
+	}))
+	m.AssertExpectations(t)
+}
+
+// TestFindReservationOrderByIdempotencyToken_EmptyStateIsAdopted: an order
+// listed without a provisioning state still suppresses a re-drive.
+func TestFindReservationOrderByIdempotencyToken_EmptyStateIsAdopted(t *testing.T) {
+	m := &mockHTTPClient{}
+	body := orderListJSON([]struct {
+		Name              string
+		IdempotencyToken  string
+		ProvisioningState string
+		OtherTags         map[string]string
+	}{
+		{Name: "order-nostate", IdempotencyToken: "wanted-tok", ProvisioningState: ""},
+	}, "")
+	resp := fakeResp(http.StatusOK, body)
+	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
+	m.On("Do", mock.Anything).Return(resp, nil).Once()
+
+	orderID, found, err := FindReservationOrderByIdempotencyToken(context.Background(), m, "tok", "wanted-tok")
+	require.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "order-nostate", orderID)
 }
 
 func TestFindReservationOrderByIdempotencyToken_HTTPError(t *testing.T) {
@@ -1386,6 +1538,42 @@ func TestPurchaseRetry_RefusesRetryWhenRecheckLookupFails(t *testing.T) {
 		"an unusable re-check must stop the retry rather than proceed blind")
 	assert.Equal(t, 1, c.purchases,
 		"no second purchase may be attempted when the re-check could not be completed")
+}
+
+// TestPurchaseRetry_RefusesRetryWhenRecheckFindsBillingFailedOrder: attempt 1
+// fails retryably, then the in-loop re-check lists a BillingFailed order for the
+// token. The retry must stop with the blocked error and issue no second
+// calculatePrice or purchase.
+func TestPurchaseRetry_RefusesRetryWhenRecheckFindsBillingFailedOrder(t *testing.T) {
+	const token = "tok-72-recheck"
+	sessionTimeout := `{"error":{"code":"BadRequest","message":"Session timed out - Call CalculatePrice again"}}`
+	billingFailed := orderListJSON([]struct {
+		Name              string
+		IdempotencyToken  string
+		ProvisioningState string
+		OtherTags         map[string]string
+	}{
+		{Name: "order-bf", IdempotencyToken: token, ProvisioningState: string(armreservations.ProvisioningStateBillingFailed)},
+	}, "")
+
+	c := &idempotencyRetryClient{
+		listResp: func(n int) (*http.Response, error) {
+			if n == 1 {
+				return fakeResp(http.StatusOK, emptyOrdersList), nil
+			}
+			return fakeResp(http.StatusOK, billingFailed), nil
+		},
+		purchase: func(int) *http.Response { return fakeResp(http.StatusBadRequest, sessionTimeout) },
+	}
+
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token)
+	require.ErrorIs(t, err, ErrReservationOrderBlocked)
+	assert.Contains(t, err.Error(), "order-bf")
+	assert.Contains(t, err.Error(), "BillingFailed")
+	assert.False(t, existing)
+	assert.Empty(t, orderID)
+	assert.Equal(t, 1, c.purchases, "no second purchase after the re-check found a BillingFailed order")
+	assert.Equal(t, 1, c.calcs, "no second calculatePrice either")
 }
 
 // A non-retryable purchase failure is an error, never an adoption (issue #211).
