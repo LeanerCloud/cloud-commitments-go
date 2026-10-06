@@ -1,8 +1,12 @@
 package provider
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -303,4 +307,99 @@ func TestGetProvidersByNames_AllFail(t *testing.T) {
 	_, err := GetProvidersByNames(ctx, []string{"nonexistent-1", "nonexistent-2"})
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no valid providers found")
+}
+
+func TestDetectAvailableProviders_FactoryErrorIsNotReportedAsMissingCredentials(t *testing.T) {
+	t.Parallel()
+	cause := errors.New("list projects: permission denied")
+	r := NewRegistry()
+	require.NoError(t, r.Register("gcp", func(*ProviderConfig) (Provider, error) { return nil, cause }))
+
+	providers, err := detectAvailableProviders(context.Background(), r)
+
+	assert.Nil(t, providers)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, cause)
+	assert.Contains(t, err.Error(), `provider "gcp" factory error`)
+	assert.NotContains(t, err.Error(), "no cloud credentials found")
+}
+
+func TestDetectAvailableProviders_NothingRegisteredReportsMissingCredentials(t *testing.T) {
+	t.Parallel()
+
+	_, err := detectAvailableProviders(context.Background(), NewRegistry())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no cloud credentials found")
+}
+
+func TestDetectAvailableProviders_WorkingProviderSurvivesFactoryError(t *testing.T) {
+	t.Parallel()
+	r := NewRegistry()
+	require.NoError(t, r.Register("broken", func(*ProviderConfig) (Provider, error) { return nil, errors.New("boom") }))
+	require.NoError(t, r.Register("ok", func(c *ProviderConfig) (Provider, error) {
+		return &MockProvider{name: c.Name, configured: true, credentialsValid: true}, nil
+	}))
+
+	providers, err := detectAvailableProviders(context.Background(), r)
+
+	require.NoError(t, err)
+	require.Len(t, providers, 1)
+	assert.Equal(t, "ok", providers[0].Name())
+}
+
+func TestDetectAvailableProviders_InvalidCredentialsAreReported(t *testing.T) {
+	t.Parallel()
+	cause := errors.New("credentials expired")
+	r := NewRegistry()
+	require.NoError(t, r.Register("aws", func(c *ProviderConfig) (Provider, error) {
+		return &MockProvider{name: c.Name, configured: true, credentialsError: cause}, nil
+	}))
+
+	providers, err := detectAvailableProviders(context.Background(), r)
+
+	assert.Nil(t, providers)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, cause)
+	assert.Contains(t, err.Error(), "no usable cloud provider found: ")
+	assert.Contains(t, err.Error(), "aws: credentials expired")
+}
+
+// Not parallel: it redirects the process-wide logger.
+func TestDetectAvailableProviders_LogsFactoryErrorsWhenAnotherProviderSucceeds(t *testing.T) {
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+
+	r := NewRegistry()
+	require.NoError(t, r.Register("gcp", func(*ProviderConfig) (Provider, error) { return nil, errors.New("no ADC") }))
+	require.NoError(t, r.Register("aws", func(c *ProviderConfig) (Provider, error) {
+		return &MockProvider{name: c.Name, configured: true, credentialsValid: true}, nil
+	}))
+
+	providers, err := detectAvailableProviders(context.Background(), r)
+
+	require.NoError(t, err)
+	require.Len(t, providers, 1)
+	assert.Contains(t, buf.String(), `provider "gcp" factory error: no ADC`)
+}
+
+func TestDetectAvailableProviders_ErrorOrderIsStable(t *testing.T) {
+	t.Parallel()
+	r := NewRegistry()
+	for _, name := range []string{"zeta", "alpha", "mid"} {
+		require.NoError(t, r.Register(name, func(*ProviderConfig) (Provider, error) {
+			return nil, errors.New("boom")
+		}))
+	}
+
+	_, first := detectAvailableProviders(context.Background(), r)
+	require.Error(t, first)
+	for i := 0; i < 20; i++ {
+		_, err := detectAvailableProviders(context.Background(), r)
+		require.EqualError(t, err, first.Error())
+	}
+	msg := first.Error()
+	assert.Less(t, strings.Index(msg, `"alpha"`), strings.Index(msg, `"mid"`))
+	assert.Less(t, strings.Index(msg, `"mid"`), strings.Index(msg, `"zeta"`))
 }
