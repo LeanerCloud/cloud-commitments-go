@@ -377,13 +377,14 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		return result, result.Error
 	}
 
-	reservationOrderID, err := reservations.DoIdempotentPurchaseTwoStep(ctx, c.httpClient, reservations.CalculatePriceURL(), bodyBytes, token.Token, opts.IdempotencyToken)
+	reservationOrderID, existing, err := reservations.DoIdempotentPurchaseTwoStep(ctx, c.httpClient, reservations.CalculatePriceURL(), bodyBytes, token.Token, opts.IdempotencyToken)
 	if err != nil {
 		result.Error = err
 		return result, result.Error
 	}
 
 	result.Success = true
+	result.ExistingCommitment = existing
 	result.CommitmentID = reservationOrderID
 	result.Cost = reservations.UpfrontCostForBillingPlan(billingPlan)
 	return result, nil

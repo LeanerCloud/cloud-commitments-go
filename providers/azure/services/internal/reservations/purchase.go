@@ -292,7 +292,8 @@ func DoPurchaseTwoStep(ctx context.Context, httpClient HTTPClient, calcURL strin
 	// No idempotency token, so no re-check is possible between attempts. This
 	// entry point is retained for callers that have none; every service executor
 	// goes through DoIdempotentPurchaseTwoStep.
-	return purchaseTwoStepGuarded(ctx, httpClient, calcURL, bodyBytes, bearerToken, "")
+	orderID, _, err := purchaseTwoStepGuarded(ctx, httpClient, calcURL, bodyBytes, bearerToken, "")
+	return orderID, err
 }
 
 // purchaseIsRetryable reports whether a failed purchase attempt should be
@@ -359,41 +360,41 @@ func recheckAlreadyPurchased(ctx context.Context, httpClient HTTPClient, bearerT
 //
 // Ordering matters: the check runs before doCalculatePrice, so a purchase that
 // already exists short-circuits without minting yet another order ID.
-func purchaseTwoStepGuarded(ctx context.Context, httpClient HTTPClient, calcURL string, bodyBytes []byte, bearerToken, idempotencyToken string) (string, error) {
+func purchaseTwoStepGuarded(ctx context.Context, httpClient HTTPClient, calcURL string, bodyBytes []byte, bearerToken, idempotencyToken string) (orderID string, existing bool, err error) {
 	for attempt := 1; attempt <= purchaseMaxAttempts; attempt++ {
 		existingID, found, err := recheckAlreadyPurchased(ctx, httpClient, bearerToken, idempotencyToken, attempt)
 		if err != nil {
-			return "", err
+			return "", false, err
 		}
 		if found {
-			return existingID, nil
+			return existingID, true, nil
 		}
 		// Step 1: calculatePrice -- mint a session-bound reservationOrderId.
 		orderID, err := doCalculatePrice(ctx, httpClient, calcURL, bodyBytes, bearerToken)
 		if err != nil {
-			return "", fmt.Errorf("calculatePrice (attempt %d/%d): %w", attempt, purchaseMaxAttempts, err)
+			return "", false, fmt.Errorf("calculatePrice (attempt %d/%d): %w", attempt, purchaseMaxAttempts, err)
 		}
 
 		// Step 2: purchase -- commit the order.
 		purchaseErr := doPurchase(ctx, httpClient, PurchaseURL(orderID), bodyBytes, bearerToken)
 		if purchaseErr == nil {
-			return orderID, nil
+			return orderID, false, nil
 		}
 
 		if !purchaseIsRetryable(purchaseErr, attempt) {
-			return "", purchaseErr
+			return "", false, purchaseErr
 		}
 		log.Printf("reservation purchase retryable (attempt %d/%d), re-running calculatePrice in %s",
 			attempt, purchaseMaxAttempts, purchaseRetryDelay)
 		if err := waitBeforeRetry(ctx); err != nil {
-			return "", err
+			return "", false, err
 		}
 	}
 	// Unreachable: purchaseIsRetryable is false once attempt == purchaseMaxAttempts,
 	// so the final iteration always returns purchaseErr from inside the loop. Kept
 	// because the compiler cannot prove that, and worded generally rather than
 	// naming session timeout, which is now only one of two retry triggers.
-	return "", fmt.Errorf("reservation purchase exhausted %d attempts", purchaseMaxAttempts)
+	return "", false, fmt.Errorf("reservation purchase exhausted %d attempts", purchaseMaxAttempts)
 }
 
 // doCalculatePrice calls the calculatePrice endpoint and returns the
@@ -579,15 +580,19 @@ func matchReservationOrderInPage(page *reservationOrdersListResponse, idempotenc
 // returned verbatim, and the recovery sweep treats the recommendation as
 // not-yet-purchased and retries the whole guarded path (mirroring the EC2
 // findRIByIdempotencyToken safety contract in providers/aws/services/ec2).
-func DoIdempotentPurchaseTwoStep(ctx context.Context, httpClient HTTPClient, calcURL string, bodyBytes []byte, bearerToken, idempotencyToken string) (string, error) {
+//
+// existing is true only when an already-tagged order was adopted (the pre-loop
+// lookup or the in-loop re-check) instead of purchasing, so callers can set
+// PurchaseResult.ExistingCommitment (issue #211).
+func DoIdempotentPurchaseTwoStep(ctx context.Context, httpClient HTTPClient, calcURL string, bodyBytes []byte, bearerToken, idempotencyToken string) (orderID string, existing bool, err error) {
 	if idempotencyToken != "" {
 		existingID, found, err := FindReservationOrderByIdempotencyToken(ctx, httpClient, bearerToken, idempotencyToken)
 		if err != nil {
-			return "", fmt.Errorf("idempotency lookup failed before Azure reservation purchase (refusing to purchase to avoid a possible double-buy): %w", err)
+			return "", false, fmt.Errorf("idempotency lookup failed before Azure reservation purchase (refusing to purchase to avoid a possible double-buy): %w", err)
 		}
 		if found {
 			log.Printf("Azure reservation order for idempotency token %s already exists (%s); skipping purchase (issue #721 re-drive)", common.MaskToken(idempotencyToken), existingID)
-			return existingID, nil
+			return existingID, true, nil
 		}
 	}
 	return purchaseTwoStepGuarded(ctx, httpClient, calcURL, bodyBytes, bearerToken, idempotencyToken)

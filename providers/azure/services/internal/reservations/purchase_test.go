@@ -675,8 +675,9 @@ func TestDoIdempotentPurchaseTwoStep_EmptyToken_NoLookup(t *testing.T) {
 		return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/order-no-tok/purchase"
 	})).Return(purchaseResp22, nil).Once()
 
-	orderID, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "")
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "")
 	require.NoError(t, err)
+	assert.False(t, existing)
 	assert.Equal(t, "order-no-tok", orderID)
 	// No GET to the list endpoint must have happened.
 	m.AssertNotCalled(t, "Do", mock.MatchedBy(func(r *http.Request) bool {
@@ -716,8 +717,9 @@ func TestDoIdempotentPurchaseTwoStep_NoMatch_FallsThroughToPurchase(t *testing.T
 		return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/order-fresh/purchase"
 	})).Return(purchaseResp25, nil).Once()
 
-	orderID, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "fresh-tok-1")
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "fresh-tok-1")
 	require.NoError(t, err)
+	assert.False(t, existing, "a fresh purchase is not an existing commitment")
 	assert.Equal(t, "order-fresh", orderID)
 	m.AssertExpectations(t)
 }
@@ -747,8 +749,9 @@ func TestDoIdempotentPurchaseTwoStep_Match_ShortCircuits(t *testing.T) {
 		return r.Method == http.MethodGet && r.URL.String() == listURL
 	})).Return(lookupResp26, nil).Once()
 
-	orderID, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "redrive-tok")
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "redrive-tok")
 	require.NoError(t, err)
+	assert.True(t, existing, "a tagged order was adopted, so this is an existing commitment")
 	assert.Equal(t, "order-already-bought", orderID)
 	// CRITICAL: zero POST calls -- no calculatePrice, no purchase. The
 	// regression test that proves issue #721 is fixed.
@@ -774,8 +777,9 @@ func TestDoIdempotentPurchaseTwoStep_LookupFailure_DoesNotPurchase(t *testing.T)
 		return r.Method == http.MethodGet
 	})).Return(lookupResp27, nil).Once()
 
-	_, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "tok-failing")
+	_, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "tok-failing")
 	require.Error(t, err)
+	assert.False(t, existing, "a failed lookup must not be reported as an adoption")
 	assert.Contains(t, err.Error(), "idempotency lookup failed")
 	assert.Contains(t, err.Error(), "refusing to purchase")
 	// No POSTs at all -- the failed list must abort the whole flow.
@@ -824,8 +828,9 @@ func TestDoIdempotentPurchaseTwoStep_DifferentTokens_DistinctReservations(t *tes
 			return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/"+mintedOrderID+"/purchase"
 		})).Return(purchaseResp30, nil).Once()
 
-		got, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", idemTok)
+		got, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", idemTok)
 		require.NoError(t, err)
+		assert.False(t, existing)
 		m.AssertExpectations(t)
 		return got
 	}
@@ -901,8 +906,9 @@ func TestDoIdempotentPurchaseTwoStep_PreservesTwoStepFlow(t *testing.T) {
 		return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/second/purchase"
 	})).Return(purchaseResp35, nil).Once()
 
-	orderID, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "retry-tok")
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "retry-tok")
 	require.NoError(t, err)
+	assert.False(t, existing)
 	assert.Equal(t, "second", orderID)
 	m.AssertExpectations(t)
 }
@@ -1316,8 +1322,9 @@ func TestPurchaseRetry_DoesNotDoubleBuyWhenFirstAttemptCommitted(t *testing.T) {
 		purchase: func(int) *http.Response { return fakeResp(http.StatusBadRequest, sessionTimeout) },
 	}
 
-	orderID, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token)
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token)
 	require.NoError(t, err, "the committed order must be adopted, not treated as a failure")
+	assert.True(t, existing, "adopting an order the first attempt committed is an existing commitment")
 	assert.Equal(t, "committed-order", orderID)
 	assert.Equal(t, 1, c.purchases,
 		"exactly one purchase must reach Azure; a second would be a duplicate reservation the "+
@@ -1346,8 +1353,9 @@ func TestPurchaseRetry_StillRecoversWhenFirstAttemptGenuinelyFailed(t *testing.T
 		},
 	}
 
-	orderID, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token)
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token)
 	require.NoError(t, err, "a genuine session timeout must still be recovered by the retry")
+	assert.False(t, existing, "a retry that purchased after a genuine failure is a fresh purchase")
 	assert.Equal(t, "order-2", orderID, "the second attempt's freshly minted order ID must be returned")
 	assert.Equal(t, 2, c.purchases, "the retry must actually happen")
 	assert.Equal(t, 2, c.calcs, "each attempt mints its own session-bound order ID")
@@ -1371,10 +1379,38 @@ func TestPurchaseRetry_RefusesRetryWhenRecheckLookupFails(t *testing.T) {
 		purchase: func(int) *http.Response { return fakeResp(http.StatusBadRequest, sessionTimeout) },
 	}
 
-	_, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token)
+	_, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token)
 	require.Error(t, err)
+	assert.False(t, existing, "a refused re-check is a failure, not an adoption")
 	assert.Contains(t, err.Error(), "refusing to retry",
 		"an unusable re-check must stop the retry rather than proceed blind")
 	assert.Equal(t, 1, c.purchases,
 		"no second purchase may be attempted when the re-check could not be completed")
+}
+
+// A non-retryable purchase failure is an error, never an adoption (issue #211).
+func TestDoIdempotentPurchaseTwoStep_PurchaseFailure_NotFlagged(t *testing.T) {
+	m := &mockHTTPClient{}
+	lookup := fakeResp(http.StatusOK, `{"value":[]}`)
+	calc := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"order-x"}}`)
+	purchase := fakeResp(http.StatusInternalServerError, `{}`)
+	t.Cleanup(func() {
+		require.NoError(t, lookup.Body.Close())
+		require.NoError(t, calc.Body.Close())
+		require.NoError(t, purchase.Body.Close())
+	})
+	m.On("Do", mock.MatchedBy(func(r *http.Request) bool {
+		return r.Method == http.MethodGet && r.URL.String() == listURL
+	})).Return(lookup, nil).Once()
+	m.On("Do", mock.MatchedBy(func(r *http.Request) bool {
+		return r.Method == http.MethodPost && r.URL.String() == calcURL
+	})).Return(calc, nil).Once()
+	m.On("Do", mock.MatchedBy(func(r *http.Request) bool {
+		return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/order-x/purchase"
+	})).Return(purchase, nil).Once()
+
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), m, calcURL, []byte(testBody), "tok", "fail-tok")
+	require.Error(t, err)
+	assert.Empty(t, orderID)
+	assert.False(t, existing)
 }
