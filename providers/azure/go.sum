@@ -38,8 +38,8 @@ github.com/AzureAD/microsoft-authentication-extensions-for-go/cache v0.1.1 h1:WJ
 github.com/AzureAD/microsoft-authentication-extensions-for-go/cache v0.1.1/go.mod h1:tCcJZ0uHAmvjsVYzEFivsRTN00oz5BEsRgQHu5JZ9WE=
 github.com/AzureAD/microsoft-authentication-library-for-go v1.6.0 h1:XRzhVemXdgvJqCH0sFfrBUTnUJSBrBf7++ypk+twtRs=
 github.com/AzureAD/microsoft-authentication-library-for-go v1.6.0/go.mod h1:HKpQxkWaGLJ+D/5H8QRpyQXA1eKjxkFlOMwck5+33Jk=
-github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261006002706-ea61b58e4b07 h1:gesq6vym4FeJmkDIlafNSFQVHYTj+WlQT0hahSO2jGw=
-github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261006002706-ea61b58e4b07/go.mod h1:ApWBliDXe099f3oDXBz41K/I9v4bHvn1dG/BGoRmHlw=
+github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261006104817-90e61e668b99 h1:inu/nYSAVY6cLsTn4qc64RIbCsymURLlEdgkhha79cw=
+github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261006104817-90e61e668b99/go.mod h1:ApWBliDXe099f3oDXBz41K/I9v4bHvn1dG/BGoRmHlw=
 github.com/aws/aws-sdk-go-v2 v1.41.5 h1:dj5kopbwUsVUVFgO4Fi5BIT3t4WyqIDjGKCangnV/yY=
 github.com/aws/aws-sdk-go-v2 v1.41.5/go.mod h1:mwsPRE8ceUUpiTgF7QmQIJ7lgsKUPQOUl3o72QBrE1o=
 github.com/aws/smithy-go v1.24.2 h1:FzA3bu/nt/vDvmnkg+R8Xl46gmzEDam6mZ1hzmwXFng=
