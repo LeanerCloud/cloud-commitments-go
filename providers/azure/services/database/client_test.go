@@ -1004,6 +1004,8 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_PopulatesAllFields(t *test
 	// Inject empty capabilities client so cachedSKULookup doesn't make a
 	// real Azure call during this test.
 	client.SetCapabilitiesClient(&MockCapabilitiesClient{})
+	client.SetManagedInstancesPager(&MockSQLManagedInstancesPager{})
+	client.SetServersPager(&MockSQLServersPager{})
 
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithRegion("northeurope"),
@@ -1071,6 +1073,8 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_PopulatesEngineVersion(t *
 		},
 	}
 	client.SetCapabilitiesClient(mockClient)
+	client.SetManagedInstancesPager(&MockSQLManagedInstancesPager{})
+	client.SetServersPager(&MockSQLServersPager{})
 
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithRegion("eastus"),
@@ -1093,6 +1097,8 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_CapabilitiesErrorFallsBack
 	client.SetCapabilitiesClient(&MockCapabilitiesClient{
 		err: errors.New("transient Azure API error"),
 	})
+	client.SetManagedInstancesPager(&MockSQLManagedInstancesPager{})
+	client.SetServersPager(&MockSQLServersPager{})
 
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithRegion("eastus"),
