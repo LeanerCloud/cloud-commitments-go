@@ -369,7 +369,7 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 		upfrontCost = 0
 		recurringCost = totalCost / (float64(termYears) * 12)
 	default:
-		upfrontCost = totalCost
+		return nil, fmt.Errorf("unsupported payment option for Azure Managed Redis offering details: %q", rec.PaymentOption)
 	}
 
 	return &common.OfferingDetails{
