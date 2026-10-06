@@ -14,6 +14,7 @@ package pricing
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -67,6 +68,20 @@ const DefaultMaxPages = 50
 // so caller-initiated cancel() still aborts the walk — the per-page
 // timeout only scopes the deadline.
 func FetchAll[T any](ctx context.Context, httpClient HTTPClient, initialURL string, pageTimeout time.Duration, maxPages int) ([]T, error) {
+	all, err := fetchAll[T](ctx, httpClient, initialURL, pageTimeout, maxPages)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrFetch, err)
+	}
+	return all, nil
+}
+
+// ErrFetch marks a failure to retrieve the catalog (transport error, non-200
+// status, undecodable or runaway pagination, canceled context), as opposed
+// to a catalog that was read and has no usable row. Callers wrap it so the
+// two can be told apart with errors.Is.
+var ErrFetch = errors.New("retail prices fetch failed")
+
+func fetchAll[T any](ctx context.Context, httpClient HTTPClient, initialURL string, pageTimeout time.Duration, maxPages int) ([]T, error) {
 	if maxPages <= 0 {
 		return nil, fmt.Errorf("pricing.FetchAll: maxPages must be > 0, got %d", maxPages)
 	}

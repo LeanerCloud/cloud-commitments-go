@@ -47,7 +47,7 @@ func TestComputeClient_ConvertAzureVMRecommendation_MakesNoExternalRequests(t *t
 	client := NewClient(nil, "test-subscription", "eastus")
 	client.SetResourceSKUsPager(&mocks.MockResourceSKUsPager{})
 
-	rec := mocks.BuildLegacyReservationRecommendation(mocks.WithRegion("eastus"))
+	rec := mocks.BuildLegacyReservationRecommendation(mocks.WithRegion("eastus"), mocks.WithCosts(100, 70, 30))
 	require.NotNil(t, client.convertAzureVMRecommendation(context.Background(), rec))
 	assert.Zero(t, externalRequests.Load()-before, "conversion must not reach the network")
 }

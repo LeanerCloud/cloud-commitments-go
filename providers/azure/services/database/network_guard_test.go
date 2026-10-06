@@ -70,6 +70,7 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_MakesNoExternalRequests(t 
 			rec := mocks.BuildLegacyReservationRecommendation(
 				mocks.WithRegion("eastus"),
 				mocks.WithNormalizedSize(skuName),
+				mocks.WithCosts(100, 70, 30),
 			)
 			require.NotNil(t, client.convertAzureSQLRecommendation(context.Background(), rec))
 			assert.Zero(t, externalRequests.Load()-before, "conversion must not reach the network")

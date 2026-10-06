@@ -40,6 +40,9 @@ type ExtractedFields struct {
 	CommitmentCost   float64
 	EstimatedSavings float64
 	Term             string
+	// LookBackDays is the lookback window the cost fields were computed over;
+	// set only by ExtractConsumption (0 from plain Extract).
+	LookBackDays int
 	// Scope is populated from the API response ("Shared" or a subscription ID)
 	// but is not yet threaded into the purchase body. All service clients
 	// currently hardcode "appliedScopeType": "Shared", which is correct because
@@ -49,22 +52,12 @@ type ExtractedFields struct {
 	// subscription scoped recommendations are ever requested. See finding M1/M2
 	// in docs/code-review/09-provider-azure.md.
 	Scope string
-	// RecurringMonthlyCost is the covered/effective recurring cost for this
-	// commitment, i.e. what the customer pays WITH the reservation in place.
-	// The frontend renders this column as the "covered" spend; leaving it 0
-	// makes the GUI fall back to displaying OnDemandCost (the spend WITHOUT
-	// any reservation), which is the opposite of the intended figure.
-	//
-	// The value is sourced from TotalCostWithReservedInstances (preferred);
-	// if that field is absent it is reconstructed as OnDemandCost - NetSavings
-	// (covered = on-demand minus net savings). Like OnDemandCost and
-	// EstimatedSavings, the figure is over Azure's lookback period and is
-	// treated downstream as a monthly run-rate.
-	//
-	// nil means the provider returned neither a total-with-RI nor an
-	// (on-demand, net-savings) pair to reconstruct it from. nil renders as
-	// "—" (data not available); it is NEVER set to a fabricated 0 (which
-	// would falsely claim "free recurring charge").
+	// RecurringMonthlyCost is the covered/effective cost over Azure's lookback
+	// window, set by plain Extract only (from TotalCostWithReservedInstances, or
+	// OnDemandCost - NetSavings when that is absent; nil, never a fabricated 0,
+	// when neither is available). ExtractConsumption always leaves it nil:
+	// ExpandConsumptionVariants sets it per payment variant (0 for upfront,
+	// Count x reservation price / term months for monthly).
 	RecurringMonthlyCost *float64
 }
 

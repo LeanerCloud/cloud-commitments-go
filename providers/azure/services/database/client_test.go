@@ -1022,9 +1022,9 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_PopulatesAllFields(t *test
 	assert.Equal(t, "northeurope", out.Region)
 	assert.Equal(t, "GeneralPurpose_Gen5_2", out.ResourceType)
 	assert.Equal(t, 4, out.Count)
-	assert.InDelta(t, 200.0, out.OnDemandCost, 1e-9)
-	assert.InDelta(t, 140.0, out.CommitmentCost, 1e-9)
-	assert.InDelta(t, 60.0, out.EstimatedSavings, 1e-9)
+	assert.InDelta(t, 200.0*30.4375/7, out.OnDemandCost, 1e-9)
+	assert.Zero(t, out.CommitmentCost, "commitment is priced from the retail row at variant expansion")
+	assert.InDelta(t, 60.0*30.4375/7, out.EstimatedSavings, 1e-9)
 	assert.Equal(t, common.CommitmentReservedInstance, out.CommitmentType)
 	assert.Equal(t, "1yr", out.Term)
 	assert.Equal(t, "upfront", out.PaymentOption)
@@ -1079,6 +1079,7 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_PopulatesEngineVersion(t *
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithRegion("eastus"),
 		mocks.WithNormalizedSize(skuName),
+		mocks.WithCosts(100, 70, 30),
 	)
 	out := client.convertAzureSQLRecommendation(context.Background(), rec)
 	require.NotNil(t, out)
@@ -1103,6 +1104,7 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_CapabilitiesErrorFallsBack
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithRegion("eastus"),
 		mocks.WithNormalizedSize("GeneralPurpose_Gen5_2"),
+		mocks.WithCosts(100, 70, 30),
 	)
 	out := client.convertAzureSQLRecommendation(context.Background(), rec)
 	require.NotNil(t, out, "conversion must NOT fail on capabilities-fetch error")
@@ -1832,6 +1834,7 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_PopulatesAZConfig(t *testi
 
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithNormalizedSize("GeneralPurpose_Gen5_2"),
+		mocks.WithCosts(100, 70, 30),
 	)
 	out := client.convertAzureSQLRecommendation(context.Background(), rec)
 	require.NotNil(t, out)
@@ -1853,6 +1856,7 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_AmbiguousAZConfig(t *testi
 
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithNormalizedSize("GeneralPurpose_Gen5_2"),
+		mocks.WithCosts(100, 70, 30),
 	)
 	out := client.convertAzureSQLRecommendation(context.Background(), rec)
 	require.NotNil(t, out)
@@ -1875,6 +1879,7 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_AZConfigPagerErrorFallsBac
 
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithNormalizedSize("GeneralPurpose_Gen5_2"),
+		mocks.WithCosts(100, 70, 30),
 	)
 	out := client.convertAzureSQLRecommendation(context.Background(), rec)
 	require.NotNil(t, out, "conversion must NOT fail on pager error")
@@ -1916,6 +1921,7 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_MidWalkPageErrorLeavesSign
 
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithNormalizedSize("GeneralPurpose_Gen5_2"),
+		mocks.WithCosts(100, 70, 30),
 	)
 	out := client.convertAzureSQLRecommendation(context.Background(), rec)
 	require.NotNil(t, out, "conversion must NOT fail on a page error")
@@ -1970,6 +1976,7 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_IncompleteWalkLeavesSignal
 
 			rec := mocks.BuildLegacyReservationRecommendation(
 				mocks.WithNormalizedSize("GeneralPurpose_Gen5_2"),
+				mocks.WithCosts(100, 70, 30),
 			)
 			out := client.convertAzureSQLRecommendation(tt.ctx, rec)
 			require.NotNil(t, out)
@@ -1993,6 +2000,7 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_MultiPageWalkDerivesAZConf
 
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithNormalizedSize("GeneralPurpose_Gen5_2"),
+		mocks.WithCosts(100, 70, 30),
 	)
 	out := client.convertAzureSQLRecommendation(context.Background(), rec)
 	require.NotNil(t, out)
@@ -2023,6 +2031,7 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_PopulatesDeployment(t *tes
 
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithNormalizedSize("GeneralPurpose_Gen5_2"),
+		mocks.WithCosts(100, 70, 30),
 	)
 	out := client.convertAzureSQLRecommendation(context.Background(), rec)
 	require.NotNil(t, out)
@@ -2045,6 +2054,7 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_DeploymentSingle(t *testin
 
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithNormalizedSize("GeneralPurpose_Gen5_2"),
+		mocks.WithCosts(100, 70, 30),
 	)
 	out := client.convertAzureSQLRecommendation(context.Background(), rec)
 	require.NotNil(t, out)
@@ -2067,6 +2077,7 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_DeploymentPagerErrorFallsB
 
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithNormalizedSize("GeneralPurpose_Gen5_2"),
+		mocks.WithCosts(100, 70, 30),
 	)
 	out := client.convertAzureSQLRecommendation(context.Background(), rec)
 	require.NotNil(t, out, "conversion must NOT fail on servers pager error")
@@ -2092,6 +2103,7 @@ func TestDatabaseClient_ServerInfo_FetchedOnce(t *testing.T) {
 
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithNormalizedSize("GeneralPurpose_Gen5_2"),
+		mocks.WithCosts(100, 70, 30),
 	)
 	// Call the converter 10 times — fetchServerInfo must run only once.
 	for i := 0; i < 10; i++ {

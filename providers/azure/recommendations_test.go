@@ -861,3 +861,32 @@ func TestGetRecommendations_ErrorIsolation(t *testing.T) {
 	assert.Contains(t, services, common.ServiceNoSQL, "cosmosdb recs must be present despite db error")
 	assert.NotContains(t, services, common.ServiceRelationalDB, "db recs must be absent when db errors")
 }
+
+// The Advisor path must keep the pre-existing expansion: Advisor supplies only
+// a monthly saving (no on-demand or commitment figure), which survives onto
+// both variants with no recurring cost and no scaling applied.
+func TestAppendAdvisorPageRecs_ExpansionUnchanged(t *testing.T) {
+	adapter := &RecommendationsClientAdapter{subscriptionID: "test-subscription"}
+	impactedField := "Microsoft.Compute/virtualMachines"
+	page := armadvisor.RecommendationsClientListResponse{
+		ResourceRecommendationBaseListResult: armadvisor.ResourceRecommendationBaseListResult{
+			Value: []*armadvisor.ResourceRecommendationBase{{
+				Properties: &armadvisor.RecommendationProperties{
+					ImpactedField:      &impactedField,
+					ExtendedProperties: map[string]*string{"annualSavingsAmount": strPtr("1200"), "sku": strPtr("Standard_D2s_v3"), "term": strPtr("3yr"), "qty": strPtr("2")},
+				},
+			}},
+		},
+	}
+
+	recs := adapter.appendAdvisorPageRecs(common.RecommendationParams{}, page, nil)
+	require.Len(t, recs, 2)
+	for i, payment := range []string{"upfront", "monthly"} {
+		assert.Equal(t, payment, recs[i].PaymentOption)
+		assert.Equal(t, 100.0, recs[i].EstimatedSavings)
+		assert.Zero(t, recs[i].OnDemandCost)
+		assert.Zero(t, recs[i].CommitmentCost)
+		assert.Zero(t, recs[i].SavingsPercentage)
+		assert.Nil(t, recs[i].RecurringMonthlyCost)
+	}
+}

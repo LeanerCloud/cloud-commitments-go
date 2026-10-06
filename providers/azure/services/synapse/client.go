@@ -131,6 +131,13 @@ type RetailPriceItem struct {
 // Azure Consumption API.
 func (c *Client) GetRecommendations(ctx context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	recs := make([]common.Recommendation, 0)
+	pricer := recommendations.NewPricer("synapse", func(ctx context.Context, sku, region string, termYears int) (recommendations.ReservationPrice, error) {
+		p, err := c.getSynapsePricing(ctx, sku, region, termYears)
+		if err != nil {
+			return recommendations.ReservationPrice{}, err
+		}
+		return recommendations.ReservationPrice{Total: p.ReservationPrice, Currency: p.Currency}, nil
+	})
 
 	var pager RecommendationsPager
 	if c.recommendationsPager != nil {
@@ -141,7 +148,7 @@ func (c *Client) GetRecommendations(ctx context.Context, _ *common.Recommendatio
 			return nil, fmt.Errorf("failed to create consumption client: %w", err)
 		}
 		scope := fmt.Sprintf("/subscriptions/%s", c.subscriptionID)
-		filter := "properties/scope eq 'Shared' and properties/resourceType eq '" + reservationResourceTypeSynapse + "'"
+		filter := recommendations.ConsumptionFilter(reservationResourceTypeSynapse)
 		pager = client.NewListPager(scope, &armconsumption.ReservationRecommendationsClientListOptions{Filter: &filter})
 	}
 
@@ -157,7 +164,10 @@ func (c *Client) GetRecommendations(ctx context.Context, _ *common.Recommendatio
 			return nil, fmt.Errorf("failed to get Synapse recommendations: %w", err)
 		}
 
-		recs = c.appendRegionRecommendations(recs, page.Value)
+		recs, err = c.appendRegionRecommendations(ctx, pricer, recs, page.Value)
+		if err != nil {
+			return recs, err
+		}
 	}
 
 	return recs, nil
@@ -165,7 +175,7 @@ func (c *Client) GetRecommendations(ctx context.Context, _ *common.Recommendatio
 
 // appendRegionRecommendations converts the page and appends the entries that
 // belong to the client's region (all of them when no region is set).
-func (c *Client) appendRegionRecommendations(recs []common.Recommendation, page []armconsumption.ReservationRecommendationClassification) []common.Recommendation {
+func (c *Client) appendRegionRecommendations(ctx context.Context, pricer *recommendations.Pricer, recs []common.Recommendation, page []armconsumption.ReservationRecommendationClassification) ([]common.Recommendation, error) {
 	for _, rec := range page {
 		converted := c.convertSynapseRecommendation(rec)
 		if converted == nil {
@@ -174,9 +184,13 @@ func (c *Client) appendRegionRecommendations(recs []common.Recommendation, page 
 		if c.region != "" && !strings.EqualFold(converted.Region, c.region) {
 			continue
 		}
-		recs = append(recs, *converted)
+		var err error
+		recs, err = recommendations.AppendConsumptionVariants(ctx, "synapse", recs, *converted, pricer)
+		if err != nil {
+			return recs, err
+		}
 	}
-	return recs
+	return recs, nil
 }
 
 // GetExistingCommitments retrieves existing Synapse reserved capacity
@@ -475,7 +489,7 @@ func (c *Client) getSynapsePricing(ctx context.Context, sku, region string, term
 // convertSynapseRecommendation converts an Azure reservation recommendation
 // to the common Recommendation format.
 func (c *Client) convertSynapseRecommendation(azureRec armconsumption.ReservationRecommendationClassification) *common.Recommendation {
-	f := recommendations.Extract(azureRec)
+	f := recommendations.ExtractConsumptionOrSkip("synapse", azureRec)
 	if f == nil {
 		return nil
 	}

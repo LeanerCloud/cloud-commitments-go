@@ -227,7 +227,11 @@ func TestComputeClient_GetRecommendations_WithMock(t *testing.T) {
 // identical savings figures.
 func TestComputeClient_GetRecommendations_EmitsBothPaymentVariants(t *testing.T) {
 	ctx := context.Background()
-	client := NewClient(nil, "test-subscription", "eastus")
+	// Synthetic reservation retail rows (1y $500, 3y $1200 per unit).
+	client := NewClientWithHTTP(nil, "test-subscription", "eastus", &mocks.PricingHTTP{Items: []map[string]any{
+		mocks.ReservationRow("Virtual Machines", "Virtual Machines D Series", "eastus", "Standard_D2s_v3", "D2s v3", "D2s v3", "1 Year", 500),
+		mocks.ReservationRow("Virtual Machines", "Virtual Machines D Series", "eastus", "Standard_D2s_v3", "D2s v3", "D2s v3", "3 Years", 1200),
+	}})
 	client.SetResourceSKUsPager(&mocks.MockResourceSKUsPager{})
 
 	// Inject a single recommendation via the mock pager.
@@ -263,7 +267,9 @@ func TestComputeClient_GetRecommendations_EmitsBothPaymentVariants(t *testing.T)
 	require.NotNil(t, allUp.RecurringMonthlyCost)
 	assert.InDelta(t, 0.0, *allUp.RecurringMonthlyCost, 1e-9)
 	require.NotNil(t, noUp.RecurringMonthlyCost)
-	assert.InDelta(t, 84.0/12.0, *noUp.RecurringMonthlyCost, 1e-9)
+	assert.InDelta(t, 500.0/12.0, *noUp.RecurringMonthlyCost, 1e-9)
+	assert.InDelta(t, 500.0, allUp.CommitmentCost, 1e-9)
+	assert.Zero(t, noUp.CommitmentCost)
 
 	// Savings must be identical across variants.
 	assert.InDelta(t, allUp.EstimatedSavings, noUp.EstimatedSavings, 1e-9)
@@ -1145,17 +1151,15 @@ func TestComputeClient_ConvertAzureVMRecommendation_PopulatesAllFields(t *testin
 	assert.Equal(t, "westeurope", out.Region)
 	assert.Equal(t, "Standard_D2s_v3", out.ResourceType)
 	assert.Equal(t, 2, out.Count)
-	assert.InDelta(t, 100.0, out.OnDemandCost, 1e-9)
-	assert.InDelta(t, 70.0, out.CommitmentCost, 1e-9)
-	assert.InDelta(t, 30.0, out.EstimatedSavings, 1e-9)
+	assert.InDelta(t, 100.0*30.4375/7, out.OnDemandCost, 1e-9)
+	assert.Zero(t, out.CommitmentCost, "commitment is priced from the retail row at variant expansion")
+	assert.InDelta(t, 30.0*30.4375/7, out.EstimatedSavings, 1e-9)
 	assert.Equal(t, common.CommitmentReservedInstance, out.CommitmentType)
 	assert.Equal(t, "3yr", out.Term)
 	assert.Equal(t, "upfront", out.PaymentOption)
 
-	// RecurringMonthlyCost is the covered/effective cost (paid WITH the
-	// reservation) = TotalCostWithReservedInstances, not 0.
-	require.NotNil(t, out.RecurringMonthlyCost, "RecurringMonthlyCost must be populated for Azure compute recs")
-	assert.InDelta(t, 70.0, *out.RecurringMonthlyCost, 1e-9)
+	// The recurring cost is set per payment variant at expansion.
+	assert.Nil(t, out.RecurringMonthlyCost)
 
 	// Details is populated from the payload's ResourceType (InstanceType
 	// only — Platform/Tenancy/Scope are deferred to batched enrichment).
@@ -1378,6 +1382,7 @@ func TestComputeClient_ConvertAzureVMRecommendation_PopulatesVCPUAndMemoryFromSK
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithRegion("eastus"),
 		mocks.WithNormalizedSize("Standard_D2s_v3"),
+		mocks.WithCosts(100, 70, 30),
 	)
 	out := client.convertAzureVMRecommendation(context.Background(), rec)
 	require.NotNil(t, out)
@@ -1404,6 +1409,7 @@ func TestComputeClient_ConvertAzureVMRecommendation_PagerErrorFallsBack(t *testi
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithRegion("eastus"),
 		mocks.WithNormalizedSize("Standard_D2s_v3"),
+		mocks.WithCosts(100, 70, 30),
 	)
 	out := client.convertAzureVMRecommendation(context.Background(), rec)
 	require.NotNil(t, out, "conversion must NOT fail on catalog-fetch error")
@@ -1435,7 +1441,8 @@ func TestComputeClient_ConvertAzureVMRecommendation_NoMatchLeavesFieldsZero(t *t
 
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithRegion("eastus"),
-		mocks.WithNormalizedSize("Standard_NC6s_v3"), // not in catalog
+		mocks.WithNormalizedSize("Standard_NC6s_v3"), // not in catalog,
+		mocks.WithCosts(100, 70, 30),
 	)
 	out := client.convertAzureVMRecommendation(context.Background(), rec)
 	require.NotNil(t, out)

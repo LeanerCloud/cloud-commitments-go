@@ -1015,12 +1015,10 @@ func TestConvertRecommendation_legacy(t *testing.T) {
 	assert.Equal(t, common.CommitmentReservedInstance, rec.CommitmentType)
 	assert.Equal(t, "1yr", rec.Term)
 	assert.Equal(t, "upfront", rec.PaymentOption)
-	assert.InDelta(t, 1000.0, rec.OnDemandCost, 0.01)
-	assert.InDelta(t, 700.0, rec.CommitmentCost, 0.01)
-	assert.InDelta(t, 300.0, rec.EstimatedSavings, 0.01)
-	// Covered/effective cost (paid WITH the reservation) = CommitmentCost.
-	require.NotNil(t, rec.RecurringMonthlyCost)
-	assert.InDelta(t, 700.0, *rec.RecurringMonthlyCost, 0.01)
+	assert.InDelta(t, 1000.0*30.4375/7, rec.OnDemandCost, 0.01)
+	assert.Zero(t, rec.CommitmentCost, "commitment is priced from the retail row at variant expansion")
+	assert.InDelta(t, 300.0*30.4375/7, rec.EstimatedSavings, 0.01)
+	assert.Nil(t, rec.RecurringMonthlyCost)
 }
 
 // -- RedisPricing struct --

@@ -178,6 +178,13 @@ type AzureRetailPrice = pricing.Page[pricing.RetailPriceItem]
 // GetRecommendations gets VM RI recommendations from Azure Consumption API.
 func (c *Client) GetRecommendations(ctx context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	recommendations := make([]common.Recommendation, 0)
+	pricer := azrecs.NewPricer("compute", func(ctx context.Context, sku, region string, termYears int) (azrecs.ReservationPrice, error) {
+		p, err := c.getVMPricing(ctx, sku, region, termYears)
+		if err != nil {
+			return azrecs.ReservationPrice{}, err
+		}
+		return azrecs.ReservationPrice{Total: p.ReservationPrice, Currency: p.Currency}, nil
+	})
 
 	// Use injected pager if available (for testing)
 	var pager RecommendationsPager
@@ -196,7 +203,7 @@ func (c *Client) GetRecommendations(ctx context.Context, _ *common.Recommendatio
 		// every request returned an error. The filter belongs in the
 		// ClientListOptions.Filter field.
 		scope := fmt.Sprintf("/subscriptions/%s", c.subscriptionID)
-		filter := "properties/scope eq 'Shared' and properties/resourceType eq 'VirtualMachines'"
+		filter := azrecs.ConsumptionFilter("VirtualMachines")
 		pager = client.NewListPager(scope, &armconsumption.ReservationRecommendationsClientListOptions{Filter: &filter})
 	}
 
@@ -212,15 +219,31 @@ func (c *Client) GetRecommendations(ctx context.Context, _ *common.Recommendatio
 			return nil, fmt.Errorf("failed to get VM recommendations: %w", err)
 		}
 
-		for _, rec := range page.Value {
-			converted := c.convertAzureVMRecommendation(ctx, rec)
-			if converted != nil {
-				recommendations = append(recommendations, azrecs.ExpandPaymentVariants(*converted)...)
-			}
+		recommendations, err = c.appendPage(ctx, pricer, recommendations, page.Value)
+		if err != nil {
+			return recommendations, err
 		}
 	}
 
 	return recommendations, nil
+}
+
+// appendPage converts one page of recommendations and appends their priced
+// variants. It is split out of GetRecommendations to keep that function under
+// the cyclomatic limit.
+func (c *Client) appendPage(ctx context.Context, pricer *azrecs.Pricer, recs []common.Recommendation, page []armconsumption.ReservationRecommendationClassification) ([]common.Recommendation, error) {
+	for _, rec := range page {
+		converted := c.convertAzureVMRecommendation(ctx, rec)
+		if converted == nil {
+			continue
+		}
+		var err error
+		recs, err = azrecs.AppendConsumptionVariants(ctx, "compute", recs, *converted, pricer)
+		if err != nil {
+			return recs, err
+		}
+	}
+	return recs, nil
 }
 
 // GetExistingCommitments retrieves existing VM Reserved Instances.
@@ -776,7 +799,7 @@ func (c *Client) fetchAzurePricing(ctx context.Context, filter string) (*AzureRe
 // sources (consumption usage records, dedicated-host inventory) and
 // remain unpopulated — out of scope for this issue.
 func (c *Client) convertAzureVMRecommendation(ctx context.Context, azureRec armconsumption.ReservationRecommendationClassification) *common.Recommendation {
-	f := azrecs.Extract(azureRec)
+	f := azrecs.ExtractConsumptionOrSkip("compute", azureRec)
 	if f == nil {
 		return nil
 	}
