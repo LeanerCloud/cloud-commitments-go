@@ -9,6 +9,7 @@ import (
 	"maps"
 	"math"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -885,7 +886,10 @@ func (c *Client) buildInsertRequest(rec common.Recommendation, opts common.Purch
 		description = fmt.Sprintf("%s [%s=%s]", description, common.PurchaseTagKey, opts.Source)
 	}
 
-	commitmentName := idempotentCommitmentName(opts.IdempotencyToken)
+	commitmentName, err := idempotentCommitmentName(opts.IdempotencyToken)
+	if err != nil {
+		return nil, "", fmt.Errorf("buildInsertRequest: %w", err)
+	}
 
 	// Derive the memory Amount from the Recommender payload (stored in
 	// ComputeDetails.MemoryGB by extractMemoryMBFromRecommendation). Using the
@@ -1595,18 +1599,23 @@ const idempotentNameTokenLen = 32
 // CUD. An empty token preserves the prior non-idempotent timestamp-based name
 // (the CLI path, which has no owning execution).
 //
-// The token is a lowercase SHA-256 hex digest, so the leading chars are already
-// valid RFC1035 name characters and need no further sanitisation.
-func idempotentCommitmentName(token string) string {
+// The token must be a lowercase hex digest (as common.DeriveIdempotencyToken
+// produces) so its leading chars are valid RFC1035 name characters; any other
+// token is rejected rather than turned into a name GCP would refuse.
+func idempotentCommitmentName(token string) (string, error) {
 	if token == "" {
-		return fmt.Sprintf("cud-%d", time.Now().Unix())
+		return fmt.Sprintf("cud-%d", time.Now().Unix()), nil
 	}
-	t := strings.ToLower(token)
-	if len(t) > idempotentNameTokenLen {
-		t = t[:idempotentNameTokenLen]
+	if !idempotencyTokenPattern.MatchString(token) {
+		return "", fmt.Errorf("idempotency token must be a lowercase hex digest to derive a GCP commitment name (got %d chars)", len(token))
 	}
-	return "cud-" + t
+	if len(token) > idempotentNameTokenLen {
+		token = token[:idempotentNameTokenLen]
+	}
+	return "cud-" + token, nil
 }
+
+var idempotencyTokenPattern = regexp.MustCompile(`^[0-9a-f]+$`)
 
 // Helper functions.
 func stringPtr(s string) *string {

@@ -2549,3 +2549,34 @@ func TestGetRecommendationsRejectsCrossResourceAmounts(t *testing.T) {
 	require.ErrorContains(t, err, "different resources")
 	assert.Nil(t, recs)
 }
+
+// A token that is not a lowercase hex digest (UUID with dashes, base64 with
+// '_' or ':') would yield an RFC1035-invalid commitment name; the purchase must
+// fail locally and never reach Insert.
+func TestPurchaseCommitment_RejectsNonHexIdempotencyToken(t *testing.T) {
+	ctx := context.Background()
+	rec := common.Recommendation{
+		ResourceType: "n1-standard-1",
+		Term:         "1yr",
+		Count:        5,
+		Details:      common.ComputeDetails{MemoryGB: 20.0},
+	}
+	for _, token := range []string{
+		"3f2b8c1e-9d4a-4e7b-8a61-5c0d2e9f7a14",
+		"AB12CD34EF56",
+		"abc_def:123",
+		"deadbeef-",
+	} {
+		t.Run(token, func(t *testing.T) {
+			client, _ := NewClient(ctx, "test-project", "us-central1")
+			mockSvc := &MockCommitmentsService{operation: &MockOperation{}}
+			client.SetCommitmentsService(mockSvc)
+
+			result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{IdempotencyToken: token})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "lowercase hex digest")
+			assert.False(t, result.Success)
+			assert.Empty(t, mockSvc.insertReqs, "Insert must not be called for an invalid token")
+		})
+	}
+}
