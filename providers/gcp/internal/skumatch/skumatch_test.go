@@ -8,10 +8,27 @@ import (
 )
 
 func TestInRegion(t *testing.T) {
-	assert.True(t, InRegion(&cloudbilling.Sku{ServiceRegions: []string{"us-east1", "Europe-West4"}}, "europe-west4"))
-	assert.False(t, InRegion(&cloudbilling.Sku{ServiceRegions: []string{"us-east1"}}, "europe-west4"))
-	assert.False(t, InRegion(&cloudbilling.Sku{ServiceRegions: nil}, "europe-west4"))
-	assert.False(t, InRegion(&cloudbilling.Sku{ServiceRegions: []string{}}, "europe-west4"))
+	taxonomy := func(typ string) *cloudbilling.GeoTaxonomy { return &cloudbilling.GeoTaxonomy{Type: typ} }
+	tests := []struct {
+		name string
+		sku  *cloudbilling.Sku
+		want bool
+	}{
+		{"named region listed", &cloudbilling.Sku{ServiceRegions: []string{"us-east1", "Europe-West4"}}, true},
+		{"named region not listed", &cloudbilling.Sku{ServiceRegions: []string{"us-east1"}}, false},
+		{"named regions beat a GLOBAL taxonomy", &cloudbilling.Sku{ServiceRegions: []string{"us-east1"}, GeoTaxonomy: taxonomy("GLOBAL")}, false},
+		{"nil regions with GLOBAL taxonomy", &cloudbilling.Sku{GeoTaxonomy: taxonomy("GLOBAL")}, true},
+		{"empty regions with GLOBAL taxonomy", &cloudbilling.Sku{ServiceRegions: []string{}, GeoTaxonomy: taxonomy("GLOBAL")}, true},
+		{"nil regions with REGIONAL taxonomy", &cloudbilling.Sku{GeoTaxonomy: taxonomy("REGIONAL")}, false},
+		{"nil regions with MULTI_REGIONAL taxonomy", &cloudbilling.Sku{GeoTaxonomy: taxonomy("MULTI_REGIONAL")}, false},
+		{"nil regions with unspecified taxonomy", &cloudbilling.Sku{GeoTaxonomy: taxonomy("TYPE_UNSPECIFIED")}, false},
+		{"nil regions with no taxonomy", &cloudbilling.Sku{}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, InRegion(tt.sku, "europe-west4"))
+		})
+	}
 }
 
 func TestHasToken(t *testing.T) {

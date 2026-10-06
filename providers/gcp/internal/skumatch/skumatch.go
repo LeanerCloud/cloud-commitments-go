@@ -8,10 +8,18 @@ import (
 	"google.golang.org/api/cloudbilling/v1"
 )
 
-// InRegion reports whether the SKU lists region in ServiceRegions. A SKU with
-// no regions is not treated as global: the API documents ServiceRegions only
-// as the regions a SKU is offered at, so missing data must not price every region.
+// geoTaxonomyGlobal is the GeoTaxonomy.Type of a SKU that applies to every region.
+const geoTaxonomyGlobal = "GLOBAL"
+
+// InRegion reports whether the SKU applies in region. A SKU with named regions
+// applies only there. A SKU with no regions applies everywhere only when its
+// GeoTaxonomy.Type is GLOBAL (the catalog leaves the region list empty for
+// global SKUs); empty regions with any other or a missing taxonomy is
+// ambiguous data and does not match.
 func InRegion(sku *cloudbilling.Sku, region string) bool {
+	if len(sku.ServiceRegions) == 0 {
+		return sku.GeoTaxonomy != nil && sku.GeoTaxonomy.Type == geoTaxonomyGlobal
+	}
 	for _, serviceRegion := range sku.ServiceRegions {
 		if strings.EqualFold(serviceRegion, region) {
 			return true
