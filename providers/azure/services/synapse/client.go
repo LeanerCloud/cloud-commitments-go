@@ -157,19 +157,26 @@ func (c *Client) GetRecommendations(ctx context.Context, _ *common.Recommendatio
 			return nil, fmt.Errorf("failed to get Synapse recommendations: %w", err)
 		}
 
-		for _, rec := range page.Value {
-			converted := c.convertSynapseRecommendation(rec)
-			if converted == nil {
-				continue
-			}
-			if c.region != "" && !strings.EqualFold(converted.Region, c.region) {
-				continue
-			}
-			recs = append(recs, *converted)
-		}
+		recs = c.appendRegionRecommendations(recs, page.Value)
 	}
 
 	return recs, nil
+}
+
+// appendRegionRecommendations converts the page and appends the entries that
+// belong to the client's region (all of them when no region is set).
+func (c *Client) appendRegionRecommendations(recs []common.Recommendation, page []armconsumption.ReservationRecommendationClassification) []common.Recommendation {
+	for _, rec := range page {
+		converted := c.convertSynapseRecommendation(rec)
+		if converted == nil {
+			continue
+		}
+		if c.region != "" && !strings.EqualFold(converted.Region, c.region) {
+			continue
+		}
+		recs = append(recs, *converted)
+	}
+	return recs
 }
 
 // GetExistingCommitments retrieves existing Synapse reserved capacity

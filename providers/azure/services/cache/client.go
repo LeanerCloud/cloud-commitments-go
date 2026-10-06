@@ -656,24 +656,29 @@ func (c *Client) fetchSKUCatalogue(ctx context.Context) map[string]redisSKUEntry
 			logging.Warnf("azure cache: SKU catalog page fetch failed for region %s: %v — partial cache (%d entries) discarded, Details.Shards left at 0", c.region, err, len(out))
 			return nil
 		}
-		for _, cache := range page.Value {
-			fullSKU := extractSKUFromCache(cache)
-			if fullSKU == "" {
-				continue
-			}
-			shards := 0
-			if cache.Properties != nil && cache.Properties.ShardCount != nil {
-				shards = int(*cache.Properties.ShardCount)
-			}
-			// First-write-wins: if the same SKU appears on two caches
-			// with different ShardCounts, keep the first. Real Premium
-			// clusters configured to the same SKU typically share the
-			// shard count anyway — this just keeps the cache
-			// deterministic regardless of pager order.
-			if _, exists := out[fullSKU]; !exists {
-				out[fullSKU] = redisSKUEntry{shardCount: shards}
-			}
-		}
+		addSKUEntries(out, page.Value)
 	}
 	return out
+}
+
+// addSKUEntries records each cache's SKU and shard count in out.
+func addSKUEntries(out map[string]redisSKUEntry, caches []*armredis.ResourceInfo) {
+	for _, cache := range caches {
+		fullSKU := extractSKUFromCache(cache)
+		if fullSKU == "" {
+			continue
+		}
+		shards := 0
+		if cache.Properties != nil && cache.Properties.ShardCount != nil {
+			shards = int(*cache.Properties.ShardCount)
+		}
+		// First-write-wins: if the same SKU appears on two caches
+		// with different ShardCounts, keep the first. Real Premium
+		// clusters configured to the same SKU typically share the
+		// shard count anyway — this just keeps the cache
+		// deterministic regardless of pager order.
+		if _, exists := out[fullSKU]; !exists {
+			out[fullSKU] = redisSKUEntry{shardCount: shards}
+		}
+	}
 }
