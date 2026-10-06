@@ -593,8 +593,9 @@ func TestAzureProvider_GetAccounts(t *testing.T) {
 		assert.Equal(t, subID2, accounts[1].ID)
 	})
 
-	t.Run("skips subscriptions with nil ID or name", func(t *testing.T) {
+	t.Run("skips subscriptions with nil ID and keeps ones with nil name", func(t *testing.T) {
 		validID := "valid-sub"
+		noNameID := "no-name-sub"
 		validName := "Valid Subscription"
 
 		mockClient := &mockSubscriptionsClient{
@@ -605,7 +606,7 @@ func TestAzureProvider_GetAccounts(t *testing.T) {
 							SubscriptionListResult: armsubscriptions.SubscriptionListResult{
 								Value: []*armsubscriptions.Subscription{
 									{SubscriptionID: nil, DisplayName: &validName},      // nil ID
-									{SubscriptionID: &validID, DisplayName: nil},        // nil name
+									{SubscriptionID: &noNameID, DisplayName: nil},       // nil name
 									{SubscriptionID: &validID, DisplayName: &validName}, // valid
 								},
 							},
@@ -622,8 +623,13 @@ func TestAzureProvider_GetAccounts(t *testing.T) {
 
 		accounts, err := p.GetAccounts(context.Background())
 		require.NoError(t, err)
-		require.Len(t, accounts, 1)
-		assert.Equal(t, validID, accounts[0].ID)
+		require.Len(t, accounts, 2)
+		assert.Equal(t, noNameID, accounts[0].ID)
+		assert.Equal(t, noNameID, accounts[0].Name)
+		assert.Equal(t, noNameID, accounts[0].DisplayName)
+		assert.Equal(t, validID, accounts[1].ID)
+		assert.Equal(t, validName, accounts[1].DisplayName)
+		assert.True(t, accountsContain(accounts, noNameID))
 	})
 
 	t.Run("returns error on API failure", func(t *testing.T) {
