@@ -146,6 +146,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		if found {
 			log.Printf("EC2 RI for idempotency token %s already exists (%s); skipping purchase (issue #636 re-drive)", common.MaskToken(opts.IdempotencyToken), existingID)
 			result.Success = true
+			result.ExistingCommitment = true
 			result.CommitmentID = existingID
 			return result, nil
 		}

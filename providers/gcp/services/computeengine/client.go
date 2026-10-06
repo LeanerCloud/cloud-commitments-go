@@ -825,6 +825,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 			result.Error = err
 			return result, err
 		}
+		result.ExistingCommitment = true
 	}
 
 	result.Success = true
