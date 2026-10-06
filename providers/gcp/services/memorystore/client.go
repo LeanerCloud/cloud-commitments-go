@@ -382,9 +382,9 @@ func extractPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string) (onDe
 			return 0, 0, "", err
 		}
 
-		slot, err := skumatch.Slot(sku)
-		if err != nil {
-			return 0, 0, "", err
+		slot, slotErr := skumatch.Slot(sku)
+		if slotErr != nil {
+			return 0, 0, "", slotErr
 		}
 		switch slot {
 		case skumatch.SlotCommitment:
