@@ -1919,6 +1919,62 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_MidWalkPageErrorLeavesSign
 	assert.Empty(t, details.Deployment, "partial walk must not derive Deployment")
 }
 
+// TestDatabaseClient_ConvertAzureSQLRecommendation_IncompleteWalkLeavesSignalsEmpty
+// covers the cases where regular servers exist and the managed-instance
+// walk stops early: Deployment must not become "single" and AZConfig must
+// stay empty.
+func TestDatabaseClient_ConvertAzureSQLRecommendation_IncompleteWalkLeavesSignalsEmpty(t *testing.T) {
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	tests := []struct {
+		name  string
+		ctx   context.Context
+		pager SQLManagedInstancesPager
+	}{
+		{
+			name:  "page error on first page",
+			ctx:   context.Background(),
+			pager: &failingSecondPageMIPager{err: errors.New("page one failed")},
+		},
+		{
+			name: "page error after instances",
+			ctx:  context.Background(),
+			pager: &failingSecondPageMIPager{
+				pages: []armsql.ManagedInstancesClientListResponse{buildMIPage(true, true)},
+				err:   errors.New("page two failed"),
+			},
+		},
+		{
+			name: "context cancelled mid-walk",
+			ctx:  cancelled,
+			pager: &failingSecondPageMIPager{
+				pages: []armsql.ManagedInstancesClientListResponse{buildMIPage(true, true)},
+				err:   context.Canceled,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client := NewClient(nil, "test-subscription", "eastus")
+			client.SetCapabilitiesClient(&MockCapabilitiesClient{})
+			client.SetManagedInstancesPager(tt.pager)
+			client.SetServersPager(&MockSQLServersPager{
+				pages: []armsql.ServersClientListResponse{buildServerPage(2)},
+			})
+
+			rec := mocks.BuildLegacyReservationRecommendation(
+				mocks.WithNormalizedSize("GeneralPurpose_Gen5_2"),
+			)
+			out := client.convertAzureSQLRecommendation(tt.ctx, rec)
+			require.NotNil(t, out)
+			details, ok := out.Details.(*common.DatabaseDetails)
+			require.True(t, ok)
+			assert.Empty(t, details.AZConfig)
+			assert.Empty(t, details.Deployment)
+		})
+	}
+}
+
 // TestDatabaseClient_ConvertAzureSQLRecommendation_MultiPageWalkDerivesAZConfig
 // is the control: a fully paginated walk still derives AZConfig.
 func TestDatabaseClient_ConvertAzureSQLRecommendation_MultiPageWalkDerivesAZConfig(t *testing.T) {

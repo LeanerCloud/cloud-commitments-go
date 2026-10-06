@@ -790,10 +790,10 @@ func (c *Client) walkManagedInstances(ctx context.Context) (zoneRedundant, nonZo
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
-				return 0, 0, 0, false
+				return zoneRedundant, nonZoneRedundant, total, false
 			}
 			logging.Warnf("azure database: managed instances page fetch failed: %v; AZConfig/Deployment signal unavailable", err)
-			return 0, 0, 0, false
+			return zoneRedundant, nonZoneRedundant, total, false
 		}
 		for _, mi := range page.Value {
 			total++
