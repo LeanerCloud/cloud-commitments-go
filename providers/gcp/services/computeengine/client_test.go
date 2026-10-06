@@ -2456,3 +2456,33 @@ func TestGetRecommendations_SkipsBadAmountRowKeepsOthers(t *testing.T) {
 		})
 	}
 }
+
+func TestGetRecommendations_StructuralErrorsStillAbort(t *testing.T) {
+	cases := map[string]func(*recommenderpb.Recommendation){
+		"duplicate vcpu": func(r *recommenderpb.Recommendation) {
+			g := r.Content.OperationGroups[0]
+			g.Operations = append(g.Operations, g.Operations[0])
+		},
+		"unknown resource type": func(r *recommenderpb.Recommendation) {
+			r.Content.OperationGroups[0].Operations[1].PathFilters["/resources/1/type"] = structpb.NewStringValue("BOGUS")
+		},
+		"missing vcpu": func(r *recommenderpb.Recommendation) {
+			r.Content.OperationGroups[0].Operations = r.Content.OperationGroups[0].Operations[1:]
+		},
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			client, _ := NewClient(ctx, "test-project", "us-central1")
+			bad := badAmountRecommendation("bad", "4", "6144")
+			mutate(bad)
+			client.SetRecommenderClient(&MockRecommenderClient{iterator: &MockRecommenderIterator{
+				recommendations: []*recommenderpb.Recommendation{badAmountRecommendation("good", "4", "6144"), bad},
+			}})
+
+			recs, err := client.GetRecommendations(ctx, &common.RecommendationParams{})
+			require.Error(t, err)
+			assert.Nil(t, recs)
+		})
+	}
+}

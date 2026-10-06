@@ -1453,7 +1453,7 @@ func recommendationAmount(value *structpb.Value, name string) (int64, error) {
 	case *structpb.Value_StringValue:
 		parsed, err := strconv.ParseInt(v.StringValue, 10, 64)
 		if err != nil {
-			return 0, fmt.Errorf("%w: invalid %s amount %q: %v", errBadAmount, name, v.StringValue, err)
+			return 0, fmt.Errorf("%w: invalid %s amount %q: %w", errBadAmount, name, v.StringValue, err)
 		}
 		if parsed > maxExactAmount {
 			return 0, fmt.Errorf("%w: %s amount must be at most 2^53-1", errBadAmount, name)
