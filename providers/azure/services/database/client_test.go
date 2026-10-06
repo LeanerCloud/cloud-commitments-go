@@ -1924,7 +1924,7 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_MidWalkPageErrorLeavesSign
 // walk stops early: Deployment must not become "single" and AZConfig must
 // stay empty.
 func TestDatabaseClient_ConvertAzureSQLRecommendation_IncompleteWalkLeavesSignalsEmpty(t *testing.T) {
-	cancelled, cancel := context.WithCancel(context.Background())
+	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
 	tests := []struct {
 		name  string
@@ -1945,8 +1945,8 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_IncompleteWalkLeavesSignal
 			},
 		},
 		{
-			name: "context cancelled mid-walk",
-			ctx:  cancelled,
+			name: "context canceled mid-walk",
+			ctx:  canceled,
 			pager: &failingSecondPageMIPager{
 				pages: []armsql.ManagedInstancesClientListResponse{buildMIPage(true, true)},
 				err:   context.Canceled,
