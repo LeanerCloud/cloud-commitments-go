@@ -460,9 +460,12 @@ type reservationOrdersListResponse struct {
 type orderDisposition int
 
 const (
+	// orderUnknown is the zero value: a state with no table entry (including
+	// the empty string) is adopted, never retried.
+	orderUnknown orderDisposition = iota
 	// orderAdopt: the order is live, in flight or transformed. Return its ID
 	// and do not purchase again.
-	orderAdopt orderDisposition = iota
+	orderAdopt
 	// orderRetryable: the order was rolled back or aged out and never delivered
 	// a commitment. Ignore it so the purchase can proceed.
 	orderRetryable
@@ -471,6 +474,10 @@ const (
 	// Refuse both and surface an error (issue #72).
 	orderBlocked
 )
+
+// ErrReservationOrderBlocked marks a lookup refused because an order for the
+// idempotency token is in a state whose financial outcome is unknown.
+var ErrReservationOrderBlocked = errors.New("reservation order blocked")
 
 // reservationOrderDispositions classifies every armreservations.ProvisioningState.
 // TestReservationOrderDispositions_CoversEverySDKState fails when the SDK adds a
@@ -580,7 +587,7 @@ func fetchReservationOrdersPage(ctx context.Context, httpClient HTTPClient, page
 // the idempotency token and applies reservationOrderDispositions. Extracted
 // from FindReservationOrderByIdempotencyToken to keep the function under the
 // gocyclo:10 threshold enforced by the pre-commit hook.
-func matchReservationOrderInPage(page *reservationOrdersListResponse, idempotencyToken string) (string, bool, error) {
+func matchReservationOrderInPage(page *reservationOrdersListResponse, idempotencyToken string) (orderID string, found bool, err error) {
 	for _, order := range page.Value {
 		if order.Tags[common.IdempotencyTagKey] != idempotencyToken {
 			continue
@@ -590,8 +597,8 @@ func matchReservationOrderInPage(page *reservationOrdersListResponse, idempotenc
 		case orderRetryable:
 			continue
 		case orderBlocked:
-			return "", false, fmt.Errorf("reservation order %q for this idempotency token is in state %s; refusing to adopt it as a purchase or buy again until it is resolved in Azure", order.Name, state)
-		case orderAdopt:
+			return "", false, fmt.Errorf("reservation order %q for this idempotency token is in state %s; refusing to adopt it or buy again (resolve or cancel the order in Azure, or start a new execution): %w", order.Name, state, ErrReservationOrderBlocked)
+		case orderAdopt, orderUnknown:
 		}
 		if order.Name == "" {
 			continue

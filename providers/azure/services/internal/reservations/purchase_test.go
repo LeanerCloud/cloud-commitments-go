@@ -606,6 +606,8 @@ func TestFindReservationOrderByIdempotencyToken_BillingFailedIsBlocked(t *testin
 	orderID, found, err := FindReservationOrderByIdempotencyToken(context.Background(), m, "tok", "wanted-tok")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "BillingFailed")
+	assert.Contains(t, err.Error(), "order-billing-failed")
+	require.ErrorIs(t, err, ErrReservationOrderBlocked)
 	assert.False(t, found)
 	assert.Empty(t, orderID)
 }
@@ -629,7 +631,7 @@ func TestDoIdempotentPurchaseTwoStep_BillingFailed_NeitherAdoptsNorPurchases(t *
 	})).Return(resp, nil).Once()
 
 	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), m, calcURL, []byte(testBody), "tok", "redrive-tok")
-	require.Error(t, err)
+	require.ErrorIs(t, err, ErrReservationOrderBlocked)
 	assert.False(t, existing)
 	assert.Empty(t, orderID)
 	m.AssertNotCalled(t, "Do", mock.MatchedBy(func(r *http.Request) bool {
@@ -1464,6 +1466,42 @@ func TestPurchaseRetry_RefusesRetryWhenRecheckLookupFails(t *testing.T) {
 		"an unusable re-check must stop the retry rather than proceed blind")
 	assert.Equal(t, 1, c.purchases,
 		"no second purchase may be attempted when the re-check could not be completed")
+}
+
+// TestPurchaseRetry_RefusesRetryWhenRecheckFindsBillingFailedOrder: attempt 1
+// fails retryably, then the in-loop re-check lists a BillingFailed order for the
+// token. The retry must stop with the blocked error and issue no second
+// calculatePrice or purchase.
+func TestPurchaseRetry_RefusesRetryWhenRecheckFindsBillingFailedOrder(t *testing.T) {
+	const token = "tok-72-recheck"
+	sessionTimeout := `{"error":{"code":"BadRequest","message":"Session timed out - Call CalculatePrice again"}}`
+	billingFailed := orderListJSON([]struct {
+		Name              string
+		IdempotencyToken  string
+		ProvisioningState string
+		OtherTags         map[string]string
+	}{
+		{Name: "order-bf", IdempotencyToken: token, ProvisioningState: string(armreservations.ProvisioningStateBillingFailed)},
+	}, "")
+
+	c := &idempotencyRetryClient{
+		listResp: func(n int) (*http.Response, error) {
+			if n == 1 {
+				return fakeResp(http.StatusOK, emptyOrdersList), nil
+			}
+			return fakeResp(http.StatusOK, billingFailed), nil
+		},
+		purchase: func(int) *http.Response { return fakeResp(http.StatusBadRequest, sessionTimeout) },
+	}
+
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token)
+	require.ErrorIs(t, err, ErrReservationOrderBlocked)
+	assert.Contains(t, err.Error(), "order-bf")
+	assert.Contains(t, err.Error(), "BillingFailed")
+	assert.False(t, existing)
+	assert.Empty(t, orderID)
+	assert.Equal(t, 1, c.purchases, "no second purchase after the re-check found a BillingFailed order")
+	assert.Equal(t, 1, c.calcs, "no second calculatePrice either")
 }
 
 // A non-retryable purchase failure is an error, never an adoption (issue #211).
