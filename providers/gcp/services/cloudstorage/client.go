@@ -12,6 +12,7 @@ import (
 	"google.golang.org/api/option"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skumatch"
 )
 
 // Match the annual-average convention used for term totals, not calendar-month lengths.
@@ -272,9 +273,14 @@ func extractStoragePricingFromSKUs(skus []*cloudbilling.Sku, storageClass, regio
 			currency = curr
 		}
 
-		if strings.Contains(strings.ToLower(sku.Description), "commitment") {
+		slot, slotErr := skumatch.Slot(sku)
+		if slotErr != nil {
+			return 0, 0, "", slotErr
+		}
+		switch slot {
+		case skumatch.SlotCommitment:
 			commitment = price
-		} else {
+		case skumatch.SlotOnDemand:
 			onDemand = price
 		}
 	}

@@ -1051,7 +1051,10 @@ func (c *Client) getComputePricing(ctx context.Context, machineType, region stri
 		return nil, fmt.Errorf("failed to list SKUs: %w", err)
 	}
 
-	onDemandPrice, commitmentPrice, currency := extractComputePricingFromSKUs(skus.Skus, machineType, region)
+	onDemandPrice, commitmentPrice, currency, err := extractComputePricingFromSKUs(skus.Skus, machineType, region)
+	if err != nil {
+		return nil, err
+	}
 	if onDemandPrice == 0 {
 		return nil, fmt.Errorf("no on-demand pricing found for machine type %s", machineType)
 	}
@@ -1086,7 +1089,7 @@ func (c *Client) getOrCreateBillingService(ctx context.Context) (BillingService,
 }
 
 // extractComputePricingFromSKUs extracts on-demand and commitment pricing from SKU list.
-func extractComputePricingFromSKUs(skus []*cloudbilling.Sku, machineType, region string) (onDemand, commitment float64, currency string) {
+func extractComputePricingFromSKUs(skus []*cloudbilling.Sku, machineType, region string) (onDemand, commitment float64, currency string, err error) {
 	currency = "USD"
 
 	for _, sku := range skus {
@@ -1103,14 +1106,19 @@ func extractComputePricingFromSKUs(skus []*cloudbilling.Sku, machineType, region
 			currency = curr
 		}
 
-		if strings.Contains(strings.ToLower(sku.Description), "commitment") {
+		slot, slotErr := skumatch.Slot(sku)
+		if slotErr != nil {
+			return 0, 0, "", slotErr
+		}
+		switch slot {
+		case skumatch.SlotCommitment:
 			commitment = price
-		} else {
+		case skumatch.SlotOnDemand:
 			onDemand = price
 		}
 	}
 
-	return onDemand, commitment, currency
+	return onDemand, commitment, currency, nil
 }
 
 // extractComputePriceFromSKU extracts the unit price from a SKU.

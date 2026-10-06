@@ -382,9 +382,14 @@ func extractPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string) (onDe
 			return 0, 0, "", err
 		}
 
-		if strings.Contains(strings.ToLower(sku.Description), "commitment") {
+		slot, slotErr := skumatch.Slot(sku)
+		if slotErr != nil {
+			return 0, 0, "", slotErr
+		}
+		switch slot {
+		case skumatch.SlotCommitment:
 			commitment = price
-		} else {
+		case skumatch.SlotOnDemand:
 			onDemand = price
 		}
 	}

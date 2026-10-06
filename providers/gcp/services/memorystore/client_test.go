@@ -194,6 +194,7 @@ func TestSkuMatchesTier(t *testing.T) {
 			name: "SKU matches tier and region",
 			sku: &cloudbilling.Sku{
 				Description:    "Memorystore Redis STANDARD_HA",
+				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 				ServiceRegions: []string{"us-central1"},
 			},
 			tier:     "STANDARD_HA",
@@ -204,6 +205,7 @@ func TestSkuMatchesTier(t *testing.T) {
 			name: "SKU matches tier but not region",
 			sku: &cloudbilling.Sku{
 				Description:    "Memorystore Redis BASIC",
+				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 				ServiceRegions: []string{"europe-west1"},
 			},
 			tier:     "BASIC",
@@ -214,6 +216,7 @@ func TestSkuMatchesTier(t *testing.T) {
 			name: "SKU does not match tier",
 			sku: &cloudbilling.Sku{
 				Description:    "Memorystore Redis BASIC",
+				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 				ServiceRegions: []string{"us-central1"},
 			},
 			tier:     "STANDARD_HA",
@@ -224,6 +227,7 @@ func TestSkuMatchesTier(t *testing.T) {
 			name: "SKU with nil service regions matches no region",
 			sku: &cloudbilling.Sku{
 				Description:    "Memorystore Redis BASIC instance",
+				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 				ServiceRegions: nil,
 			},
 			tier:     "BASIC",
@@ -234,6 +238,7 @@ func TestSkuMatchesTier(t *testing.T) {
 			name: "SKU for STANDARD_HA is a decoy for tier STANDARD",
 			sku: &cloudbilling.Sku{
 				Description:    "Memorystore Redis STANDARD_HA instance",
+				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 				ServiceRegions: []string{"us-central1"},
 			},
 			tier:     "STANDARD",
@@ -244,6 +249,7 @@ func TestSkuMatchesTier(t *testing.T) {
 			name: "SKU with empty service regions matches no region",
 			sku: &cloudbilling.Sku{
 				Description:    "Memorystore Redis BASIC instance",
+				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 				ServiceRegions: []string{},
 			},
 			tier:     "BASIC",
@@ -254,6 +260,7 @@ func TestSkuMatchesTier(t *testing.T) {
 			name: "Case insensitive tier match",
 			sku: &cloudbilling.Sku{
 				Description:    "Memorystore Redis standard_ha",
+				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 				ServiceRegions: []string{"us-central1"},
 			},
 			tier:     "STANDARD_HA",
@@ -396,6 +403,7 @@ func TestMemorystoreClient_GetOfferingDetails_WithMockService(t *testing.T) {
 				Skus: []*cloudbilling.Sku{
 					{
 						Description:    "Memorystore Redis STANDARD_HA instance",
+						Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 						ServiceRegions: []string{"us-central1"},
 						PricingInfo: []*cloudbilling.PricingInfo{
 							{
@@ -415,6 +423,7 @@ func TestMemorystoreClient_GetOfferingDetails_WithMockService(t *testing.T) {
 					},
 					{
 						Description:    "Memorystore Redis STANDARD_HA commitment 1yr",
+						Category:       &cloudbilling.Category{UsageType: "Commit1Yr"},
 						ServiceRegions: []string{"us-central1"},
 						PricingInfo: []*cloudbilling.PricingInfo{
 							{
@@ -448,6 +457,7 @@ func TestMemorystoreClient_GetOfferingDetails_WithMockService(t *testing.T) {
 				Skus: []*cloudbilling.Sku{
 					{
 						Description:    "Memorystore Redis BASIC instance",
+						Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 						ServiceRegions: []string{"us-central1"},
 						PricingInfo: []*cloudbilling.PricingInfo{
 							{
@@ -467,6 +477,7 @@ func TestMemorystoreClient_GetOfferingDetails_WithMockService(t *testing.T) {
 					},
 					{
 						Description:    "Memorystore Redis BASIC commitment 3yr",
+						Category:       &cloudbilling.Category{UsageType: "Commit3Yr"},
 						ServiceRegions: []string{"us-central1"},
 						PricingInfo: []*cloudbilling.PricingInfo{
 							{
@@ -716,6 +727,7 @@ func TestGetRedisPricing_CommitmentPriceIsTermTotal(t *testing.T) {
 			Skus: []*cloudbilling.Sku{
 				{
 					Description:    "Memorystore Redis STANDARD_HA instance",
+					Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 					ServiceRegions: []string{"us-central1"},
 					PricingInfo: []*cloudbilling.PricingInfo{
 						{
@@ -735,6 +747,7 @@ func TestGetRedisPricing_CommitmentPriceIsTermTotal(t *testing.T) {
 				},
 				{
 					Description:    "Memorystore Redis STANDARD_HA commitment 1yr",
+					Category:       &cloudbilling.Category{UsageType: "Commit1Yr"},
 					ServiceRegions: []string{"us-central1"},
 					PricingInfo: []*cloudbilling.PricingInfo{
 						{
@@ -811,6 +824,7 @@ func TestMemorystoreClient_ConvertGCPRecommendation_RecurringMonthlyCost(t *test
 			Skus: []*cloudbilling.Sku{
 				{
 					Description:    "redis-basic Cloud Memorystore Redis",
+					Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 					ServiceRegions: []string{"us-central1"},
 					PricingInfo: []*cloudbilling.PricingInfo{
 						{
@@ -832,6 +846,7 @@ func TestMemorystoreClient_ConvertGCPRecommendation_RecurringMonthlyCost(t *test
 					// Commitment SKU required by getRedisPricing: without a
 					// "commitment" SKU it errors and RecurringMonthlyCost stays nil.
 					Description:    "redis-basic Cloud Memorystore Redis commitment 1yr",
+					Category:       &cloudbilling.Category{UsageType: "Commit1Yr"},
 					ServiceRegions: []string{"us-central1"},
 					PricingInfo: []*cloudbilling.PricingInfo{
 						{

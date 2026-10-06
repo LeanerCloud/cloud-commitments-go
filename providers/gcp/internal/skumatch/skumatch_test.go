@@ -1,6 +1,7 @@
 package skumatch
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -47,5 +48,38 @@ func TestHasToken(t *testing.T) {
 	}
 	for _, tt := range tests {
 		assert.Equal(t, tt.want, HasToken(tt.description, tt.token), "%q in %q", tt.token, tt.description)
+	}
+}
+
+func TestSlot(t *testing.T) {
+	tests := []struct {
+		name    string
+		sku     *cloudbilling.Sku
+		want    PriceSlot
+		wantErr string
+	}{
+		{name: "on demand", sku: &cloudbilling.Sku{Category: &cloudbilling.Category{UsageType: "OnDemand"}}, want: SlotOnDemand},
+		{name: "1 year commitment without the word in the description", sku: &cloudbilling.Sku{Description: "Committed Use Discount: Cloud SQL DB custom CORE", Category: &cloudbilling.Category{UsageType: "Commit1Yr"}}, want: SlotCommitment},
+		{name: "3 year commitment", sku: &cloudbilling.Sku{Category: &cloudbilling.Category{UsageType: "Commit3Yr"}}, want: SlotCommitment},
+		{name: "description saying commitment on an on-demand SKU", sku: &cloudbilling.Sku{Description: "No commitment required", Category: &cloudbilling.Category{UsageType: "OnDemand"}}, want: SlotOnDemand},
+		{name: "preemptible", sku: &cloudbilling.Sku{Category: &cloudbilling.Category{UsageType: "Preemptible"}}, want: SlotNone},
+		{name: "spot", sku: &cloudbilling.Sku{Category: &cloudbilling.Category{UsageType: "Spot"}}, want: SlotNone},
+		{name: "unknown usage type", sku: &cloudbilling.Sku{SkuId: "A1", Category: &cloudbilling.Category{UsageType: "Commit5Yr"}}, wantErr: `unrecognized usage type "Commit5Yr"`},
+		{name: "empty usage type", sku: &cloudbilling.Sku{SkuId: "A2", Category: &cloudbilling.Category{}}, wantErr: "unrecognized usage type"},
+		{name: "no category", sku: &cloudbilling.Sku{SkuId: "A3"}, wantErr: "no category"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := Slot(tt.sku)
+			if tt.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+					t.Fatalf("Slot() error = %v, want containing %q", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil || got != tt.want {
+				t.Fatalf("Slot() = %v, %v, want %v", got, err, tt.want)
+			}
+		})
 	}
 }

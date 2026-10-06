@@ -397,7 +397,7 @@ func (c *Client) getOrCreateBillingService(ctx context.Context) (BillingService,
 }
 
 // extractSQLPricingFromSKUs extracts on-demand and commitment pricing from the SKU list.
-// Cloud SQL committed-use discounts are surfaced as "commitment" SKUs in the billing catalog.
+// Cloud SQL committed-use discounts are SKUs whose Category.UsageType is Commit1Yr or Commit3Yr.
 func extractSQLPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string) (onDemand, commitment float64, currency string, err error) {
 	for _, sku := range skus {
 		if !skuMatchesTier(sku, tier, region) {
@@ -414,9 +414,14 @@ func extractSQLPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string) (o
 			return 0, 0, "", err
 		}
 
-		if strings.Contains(strings.ToLower(sku.Description), "commitment") {
+		slot, slotErr := skumatch.Slot(sku)
+		if slotErr != nil {
+			return 0, 0, "", slotErr
+		}
+		switch slot {
+		case skumatch.SlotCommitment:
 			commitment = price
-		} else {
+		case skumatch.SlotOnDemand:
 			onDemand = price
 		}
 	}

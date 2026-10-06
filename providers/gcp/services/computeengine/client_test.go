@@ -231,6 +231,7 @@ func TestSkuMatchesMachineType(t *testing.T) {
 			name: "SKU matches machine type and region",
 			sku: &cloudbilling.Sku{
 				Description:    "n1-standard-1 VM running in Americas",
+				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 				ServiceRegions: []string{"us-central1"},
 			},
 			machineType: "n1-standard-1",
@@ -241,6 +242,7 @@ func TestSkuMatchesMachineType(t *testing.T) {
 			name: "SKU matches machine type but not region",
 			sku: &cloudbilling.Sku{
 				Description:    "n1-standard-1 VM running in Europe",
+				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 				ServiceRegions: []string{"europe-west1"},
 			},
 			machineType: "n1-standard-1",
@@ -251,6 +253,7 @@ func TestSkuMatchesMachineType(t *testing.T) {
 			name: "SKU does not match machine type",
 			sku: &cloudbilling.Sku{
 				Description:    "n2-highmem-4 VM running in Americas",
+				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 				ServiceRegions: []string{"us-central1"},
 			},
 			machineType: "n1-standard-1",
@@ -261,6 +264,7 @@ func TestSkuMatchesMachineType(t *testing.T) {
 			name: "SKU with nil service regions matches no region",
 			sku: &cloudbilling.Sku{
 				Description:    "n1-standard-1 VM",
+				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 				ServiceRegions: nil,
 			},
 			machineType: "n1-standard-1",
@@ -271,6 +275,7 @@ func TestSkuMatchesMachineType(t *testing.T) {
 			name: "SKU for a longer machine type that starts with the same text is a decoy",
 			sku: &cloudbilling.Sku{
 				Description:    "n1-standard-16 VM running in Americas",
+				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 				ServiceRegions: []string{"us-central1"},
 			},
 			machineType: "n1-standard-1",
@@ -281,6 +286,7 @@ func TestSkuMatchesMachineType(t *testing.T) {
 			name: "Case insensitive machine type match",
 			sku: &cloudbilling.Sku{
 				Description:    "N1-STANDARD-1 VM running in Americas",
+				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 				ServiceRegions: []string{"us-central1"},
 			},
 			machineType: "n1-standard-1",
@@ -934,6 +940,7 @@ func TestComputeEngineClient_GetOfferingDetails_WithMock(t *testing.T) {
 			Skus: []*cloudbilling.Sku{
 				{
 					Description:    "n1-standard-1 VM running in Americas",
+					Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 					ServiceRegions: []string{"us-central1"},
 					PricingInfo: []*cloudbilling.PricingInfo{
 						{
@@ -953,6 +960,7 @@ func TestComputeEngineClient_GetOfferingDetails_WithMock(t *testing.T) {
 				},
 				{
 					Description:    "n1-standard-1 commitment 1yr in Americas",
+					Category:       &cloudbilling.Category{UsageType: "Commit1Yr"},
 					ServiceRegions: []string{"us-central1"},
 					PricingInfo: []*cloudbilling.PricingInfo{
 						{
@@ -1248,6 +1256,7 @@ func mockBillingWithCommitment() *MockBillingService {
 			Skus: []*cloudbilling.Sku{
 				{
 					Description:    "n1-standard-4 VM running in Americas",
+					Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 					ServiceRegions: []string{"us-central1"},
 					PricingInfo: []*cloudbilling.PricingInfo{
 						{
@@ -1267,6 +1276,7 @@ func mockBillingWithCommitment() *MockBillingService {
 				},
 				{
 					Description:    "n1-standard-4 commitment 1yr in Americas",
+					Category:       &cloudbilling.Category{UsageType: "Commit1Yr"},
 					ServiceRegions: []string{"us-central1"},
 					PricingInfo: []*cloudbilling.PricingInfo{
 						{
@@ -1419,6 +1429,7 @@ func TestGetComputePricing_NoCommitmentSKUReturnsError(t *testing.T) {
 			Skus: []*cloudbilling.Sku{
 				{
 					Description:    "n1-standard-4 VM running in Americas",
+					Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 					ServiceRegions: []string{"us-central1"},
 					PricingInfo: []*cloudbilling.PricingInfo{
 						{
