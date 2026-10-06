@@ -643,7 +643,14 @@ func (c *Client) fetchSKUCatalogue(ctx context.Context) map[string]redisSKUEntry
 		return nil
 	}
 	out := make(map[string]redisSKUEntry)
-	for pager.More() {
+	for pageIdx := 0; pager.More(); pageIdx++ {
+		if ctx.Err() != nil {
+			return nil
+		}
+		if pageIdx >= maxCachesPages {
+			logging.Warnf("azure cache: SKU catalog pagination cap (%d pages) reached for region %s; partial cache (%d entries) discarded, Details.Shards left at 0", maxCachesPages, c.region, len(out))
+			return nil
+		}
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			logging.Warnf("azure cache: SKU catalog page fetch failed for region %s: %v — partial cache (%d entries) discarded, Details.Shards left at 0", c.region, err, len(out))

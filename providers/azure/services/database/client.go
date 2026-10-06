@@ -38,6 +38,9 @@ const maxRecsPages = 10
 // maxReservationsPages caps reservation-detail pagination.
 const maxReservationsPages = 50
 
+// maxSQLListPages caps the SQL server and managed-instance list pagination.
+const maxSQLListPages = 20
+
 // sqlSKUEntry holds the SKU-catalog-derived fields the converter
 // wants for each Azure SQL SKU. Sourced from the
 // armsql.CapabilitiesClient.ListByLocation response which embeds the
@@ -786,7 +789,14 @@ func (c *Client) walkManagedInstances(ctx context.Context) (zoneRedundant, nonZo
 		logging.Warnf("azure database: managed instances pager create failed: %v; AZConfig/Deployment signal unavailable", err)
 		return 0, 0, 0, false
 	}
-	for pager.More() {
+	for pageIdx := 0; pager.More(); pageIdx++ {
+		if ctx.Err() != nil {
+			return zoneRedundant, nonZoneRedundant, total, false
+		}
+		if pageIdx >= maxSQLListPages {
+			logging.Warnf("azure database: managed instances pagination cap (%d pages) reached; AZConfig/Deployment signal unavailable", maxSQLListPages)
+			return zoneRedundant, nonZoneRedundant, total, false
+		}
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			if ctx.Err() != nil {
@@ -830,7 +840,14 @@ func (c *Client) hasRegularServers(ctx context.Context) bool {
 		logging.Warnf("azure database: servers pager create failed: %v; Deployment signal unavailable", err)
 		return false
 	}
-	for pager.More() {
+	for pageIdx := 0; pager.More(); pageIdx++ {
+		if ctx.Err() != nil {
+			return false
+		}
+		if pageIdx >= maxSQLListPages {
+			logging.Warnf("azure database: servers pagination cap (%d pages) reached; Deployment signal unavailable", maxSQLListPages)
+			return false
+		}
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			if ctx.Err() != nil {

@@ -29,6 +29,9 @@ import (
 // sibling Azure service clients, e.g. cache/client.go).
 const maxRecsPages = 10
 
+// maxReservationsPages caps reservation-detail pagination.
+const maxReservationsPages = 50
+
 // HTTPClient interface for HTTP operations (enables mocking).
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
@@ -179,7 +182,13 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 		return nil, fmt.Errorf("failed to initialize reservations details pager: %w", err)
 	}
 
-	for pager.More() {
+	for pageIdx := 0; pager.More(); pageIdx++ {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("context canceled during pagination: %w", err)
+		}
+		if pageIdx >= maxReservationsPages {
+			return nil, fmt.Errorf("managedredis: GetExistingCommitments pagination cap (%d pages) reached", maxReservationsPages)
+		}
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to fetch reservations details page: %w", err)

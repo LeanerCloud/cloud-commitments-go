@@ -148,7 +148,13 @@ func (c *Client) createExchangeablePager() (ExchangeableReservationPager, error)
 // duplicate exchange attempt upstream).
 func (c *Client) collectExchangeableReservations(ctx context.Context, pager ExchangeableReservationPager) ([]ExchangeableReservation, error) {
 	result := make([]ExchangeableReservation, 0)
-	for pager.More() {
+	for pageIdx := 0; pager.More(); pageIdx++ {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("compute: list exchangeable reservations: context canceled during pagination: %w", err)
+		}
+		if pageIdx >= maxReservationsPages {
+			return nil, fmt.Errorf("compute: list exchangeable reservations: pagination cap (%d pages) reached", maxReservationsPages)
+		}
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("compute: list exchangeable reservations: page: %w", err)
