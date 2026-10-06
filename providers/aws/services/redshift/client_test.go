@@ -1214,6 +1214,7 @@ func TestClient_PurchaseCommitment_Idempotent_TagGuardShortCircuits(t *testing.T
 	result, err := client.PurchaseCommitment(context.Background(), rsIdemRec(), common.PurchaseOptions{IdempotencyToken: token})
 	assert.NoError(t, err)
 	assert.True(t, result.Success)
+	assert.True(t, result.ExistingCommitment)
 	assert.Equal(t, "rn-existing", result.CommitmentID)
 	mockRS.AssertNotCalled(t, "PurchaseReservedNodeOffering", mock.Anything, mock.Anything)
 }
@@ -1245,6 +1246,7 @@ func TestClient_PurchaseCommitment_Idempotent_NoTagProceeds(t *testing.T) {
 	result, err := client.PurchaseCommitment(context.Background(), rsIdemRec(), common.PurchaseOptions{IdempotencyToken: token})
 	assert.NoError(t, err)
 	assert.True(t, result.Success)
+	assert.False(t, result.ExistingCommitment)
 	assert.Equal(t, "rn-new", result.CommitmentID)
 	mockRS.AssertExpectations(t)
 }
@@ -1267,6 +1269,7 @@ func TestClient_PurchaseCommitment_Idempotent_FailLoudOnLookupError(t *testing.T
 	result, err := client.PurchaseCommitment(context.Background(), rsIdemRec(), common.PurchaseOptions{IdempotencyToken: token})
 	assert.Error(t, err)
 	assert.False(t, result.Success)
+	assert.False(t, result.ExistingCommitment)
 	assert.Contains(t, err.Error(), "refusing to purchase")
 	mockRS.AssertNotCalled(t, "PurchaseReservedNodeOffering", mock.Anything, mock.Anything)
 }
@@ -1657,4 +1660,22 @@ func TestClient_PendingPaymentNodeIsOwned(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, found)
 	assert.Equal(t, "rn-pending", id)
+}
+
+// Issue #211: a failed purchase after a clean token lookup is not an adoption.
+func TestClient_PurchaseCommitment_Idempotent_PurchaseFailureNotFlagged(t *testing.T) {
+	mockRS := &MockRedshiftClient{}
+	client := rsClientWithAccount(mockRS)
+	token := common.DeriveIdempotencyToken("exec-211", 0)
+
+	expectRSOffering(mockRS)
+	mockRS.On("DescribeReservedNodes", mock.Anything, mock.Anything).
+		Return(&redshift.DescribeReservedNodesOutput{}, nil)
+	mockRS.On("PurchaseReservedNodeOffering", mock.Anything, mock.Anything).
+		Return((*redshift.PurchaseReservedNodeOfferingOutput)(nil), fmt.Errorf("boom"))
+
+	result, err := client.PurchaseCommitment(context.Background(), rsIdemRec(), common.PurchaseOptions{IdempotencyToken: token})
+	assert.Error(t, err)
+	assert.False(t, result.Success)
+	assert.False(t, result.ExistingCommitment)
 }

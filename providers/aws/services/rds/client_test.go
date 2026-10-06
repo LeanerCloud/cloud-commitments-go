@@ -765,6 +765,7 @@ func TestClient_PurchaseCommitment_Idempotent_GuardShortCircuits(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.True(t, result.Success)
+	assert.True(t, result.ExistingCommitment)
 	assert.Equal(t, derivedID, result.CommitmentID)
 	mockRDS.AssertNotCalled(t, "PurchaseReservedDBInstancesOffering", mock.Anything, mock.Anything)
 }
@@ -792,6 +793,7 @@ func TestClient_PurchaseCommitment_Idempotent_NotFoundProceeds(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.True(t, result.Success)
+	assert.False(t, result.ExistingCommitment)
 	assert.Equal(t, derivedID, result.CommitmentID)
 	mockRDS.AssertExpectations(t)
 }
@@ -823,6 +825,7 @@ func TestClient_PurchaseCommitment_Idempotent_AlreadyExistsRecovers(t *testing.T
 
 	assert.NoError(t, err)
 	assert.True(t, result.Success)
+	assert.True(t, result.ExistingCommitment)
 	assert.Equal(t, derivedID, result.CommitmentID)
 }
 
@@ -842,6 +845,7 @@ func TestClient_PurchaseCommitment_Idempotent_FailLoudOnLookupError(t *testing.T
 
 	assert.Error(t, err)
 	assert.False(t, result.Success)
+	assert.False(t, result.ExistingCommitment)
 	assert.Contains(t, err.Error(), "refusing to purchase")
 	mockRDS.AssertNotCalled(t, "PurchaseReservedDBInstancesOffering", mock.Anything, mock.Anything)
 }
@@ -1156,4 +1160,23 @@ func TestClient_PurchaseCommitment_NoToken_RichReservationName(t *testing.T) {
 	assert.Contains(t, capturedID, "db-t4g-medium", "SKU (dots->hyphens) must be embedded: %q", capturedID)
 	assert.Contains(t, capturedID, "1x-1yr", "count and term must be embedded: %q", capturedID)
 	assert.LessOrEqual(t, len(capturedID), 60, "must fit AWS reservation-ID cap")
+}
+
+// Issue #211: a duplicate-ID rejection whose recovery lookup finds nothing is a
+// failure, not an adoption.
+func TestClient_PurchaseCommitment_Idempotent_RejectedNotFlagged(t *testing.T) {
+	mockRDS := &MockRDSClient{}
+	client := &Client{client: mockRDS, region: "eu-west-1"}
+	token := common.DeriveIdempotencyToken("exec-211", 0)
+
+	expectOffering(mockRDS)
+	mockRDS.On("DescribeReservedDBInstances", mock.Anything, mock.Anything).
+		Return((*rds.DescribeReservedDBInstancesOutput)(nil), &types.ReservedDBInstanceNotFoundFault{})
+	mockRDS.On("PurchaseReservedDBInstancesOffering", mock.Anything, mock.Anything).
+		Return((*rds.PurchaseReservedDBInstancesOfferingOutput)(nil), &types.ReservedDBInstanceAlreadyExistsFault{})
+
+	result, err := client.PurchaseCommitment(context.Background(), idempotencyTestRec(), common.PurchaseOptions{IdempotencyToken: token})
+	assert.Error(t, err)
+	assert.False(t, result.Success)
+	assert.False(t, result.ExistingCommitment)
 }

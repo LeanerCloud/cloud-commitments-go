@@ -196,6 +196,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		return result, result.Error
 	} else if shortCircuit {
 		result.Success = true
+		result.ExistingCommitment = true
 		result.CommitmentID = existingID
 		return result, nil
 	}
@@ -210,6 +211,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	if err != nil {
 		if existingID, recovered := c.recoverAlreadyExists(ctx, opts.IdempotencyToken, reservationName, err); recovered {
 			result.Success = true
+			result.ExistingCommitment = true
 			result.CommitmentID = existingID
 			return result, nil
 		}

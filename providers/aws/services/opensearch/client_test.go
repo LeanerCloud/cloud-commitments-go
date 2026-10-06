@@ -869,6 +869,7 @@ func TestClient_PurchaseCommitment_Idempotent_GuardShortCircuits(t *testing.T) {
 	result, err := client.PurchaseCommitment(context.Background(), osIdemRec(), common.PurchaseOptions{IdempotencyToken: token})
 	assert.NoError(t, err)
 	assert.True(t, result.Success)
+	assert.True(t, result.ExistingCommitment)
 	assert.Equal(t, "os-existing", result.CommitmentID)
 	mockOS.AssertNotCalled(t, "PurchaseReservedInstanceOffering", mock.Anything, mock.Anything)
 }
@@ -915,6 +916,7 @@ func TestClient_PurchaseCommitment_Idempotent_NotFoundProceeds(t *testing.T) {
 	result, err := client.PurchaseCommitment(context.Background(), osIdemRec(), common.PurchaseOptions{IdempotencyToken: token})
 	assert.NoError(t, err)
 	assert.True(t, result.Success)
+	assert.False(t, result.ExistingCommitment)
 	assert.Equal(t, "os-new", result.CommitmentID)
 	mockOS.AssertExpectations(t)
 }
@@ -941,6 +943,7 @@ func TestClient_PurchaseCommitment_Idempotent_AlreadyExistsRecovers(t *testing.T
 	result, err := client.PurchaseCommitment(context.Background(), osIdemRec(), common.PurchaseOptions{IdempotencyToken: token})
 	assert.NoError(t, err)
 	assert.True(t, result.Success)
+	assert.True(t, result.ExistingCommitment)
 	assert.Equal(t, "os-recovered", result.CommitmentID)
 }
 
@@ -956,6 +959,7 @@ func TestClient_PurchaseCommitment_Idempotent_FailLoudOnLookupError(t *testing.T
 	result, err := client.PurchaseCommitment(context.Background(), osIdemRec(), common.PurchaseOptions{IdempotencyToken: token})
 	assert.Error(t, err)
 	assert.False(t, result.Success)
+	assert.False(t, result.ExistingCommitment)
 	assert.Contains(t, err.Error(), "refusing to purchase")
 	mockOS.AssertNotCalled(t, "PurchaseReservedInstanceOffering", mock.Anything, mock.Anything)
 }
@@ -1234,4 +1238,23 @@ func TestFindOfferingID_EmptyStringTokenEndsPagination(t *testing.T) {
 		assert.Contains(t, err.Error(), "no offerings found")
 	}
 	mockOS.AssertNumberOfCalls(t, "DescribeReservedInstanceOfferings", 1)
+}
+
+// Issue #211: a duplicate-name rejection whose recovery lookup finds nothing is
+// a failure, not an adoption.
+func TestClient_PurchaseCommitment_Idempotent_RejectedNotFlagged(t *testing.T) {
+	mockOS := &MockOpenSearchClient{}
+	client := &Client{client: mockOS, region: "eu-west-1"}
+	token := common.DeriveIdempotencyToken("exec-211", 0)
+
+	expectOSOffering(mockOS)
+	mockOS.On("DescribeReservedInstances", mock.Anything, mock.Anything).
+		Return(&opensearch.DescribeReservedInstancesOutput{}, nil)
+	mockOS.On("PurchaseReservedInstanceOffering", mock.Anything, mock.Anything).
+		Return((*opensearch.PurchaseReservedInstanceOfferingOutput)(nil), &types.ResourceAlreadyExistsException{})
+
+	result, err := client.PurchaseCommitment(context.Background(), osIdemRec(), common.PurchaseOptions{IdempotencyToken: token})
+	assert.Error(t, err)
+	assert.False(t, result.Success)
+	assert.False(t, result.ExistingCommitment)
 }
