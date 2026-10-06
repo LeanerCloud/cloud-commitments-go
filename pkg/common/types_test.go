@@ -30,6 +30,19 @@ func TestPurchaseResult_CostJSON(t *testing.T) {
 	}
 }
 
+func TestPurchaseResult_ExistingCommitmentJSON(t *testing.T) {
+	fresh, err := json.Marshal(PurchaseResult{Success: true, CommitmentID: "ri-1"})
+	require.NoError(t, err)
+	assert.NotContains(t, string(fresh), "existing_commitment")
+
+	redrive, err := json.Marshal(PurchaseResult{Success: true, CommitmentID: "ri-1", ExistingCommitment: true})
+	require.NoError(t, err)
+	assert.Contains(t, string(redrive), `"existing_commitment":true`)
+	var decoded PurchaseResult
+	require.NoError(t, json.Unmarshal(redrive, &decoded))
+	assert.True(t, decoded.ExistingCommitment)
+}
+
 func TestProviderType_String(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

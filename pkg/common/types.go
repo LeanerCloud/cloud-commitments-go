@@ -346,6 +346,13 @@ type PurchaseResult struct {
 	Cost      *float64  `json:"cost"`
 	DryRun    bool      `json:"dry_run"`
 	Timestamp time.Time `json:"timestamp"`
+	// ExistingCommitment is true when an idempotent re-drive found a commitment
+	// an earlier attempt already bought and returned it instead of buying again.
+	// CommitmentID then names that earlier commitment, whose attributes (for
+	// example the offering class) may differ from the ones now configured, and
+	// Cost may be nil because the earlier purchase's price is not re-read.
+	// False on a fresh purchase.
+	ExistingCommitment bool `json:"existing_commitment,omitempty"`
 }
 
 // Source values for PurchaseOptions.Source. Kept lowercase so they can be used
