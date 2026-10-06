@@ -532,7 +532,7 @@ func TestFindReservationOrderByIdempotencyToken_SkipsTerminalFailed(t *testing.T
 }
 
 // TestFindReservationOrderByIdempotencyToken_AcceptsInFlightStates verifies
-// that orders in non-terminal states (Succeeded, Pending, Creating,
+// that orders in non-terminal states (Succeeded, Creating, PendingBilling,
 // ConfirmedBilling) DO short-circuit the purchase: those orders are either
 // already-paid-for or currently being processed and a re-drive would create
 // a duplicate.
@@ -547,7 +547,6 @@ func TestFindReservationOrderByIdempotencyToken_AcceptsInFlightStates(t *testing
 		string(armreservations.ProvisioningStateConfirmedResourceHold),
 		string(armreservations.ProvisioningStateMerged),
 		string(armreservations.ProvisioningStateSplit),
-		"Pending", "",
 	} {
 		t.Run(state, func(t *testing.T) {
 			m := &mockHTTPClient{}
@@ -584,6 +583,57 @@ func TestReservationOrderDispositions_CoversEverySDKState(t *testing.T) {
 		_, classified := reservationOrderDispositions[state]
 		assert.True(t, classified, "ProvisioningState %q has no entry in reservationOrderDispositions", state)
 	}
+}
+
+// TestFindReservationOrderByIdempotencyToken_UnrecognizedStateIsBlocked: a
+// non-empty state outside the SDK enum is neither adopted nor skipped.
+func TestFindReservationOrderByIdempotencyToken_UnrecognizedStateIsBlocked(t *testing.T) {
+	m := &mockHTTPClient{}
+	body := orderListJSON([]struct {
+		Name              string
+		IdempotencyToken  string
+		ProvisioningState string
+		OtherTags         map[string]string
+	}{
+		{Name: "order-future", IdempotencyToken: "wanted-tok", ProvisioningState: "SomeFutureState"},
+	}, "")
+	resp := fakeResp(http.StatusOK, body)
+	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
+	m.On("Do", mock.Anything).Return(resp, nil).Once()
+
+	orderID, found, err := FindReservationOrderByIdempotencyToken(context.Background(), m, "tok", "wanted-tok")
+	require.ErrorIs(t, err, ErrReservationOrderBlocked)
+	assert.Contains(t, err.Error(), "order-future")
+	assert.Contains(t, err.Error(), "SomeFutureState")
+	assert.False(t, found)
+	assert.Empty(t, orderID)
+}
+
+// TestDoIdempotentPurchaseTwoStep_UnrecognizedState_DoesNotPurchase: zero POSTs.
+func TestDoIdempotentPurchaseTwoStep_UnrecognizedState_DoesNotPurchase(t *testing.T) {
+	m := &mockHTTPClient{}
+	body := orderListJSON([]struct {
+		Name              string
+		IdempotencyToken  string
+		ProvisioningState string
+		OtherTags         map[string]string
+	}{
+		{Name: "order-future", IdempotencyToken: "redrive-tok", ProvisioningState: "SomeFutureState"},
+	}, "")
+	resp := fakeResp(http.StatusOK, body)
+	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
+	m.On("Do", mock.MatchedBy(func(r *http.Request) bool {
+		return r.Method == http.MethodGet && r.URL.String() == listURL
+	})).Return(resp, nil).Once()
+
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), m, calcURL, []byte(testBody), "tok", "redrive-tok")
+	require.ErrorIs(t, err, ErrReservationOrderBlocked)
+	assert.False(t, existing)
+	assert.Empty(t, orderID)
+	m.AssertNotCalled(t, "Do", mock.MatchedBy(func(r *http.Request) bool {
+		return r.Method == http.MethodPost
+	}))
+	m.AssertExpectations(t)
 }
 
 // TestFindReservationOrderByIdempotencyToken_BillingFailedIsBlocked pins issue
@@ -638,6 +688,28 @@ func TestDoIdempotentPurchaseTwoStep_BillingFailed_NeitherAdoptsNorPurchases(t *
 		return r.Method == http.MethodPost
 	}))
 	m.AssertExpectations(t)
+}
+
+// TestFindReservationOrderByIdempotencyToken_EmptyStateIsAdopted: an order
+// listed without a provisioning state still suppresses a re-drive.
+func TestFindReservationOrderByIdempotencyToken_EmptyStateIsAdopted(t *testing.T) {
+	m := &mockHTTPClient{}
+	body := orderListJSON([]struct {
+		Name              string
+		IdempotencyToken  string
+		ProvisioningState string
+		OtherTags         map[string]string
+	}{
+		{Name: "order-nostate", IdempotencyToken: "wanted-tok", ProvisioningState: ""},
+	}, "")
+	resp := fakeResp(http.StatusOK, body)
+	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
+	m.On("Do", mock.Anything).Return(resp, nil).Once()
+
+	orderID, found, err := FindReservationOrderByIdempotencyToken(context.Background(), m, "tok", "wanted-tok")
+	require.NoError(t, err)
+	assert.True(t, found)
+	assert.Equal(t, "order-nostate", orderID)
 }
 
 func TestFindReservationOrderByIdempotencyToken_HTTPError(t *testing.T) {

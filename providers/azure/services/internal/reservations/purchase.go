@@ -460,12 +460,9 @@ type reservationOrdersListResponse struct {
 type orderDisposition int
 
 const (
-	// orderUnknown is the zero value: a state with no table entry (including
-	// the empty string) is adopted, never retried.
-	orderUnknown orderDisposition = iota
 	// orderAdopt: the order is live, in flight or transformed. Return its ID
-	// and do not purchase again.
-	orderAdopt
+	// and do not purchase again. Also the zero value, used for an empty state.
+	orderAdopt orderDisposition = iota
 	// orderRetryable: the order was rolled back or aged out and never delivered
 	// a commitment. Ignore it so the purchase can proceed.
 	orderRetryable
@@ -481,9 +478,7 @@ var ErrReservationOrderBlocked = errors.New("reservation order blocked")
 
 // reservationOrderDispositions classifies every armreservations.ProvisioningState.
 // TestReservationOrderDispositions_CoversEverySDKState fails when the SDK adds a
-// state that is not listed here. A state outside this map (including the empty
-// string Azure returns for some listings) is adopted: an unrecognized order must
-// never authorize another purchase.
+// state that is not listed here. See dispositionOf for states not listed.
 //
 //   - Failed, canceled, Expired: terminal, no commitment delivered.
 //   - BillingFailed: billing failed, but nothing in the SDK or the list API
@@ -508,6 +503,18 @@ var reservationOrderDispositions = map[armreservations.ProvisioningState]orderDi
 	armreservations.ProvisioningStateConfirmedBilling:      orderAdopt,
 	armreservations.ProvisioningStatePendingResourceHold:   orderAdopt,
 	armreservations.ProvisioningStateConfirmedResourceHold: orderAdopt,
+}
+
+// dispositionOf looks up a state. An empty state (Azure omits it on some
+// listings) is adopted as before. An unrecognized non-empty state is blocked:
+// adopting it would report a purchase that may not exist, and skipping it would
+// authorize a second purchase.
+func dispositionOf(state armreservations.ProvisioningState) orderDisposition {
+	disposition, known := reservationOrderDispositions[state]
+	if !known && state != "" {
+		return orderBlocked
+	}
+	return disposition
 }
 
 // FindReservationOrderByIdempotencyToken lists reservation orders visible to
@@ -593,12 +600,12 @@ func matchReservationOrderInPage(page *reservationOrdersListResponse, idempotenc
 			continue
 		}
 		state := armreservations.ProvisioningState(order.Properties.ProvisioningState)
-		switch reservationOrderDispositions[state] {
+		switch dispositionOf(state) {
 		case orderRetryable:
 			continue
 		case orderBlocked:
 			return "", false, fmt.Errorf("reservation order %q for this idempotency token is in state %s; refusing to adopt it or buy again (resolve or cancel the order in Azure, or start a new execution): %w", order.Name, state, ErrReservationOrderBlocked)
-		case orderAdopt, orderUnknown:
+		case orderAdopt:
 		}
 		if order.Name == "" {
 			continue
