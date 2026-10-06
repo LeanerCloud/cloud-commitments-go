@@ -30,6 +30,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   new-style `es:*ReservedInstance*` OpenSearch actions (replacing the legacy
   `es:*ReservedElasticsearch*` names).
 
+### Changed
+
+- **Breaking (source):** `common.PurchaseResult` gained an `ExistingCommitment`
+  field. Downstream code that builds it with unkeyed composite literals no
+  longer compiles; keyed literals are unaffected. The field is true when a
+  provider adopted a commitment that already existed for the same idempotency
+  token (#211)
+
 ### Fixed
 
 - Remove debug console.log from frontend recommendation handler
