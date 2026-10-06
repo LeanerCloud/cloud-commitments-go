@@ -304,3 +304,42 @@ func TestGetProvidersByNames_AllFail(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no valid providers found")
 }
+
+func TestDetectAvailableProviders_FactoryErrorIsNotReportedAsMissingCredentials(t *testing.T) {
+	t.Parallel()
+	cause := errors.New("list projects: permission denied")
+	r := NewRegistry()
+	require.NoError(t, r.Register("gcp", func(*ProviderConfig) (Provider, error) { return nil, cause }))
+
+	providers, err := detectAvailableProviders(context.Background(), r)
+
+	assert.Nil(t, providers)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, cause)
+	assert.Contains(t, err.Error(), `provider "gcp" factory error`)
+	assert.NotContains(t, err.Error(), "no cloud credentials found")
+}
+
+func TestDetectAvailableProviders_NothingRegisteredReportsMissingCredentials(t *testing.T) {
+	t.Parallel()
+
+	_, err := detectAvailableProviders(context.Background(), NewRegistry())
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no cloud credentials found")
+}
+
+func TestDetectAvailableProviders_WorkingProviderSurvivesFactoryError(t *testing.T) {
+	t.Parallel()
+	r := NewRegistry()
+	require.NoError(t, r.Register("broken", func(*ProviderConfig) (Provider, error) { return nil, errors.New("boom") }))
+	require.NoError(t, r.Register("ok", func(c *ProviderConfig) (Provider, error) {
+		return &MockProvider{name: c.Name, configured: true, credentialsValid: true}, nil
+	}))
+
+	providers, err := detectAvailableProviders(context.Background(), r)
+
+	require.NoError(t, err)
+	require.Len(t, providers, 1)
+	assert.Equal(t, "ok", providers[0].Name())
+}

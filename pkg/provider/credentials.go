@@ -3,6 +3,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 )
 
@@ -21,11 +22,14 @@ func NewCredentialDetector() *CredentialDetector {
 // DetectAvailableProviders scans for configured cloud credentials
 // It checks all registered providers and returns those with valid credentials.
 func DetectAvailableProviders(ctx context.Context) ([]Provider, error) {
-	// Get all registered providers from the registry
-	allProviders := GetRegistry().GetAllProviders()
+	return detectAvailableProviders(ctx, GetRegistry())
+}
+
+func detectAvailableProviders(ctx context.Context, registry *Registry) ([]Provider, error) {
+	allProviders, factoryErrs := registry.GetAllProvidersWithErrors()
 
 	var available []Provider
-	var errors []error
+	errs := factoryErrs
 
 	// Check each provider for valid credentials
 	for _, provider := range allProviders {
@@ -34,15 +38,15 @@ func DetectAvailableProviders(ctx context.Context) ([]Provider, error) {
 			if err := provider.ValidateCredentials(ctx); err == nil {
 				available = append(available, provider)
 			} else {
-				errors = append(errors, fmt.Errorf("%s: %w", provider.Name(), err))
+				errs = append(errs, fmt.Errorf("%s: %w", provider.Name(), err))
 			}
 		}
 	}
 
 	// If no providers found, return error with details
 	if len(available) == 0 {
-		if len(errors) > 0 {
-			return nil, fmt.Errorf("no valid cloud credentials found. Errors: %v", errors)
+		if len(errs) > 0 {
+			return nil, fmt.Errorf("no usable cloud provider found: %w", errors.Join(errs...))
 		}
 		return nil, fmt.Errorf("no cloud credentials found. Please configure AWS, Azure, or GCP credentials")
 	}
@@ -71,19 +75,19 @@ func DetectProvider(ctx context.Context, name string) (Provider, error) {
 // GetProvidersByNames gets providers by their names.
 func GetProvidersByNames(ctx context.Context, names []string) ([]Provider, error) {
 	var providers []Provider
-	var errors []error
+	var errs []error
 
 	for _, name := range names {
 		provider, err := DetectProvider(ctx, name)
 		if err != nil {
-			errors = append(errors, err)
+			errs = append(errs, err)
 			continue
 		}
 		providers = append(providers, provider)
 	}
 
 	if len(providers) == 0 {
-		return nil, fmt.Errorf("no valid providers found: %v", errors)
+		return nil, fmt.Errorf("no valid providers found: %v", errs)
 	}
 
 	return providers, nil

@@ -92,8 +92,21 @@ func (r *Registry) GetProviderWithConfig(name string, config *ProviderConfig) (P
 	return factory(config)
 }
 
-// GetAllProviders returns instances of all registered providers.
+// GetAllProviders returns instances of all registered providers. Factory
+// failures are logged and the provider is omitted; use GetAllProvidersWithErrors
+// to receive them.
 func (r *Registry) GetAllProviders() []Provider {
+	providers, errs := r.GetAllProvidersWithErrors()
+	for _, err := range errs {
+		log.Print(err)
+	}
+	return providers
+}
+
+// GetAllProvidersWithErrors returns instances of all registered providers whose
+// factory succeeded, plus one error per provider whose factory failed. Each
+// error wraps the factory's error and names the provider.
+func (r *Registry) GetAllProvidersWithErrors() ([]Provider, []error) {
 	// Copy the name->factory map under the lock, then release it and construct
 	// the providers lock-free. Factories may do network I/O (see GetProvider);
 	// running them under r.mu would serialize every provider's network init and
@@ -106,16 +119,17 @@ func (r *Registry) GetAllProviders() []Provider {
 	r.mu.RUnlock()
 
 	providers := make([]Provider, 0, len(factories))
+	var errs []error
 	for name, factory := range factories {
 		provider, err := factory(&ProviderConfig{Name: name})
 		if err != nil {
-			log.Printf("provider %q factory error: %v", name, err)
+			errs = append(errs, fmt.Errorf("provider %q factory error: %w", name, err))
 			continue
 		}
 		providers = append(providers, provider)
 	}
 
-	return providers
+	return providers, errs
 }
 
 // GetProviderNames returns the names of all registered providers.
