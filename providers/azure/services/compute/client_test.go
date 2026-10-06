@@ -228,6 +228,7 @@ func TestComputeClient_GetRecommendations_WithMock(t *testing.T) {
 func TestComputeClient_GetRecommendations_EmitsBothPaymentVariants(t *testing.T) {
 	ctx := context.Background()
 	client := NewClient(nil, "test-subscription", "eastus")
+	client.SetResourceSKUsPager(&mocks.MockResourceSKUsPager{})
 
 	// Inject a single recommendation via the mock pager.
 	apiRec := mocks.BuildLegacyReservationRecommendation(
@@ -1127,6 +1128,7 @@ func TestComputeClient_ConvertAzureVMRecommendation_NilGuards(t *testing.T) {
 // PaymentOption). Subscription/Account comes from the client, not the rec.
 func TestComputeClient_ConvertAzureVMRecommendation_PopulatesAllFields(t *testing.T) {
 	client := NewClient(nil, "test-subscription", "eastus")
+	client.SetResourceSKUsPager(&mocks.MockResourceSKUsPager{})
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithRegion("westeurope"),
 		mocks.WithScope("Shared"),
@@ -1674,7 +1676,7 @@ func TestPurchaseBody_SKUAndQuantityStayInMatchingUnits(t *testing.T) {
 				mocks.WithCosts(1000, 600, 400),
 			)...)
 
-			c := &Client{subscriptionID: "sub-1", region: "eastus"}
+			c := &Client{subscriptionID: "sub-1", region: "eastus", resourceSKUsPager: &mocks.MockResourceSKUsPager{}}
 			rec := c.convertAzureVMRecommendation(context.Background(), apiRec)
 			require.NotNil(t, rec)
 
