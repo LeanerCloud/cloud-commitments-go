@@ -545,6 +545,53 @@ func TestGetOfferingDetails_NoUpfront(t *testing.T) {
 	assert.Greater(t, details.RecurringCost, float64(0))
 }
 
+func TestGetOfferingDetails_PaymentOptions(t *testing.T) {
+	tests := []struct {
+		option        string
+		wantUpfront   float64
+		wantRecurring float64
+	}{
+		{"all-upfront", 350.0, 0},
+		{"upfront", 350.0, 0},
+		{"monthly", 0, 350.0 / 12},
+		{"no-upfront", 0, 350.0 / 12},
+	}
+	for _, tt := range tests {
+		t.Run(tt.option, func(t *testing.T) {
+			h := &mocks.MockHTTPClient{}
+			t.Cleanup(func() { h.AssertExpectations(t) })
+			resp := mocks.CreateMockHTTPResponse(http.StatusOK, samplePricingJSON())
+			t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
+			h.On("Do", mock.Anything).Return(resp, nil)
+			c := NewClientWithHTTP(nil, "sub", "eastus", h)
+			details, err := c.GetOfferingDetails(context.Background(), common.Recommendation{
+				ResourceType: "Premium_P1", Term: "1yr", PaymentOption: tt.option,
+			})
+			require.NoError(t, err)
+			assert.InDelta(t, tt.wantUpfront, details.UpfrontCost, 1e-9)
+			assert.InDelta(t, tt.wantRecurring, details.RecurringCost, 1e-9)
+		})
+	}
+}
+
+func TestGetOfferingDetails_UnknownPaymentOption(t *testing.T) {
+	for _, option := range []string{"partial-upfront", "bogus", ""} {
+		t.Run(option, func(t *testing.T) {
+			h := &mocks.MockHTTPClient{}
+			resp := mocks.CreateMockHTTPResponse(http.StatusOK, samplePricingJSON())
+			t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
+			h.On("Do", mock.Anything).Return(resp, nil)
+			c := NewClientWithHTTP(nil, "sub", "eastus", h)
+			details, err := c.GetOfferingDetails(context.Background(), common.Recommendation{
+				ResourceType: "Premium_P1", Term: "1yr", PaymentOption: option,
+			})
+			require.Error(t, err)
+			assert.Nil(t, details)
+			assert.Contains(t, err.Error(), "unsupported payment option")
+		})
+	}
+}
+
 func TestGetOfferingDetails_APIError(t *testing.T) {
 	h := &mocks.MockHTTPClient{}
 	t.Cleanup(func() { h.AssertExpectations(t) })
