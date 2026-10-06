@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 )
 
 // CredentialDetector detects available cloud credentials.
@@ -49,6 +50,10 @@ func detectAvailableProviders(ctx context.Context, registry *Registry) ([]Provid
 			return nil, fmt.Errorf("no usable cloud provider found: %w", errors.Join(errs...))
 		}
 		return nil, fmt.Errorf("no cloud credentials found. Please configure AWS, Azure, or GCP credentials")
+	}
+
+	for _, err := range factoryErrs {
+		log.Print(err)
 	}
 
 	return available, nil

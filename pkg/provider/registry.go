@@ -4,6 +4,7 @@ package provider
 import (
 	"fmt"
 	"log"
+	"sort"
 	"sync"
 )
 
@@ -105,7 +106,8 @@ func (r *Registry) GetAllProviders() []Provider {
 
 // GetAllProvidersWithErrors returns instances of all registered providers whose
 // factory succeeded, plus one error per provider whose factory failed. Each
-// error wraps the factory's error and names the provider.
+// error wraps the factory's error and names the provider. Both results are
+// ordered by provider name.
 func (r *Registry) GetAllProvidersWithErrors() ([]Provider, []error) {
 	// Copy the name->factory map under the lock, then release it and construct
 	// the providers lock-free. Factories may do network I/O (see GetProvider);
@@ -118,10 +120,16 @@ func (r *Registry) GetAllProvidersWithErrors() ([]Provider, []error) {
 	}
 	r.mu.RUnlock()
 
+	names := make([]string, 0, len(factories))
+	for name := range factories {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
 	providers := make([]Provider, 0, len(factories))
 	var errs []error
-	for name, factory := range factories {
-		provider, err := factory(&ProviderConfig{Name: name})
+	for _, name := range names {
+		provider, err := factories[name](&ProviderConfig{Name: name})
 		if err != nil {
 			errs = append(errs, fmt.Errorf("provider %q factory error: %w", name, err))
 			continue
