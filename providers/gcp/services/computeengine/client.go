@@ -28,6 +28,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/retry"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skumatch"
 )
 
 // maxRecsPages caps GCP Recommender API iteration to avoid burning a Lambda
@@ -1140,22 +1141,7 @@ func calculateComputeSavingsPercentage(onDemandPrice, hoursInTerm, commitmentPri
 
 // skuMatchesMachineType checks if a SKU matches the machine type and region.
 func skuMatchesMachineType(sku *cloudbilling.Sku, machineType, region string) bool {
-	// Check if the SKU description contains the machine type
-	if !strings.Contains(strings.ToLower(sku.Description), strings.ToLower(machineType)) {
-		return false
-	}
-
-	// Check if the SKU is available in the region
-	if sku.ServiceRegions != nil {
-		for _, serviceRegion := range sku.ServiceRegions {
-			if strings.EqualFold(serviceRegion, region) {
-				return true
-			}
-		}
-		return false
-	}
-
-	return true
+	return skumatch.HasToken(sku.Description, machineType) && skumatch.InRegion(sku, region)
 }
 
 // convertGCPRecommendation converts a GCP Recommender recommendation to common format.

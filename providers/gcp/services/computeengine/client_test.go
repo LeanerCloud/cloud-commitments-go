@@ -258,14 +258,24 @@ func TestSkuMatchesMachineType(t *testing.T) {
 			expected:    false,
 		},
 		{
-			name: "SKU with nil service regions matches any region",
+			name: "SKU with nil service regions matches no region",
 			sku: &cloudbilling.Sku{
 				Description:    "n1-standard-1 VM",
 				ServiceRegions: nil,
 			},
 			machineType: "n1-standard-1",
 			region:      "us-central1",
-			expected:    true,
+			expected:    false,
+		},
+		{
+			name: "SKU for a longer machine type that starts with the same text is a decoy",
+			sku: &cloudbilling.Sku{
+				Description:    "n1-standard-16 VM running in Americas",
+				ServiceRegions: []string{"us-central1"},
+			},
+			machineType: "n1-standard-1",
+			region:      "us-central1",
+			expected:    false,
 		},
 		{
 			name: "Case insensitive machine type match",

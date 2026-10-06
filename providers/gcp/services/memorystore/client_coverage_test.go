@@ -111,6 +111,7 @@ func TestExtractPricingFromSKUs_ValidPricing(t *testing.T) {
 					},
 				},
 			},
+			ServiceRegions: []string{"us-central1"},
 			Category: &cloudbilling.Category{
 				ResourceGroup: "Memorystore",
 			},
@@ -132,6 +133,7 @@ func TestExtractPricingFromSKUs_ValidPricing(t *testing.T) {
 					},
 				},
 			},
+			ServiceRegions: []string{"us-central1"},
 			Category: &cloudbilling.Category{
 				ResourceGroup: "Memorystore",
 			},

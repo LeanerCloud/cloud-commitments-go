@@ -228,14 +228,24 @@ func TestSkuMatchesTier(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "SKU with nil service regions matches any region",
+			name: "SKU with nil service regions matches no region",
 			sku: &cloudbilling.Sku{
 				Description:    "db-n1-standard-1 Cloud SQL",
 				ServiceRegions: nil,
 			},
 			tier:     "db-n1-standard-1",
 			region:   "us-central1",
-			expected: true,
+			expected: false,
+		},
+		{
+			name: "SKU for a larger tier that starts with the same text is a decoy",
+			sku: &cloudbilling.Sku{
+				Description:    "db-n1-standard-16 Cloud SQL",
+				ServiceRegions: []string{"us-central1"},
+			},
+			tier:     "db-n1-standard-1",
+			region:   "us-central1",
+			expected: false,
 		},
 		{
 			name: "Case insensitive tier match",
@@ -956,4 +966,29 @@ func TestCloudSQLClient_ConvertGCPRecommendation_RecurringMonthlyCost_BillingFai
 	rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
 	require.NotNil(t, rec)
 	assert.Nil(t, rec.RecurringMonthlyCost, "RecurringMonthlyCost must be nil when billing lookup fails")
+}
+
+func TestExtractSQLPricingFromSKUs_IgnoresLargerTierAndRegionlessSKUs(t *testing.T) {
+	sku := func(description string, regions []string, units int64) *cloudbilling.Sku {
+		return &cloudbilling.Sku{
+			Description:    description,
+			ServiceRegions: regions,
+			PricingInfo: []*cloudbilling.PricingInfo{{
+				PricingExpression: &cloudbilling.PricingExpression{
+					TieredRates: []*cloudbilling.TierRate{{
+						UnitPrice: &cloudbilling.Money{Units: units, CurrencyCode: "USD"},
+					}},
+				},
+			}},
+		}
+	}
+	skus := []*cloudbilling.Sku{
+		sku("db-n1-standard-1 Cloud SQL", []string{"europe-west4"}, 1),
+		sku("db-n1-standard-16 Cloud SQL", []string{"europe-west4"}, 16),
+		sku("db-n1-standard-1 Cloud SQL", nil, 99),
+	}
+
+	onDemand, _, _, err := extractSQLPricingFromSKUs(skus, "db-n1-standard-1", "europe-west4")
+	require.NoError(t, err)
+	assert.Equal(t, 1.0, onDemand)
 }

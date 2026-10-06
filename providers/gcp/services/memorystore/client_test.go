@@ -221,14 +221,34 @@ func TestSkuMatchesTier(t *testing.T) {
 			expected: false,
 		},
 		{
-			name: "SKU with nil service regions matches any region",
+			name: "SKU with nil service regions matches no region",
 			sku: &cloudbilling.Sku{
 				Description:    "Memorystore Redis BASIC instance",
 				ServiceRegions: nil,
 			},
 			tier:     "BASIC",
 			region:   "us-central1",
-			expected: true,
+			expected: false,
+		},
+		{
+			name: "SKU for STANDARD_HA is a decoy for tier STANDARD",
+			sku: &cloudbilling.Sku{
+				Description:    "Memorystore Redis STANDARD_HA instance",
+				ServiceRegions: []string{"us-central1"},
+			},
+			tier:     "STANDARD",
+			region:   "us-central1",
+			expected: false,
+		},
+		{
+			name: "SKU with empty service regions matches no region",
+			sku: &cloudbilling.Sku{
+				Description:    "Memorystore Redis BASIC instance",
+				ServiceRegions: []string{},
+			},
+			tier:     "BASIC",
+			region:   "us-central1",
+			expected: false,
 		},
 		{
 			name: "Case insensitive tier match",
