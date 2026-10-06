@@ -44,3 +44,50 @@ func TestListExchangeableReservations_CancelledContextReturnsContextError(t *tes
 	require.ErrorIs(t, err, context.Canceled)
 	assert.Zero(t, pager.calls)
 }
+
+// exchangeCap mirrors compute.maxReservationsPages (unexported).
+const exchangeCap = 50
+
+func TestListExchangeableReservations_CapIsExact(t *testing.T) {
+	atCap := &countingExchangeablePager{limit: exchangeCap}
+	client := newClient()
+	client.SetExchangeablePager(atCap)
+	_, err := client.ListExchangeableReservations(context.Background())
+	require.NoError(t, err, "exactly cap pages must succeed")
+	assert.Equal(t, exchangeCap, atCap.calls)
+
+	overCap := &countingExchangeablePager{limit: exchangeCap + 1}
+	client = newClient()
+	client.SetExchangeablePager(overCap)
+	_, err = client.ListExchangeableReservations(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "pagination cap")
+	assert.Equal(t, exchangeCap, overCap.calls)
+}
+
+// cancelOnSecondCallPager cancels the context while serving its second page.
+type cancelOnSecondCallPager struct {
+	calls  int
+	cancel context.CancelFunc
+}
+
+func (p *cancelOnSecondCallPager) More() bool { return true }
+func (p *cancelOnSecondCallPager) NextPage(_ context.Context) (armreservations.ReservationClientListAllResponse, error) {
+	p.calls++
+	if p.calls == 2 {
+		p.cancel()
+	}
+	return armreservations.ReservationClientListAllResponse{}, nil
+}
+
+func TestListExchangeableReservations_CancelMidWalkReturnsContextError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	pager := &cancelOnSecondCallPager{cancel: cancel}
+	client := newClient()
+	client.SetExchangeablePager(pager)
+
+	_, err := client.ListExchangeableReservations(ctx)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, 2, pager.calls)
+}
