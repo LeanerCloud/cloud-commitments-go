@@ -498,7 +498,12 @@ func TestFindReservationOrderByIdempotencyToken_NoMatch(t *testing.T) {
 // tag MUST NOT short-circuit a legitimate fresh purchase. Mirrors the AWS EC2
 // findRIByIdempotencyToken filter (state in active|payment-pending).
 func TestFindReservationOrderByIdempotencyToken_SkipsTerminalFailed(t *testing.T) {
-	for _, state := range []string{string(armreservations.ProvisioningStateCancelled), "Failed", "Expired"} {
+	for _, st := range []armreservations.ProvisioningState{
+		armreservations.ProvisioningStateCancelled,
+		armreservations.ProvisioningStateFailed,
+		armreservations.ProvisioningStateExpired,
+	} {
+		state := string(st)
 		t.Run(state, func(t *testing.T) {
 			m := &mockHTTPClient{}
 			ctx := context.Background()
@@ -532,7 +537,18 @@ func TestFindReservationOrderByIdempotencyToken_SkipsTerminalFailed(t *testing.T
 // already-paid-for or currently being processed and a re-drive would create
 // a duplicate.
 func TestFindReservationOrderByIdempotencyToken_AcceptsInFlightStates(t *testing.T) {
-	for _, state := range []string{"Succeeded", "Pending", "Creating", "ConfirmedBilling", ""} {
+	for _, state := range []string{
+		string(armreservations.ProvisioningStateSucceeded),
+		string(armreservations.ProvisioningStateCreated),
+		string(armreservations.ProvisioningStateCreating),
+		string(armreservations.ProvisioningStatePendingBilling),
+		string(armreservations.ProvisioningStateConfirmedBilling),
+		string(armreservations.ProvisioningStatePendingResourceHold),
+		string(armreservations.ProvisioningStateConfirmedResourceHold),
+		string(armreservations.ProvisioningStateMerged),
+		string(armreservations.ProvisioningStateSplit),
+		"Pending", "",
+	} {
 		t.Run(state, func(t *testing.T) {
 			m := &mockHTTPClient{}
 			ctx := context.Background()
@@ -558,6 +574,68 @@ func TestFindReservationOrderByIdempotencyToken_AcceptsInFlightStates(t *testing
 			assert.Equal(t, "order-live", orderID)
 		})
 	}
+}
+
+// TestReservationOrderDispositions_CoversEverySDKState forces a decision for
+// every ProvisioningState the SDK defines, so a newly added state cannot
+// silently fall into the adopt default.
+func TestReservationOrderDispositions_CoversEverySDKState(t *testing.T) {
+	for _, state := range armreservations.PossibleProvisioningStateValues() {
+		_, classified := reservationOrderDispositions[state]
+		assert.True(t, classified, "ProvisioningState %q has no entry in reservationOrderDispositions", state)
+	}
+}
+
+// TestFindReservationOrderByIdempotencyToken_BillingFailedIsBlocked pins issue
+// #72: a BillingFailed order is neither adopted (false success) nor skipped
+// (possible double-buy); the lookup returns an error.
+func TestFindReservationOrderByIdempotencyToken_BillingFailedIsBlocked(t *testing.T) {
+	m := &mockHTTPClient{}
+	body := orderListJSON([]struct {
+		Name              string
+		IdempotencyToken  string
+		ProvisioningState string
+		OtherTags         map[string]string
+	}{
+		{Name: "order-billing-failed", IdempotencyToken: "wanted-tok", ProvisioningState: string(armreservations.ProvisioningStateBillingFailed)},
+	}, "")
+	resp := fakeResp(http.StatusOK, body)
+	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
+	m.On("Do", mock.Anything).Return(resp, nil).Once()
+
+	orderID, found, err := FindReservationOrderByIdempotencyToken(context.Background(), m, "tok", "wanted-tok")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "BillingFailed")
+	assert.False(t, found)
+	assert.Empty(t, orderID)
+}
+
+// TestDoIdempotentPurchaseTwoStep_BillingFailed_NeitherAdoptsNorPurchases is the
+// end-to-end form: no success, no existing flag, and zero POSTs.
+func TestDoIdempotentPurchaseTwoStep_BillingFailed_NeitherAdoptsNorPurchases(t *testing.T) {
+	m := &mockHTTPClient{}
+	body := orderListJSON([]struct {
+		Name              string
+		IdempotencyToken  string
+		ProvisioningState string
+		OtherTags         map[string]string
+	}{
+		{Name: "order-billing-failed", IdempotencyToken: "redrive-tok", ProvisioningState: string(armreservations.ProvisioningStateBillingFailed)},
+	}, "")
+	resp := fakeResp(http.StatusOK, body)
+	t.Cleanup(func() { require.NoError(t, resp.Body.Close()) })
+	m.On("Do", mock.MatchedBy(func(r *http.Request) bool {
+		return r.Method == http.MethodGet && r.URL.String() == listURL
+	})).Return(resp, nil).Once()
+
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), m, calcURL, []byte(testBody), "tok", "redrive-tok")
+	require.Error(t, err)
+	assert.False(t, existing)
+	assert.Empty(t, orderID)
+	m.AssertNotCalled(t, "Do", mock.MatchedBy(func(r *http.Request) bool {
+		return r.Method == http.MethodPost
+	}))
+	m.AssertExpectations(t)
 }
 
 func TestFindReservationOrderByIdempotencyToken_HTTPError(t *testing.T) {

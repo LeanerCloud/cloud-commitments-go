@@ -455,15 +455,52 @@ type reservationOrdersListResponse struct {
 	NextLink string `json:"nextLink"`
 }
 
-// reservationOrderTerminalFailedStates enumerates the provisioning states for
-// which an existing reservation order MUST NOT suppress a fresh purchase.
-// A canceled/failed/expired order with a matching idempotency tag was
-// either rolled back or aged out; the recommendation is still owed and the
-// re-drive must be allowed through.
-var reservationOrderTerminalFailedStates = map[string]struct{}{
-	string(armreservations.ProvisioningStateCancelled): {},
-	"Failed":  {},
-	"Expired": {},
+// orderDisposition says what an existing reservation order that carries the
+// idempotency token means for a re-drive.
+type orderDisposition int
+
+const (
+	// orderAdopt: the order is live, in flight or transformed. Return its ID
+	// and do not purchase again.
+	orderAdopt orderDisposition = iota
+	// orderRetryable: the order was rolled back or aged out and never delivered
+	// a commitment. Ignore it so the purchase can proceed.
+	orderRetryable
+	// orderBlocked: the order's financial outcome is unknown. Adopting it
+	// reports a purchase that may not exist; purchasing again may double-buy.
+	// Refuse both and surface an error (issue #72).
+	orderBlocked
+)
+
+// reservationOrderDispositions classifies every armreservations.ProvisioningState.
+// TestReservationOrderDispositions_CoversEverySDKState fails when the SDK adds a
+// state that is not listed here. A state outside this map (including the empty
+// string Azure returns for some listings) is adopted: an unrecognized order must
+// never authorize another purchase.
+//
+//   - Failed, canceled, Expired: terminal, no commitment delivered.
+//   - BillingFailed: billing failed, but nothing in the SDK or the list API
+//     reference establishes that the order can never charge later or keep
+//     benefits, so it blocks rather than retrying.
+//   - Merged, Split: the commitment was transformed by an exchange or split,
+//     not lost; adopt so a re-drive does not buy a second one.
+//   - the rest: live or in flight; a re-drive would duplicate them.
+//
+// https://learn.microsoft.com/rest/api/reserved-vm-instances/reservationorder/list
+var reservationOrderDispositions = map[armreservations.ProvisioningState]orderDisposition{
+	armreservations.ProvisioningStateFailed:                orderRetryable,
+	armreservations.ProvisioningStateCancelled:             orderRetryable,
+	armreservations.ProvisioningStateExpired:               orderRetryable,
+	armreservations.ProvisioningStateBillingFailed:         orderBlocked,
+	armreservations.ProvisioningStateMerged:                orderAdopt,
+	armreservations.ProvisioningStateSplit:                 orderAdopt,
+	armreservations.ProvisioningStateSucceeded:             orderAdopt,
+	armreservations.ProvisioningStateCreated:               orderAdopt,
+	armreservations.ProvisioningStateCreating:              orderAdopt,
+	armreservations.ProvisioningStatePendingBilling:        orderAdopt,
+	armreservations.ProvisioningStateConfirmedBilling:      orderAdopt,
+	armreservations.ProvisioningStatePendingResourceHold:   orderAdopt,
+	armreservations.ProvisioningStateConfirmedResourceHold: orderAdopt,
 }
 
 // FindReservationOrderByIdempotencyToken lists reservation orders visible to
@@ -481,6 +518,7 @@ var reservationOrderTerminalFailedStates = map[string]struct{}{
 // Terminal-failed orders (canceled, failed, expired) are skipped so they do
 // not suppress a legitimate fresh purchase of the same recommendation -- this
 // mirrors the EC2 dedupe guard's state filter (active + payment-pending only).
+// A BillingFailed order returns an error: it is neither adopted nor skipped.
 func FindReservationOrderByIdempotencyToken(ctx context.Context, httpClient HTTPClient, bearerToken, idempotencyToken string) (resultOrderID string, resultFound bool, resultErr error) {
 	if idempotencyToken == "" {
 		return "", false, nil
@@ -492,7 +530,11 @@ func FindReservationOrderByIdempotencyToken(ctx context.Context, httpClient HTTP
 		if err != nil {
 			return "", false, err
 		}
-		if orderID, found := matchReservationOrderInPage(page, idempotencyToken); found {
+		orderID, found, matchErr := matchReservationOrderInPage(page, idempotencyToken)
+		if matchErr != nil {
+			return "", false, matchErr
+		}
+		if found {
 			return orderID, true, nil
 		}
 		nextURL = page.NextLink
@@ -535,24 +577,28 @@ func fetchReservationOrdersPage(ctx context.Context, httpClient HTTPClient, page
 }
 
 // matchReservationOrderInPage scans one decoded page for an order tagged with
-// the idempotency token. Terminal-failed (canceled/failed/expired) orders
-// are skipped so they do not suppress a legitimate fresh purchase. Extracted
+// the idempotency token and applies reservationOrderDispositions. Extracted
 // from FindReservationOrderByIdempotencyToken to keep the function under the
 // gocyclo:10 threshold enforced by the pre-commit hook.
-func matchReservationOrderInPage(page *reservationOrdersListResponse, idempotencyToken string) (string, bool) {
+func matchReservationOrderInPage(page *reservationOrdersListResponse, idempotencyToken string) (string, bool, error) {
 	for _, order := range page.Value {
 		if order.Tags[common.IdempotencyTagKey] != idempotencyToken {
 			continue
 		}
-		if _, terminalFailed := reservationOrderTerminalFailedStates[order.Properties.ProvisioningState]; terminalFailed {
+		state := armreservations.ProvisioningState(order.Properties.ProvisioningState)
+		switch reservationOrderDispositions[state] {
+		case orderRetryable:
 			continue
+		case orderBlocked:
+			return "", false, fmt.Errorf("reservation order %q for this idempotency token is in state %s; refusing to adopt it as a purchase or buy again until it is resolved in Azure", order.Name, state)
+		case orderAdopt:
 		}
 		if order.Name == "" {
 			continue
 		}
-		return order.Name, true
+		return order.Name, true, nil
 	}
-	return "", false
+	return "", false, nil
 }
 
 // DoIdempotentPurchaseTwoStep is the dedupe-guarded wrapper around
