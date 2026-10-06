@@ -346,12 +346,11 @@ type PurchaseResult struct {
 	Cost      *float64  `json:"cost"`
 	DryRun    bool      `json:"dry_run"`
 	Timestamp time.Time `json:"timestamp"`
-	// ExistingCommitment is true when an idempotent re-drive found a commitment
-	// an earlier attempt already bought and returned it instead of buying again.
-	// CommitmentID then names that earlier commitment, whose attributes (for
-	// example the offering class) may differ from the ones now configured, and
-	// Cost may be nil because the earlier purchase's price is not re-read.
-	// False on a fresh purchase.
+	// ExistingCommitment is true when the provider adopted a commitment that
+	// already existed for the same idempotency token (a re-drive of an earlier
+	// attempt) instead of creating a new one. Success stays true and
+	// CommitmentID names the adopted commitment. Cost semantics on adoption are
+	// unspecified until the provider changes land. False on a fresh purchase.
 	ExistingCommitment bool `json:"existing_commitment,omitempty"`
 }
 
