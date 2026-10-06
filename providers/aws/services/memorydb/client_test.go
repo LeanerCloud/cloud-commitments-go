@@ -881,6 +881,7 @@ func TestClient_PurchaseCommitment_Idempotent_GuardShortCircuits(t *testing.T) {
 	result, err := client.PurchaseCommitment(context.Background(), mdbIdemRec(), common.PurchaseOptions{IdempotencyToken: token})
 	assert.NoError(t, err)
 	assert.True(t, result.Success)
+	assert.True(t, result.ExistingCommitment)
 	assert.Equal(t, derivedID, result.CommitmentID)
 	mockMDB.AssertNotCalled(t, "PurchaseReservedNodesOffering", mock.Anything, mock.Anything)
 }
@@ -903,6 +904,7 @@ func TestClient_PurchaseCommitment_Idempotent_NotFoundProceeds(t *testing.T) {
 	result, err := client.PurchaseCommitment(context.Background(), mdbIdemRec(), common.PurchaseOptions{IdempotencyToken: token})
 	assert.NoError(t, err)
 	assert.True(t, result.Success)
+	assert.False(t, result.ExistingCommitment)
 	assert.Equal(t, derivedID, result.CommitmentID)
 	mockMDB.AssertExpectations(t)
 }
@@ -926,6 +928,7 @@ func TestClient_PurchaseCommitment_Idempotent_AlreadyExistsRecovers(t *testing.T
 	result, err := client.PurchaseCommitment(context.Background(), mdbIdemRec(), common.PurchaseOptions{IdempotencyToken: token})
 	assert.NoError(t, err)
 	assert.True(t, result.Success)
+	assert.True(t, result.ExistingCommitment)
 	assert.Equal(t, derivedID, result.CommitmentID)
 }
 
@@ -941,6 +944,7 @@ func TestClient_PurchaseCommitment_Idempotent_FailLoudOnLookupError(t *testing.T
 	result, err := client.PurchaseCommitment(context.Background(), mdbIdemRec(), common.PurchaseOptions{IdempotencyToken: token})
 	assert.Error(t, err)
 	assert.False(t, result.Success)
+	assert.False(t, result.ExistingCommitment)
 	assert.Contains(t, err.Error(), "refusing to purchase")
 	mockMDB.AssertNotCalled(t, "PurchaseReservedNodesOffering", mock.Anything, mock.Anything)
 }
@@ -1066,4 +1070,23 @@ func TestFindOfferingID_InvalidTerm_ErrorsBeforeAPICall(t *testing.T) {
 		assert.Contains(t, err.Error(), "unsupported MemoryDB reservation term")
 	}
 	mockMDB.AssertNotCalled(t, "DescribeReservedNodesOfferings", mock.Anything, mock.Anything)
+}
+
+// Issue #211: a duplicate-ID rejection whose recovery lookup finds nothing is a
+// failure, not an adoption.
+func TestClient_PurchaseCommitment_Idempotent_RejectedNotFlagged(t *testing.T) {
+	mockMDB := &MockMemoryDBClient{}
+	client := &Client{client: mockMDB, region: "eu-west-1"}
+	token := common.DeriveIdempotencyToken("exec-211", 0)
+
+	expectMDBOffering(mockMDB)
+	mockMDB.On("DescribeReservedNodes", mock.Anything, mock.Anything).
+		Return((*memorydb.DescribeReservedNodesOutput)(nil), &types.ReservedNodeNotFoundFault{})
+	mockMDB.On("PurchaseReservedNodesOffering", mock.Anything, mock.Anything).
+		Return((*memorydb.PurchaseReservedNodesOfferingOutput)(nil), &types.ReservedNodeAlreadyExistsFault{})
+
+	result, err := client.PurchaseCommitment(context.Background(), mdbIdemRec(), common.PurchaseOptions{IdempotencyToken: token})
+	assert.Error(t, err)
+	assert.False(t, result.Success)
+	assert.False(t, result.ExistingCommitment)
 }

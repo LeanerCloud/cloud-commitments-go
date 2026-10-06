@@ -572,6 +572,7 @@ func TestClient_PurchaseCommitment_Idempotent_GuardShortCircuits(t *testing.T) {
 	result, err := client.PurchaseCommitment(context.Background(), idemRec(), common.PurchaseOptions{IdempotencyToken: token})
 	assert.NoError(t, err)
 	assert.True(t, result.Success)
+	assert.True(t, result.ExistingCommitment)
 	assert.Equal(t, derivedID, result.CommitmentID)
 	mockEC.AssertNotCalled(t, "PurchaseReservedCacheNodesOffering", mock.Anything, mock.Anything)
 }
@@ -594,6 +595,7 @@ func TestClient_PurchaseCommitment_Idempotent_NotFoundProceeds(t *testing.T) {
 	result, err := client.PurchaseCommitment(context.Background(), idemRec(), common.PurchaseOptions{IdempotencyToken: token})
 	assert.NoError(t, err)
 	assert.True(t, result.Success)
+	assert.False(t, result.ExistingCommitment)
 	assert.Equal(t, derivedID, result.CommitmentID)
 	mockEC.AssertExpectations(t)
 }
@@ -617,6 +619,7 @@ func TestClient_PurchaseCommitment_Idempotent_AlreadyExistsRecovers(t *testing.T
 	result, err := client.PurchaseCommitment(context.Background(), idemRec(), common.PurchaseOptions{IdempotencyToken: token})
 	assert.NoError(t, err)
 	assert.True(t, result.Success)
+	assert.True(t, result.ExistingCommitment)
 	assert.Equal(t, derivedID, result.CommitmentID)
 }
 
@@ -632,6 +635,7 @@ func TestClient_PurchaseCommitment_Idempotent_FailLoudOnLookupError(t *testing.T
 	result, err := client.PurchaseCommitment(context.Background(), idemRec(), common.PurchaseOptions{IdempotencyToken: token})
 	assert.Error(t, err)
 	assert.False(t, result.Success)
+	assert.False(t, result.ExistingCommitment)
 	assert.Contains(t, err.Error(), "refusing to purchase")
 	mockEC.AssertNotCalled(t, "PurchaseReservedCacheNodesOffering", mock.Anything, mock.Anything)
 }
@@ -926,4 +930,23 @@ func TestClient_GetExistingCommitments_WarnsOnMissingEngine(t *testing.T) {
 		logs.Reset()
 		api.AssertExpectations(t)
 	}
+}
+
+// Issue #211: a duplicate-ID rejection whose recovery lookup finds nothing is a
+// failure, not an adoption.
+func TestClient_PurchaseCommitment_Idempotent_RejectedNotFlagged(t *testing.T) {
+	mockEC := &MockElastiCacheClient{}
+	client := &Client{client: mockEC, region: "eu-west-1"}
+	token := common.DeriveIdempotencyToken("exec-211", 0)
+
+	expectECOffering(mockEC)
+	mockEC.On("DescribeReservedCacheNodes", mock.Anything, mock.Anything).
+		Return((*elasticache.DescribeReservedCacheNodesOutput)(nil), &types.ReservedCacheNodeNotFoundFault{})
+	mockEC.On("PurchaseReservedCacheNodesOffering", mock.Anything, mock.Anything).
+		Return((*elasticache.PurchaseReservedCacheNodesOfferingOutput)(nil), &types.ReservedCacheNodeAlreadyExistsFault{})
+
+	result, err := client.PurchaseCommitment(context.Background(), idemRec(), common.PurchaseOptions{IdempotencyToken: token})
+	assert.Error(t, err)
+	assert.False(t, result.Success)
+	assert.False(t, result.ExistingCommitment)
 }
