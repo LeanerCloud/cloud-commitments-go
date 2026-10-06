@@ -17,6 +17,7 @@ import (
 	"google.golang.org/api/sqladmin/v1"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/billingcurrency"
 )
 
 // maxRecsPages caps GCP Recommender API iteration.
@@ -353,7 +354,10 @@ func (c *Client) getSQLPricing(ctx context.Context, tier, region string, termYea
 		return nil, fmt.Errorf("failed to list SKUs: %w", err)
 	}
 
-	onDemandPrice, commitmentPrice, currency := extractSQLPricingFromSKUs(skus.Skus, tier, region)
+	onDemandPrice, commitmentPrice, currency, err := extractSQLPricingFromSKUs(skus.Skus, tier, region)
+	if err != nil {
+		return nil, err
+	}
 	if onDemandPrice == 0 {
 		return nil, fmt.Errorf("no pricing found for Cloud SQL tier %s", tier)
 	}
@@ -393,9 +397,7 @@ func (c *Client) getOrCreateBillingService(ctx context.Context) (BillingService,
 
 // extractSQLPricingFromSKUs extracts on-demand and commitment pricing from the SKU list.
 // Cloud SQL committed-use discounts are surfaced as "commitment" SKUs in the billing catalog.
-func extractSQLPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string) (onDemand, commitment float64, currency string) {
-	currency = "USD"
-
+func extractSQLPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string) (onDemand, commitment float64, currency string, err error) {
 	for _, sku := range skus {
 		if !skuMatchesTier(sku, tier, region) {
 			continue
@@ -406,8 +408,9 @@ func extractSQLPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string) (o
 			continue
 		}
 
-		if curr != "" {
-			currency = curr
+		currency, err = billingcurrency.Unify(currency, curr, sku.SkuId)
+		if err != nil {
+			return 0, 0, "", err
 		}
 
 		if strings.Contains(strings.ToLower(sku.Description), "commitment") {
@@ -417,7 +420,7 @@ func extractSQLPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string) (o
 		}
 	}
 
-	return onDemand, commitment, currency
+	return onDemand, commitment, currency, nil
 }
 
 // extractSQLPriceFromSKU extracts the unit price from a SKU.

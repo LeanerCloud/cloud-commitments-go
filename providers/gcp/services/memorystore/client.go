@@ -18,6 +18,7 @@ import (
 	"google.golang.org/api/option"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/billingcurrency"
 )
 
 // maxRecsPages caps GCP Recommender API iteration.
@@ -322,7 +323,10 @@ func (c *Client) getRedisPricing(ctx context.Context, tier, region string, termY
 		return nil, fmt.Errorf("failed to list SKUs: %w", err)
 	}
 
-	onDemandPrice, commitmentPrice, currency := extractPricingFromSKUs(skus.Skus, tier, region)
+	onDemandPrice, commitmentPrice, currency, err := extractPricingFromSKUs(skus.Skus, tier, region)
+	if err != nil {
+		return nil, err
+	}
 	if onDemandPrice == 0 {
 		return nil, fmt.Errorf("no pricing found for Memorystore tier %s", tier)
 	}
@@ -361,9 +365,7 @@ func (c *Client) getOrCreateBillingService(ctx context.Context) (BillingService,
 }
 
 // extractPricingFromSKUs extracts on-demand and commitment pricing from SKU list.
-func extractPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string) (onDemand, commitment float64, currency string) {
-	currency = "USD"
-
+func extractPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string) (onDemand, commitment float64, currency string, err error) {
 	for _, sku := range skus {
 		if !skuMatchesTier(sku, tier, region) {
 			continue
@@ -374,8 +376,9 @@ func extractPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string) (onDe
 			continue
 		}
 
-		if curr != "" {
-			currency = curr
+		currency, err = billingcurrency.Unify(currency, curr, sku.SkuId)
+		if err != nil {
+			return 0, 0, "", err
 		}
 
 		if strings.Contains(strings.ToLower(sku.Description), "commitment") {
@@ -385,7 +388,7 @@ func extractPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string) (onDe
 		}
 	}
 
-	return onDemand, commitment, currency
+	return onDemand, commitment, currency, nil
 }
 
 // extractPriceFromSKU extracts the unit price from a SKU.
