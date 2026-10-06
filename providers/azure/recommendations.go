@@ -334,15 +334,39 @@ func (r *RecommendationsClientAdapter) getAdvisorRecommendations(ctx context.Con
 		return nil, fmt.Errorf("failed to create advisor client: %w", err)
 	}
 
-	recommendations := make([]common.Recommendation, 0)
-
 	// Filter for cost recommendations
 	filter := "Category eq 'Cost'"
 	pager := client.NewListPager(&armadvisor.RecommendationsClientListOptions{
 		Filter: &filter,
 	})
+	return r.collectAdvisorRecommendations(ctx, params, pager)
+}
 
-	for pager.More() {
+// maxAdvisorPages caps the Advisor cost-recommendation walk; above the
+// 10-page cap on the Consumption recommendation walks because Advisor lists
+// every resource-level cost recommendation in the subscription.
+const maxAdvisorPages = 50
+
+// AdvisorPager is the page iterator collectAdvisorRecommendations walks
+// (enables mocking).
+type AdvisorPager interface {
+	More() bool
+	NextPage(ctx context.Context) (armadvisor.RecommendationsClientListResponse, error)
+}
+
+// collectAdvisorRecommendations walks the Advisor pager. A canceled context
+// is an error; a page error or hitting the page cap keeps what was collected
+// so far with a warning (the intentional partial-OK path).
+func (r *RecommendationsClientAdapter) collectAdvisorRecommendations(ctx context.Context, params common.RecommendationParams, pager AdvisorPager) ([]common.Recommendation, error) {
+	recommendations := make([]common.Recommendation, 0)
+	for pageIdx := 0; pager.More(); pageIdx++ {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("azure advisor: context canceled during pagination: %w", err)
+		}
+		if pageIdx >= maxAdvisorPages {
+			logging.Warnf("Azure Advisor pagination cap (%d pages) reached after %d recommendations (partial results returned)", maxAdvisorPages, len(recommendations))
+			break
+		}
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			// Advisor partial-OK is intentional: per-service reservation results
