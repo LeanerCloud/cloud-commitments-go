@@ -445,6 +445,13 @@ func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	return instanceTypes, nil
 }
 
+// Duration constants for RI term calculations. Aliased from purchasecfg so
+// the exported names stay available to downstream consumers of this module.
+const (
+	OneYearSeconds   = purchasecfg.OneYearSeconds   // 365 days in seconds
+	ThreeYearSeconds = purchasecfg.ThreeYearSeconds // 3 * 365 days in seconds
+)
+
 // getDurationString converts a term string to the duration string the
 // ElastiCache API expects, failing loud on any unrecognized or empty input.
 // The parsing logic lives in purchasecfg; this wrapper only supplies the
