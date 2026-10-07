@@ -184,20 +184,69 @@ func TestComputeClient_Fields(t *testing.T) {
 	assert.Nil(t, client.cred)
 }
 
+// fakeAppliedLister is a hermetic reservations.AppliedReservationsLister.
+type fakeAppliedLister struct {
+	orderIDs []*string
+	nextLink *string
+	err      error
+}
+
+func (f *fakeAppliedLister) GetAppliedReservationList(context.Context, string, *armreservations.AzureReservationAPIClientGetAppliedReservationListOptions) (armreservations.AzureReservationAPIClientGetAppliedReservationListResponse, error) {
+	if f.err != nil {
+		return armreservations.AzureReservationAPIClientGetAppliedReservationListResponse{}, f.err
+	}
+	return armreservations.AzureReservationAPIClientGetAppliedReservationListResponse{
+		AppliedReservations: armreservations.AppliedReservations{
+			Properties: &armreservations.AppliedReservationsProperties{
+				ReservationOrderIDs: &armreservations.AppliedReservationList{
+					Value:    f.orderIDs,
+					NextLink: f.nextLink,
+				},
+			},
+		},
+	}, nil
+}
+
+// fakeOrderPager is a single-page hermetic reservations.OrderReservationsPager.
+type fakeOrderPager struct {
+	responses []*armreservations.ReservationResponse
+	err       error
+	done      bool
+}
+
+func (p *fakeOrderPager) More() bool { return !p.done }
+
+func (p *fakeOrderPager) NextPage(context.Context) (armreservations.ReservationClientListResponse, error) {
+	p.done = true
+	if p.err != nil {
+		return armreservations.ReservationClientListResponse{}, p.err
+	}
+	return armreservations.ReservationClientListResponse{
+		ReservationList: armreservations.ReservationList{Value: p.responses},
+	}, nil
+}
+
 func TestComputeClient_SetPagers(t *testing.T) {
 	client := NewClient(nil, "sub", "eastus")
 
 	recPager := &mocks.MockRecommendationsPager{}
-	resPager := &mocks.MockReservationsDetailsPager{}
 	skuPager := &mocks.MockResourceSKUsPager{}
+	factories := &reservations.InventoryFactories{
+		NewAppliedLister: func() (reservations.AppliedReservationsLister, error) {
+			return &fakeAppliedLister{}, nil
+		},
+		NewOrderPager: func(string) reservations.OrderReservationsPager {
+			return &fakeOrderPager{}
+		},
+	}
 
 	client.SetRecommendationsPager(recPager)
-	client.SetReservationsPager(resPager)
 	client.SetResourceSKUsPager(skuPager)
+	client.SetInventoryFactories(factories)
 
 	assert.Equal(t, recPager, client.recommendationsPager)
-	assert.Equal(t, resPager, client.reservationsPager)
 	assert.Equal(t, skuPager, client.resourceSKUsPager)
+	assert.Equal(t, factories, client.inventoryFactories)
 }
 
 func TestComputeClient_GetRecommendations_WithMock(t *testing.T) {
@@ -285,35 +334,108 @@ func TestComputeClient_GetExistingCommitments_WithMock(t *testing.T) {
 	ctx := context.Background()
 	client := NewClient(nil, "test-subscription", "eastus")
 
-	// Create mock pager with reservation details
-	mockPager := &mocks.MockReservationsDetailsPager{
-		Results: mocks.CreateSampleReservationDetails("test-subscription", "eastus"),
-		HasMore: true,
-	}
-	client.SetReservationsPager(mockPager)
+	purchaseDate := time.Now().Add(-2 * time.Hour)
+	expiryDate := time.Now().Add(365 * 24 * time.Hour)
+	succeeded := armreservations.ProvisioningStateSucceeded
+	cancelled := armreservations.ProvisioningStateCancelled
+	vmType := armreservations.ReservedResourceTypeVirtualMachines
+	sqlType := armreservations.ReservedResourceTypeSQLDatabases
+
+	pager := &fakeOrderPager{responses: []*armreservations.ReservationResponse{
+		{
+			ID:       mocks.StringPtr("/providers/Microsoft.Capacity/reservationOrders/order-1/reservations/reservation-123"),
+			Location: mocks.StringPtr("westus2"), // mismatched with the client's eastus: Location wins
+			SKU:      &armreservations.SKUName{Name: mocks.StringPtr("Standard_D2s_v3")},
+			Properties: &armreservations.Properties{
+				ReservedResourceType: &vmType,
+				ProvisioningState:    &succeeded,
+				Quantity:             mocks.Int32Ptr(3),
+				PurchaseDate:         &purchaseDate,
+				ExpiryDate:           &expiryDate,
+			},
+		},
+		{
+			ID:       mocks.StringPtr("reservation-cancelled"),
+			Location: mocks.StringPtr("eastus"),
+			SKU:      &armreservations.SKUName{Name: mocks.StringPtr("Standard_D4s_v3")},
+			Properties: &armreservations.Properties{
+				ReservedResourceType: &vmType,
+				ProvisioningState:    &cancelled,
+				Quantity:             mocks.Int32Ptr(1),
+			},
+		},
+		{ // non-VM reservation: skipped
+			ID:       mocks.StringPtr("reservation-sql"),
+			Location: mocks.StringPtr("eastus"),
+			SKU:      &armreservations.SKUName{Name: mocks.StringPtr("Standard_S0")},
+			Properties: &armreservations.Properties{
+				ReservedResourceType: &sqlType,
+				ProvisioningState:    &succeeded,
+			},
+		},
+		{ID: mocks.StringPtr("reservation-no-props")}, // nil Properties: skipped
+	}}
+	client.SetInventoryFactories(&reservations.InventoryFactories{
+		NewAppliedLister: func() (reservations.AppliedReservationsLister, error) {
+			return &fakeAppliedLister{orderIDs: []*string{
+				mocks.StringPtr("/providers/Microsoft.Capacity/reservationOrders/order-1"),
+			}}, nil
+		},
+		NewOrderPager: func(string) reservations.OrderReservationsPager { return pager },
+	})
 
 	commitments, err := client.GetExistingCommitments(ctx)
 	require.NoError(t, err)
-	assert.Len(t, commitments, 1)
-	assert.Equal(t, common.ProviderAzure, commitments[0].Provider)
-	assert.Equal(t, common.ServiceCompute, commitments[0].Service)
-	assert.Equal(t, "reservation-123", commitments[0].CommitmentID)
+	require.Len(t, commitments, 2)
+
+	active := commitments[0]
+	assert.Equal(t, common.ProviderAzure, active.Provider)
+	assert.Equal(t, common.ServiceCompute, active.Service)
+	assert.Equal(t, common.CommitmentReservedInstance, active.CommitmentType)
+	assert.Equal(t, "/providers/Microsoft.Capacity/reservationOrders/order-1/reservations/reservation-123", active.CommitmentID)
+	assert.Equal(t, "westus2", active.Region, "reservation Location must win over the client's configured region")
+	assert.Equal(t, "Standard_D2s_v3", active.ResourceType)
+	assert.Equal(t, common.CommitmentStateActive, active.State)
+	assert.Equal(t, 3, active.Count)
+	assert.Equal(t, purchaseDate, active.StartDate)
+	assert.Equal(t, expiryDate, active.EndDate)
+
+	terminal := commitments[1]
+	assert.Equal(t, common.CommitmentStateCanceled, terminal.State, "a Cancelled reservation must not be stamped active")
 }
 
 func TestComputeClient_GetExistingCommitments_Empty(t *testing.T) {
 	ctx := context.Background()
 	client := NewClient(nil, "test-subscription", "eastus")
-
-	// Create mock pager with no reservation details
-	mockPager := &mocks.MockReservationsDetailsPager{
-		Results: nil,
-		HasMore: true,
-	}
-	client.SetReservationsPager(mockPager)
+	client.SetInventoryFactories(&reservations.InventoryFactories{
+		NewAppliedLister: func() (reservations.AppliedReservationsLister, error) {
+			return &fakeAppliedLister{}, nil
+		},
+		NewOrderPager: func(string) reservations.OrderReservationsPager {
+			return &fakeOrderPager{}
+		},
+	})
 
 	commitments, err := client.GetExistingCommitments(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, commitments)
+}
+
+func TestComputeClient_GetExistingCommitments_ListerError(t *testing.T) {
+	ctx := context.Background()
+	client := NewClient(nil, "test-subscription", "eastus")
+	client.SetInventoryFactories(&reservations.InventoryFactories{
+		NewAppliedLister: func() (reservations.AppliedReservationsLister, error) {
+			return &fakeAppliedLister{err: errors.New("boom")}, nil
+		},
+		NewOrderPager: func(string) reservations.OrderReservationsPager {
+			return &fakeOrderPager{}
+		},
+	})
+
+	_, err := client.GetExistingCommitments(ctx)
+	require.Error(t, err, "a failed inventory lookup must not masquerade as an empty commitment list")
+	assert.Contains(t, err.Error(), "compute: list applied reservations")
 }
 
 func TestComputeClient_GetValidResourceTypes_WithMock(t *testing.T) {
