@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"sync"
 	"testing"
 	"time"
 
@@ -16,26 +17,24 @@ import (
 
 // mockExchangeStore implements RIExchangeStore for testing.
 type mockExchangeStore struct {
+	mu             sync.Mutex
+	dailyReadCount int
+	dailyReadGate  chan struct{}
 	savedRecords   []*ExchangeRecord
 	cancelledCount int64
 	staleRecords   []ExchangeRecord
 	dailySpend     string
 	dailySpendErr  error
+	completeErr    error
+	completeCalls  int
 	// cancelByOriginLast captures the origin argument of the last
 	// CancelPendingExchangesByOrigin call for assertion in scoping tests.
 	cancelByOriginLast *common.ExchangeOrigin
-	// saveErrFor, when non-nil, is called for each SaveRIExchangeRecord call.
-	// Returning a non-nil error simulates a DB write failure for that record.
-	// Use this to inject ledger-write failures without affecting other saves.
-	saveErrFor func(record *ExchangeRecord) error
 }
 
 func (m *mockExchangeStore) SaveRIExchangeRecord(_ context.Context, record *ExchangeRecord) error {
-	if m.saveErrFor != nil {
-		if err := m.saveErrFor(record); err != nil {
-			return err
-		}
-	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	if record.ID == "" {
 		record.ID = fmt.Sprintf("test-id-%d", len(m.savedRecords))
 	}
@@ -48,6 +47,8 @@ func (m *mockExchangeStore) CancelAllPendingExchanges(_ context.Context) (int64,
 }
 
 func (m *mockExchangeStore) CancelPendingExchangesByOrigin(_ context.Context, origin common.ExchangeOrigin) (int64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.cancelByOriginLast = &origin
 	return m.cancelledCount, nil
 }
@@ -57,18 +58,147 @@ func (m *mockExchangeStore) GetStaleProcessingExchanges(_ context.Context, _ tim
 }
 
 func (m *mockExchangeStore) GetRIExchangeDailySpend(_ context.Context, _ time.Time) (string, error) {
+	m.mu.Lock()
+	m.dailyReadCount++
+	if m.dailyReadGate != nil && m.dailyReadCount == 2 {
+		close(m.dailyReadGate)
+	}
+	gate := m.dailyReadGate
+	m.mu.Unlock()
+	if gate != nil {
+		<-gate
+	}
 	if m.dailySpendErr != nil {
 		return "", m.dailySpendErr
 	}
 	return m.dailySpend, nil
 }
 
+func TestRunAutoExchange_ConcurrentRunsRespectSharedDailyCap(t *testing.T) {
+	t.Parallel()
+	store := &mockExchangeStore{dailySpend: "0", dailyReadGate: make(chan struct{})}
+	quoteDue, err := ParseDecimalRat("900")
+	require.NoError(t, err)
+	freshDue, err := ParseDecimalRat("950")
+	require.NoError(t, err)
+	quote := &ExchangeQuoteSummary{IsValidExchange: true, CurrencyCode: "USD", PaymentDueUSD: quoteDue, PaymentDueUSDStr: "900.000000"}
+	freshQuote := &ExchangeQuoteSummary{IsValidExchange: true, CurrencyCode: "USD", PaymentDueUSD: freshDue, PaymentDueUSDStr: "950.000000"}
+	clients := [2]*mockExchangeClient{
+		{quoteResult: quote, executeQuoteResult: freshQuote, executeResult: "exchange-a"},
+		{quoteResult: quote, executeQuoteResult: freshQuote, executeResult: "exchange-b"},
+	}
+	results := make(chan *AutoExchangeResult, 2)
+	for i, client := range clients {
+		params := defaultParams(store, client)
+		params.Config.Mode = "auto"
+		params.Config.MaxPaymentDailyUSD = 1000
+		params.Config.MaxPaymentPerExchangeUSD = 1000
+		params.RIs[0].ID = fmt.Sprintf("ri-%d", i)
+		params.Utilization[0].RIID = params.RIs[0].ID
+		params.RIMetadata[params.RIs[0].ID] = params.RIMetadata["ri-001"]
+		go func() {
+			result, runErr := RunAutoExchange(context.Background(), params)
+			if runErr != nil {
+				results <- &AutoExchangeResult{Failed: []ExchangeOutcome{{Error: runErr.Error()}}}
+				return
+			}
+			results <- result
+		}()
+	}
+	first, second := <-results, <-results
+	assert.Equal(t, 1, clients[0].executeCalls+clients[1].executeCalls)
+	assert.Equal(t, 1, len(first.Completed)+len(second.Completed))
+	require.Len(t, store.savedRecords, 1)
+	assert.Equal(t, "completed", store.savedRecords[0].Status)
+	assert.Equal(t, "950.000000", store.savedRecords[0].PaymentDue)
+	for _, client := range clients {
+		if client.executeCalls == 1 {
+			require.Len(t, client.executeRequests, 1)
+			assert.Zero(t, client.executeRequests[0].MaxPaymentDueUSD.Cmp(big.NewRat(1000, 1)))
+		}
+	}
+}
+
 func (m *mockExchangeStore) CompleteRIExchange(_ context.Context, _ string, _ string) error {
 	return nil
 }
 
-func (m *mockExchangeStore) FailRIExchange(_ context.Context, _ string, _ string) error {
-	return nil
+func (m *mockExchangeStore) ReserveRIExchange(_ context.Context, record *ExchangeRecord, dailyCapUSD, perExchangeCapUSD string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.dailySpendErr != nil {
+		return "", m.dailySpendErr
+	}
+	dailyCap, err := ParseDecimalRat(dailyCapUSD)
+	if err != nil {
+		return "", err
+	}
+	perExchangeCap, err := ParseDecimalRat(perExchangeCapUSD)
+	if err != nil {
+		return "", err
+	}
+	spent, err := ParseDecimalRat(m.dailySpend)
+	if err != nil {
+		return "", err
+	}
+	for _, saved := range m.savedRecords {
+		if saved.Status == "processing" || saved.Status == "completed" {
+			amount, parseErr := ParseDecimalRat(saved.PaymentDue)
+			if parseErr != nil {
+				return "", parseErr
+			}
+			spent.Add(spent, amount)
+		}
+	}
+	ceiling := new(big.Rat).Sub(dailyCap, spent)
+	if ceiling.Cmp(perExchangeCap) > 0 {
+		ceiling = perExchangeCap
+	}
+	initial, err := ParseDecimalRat(record.PaymentDue)
+	if err != nil {
+		return "", err
+	}
+	if dailyCap.Sign() < 0 || perExchangeCap.Sign() < 0 || initial.Sign() < 0 {
+		return "", fmt.Errorf("negative exchange amount or cap")
+	}
+	if initial.Cmp(ceiling) > 0 {
+		return "", fmt.Errorf("daily cap exceeded: initial %s exceeds remaining %s", initial.FloatString(2), ceiling.FloatString(2))
+	}
+	record.ID = fmt.Sprintf("test-id-%d", len(m.savedRecords))
+	record.PaymentDue = ceiling.FloatString(6)
+	m.savedRecords = append(m.savedRecords, record)
+	return record.PaymentDue, nil
+}
+
+func (m *mockExchangeStore) CompleteRIExchangeWithPayment(_ context.Context, id, exchangeID, acceptedPaymentDue string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.completeCalls++
+	if m.completeErr != nil {
+		return m.completeErr
+	}
+	for _, record := range m.savedRecords {
+		if record.ID == id {
+			record.Status = "completed"
+			record.ExchangeID = exchangeID
+			record.PaymentDue = acceptedPaymentDue
+			return nil
+		}
+	}
+	return fmt.Errorf("missing reserved exchange %s", id)
+}
+
+func (m *mockExchangeStore) FailRIExchange(_ context.Context, id string, errorMsg string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, record := range m.savedRecords {
+		if record.ID == id {
+			record.Status = "failed"
+			record.Error = errorMsg
+			return nil
+		}
+	}
+	return fmt.Errorf("missing reserved exchange %s", id)
 }
 
 // testifyExchangeStore is a testify mock.Mock-based store for tests that need
@@ -108,6 +238,16 @@ func (m *testifyExchangeStore) GetRIExchangeDailySpend(ctx context.Context, date
 
 func (m *testifyExchangeStore) CompleteRIExchange(ctx context.Context, id string, exchangeID string) error {
 	args := m.Called(ctx, id, exchangeID)
+	return args.Error(0)
+}
+
+func (m *testifyExchangeStore) ReserveRIExchange(ctx context.Context, record *ExchangeRecord, dailyCapUSD, perExchangeCapUSD string) (string, error) {
+	args := m.Called(ctx, record, dailyCapUSD, perExchangeCapUSD)
+	return args.String(0), args.Error(1)
+}
+
+func (m *testifyExchangeStore) CompleteRIExchangeWithPayment(ctx context.Context, id, exchangeID, acceptedPaymentDue string) error {
+	args := m.Called(ctx, id, exchangeID, acceptedPaymentDue)
 	return args.Error(0)
 }
 
@@ -336,7 +476,7 @@ func TestRunAutoExchange_AutoMode_DailySpendDBError_FailsClosed(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Len(t, result.Failed, 1)
-	assert.Contains(t, result.Failed[0].Error, "daily cap check failed")
+	assert.Contains(t, result.Failed[0].Error, "exchange reservation failed")
 }
 
 // TestProcessAutoExchange_UnparseablePaymentDue_FailsClosed is the regression
@@ -852,23 +992,15 @@ func TestProcessAutoExchange_AcceptedAmountFromFreshQuote(t *testing.T) {
 		"completed record must store the amount AWS actually accepted, not the pre-execution quote")
 }
 
-// ─── H4: halt on persistent ledger-save failure ──────────────────────────────
+// ─── H4: halt on persistent settlement failure ───────────────────────────────
 
-// TestProcessAutoExchange_LedgerSaveFailure_HaltsAndReturnsError is the
-// regression test for H4: when SaveRIExchangeRecord fails for a completed
-// exchange (money has already moved), processAutoExchange must retry and, on
-// persistent failure, return halt=true to stop further exchanges.
-func TestProcessAutoExchange_LedgerSaveFailure_HaltsAndReturnsError(t *testing.T) {
+// A persistent completion error keeps the processing ceiling and halts the run.
+func TestProcessAutoExchange_SettlementFailure_HaltsAndReturnsError(t *testing.T) {
 	t.Parallel()
 
 	store := &mockExchangeStore{
-		dailySpend: "0",
-		saveErrFor: func(r *ExchangeRecord) error {
-			if r.Status == "completed" {
-				return fmt.Errorf("DB connection refused")
-			}
-			return nil
-		},
+		dailySpend:  "0",
+		completeErr: fmt.Errorf("DB connection refused"),
 	}
 	client := &mockExchangeClient{
 		quoteResult:   defaultQuote(),
@@ -889,28 +1021,24 @@ func TestProcessAutoExchange_LedgerSaveFailure_HaltsAndReturnsError(t *testing.T
 
 	outcome, halt := processAutoExchange(context.Background(), params, rec, "offering-123", "0.000000", perExchangeCap)
 
-	// Execute succeeded but ledger write failed: outcome must carry an error
-	// and halt must be true to prevent cap bypass.
-	assert.Contains(t, outcome.Error, "ledger save failed")
+	// Execute succeeded but settlement failed; the reservation remains.
+	assert.Contains(t, outcome.Error, "exchange settlement failed")
 	assert.Equal(t, "exch-h4-test", outcome.ExchangeID,
-		"ExchangeID must be set even when ledger write fails (money moved)")
-	assert.True(t, halt, "persistent ledger failure must signal halt to stop further exchanges")
+		"ExchangeID must be set even when settlement fails (money moved)")
+	assert.True(t, halt, "persistent settlement failure must halt further exchanges")
+	assert.Equal(t, 3, store.completeCalls)
+	require.Len(t, store.savedRecords, 1)
+	assert.Equal(t, "processing", store.savedRecords[0].Status)
+	assert.Equal(t, outcome.RecordID, store.savedRecords[0].ID)
 }
 
-// TestRunAutoExchange_LedgerSaveFailure_StopsAfterFirstExchange verifies that
-// when the first exchange's ledger write fails (H4), RunAutoExchange does not
-// proceed to a second exchange recommendation.
-func TestRunAutoExchange_LedgerSaveFailure_StopsAfterFirstExchange(t *testing.T) {
+// A run stops after the first exchange's settlement fails.
+func TestRunAutoExchange_SettlementFailure_StopsAfterFirstExchange(t *testing.T) {
 	t.Parallel()
 
 	store := &mockExchangeStore{
-		dailySpend: "0",
-		saveErrFor: func(r *ExchangeRecord) error {
-			if r.Status == "completed" {
-				return fmt.Errorf("DB write failed")
-			}
-			return nil
-		},
+		dailySpend:  "0",
+		completeErr: fmt.Errorf("DB write failed"),
 	}
 	client := &mockExchangeClient{
 		quoteResult:   defaultQuote(),
@@ -933,10 +1061,10 @@ func TestRunAutoExchange_LedgerSaveFailure_StopsAfterFirstExchange(t *testing.T)
 	result, err := RunAutoExchange(context.Background(), params)
 	require.NoError(t, err)
 
-	// First exchange executes but ledger fails -> appears in Failed.
+	// First exchange executes but settlement fails -> appears in Failed.
 	// Second exchange must NOT have been attempted.
-	assert.Len(t, result.Failed, 1, "exactly one failed outcome (the ledger failure)")
-	assert.Empty(t, result.Completed, "no completed outcomes when ledger fails")
+	assert.Len(t, result.Failed, 1, "exactly one failed outcome (the settlement failure)")
+	assert.Empty(t, result.Completed, "no completed outcomes when settlement fails")
 	assert.Equal(t, 1, client.executeCalls,
 		"Execute must be called exactly once; second exchange must be halted")
 }
