@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -136,7 +137,7 @@ func (c *Client) GetRecommendations(_ context.Context, _ *common.RecommendationP
 	return []common.Recommendation{}, nil
 }
 
-// GetExistingCommitments retrieves all active Azure Savings Plans.
+// GetExistingCommitments retrieves the Azure Savings Plans billed to this client's subscription.
 func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	var pager SavingsPlanListAllPager
 
@@ -151,22 +152,65 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 	}
 
 	commitments := make([]common.Commitment, 0)
-
-	for pager.More() {
+	for pageIndex := 1; pager.More(); pageIndex++ {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list savings plans: %w", err)
 		}
-
-		for _, sp := range page.Value {
-			commitment := convertSavingsPlan(sp, c.subscriptionID)
-			if commitment != nil {
-				commitments = append(commitments, *commitment)
-			}
+		commitments, err = c.appendOwnedPlans(commitments, page.Value)
+		if err != nil {
+			return nil, fmt.Errorf("incomplete savings plan inventory for subscription %s, page %d: %w", c.subscriptionID, pageIndex, err)
 		}
 	}
-
 	return commitments, nil
+}
+
+const subscriptionScopePrefix = "/subscriptions/"
+
+func (c *Client) appendOwnedPlans(dst []common.Commitment, plans []*armbillingbenefits.SavingsPlanModel) ([]common.Commitment, error) {
+	ownScope := c.billingScopeID()
+	for i, sp := range plans {
+		owned, err := planOwnedBy(sp, ownScope)
+		if err != nil {
+			return nil, fmt.Errorf("row %d: %w", i+1, err)
+		}
+		if owned {
+			dst = append(dst, *convertSavingsPlan(sp, c.subscriptionID))
+		}
+	}
+	return dst, nil
+}
+
+func planOwnedBy(sp *armbillingbenefits.SavingsPlanModel, ownScope string) (bool, error) {
+	if sp == nil || sp.Properties == nil || sp.Properties.BillingScopeID == nil {
+		return false, fmt.Errorf("missing billing scope")
+	}
+	billingScope := *sp.Properties.BillingScopeID
+	if !hasPrefixFold(billingScope, subscriptionScopePrefix) {
+		return false, fmt.Errorf("billing scope does not identify a subscription")
+	}
+	subscription := billingScope[len(subscriptionScopePrefix):]
+	if subscription == "" || strings.IndexFunc(subscription, func(r rune) bool {
+		return !strings.ContainsRune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-", r)
+	}) >= 0 {
+		return false, fmt.Errorf("malformed billing subscription scope")
+	}
+	if !strings.EqualFold(billingScope, ownScope) {
+		return false, nil
+	}
+	if sp.ID == nil || strings.TrimSpace(*sp.ID) == "" {
+		return false, fmt.Errorf("owned savings plan has no ID")
+	}
+	return true, nil
+}
+
+func hasPrefixFold(s, prefix string) bool {
+	return len(s) >= len(prefix) && strings.EqualFold(s[:len(prefix)], prefix)
+}
+
+// billingScopeID is the scope this client purchases under and owns plans by.
+func (c *Client) billingScopeID() string {
+	return subscriptionScopePrefix + c.subscriptionID
 }
 
 // azureSavingsPlanState maps a savings plan provisioning state to the common
@@ -265,7 +309,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	}
 
 	grain := armbillingbenefits.CommitmentGrainHourly
-	billingScopeID := fmt.Sprintf("/subscriptions/%s", c.subscriptionID)
+	billingScopeID := c.billingScopeID()
 	appliedScope := armbillingbenefits.AppliedScopeTypeShared
 	hourlyAmount := spDetails.HourlyCommitment
 	displayName := fmt.Sprintf("cudly-%s-%s", spDetails.PlanType, rec.Term)
@@ -357,7 +401,7 @@ func (c *Client) buildValidateBody(rec common.Recommendation) (armbillingbenefit
 	}
 
 	grain := armbillingbenefits.CommitmentGrainHourly
-	billingScopeID := fmt.Sprintf("/subscriptions/%s", c.subscriptionID)
+	billingScopeID := c.billingScopeID()
 	appliedScope := armbillingbenefits.AppliedScopeTypeShared
 	hourlyAmount := spDetails.HourlyCommitment
 	displayName := "cudly-validate"

@@ -153,6 +153,7 @@ func TestGetExistingCommitments_Happy(t *testing.T) {
 		ID:   &spID,
 		Name: &spName,
 		Properties: &armbillingbenefits.SavingsPlanModelProperties{
+			BillingScopeID:    toPtr("/subscriptions/sub-abc"),
 			ProvisioningState: &prov,
 			EffectiveDateTime: &now,
 			ExpiryDateTime:    &expiry,
@@ -181,14 +182,78 @@ func TestGetExistingCommitments_Happy(t *testing.T) {
 	assert.Equal(t, amount, got.Cost)
 }
 
-func TestGetExistingCommitments_NilModel(t *testing.T) {
-	// A nil entry in the page should be skipped without panicking.
-	c := NewClient(nil, "sub", "eastus")
-	c.SetListAllPager(&mockListAllPager{results: []*armbillingbenefits.SavingsPlanModel{nil}})
-
-	commitments, err := c.GetExistingCommitments(context.Background())
-	require.NoError(t, err)
-	assert.Empty(t, commitments)
+func TestGetExistingCommitments_SubscriptionOwnership(t *testing.T) {
+	plan := func(id, scope string, applied armbillingbenefits.AppliedScopeType, subscription string) *armbillingbenefits.SavingsPlanModel {
+		return &armbillingbenefits.SavingsPlanModel{
+			ID: toPtr(id),
+			Properties: &armbillingbenefits.SavingsPlanModelProperties{
+				BillingScopeID:         toPtr(scope),
+				AppliedScopeType:       toPtr(applied),
+				AppliedScopeProperties: &armbillingbenefits.AppliedScopeProperties{SubscriptionID: toPtr(subscription)},
+			},
+		}
+	}
+	own := plan("owned", "/subscriptions/sub-a", armbillingbenefits.AppliedScopeTypeShared, "")
+	accountScope := "/providers/Microsoft.Billing/billingAccounts/ba-1"
+	foreignNoID := plan("", "/subscriptions/sub-b", "", "")
+	foreignNoID.ID = nil
+	ownNoID := plan("", "/subscriptions/sub-a", "", "")
+	ownNoID.ID = nil
+	cases := []struct {
+		name    string
+		row     *armbillingbenefits.SavingsPlanModel
+		wantOwn bool
+		wantErr bool
+	}{
+		{"own-single", plan("single", "/subscriptions/sub-a", armbillingbenefits.AppliedScopeTypeSingle, "/subscriptions/sub-a"), true, false},
+		{"own-shared-mixed-case", plan("shared", "/Subscriptions/SUB-A", armbillingbenefits.AppliedScopeTypeShared, ""), true, false},
+		{"foreign-applied-to-us", plan("foreign", "/subscriptions/sub-b", armbillingbenefits.AppliedScopeTypeSingle, "/subscriptions/sub-a"), false, false},
+		{"foreign-no-id", foreignNoID, false, false},
+		{"foreign-empty-id", plan("", "/subscriptions/sub-b", "", ""), false, false},
+		{"prefix-lookalike", plan("foreign", "/subscriptions/sub-a-2", "", ""), false, false},
+		{"account-shared", plan("shared", accountScope, armbillingbenefits.AppliedScopeTypeShared, ""), false, true},
+		{"account-single-ours", plan("single", accountScope, armbillingbenefits.AppliedScopeTypeSingle, "/subscriptions/sub-a"), false, true},
+		{"account-single-other", plan("single", accountScope, armbillingbenefits.AppliedScopeTypeSingle, "/subscriptions/sub-b"), false, true},
+		{"account-management-group", plan("group", accountScope, armbillingbenefits.AppliedScopeTypeManagementGroup, ""), false, true},
+		{"nil-row", nil, false, true},
+		{"missing-properties", &armbillingbenefits.SavingsPlanModel{ID: toPtr("missing")}, false, true},
+		{"missing-scope", &armbillingbenefits.SavingsPlanModel{ID: toPtr("missing"), Properties: &armbillingbenefits.SavingsPlanModelProperties{}}, false, true},
+		{"empty-scope", plan("empty", "", "", ""), false, true},
+		{"empty-subscription", plan("empty", "/subscriptions/", "", ""), false, true},
+		{"nested-scope", plan("nested", "/subscriptions/sub-b/resourceGroups/rg", "", ""), false, true},
+		{"whitespace-subscription", plan("blank", "/subscriptions/ ", "", ""), false, true},
+		{"internal-whitespace", plan("blank", "/subscriptions/sub b", "", ""), false, true},
+		{"control-character", plan("control", "/subscriptions/sub-b\x00", "", ""), false, true},
+		{"backslash", plan("backslash", "/subscriptions/sub-b\\x", "", ""), false, true},
+		{"unknown-scope", plan("unknown", "/unknown", "", ""), false, true},
+		{"own-no-id", ownNoID, false, true},
+		{"own-empty-id", plan("", "/subscriptions/sub-a", "", ""), false, true},
+		{"own-blank-id", plan(" ", "/subscriptions/sub-a", "", ""), false, true},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			c := NewClient(nil, "sub-a", "eastus")
+			c.SetListAllPager(&mockListAllPager{results: []*armbillingbenefits.SavingsPlanModel{own, tt.row}})
+			got, err := c.GetExistingCommitments(context.Background())
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Nil(t, got, "unresolved ownership must not return partial inventory")
+				assert.NotContains(t, err.Error(), accountScope)
+				return
+			}
+			require.NoError(t, err)
+			wantIDs := []string{"owned"}
+			if tt.wantOwn {
+				wantIDs = append(wantIDs, *tt.row.ID)
+			}
+			ids := make([]string, 0, len(got))
+			for _, commitment := range got {
+				assert.Equal(t, "sub-a", commitment.Account)
+				ids = append(ids, commitment.CommitmentID)
+			}
+			assert.Equal(t, wantIDs, ids)
+		})
+	}
 }
 
 func TestGetExistingCommitments_PagerError(t *testing.T) {
