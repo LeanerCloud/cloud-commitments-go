@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
@@ -110,10 +111,71 @@ func ListAppliedReservations(ctx context.Context, subscriptionID string, f Inven
 			if err != nil {
 				return nil, fmt.Errorf("list reservations for order %s: %w", orderID, err)
 			}
-			reservations = append(reservations, page.Value...)
+			eligible, err := filterAppliedReservations(page.Value, subscriptionID)
+			if err != nil {
+				return nil, fmt.Errorf("reservation in order %s: %w", orderID, err)
+			}
+			reservations = append(reservations, eligible...)
 		}
 	}
 	return reservations, nil
+}
+
+func filterAppliedReservations(page []*armreservations.ReservationResponse, subscriptionID string) ([]*armreservations.ReservationResponse, error) {
+	eligible := make([]*armreservations.ReservationResponse, 0, len(page))
+	for _, reservation := range page {
+		if reservation == nil || reservation.Properties == nil {
+			eligible = append(eligible, reservation)
+			continue
+		}
+		if reservation.Properties.AppliedScopeType == nil || *reservation.Properties.AppliedScopeType != armreservations.AppliedScopeTypeSingle {
+			eligible = append(eligible, reservation)
+			continue
+		}
+		matches, err := singleScopeMatchesSubscription(reservation.Properties.AppliedScopes, subscriptionID)
+		if err != nil {
+			return nil, err
+		}
+		if matches {
+			eligible = append(eligible, reservation)
+		}
+	}
+	return eligible, nil
+}
+
+func singleScopeMatchesSubscription(scopes []*string, subscriptionID string) (bool, error) {
+	if len(scopes) != 1 {
+		return false, fmt.Errorf("single scope requires exactly one applied scope, got %d", len(scopes))
+	}
+	raw := scopes[0]
+	if raw == nil || strings.TrimSpace(*raw) == "" {
+		return false, fmt.Errorf("single scope has an empty applied scope")
+	}
+	scopeSubscription, err := subscriptionFromAppliedScope(*raw)
+	if err != nil {
+		return false, err
+	}
+	if strings.IndexFunc(scopeSubscription, unicode.IsSpace) >= 0 {
+		return false, fmt.Errorf("invalid applied scope %q", *raw)
+	}
+	return strings.EqualFold(scopeSubscription, subscriptionID), nil
+}
+
+func subscriptionFromAppliedScope(scope string) (string, error) {
+	if !strings.HasPrefix(scope, "/") {
+		return "", fmt.Errorf("invalid applied scope %q", scope)
+	}
+	segments := strings.Split(scope, "/")
+	if len(segments) != 3 && len(segments) != 5 {
+		return "", fmt.Errorf("invalid applied scope %q", scope)
+	}
+	if !strings.EqualFold(segments[1], "subscriptions") || segments[2] == "" {
+		return "", fmt.Errorf("invalid applied scope %q", scope)
+	}
+	if len(segments) == 5 && (!strings.EqualFold(segments[3], "resourceGroups") || segments[4] == "") {
+		return "", fmt.Errorf("invalid applied scope %q", scope)
+	}
+	return segments[2], nil
 }
 
 // appliedOrderIDs extracts the reservation order IDs from an applied-list

@@ -245,6 +245,88 @@ func TestListAppliedReservations_PagesAndDedupesOrders(t *testing.T) {
 	assert.Equal(t, map[string]int{"order-a": 1}, pagedOrders, "the deduped order must be paged exactly once")
 }
 
+func TestListAppliedReservations_SplitOrderScopes(t *testing.T) {
+	t.Parallel()
+	succeeded := armreservations.ProvisioningStateSucceeded
+	single := armreservations.AppliedScopeTypeSingle
+	shared := armreservations.AppliedScopeTypeShared
+	target := vmReservation("target", &succeeded)
+	target.Properties.AppliedScopeType = &single
+	target.Properties.AppliedScopes = []*string{strPtr("/SUBSCRIPTIONS/SUB-A/resourceGroups/rg")}
+	other := vmReservation("other", &succeeded)
+	other.Properties.AppliedScopeType = &single
+	other.Properties.AppliedScopes = []*string{strPtr("/subscriptions/sub-b")}
+	sharedChild := vmReservation("shared", &succeeded)
+	sharedChild.Properties.AppliedScopeType = &shared
+	factories := InventoryFactories{
+		NewAppliedLister: func() (AppliedReservationsLister, error) {
+			return stubAppliedLister{resp: appliedListResponse([]*string{strPtr("order-a")}, nil)}, nil
+		},
+		NewOrderPager: func(string) OrderReservationsPager {
+			return &stubOrderPager{pages: []armreservations.ReservationClientListResponse{
+				{ReservationList: armreservations.ReservationList{Value: []*armreservations.ReservationResponse{target, other, sharedChild}}},
+			}}
+		},
+	}
+	got, err := ListAppliedReservations(context.Background(), "sub-a", factories, 10)
+	require.NoError(t, err)
+	require.Len(t, got, 2)
+	assert.Equal(t, "target", *got[0].ID)
+	assert.Equal(t, "shared", *got[1].ID)
+}
+
+func TestListAppliedReservations_SingleScopeValidation(t *testing.T) {
+	t.Parallel()
+	succeeded := armreservations.ProvisioningStateSucceeded
+	single := armreservations.AppliedScopeTypeSingle
+	cases := []struct {
+		name    string
+		scopes  []*string
+		want    bool
+		wantErr bool
+	}{
+		{"raw ID unsupported", []*string{strPtr("SUB-A")}, false, true},
+		{"opaque scope unsupported", []*string{strPtr("garbage")}, false, true},
+		{"multiple Single scopes", []*string{strPtr("/subscriptions/sub-a"), strPtr("/subscriptions/sub-b")}, false, true},
+		{"raw ID with spaces", []*string{strPtr(" sub-a ")}, false, true},
+		{"different subscription prefix", []*string{strPtr("/subscriptions/sub-a-other")}, false, false},
+		{"missing scopes", nil, false, true},
+		{"nil scope", []*string{nil}, false, true},
+		{"blank scope", []*string{strPtr(" ")}, false, true},
+		{"malformed path", []*string{strPtr("/resourceGroups/rg")}, false, true},
+		{"blank subscription segment", []*string{strPtr("/subscriptions/ ")}, false, true},
+		{"blank subscription segment in resource group", []*string{strPtr("/subscriptions/ /resourceGroups/rg")}, false, true},
+		{"malformed subscription descendant", []*string{strPtr("/subscriptions/sub-a/other")}, false, true},
+		{"match then malformed", []*string{strPtr("/subscriptions/sub-a"), strPtr("/resourceGroups/rg")}, false, true},
+		{"malformed then match", []*string{strPtr("/resourceGroups/rg"), strPtr("/subscriptions/sub-a")}, false, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			child := vmReservation("child", &succeeded)
+			child.Properties.AppliedScopeType = &single
+			child.Properties.AppliedScopes = tc.scopes
+			factories := InventoryFactories{
+				NewAppliedLister: func() (AppliedReservationsLister, error) {
+					return stubAppliedLister{resp: appliedListResponse([]*string{strPtr("order-a")}, nil)}, nil
+				},
+				NewOrderPager: func(string) OrderReservationsPager {
+					return &stubOrderPager{pages: []armreservations.ReservationClientListResponse{
+						{ReservationList: armreservations.ReservationList{Value: []*armreservations.ReservationResponse{child}}},
+					}}
+				},
+			}
+			got, err := ListAppliedReservations(context.Background(), "sub-a", factories, 10)
+			if tc.wantErr {
+				require.Error(t, err)
+				assert.Nil(t, got)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, len(got) == 1)
+		})
+	}
+}
+
 func TestListAppliedReservations_PageCap(t *testing.T) {
 	t.Parallel()
 	factories := InventoryFactories{
