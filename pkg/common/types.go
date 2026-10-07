@@ -533,12 +533,13 @@ type Region struct {
 // zero value, and the JSON tag uses omitempty so unknown values don't
 // pollute the API payload.
 type ComputeDetails struct {
-	InstanceType string  `json:"instance_type"`
-	Platform     string  `json:"platform"`            // linux, windows
-	Tenancy      string  `json:"tenancy"`             // default, dedicated, host
-	Scope        string  `json:"scope"`               // regional, zonal
-	VCPU         int     `json:"vcpu,omitempty"`      // 0 = unknown
-	MemoryGB     float64 `json:"memory_gb,omitempty"` // 0 = unknown
+	InstanceType      string  `json:"instance_type"`
+	Platform          string  `json:"platform"`            // linux, windows
+	Tenancy           string  `json:"tenancy"`             // default, dedicated, host
+	Scope             string  `json:"scope"`               // regional, zonal
+	VCPU              int     `json:"vcpu,omitempty"`      // 0 = unknown
+	MemoryGB          float64 `json:"memory_gb,omitempty"` // 0 = unknown
+	GCPCommitmentType string  `json:"gcp_commitment_type,omitempty"`
 }
 
 func (d ComputeDetails) GetServiceType() ServiceType {

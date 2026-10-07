@@ -24,10 +24,34 @@ func TestMarshalServiceDetails_NilAndPointers(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, b, "typed nil pointer must produce nil RawMessage")
 
-	b, err = MarshalServiceDetails(&ComputeDetails{InstanceType: "m5.large", Platform: "Windows"})
-	require.NoError(t, err)
-	assert.NotEmpty(t, b)
-	assert.Contains(t, string(b), `"platform":"Windows"`)
+	for _, tc := range []struct {
+		name           string
+		in             ServiceDetails
+		commitmentType string
+	}{
+		{"value", ComputeDetails{InstanceType: "m5.large", Platform: "Windows", GCPCommitmentType: "MEMORY_OPTIMIZED_M4_6TB"}, "MEMORY_OPTIMIZED_M4_6TB"},
+		{"pointer", &ComputeDetails{InstanceType: "m5.large", Platform: "Windows", GCPCommitmentType: "MEMORY_OPTIMIZED_M4_6TB"}, "MEMORY_OPTIMIZED_M4_6TB"},
+		{"zero_value", ComputeDetails{InstanceType: "m5.large", Platform: "Windows"}, ""},
+		{"zero_pointer", &ComputeDetails{InstanceType: "m5.large", Platform: "Windows"}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			b, err := MarshalServiceDetails(tc.in)
+			require.NoError(t, err)
+			var fields map[string]any
+			require.NoError(t, json.Unmarshal(b, &fields))
+			assert.Equal(t, "Windows", fields["platform"])
+			out, err := DecodeServiceDetailsFor(string(ServiceCompute), b)
+			require.NoError(t, err)
+			cd, ok := out.(*ComputeDetails)
+			require.True(t, ok, "want *ComputeDetails, got %T", out)
+			assert.Equal(t, tc.commitmentType, cd.GCPCommitmentType)
+			if tc.commitmentType == "" {
+				assert.NotContains(t, fields, "gcp_commitment_type")
+			} else {
+				assert.Equal(t, tc.commitmentType, fields["gcp_commitment_type"])
+			}
+		})
+	}
 }
 
 // TestDecodeServiceDetailsFor_RoundTrip is the core round-trip regression
@@ -42,6 +66,16 @@ func TestDecodeServiceDetailsFor_RoundTrip(t *testing.T) {
 		// the per-service fields round-tripped.
 		assert func(t *testing.T, d ServiceDetails)
 	}{
+		{
+			name:    "gcp_compute_commitment_type",
+			service: string(ServiceCompute),
+			in:      &ComputeDetails{InstanceType: "c2-standard-4", GCPCommitmentType: "MEMORY_OPTIMIZED_M4_6TB"},
+			assert: func(t *testing.T, d ServiceDetails) {
+				cd, ok := d.(*ComputeDetails)
+				require.True(t, ok, "want *ComputeDetails, got %T", d)
+				assert.Equal(t, "MEMORY_OPTIMIZED_M4_6TB", cd.GCPCommitmentType)
+			},
+		},
 		{
 			name:    "ec2_windows_dedicated",
 			service: string(ServiceEC2),
@@ -139,6 +173,14 @@ func TestDecodeServiceDetailsFor_RoundTrip(t *testing.T) {
 // yields a zero-valued typed pointer (so the cloud client's type-
 // assertion succeeds and buildOfferingFilters can substitute defaults).
 func TestDecodeServiceDetailsFor_LegacyEmpty(t *testing.T) {
+	t.Run("compute_missing_commitment_type", func(t *testing.T) {
+		out, err := DecodeServiceDetailsFor(string(ServiceCompute), json.RawMessage(`{"instance_type":"n2-standard-4"}`))
+		require.NoError(t, err)
+		cd, ok := out.(*ComputeDetails)
+		require.True(t, ok, "want *ComputeDetails, got %T", out)
+		assert.Empty(t, cd.GCPCommitmentType)
+	})
+
 	for _, svc := range []string{
 		string(ServiceEC2),
 		string(ServiceRDS),
