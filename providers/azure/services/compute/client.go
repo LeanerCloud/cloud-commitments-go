@@ -34,6 +34,15 @@ type RecommendationsPager interface {
 	NextPage(ctx context.Context) (armconsumption.ReservationRecommendationsClientListResponse, error)
 }
 
+// InventoryFactories exposes the reservation inventory factory callbacks.
+type InventoryFactories = reservations.InventoryFactories
+
+// AppliedReservationsLister is the applied-order client used by InventoryFactories.
+type AppliedReservationsLister = reservations.AppliedReservationsLister
+
+// OrderReservationsPager is the child-reservation pager used by InventoryFactories.
+type OrderReservationsPager = reservations.OrderReservationsPager
+
 // ResourceSKUsPager defines the interface for paging through resource SKUs.
 type ResourceSKUsPager interface {
 	More() bool
@@ -88,7 +97,7 @@ type Client struct {
 	// builds real armreservations SDK clients via
 	// reservations.DefaultInventoryFactories. Tests inject stubs via
 	// SetInventoryFactories to run hermetically without Azure credentials.
-	inventoryFactories *reservations.InventoryFactories
+	inventoryFactories *InventoryFactories
 
 	// Microsoft.Capacity provider registration check (cached per client lifetime)
 	capacityProviderOnce sync.Once
@@ -146,7 +155,7 @@ func (c *Client) SetRecommendationsPager(pager RecommendationsPager) {
 }
 
 // SetInventoryFactories injects reservation-inventory factories (for testing).
-func (c *Client) SetInventoryFactories(f *reservations.InventoryFactories) {
+func (c *Client) SetInventoryFactories(f *InventoryFactories) {
 	c.inventoryFactories = f
 }
 
@@ -270,9 +279,17 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 	now := time.Now()
 	commitments := make([]common.Commitment, 0, len(responses))
 	for _, r := range responses {
-		if commitment := reservations.CommitmentFromReservation(r, c.subscriptionID, common.ServiceCompute, armreservations.ReservedResourceTypeVirtualMachines, now); commitment != nil {
-			commitments = append(commitments, *commitment)
+		commitment := reservations.CommitmentFromReservation(r, c.subscriptionID, common.ServiceCompute, armreservations.ReservedResourceTypeVirtualMachines, now)
+		if commitment == nil {
+			continue
 		}
+		if r.Properties.AppliedScopeType == nil {
+			return nil, fmt.Errorf("compute: cannot attribute VM reservation %q to subscription %q: missing applied scope type", commitment.CommitmentID, c.subscriptionID)
+		}
+		if *r.Properties.AppliedScopeType != armreservations.AppliedScopeTypeSingle {
+			return nil, fmt.Errorf("compute: cannot attribute VM reservation %q to subscription %q: applied scope type %q is not Single", commitment.CommitmentID, c.subscriptionID, *r.Properties.AppliedScopeType)
+		}
+		commitments = append(commitments, *commitment)
 	}
 	return commitments, nil
 }
