@@ -34,12 +34,6 @@ type RecommendationsPager interface {
 	NextPage(ctx context.Context) (armconsumption.ReservationRecommendationsClientListResponse, error)
 }
 
-// ReservationsDetailsPager defines the interface for paging through reservation details.
-type ReservationsDetailsPager interface {
-	More() bool
-	NextPage(ctx context.Context) (armconsumption.ReservationsDetailsClientListResponse, error)
-}
-
 // ResourceSKUsPager defines the interface for paging through resource SKUs.
 type ResourceSKUsPager interface {
 	More() bool
@@ -87,8 +81,14 @@ type Client struct {
 
 	// For testing - these can be set to mock implementations
 	recommendationsPager RecommendationsPager
-	reservationsPager    ReservationsDetailsPager
 	resourceSKUsPager    ResourceSKUsPager
+
+	// Optional injected factories for the reservation-inventory path used by
+	// GetExistingCommitments. When nil (the production default) the method
+	// builds real armreservations SDK clients via
+	// reservations.DefaultInventoryFactories. Tests inject stubs via
+	// SetInventoryFactories to run hermetically without Azure credentials.
+	inventoryFactories *reservations.InventoryFactories
 
 	// Microsoft.Capacity provider registration check (cached per client lifetime)
 	capacityProviderOnce sync.Once
@@ -145,9 +145,9 @@ func (c *Client) SetRecommendationsPager(pager RecommendationsPager) {
 	c.recommendationsPager = pager
 }
 
-// SetReservationsPager sets a mock pager for reservations details (for testing).
-func (c *Client) SetReservationsPager(pager ReservationsDetailsPager) {
-	c.reservationsPager = pager
+// SetInventoryFactories injects reservation-inventory factories (for testing).
+func (c *Client) SetInventoryFactories(f *reservations.InventoryFactories) {
+	c.inventoryFactories = f
 }
 
 // SetResourceSKUsPager sets a mock pager for resource SKUs (for testing).
@@ -246,92 +246,35 @@ func (c *Client) appendPage(ctx context.Context, pricer *azrecs.Pricer, recs []c
 	return recs, nil
 }
 
-// GetExistingCommitments retrieves existing VM Reserved Instances.
-func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
-	pager, err := c.createReservationsPager()
-	if err != nil {
-		log.Printf("WARNING: failed to create VM reservations pager: %v", err)
-		return []common.Commitment{}, nil
-	}
-
-	return c.collectVMReservations(ctx, pager)
-}
-
-// createReservationsPager creates a pager for listing reservations.
-func (c *Client) createReservationsPager() (ReservationsDetailsPager, error) {
-	// Use injected pager if available (for testing)
-	if c.reservationsPager != nil {
-		return c.reservationsPager, nil
-	}
-
-	client, err := armconsumption.NewReservationsDetailsClient(c.cred, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	scope := fmt.Sprintf("subscriptions/%s", c.subscriptionID)
-	return client.NewListPager(scope, &armconsumption.ReservationsDetailsClientListOptions{}), nil
-}
-
-// collectVMReservations collects VM reservations from the pager.
+// GetExistingCommitments retrieves existing VM Reserved Instances from the
+// armreservations SDK: the applied-reservation list yields the reservation
+// orders whose benefits apply to this subscription, and each order's child
+// reservations carry the authoritative ID, region, SKU, state, quantity and
+// purchase/expiry dates (issue #190).
 //
-// Returns an error on the first pagination failure rather than silently
-// truncating the result set. A partial commitment list is unsafe for the
-// purchase flow — it could trigger duplicate purchases for reservations
-// that exist but weren't loaded. Callers must treat the error as fatal.
-func (c *Client) collectVMReservations(ctx context.Context, pager ReservationsDetailsPager) ([]common.Commitment, error) {
-	commitments := make([]common.Commitment, 0)
-
-	for pageIdx := 0; pager.More(); pageIdx++ {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context canceled during pagination: %w", err)
-		}
-		if pageIdx >= maxReservationsPages {
-			return nil, fmt.Errorf("compute: GetExistingCommitments pagination cap (%d pages) reached", maxReservationsPages)
-		}
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("compute: list reservations: %w", err)
-		}
-
-		for _, detail := range page.Value {
-			if commitment := c.convertVMReservation(detail); commitment != nil {
-				commitments = append(commitments, *commitment)
-			}
-		}
+// Any failure is returned as an error rather than as an empty inventory: an
+// empty list is indistinguishable from "no commitments" and would be unsafe
+// for the duplicate-purchase guard (matches the error-returning behavior of
+// the cache, cosmosdb, database and search clients).
+func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
+	factories := reservations.DefaultInventoryFactories(c.cred)
+	if c.inventoryFactories != nil {
+		factories = *c.inventoryFactories
 	}
 
+	responses, err := reservations.ListAppliedReservations(ctx, c.subscriptionID, factories, maxReservationsPages)
+	if err != nil {
+		return nil, fmt.Errorf("compute: list applied reservations: %w", err)
+	}
+
+	now := time.Now()
+	commitments := make([]common.Commitment, 0, len(responses))
+	for _, r := range responses {
+		if commitment := reservations.CommitmentFromReservation(r, c.subscriptionID, common.ServiceCompute, armreservations.ReservedResourceTypeVirtualMachines, now); commitment != nil {
+			commitments = append(commitments, *commitment)
+		}
+	}
 	return commitments, nil
-}
-
-// convertVMReservation converts a reservation detail to a commitment if it's a VM reservation.
-func (c *Client) convertVMReservation(detail *armconsumption.ReservationDetail) *common.Commitment {
-	if detail.Properties == nil {
-		return nil
-	}
-
-	props := detail.Properties
-	if props.SKUName == nil || !strings.Contains(strings.ToLower(*props.SKUName), "virtualmachines") {
-		return nil
-	}
-
-	commitment := &common.Commitment{
-		Provider:       common.ProviderAzure,
-		Account:        c.subscriptionID,
-		CommitmentType: common.CommitmentReservedInstance,
-		Service:        common.ServiceCompute,
-		Region:         c.region,
-		State:          common.CommitmentStateActive,
-	}
-
-	if props.ReservationID != nil {
-		commitment.CommitmentID = *props.ReservationID
-	}
-	if props.SKUName != nil {
-		commitment.ResourceType = *props.SKUName
-	}
-
-	return commitment
 }
 
 // providerRegistrationState is the JSON shape returned by the ARM providers API.
