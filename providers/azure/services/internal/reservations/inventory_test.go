@@ -87,14 +87,16 @@ func TestCommitmentStateFromProvisioning_AllStates(t *testing.T) {
 	future := now.Add(24 * time.Hour)
 	unknown := armreservations.ProvisioningState("SomethingNew")
 
-	cases := []struct {
+	type testCase struct {
 		name  string
 		state *armreservations.ProvisioningState
 		want  common.CommitmentState
-	}{
-		{"nil", nil, ""},
-		{"unknown", &unknown, ""},
 	}
+	cases := make([]testCase, 0, 2+len(armreservations.PossibleProvisioningStateValues()))
+	cases = append(cases,
+		testCase{"nil", nil, ""},
+		testCase{"unknown", &unknown, ""},
+	)
 	for _, state := range armreservations.PossibleProvisioningStateValues() {
 		want := map[armreservations.ProvisioningState]common.CommitmentState{
 			armreservations.ProvisioningStateSucceeded:             common.CommitmentStateActive,
@@ -112,11 +114,7 @@ func TestCommitmentStateFromProvisioning_AllStates(t *testing.T) {
 			armreservations.ProvisioningStateMerged:                common.CommitmentStateRetired,
 		}[state]
 		s := state
-		cases = append(cases, struct {
-			name  string
-			state *armreservations.ProvisioningState
-			want  common.CommitmentState
-		}{string(state), &s, want})
+		cases = append(cases, testCase{string(state), &s, want})
 	}
 
 	for _, tc := range cases {
