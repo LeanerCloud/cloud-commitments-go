@@ -1156,6 +1156,113 @@ func TestClient_FindOfferingID_UnknownOfferingType(t *testing.T) {
 	mockRS.AssertExpectations(t)
 }
 
+func TestClient_PurchaseCommitment_Idempotent_ScanBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		pages       int
+		match       bool
+		terminal    bool
+		cancel      bool
+		wantCalls   int
+		wantBuy     int
+		wantSuccess bool
+	}{
+		{name: "cap refuses purchase with page eleven available", pages: 11, terminal: true, wantCalls: 10},
+		{name: "cancellation between pages", pages: 2, terminal: true, cancel: true, wantCalls: 1},
+		{name: "match on page ten with continuation", pages: 10, match: true, wantCalls: 10, wantSuccess: true},
+		{name: "terminal page ten permits purchase", pages: 10, terminal: true, wantCalls: 10, wantBuy: 1, wantSuccess: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &MockRedshiftClient{}
+			client := rsClientWithAccount(m)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			token := common.DeriveIdempotencyToken("scan-boundary", 0)
+			expectRSOffering(m)
+			for page := 1; page <= tc.pages; page++ {
+				input := &redshift.DescribeReservedNodesInput{MaxRecords: aws.Int32(100)}
+				if page > 1 {
+					input.Marker = aws.String(fmt.Sprintf("page-%d", page))
+				}
+				out := &redshift.DescribeReservedNodesOutput{
+					Marker: aws.String(fmt.Sprintf("page-%d", page+1)),
+					ReservedNodes: []types.ReservedNode{{
+						ReservedNodeId: aws.String(fmt.Sprintf("node-%d", page)), State: aws.String("active"),
+					}},
+				}
+				if page == tc.pages && tc.terminal {
+					out.Marker = nil
+				}
+				call := m.On("DescribeReservedNodes", mock.Anything, input).Return(out, nil)
+				tagOut := &redshift.DescribeTagsOutput{}
+				if page == tc.pages && tc.match {
+					tagOut.TaggedResources = []types.TaggedResource{{
+						Tag: &types.Tag{Key: aws.String(common.IdempotencyTagKey), Value: aws.String(token)},
+					}}
+				}
+				tagCall := m.On("DescribeTags", mock.Anything, &redshift.DescribeTagsInput{
+					ResourceName: aws.String(fmt.Sprintf("arn:aws:redshift:eu-west-1:123456789012:reservednode:node-%d", page)),
+					TagKeys:      []string{common.IdempotencyTagKey}, TagValues: []string{token},
+				}).Return(tagOut, nil)
+				if page > tc.wantCalls {
+					call.Maybe()
+					tagCall.Maybe()
+				} else {
+					call.Once()
+					tagCall.Once()
+				}
+				if tc.cancel && page == 1 {
+					call.Run(func(mock.Arguments) { cancel() })
+				}
+			}
+			purchaseErr := fmt.Errorf("unexpected purchase sentinel")
+			if tc.wantBuy == 1 {
+				m.On("PurchaseReservedNodeOffering", mock.Anything, mock.Anything).
+					Return(&redshift.PurchaseReservedNodeOfferingOutput{
+						ReservedNode: &types.ReservedNode{ReservedNodeId: aws.String("new"), State: aws.String("payment-pending")},
+					}, nil).Once()
+				m.On("CreateTags", mock.Anything, mock.Anything).Return(&redshift.CreateTagsOutput{}, nil).Once()
+			} else {
+				m.On("PurchaseReservedNodeOffering", mock.Anything, mock.Anything).
+					Return((*redshift.PurchaseReservedNodeOfferingOutput)(nil), purchaseErr).Maybe()
+			}
+			result, err := client.PurchaseCommitment(ctx, rsIdemRec(), common.PurchaseOptions{IdempotencyToken: token})
+			if tc.wantSuccess {
+				assert.NoError(t, err)
+				if tc.match {
+					assert.Equal(t, "node-10", result.CommitmentID)
+				} else {
+					assert.Equal(t, "new", result.CommitmentID)
+				}
+			} else if tc.cancel {
+				assert.ErrorIs(t, err, context.Canceled)
+			} else if assert.Error(t, err) {
+				assert.Contains(t, err.Error(), "pagination cap reached after 10 pages")
+				assert.Contains(t, err.Error(), "refusing to purchase")
+			}
+			assert.Equal(t, tc.wantSuccess, result.Success)
+			assert.Equal(t, tc.match, result.ExistingCommitment)
+			m.AssertNumberOfCalls(t, "DescribeReservedNodes", tc.wantCalls)
+			m.AssertNumberOfCalls(t, "PurchaseReservedNodeOffering", tc.wantBuy)
+			m.AssertExpectations(t)
+		})
+	}
+}
+
+func TestFindNodeByIdempotencyToken_CanceledBeforeScan(t *testing.T) {
+	m := &MockRedshiftClient{}
+	client := rsClientWithAccount(m)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	m.On("DescribeReservedNodes", mock.Anything, mock.Anything).
+		Return(&redshift.DescribeReservedNodesOutput{}, nil).Maybe()
+	id, found, err := client.findNodeByIdempotencyToken(ctx, "token")
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Empty(t, id)
+	assert.False(t, found)
+	m.AssertNotCalled(t, "DescribeReservedNodes", mock.Anything, mock.Anything)
+}
+
 func rsIdemRec() common.Recommendation {
 	return common.Recommendation{
 		Service:       common.ServiceDataWarehouse,

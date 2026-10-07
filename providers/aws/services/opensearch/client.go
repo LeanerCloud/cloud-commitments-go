@@ -236,6 +236,10 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	return result, nil
 }
 
+// maxReservationPages bounds the idempotency reservation scan.
+// An incomplete scan refuses purchase rather than reporting no match.
+const maxReservationPages = 10
+
 // findReservationByName looks for a nonterminal OpenSearch
 // reserved instance whose ReservationName matches the given name (issue #641),
 // so a re-driven purchase can short-circuit. DescribeReservedInstances has no
@@ -244,7 +248,10 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 // GetExistingCommitments).
 func (c *Client) findReservationByName(ctx context.Context, name string) (reservationID string, found bool, err error) {
 	var nextToken *string
-	for {
+	for page := 0; page < maxReservationPages; page++ {
+		if err := ctx.Err(); err != nil {
+			return "", false, err
+		}
 		response, descErr := c.client.DescribeReservedInstances(ctx, &opensearch.DescribeReservedInstancesInput{
 			NextToken:  nextToken,
 			MaxResults: 100,
@@ -266,11 +273,11 @@ func (c *Client) findReservationByName(ctx context.Context, name string) (reserv
 			}
 		}
 		if response.NextToken == nil || aws.ToString(response.NextToken) == "" {
-			break
+			return "", false, nil
 		}
 		nextToken = response.NextToken
 	}
-	return "", false, nil
+	return "", false, fmt.Errorf("pagination cap reached after %d pages for OpenSearch reservation idempotency lookup", maxReservationPages)
 }
 
 // idempotencyGuard short-circuits a re-drive (issue #641): when token is set, it

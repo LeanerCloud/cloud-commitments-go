@@ -827,6 +827,105 @@ func TestClient_GetExistingCommitments_Pagination(t *testing.T) {
 	mockOS.AssertExpectations(t)
 }
 
+func TestClient_PurchaseCommitment_Idempotent_ScanBoundaries(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		pages       int
+		match       bool
+		terminal    bool
+		cancel      bool
+		wantCalls   int
+		wantBuy     int
+		wantSuccess bool
+	}{
+		{name: "cap refuses purchase with page eleven available", pages: 11, terminal: true, wantCalls: 10},
+		{name: "cancellation between pages", pages: 2, terminal: true, cancel: true, wantCalls: 1},
+		{name: "match on page ten with continuation", pages: 10, match: true, wantCalls: 10, wantSuccess: true},
+		{name: "terminal page ten permits purchase", pages: 10, terminal: true, wantCalls: 10, wantBuy: 1, wantSuccess: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &MockOpenSearchClient{}
+			client := &Client{client: m, region: "eu-west-1"}
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			token := common.DeriveIdempotencyToken("scan-boundary", 0)
+			name := common.IdempotentReservationID("opensearch-id-", token)
+			expectOSOffering(m)
+			for page := 1; page <= tc.pages; page++ {
+				input := &opensearch.DescribeReservedInstancesInput{MaxResults: 100}
+				if page > 1 {
+					input.NextToken = aws.String(fmt.Sprintf("page-%d", page))
+				}
+				out := &opensearch.DescribeReservedInstancesOutput{
+					NextToken: aws.String(fmt.Sprintf("page-%d", page+1)),
+					ReservedInstances: []types.ReservedInstance{{
+						ReservedInstanceId: aws.String("unrelated"), ReservationName: aws.String("other-name"), State: aws.String("active"),
+					}},
+				}
+				if page == tc.pages {
+					if tc.terminal {
+						out.NextToken = nil
+					}
+					if tc.match {
+						out.ReservedInstances[0].ReservationName = aws.String(name)
+						out.ReservedInstances[0].ReservedInstanceId = aws.String("existing")
+					}
+				}
+				call := m.On("DescribeReservedInstances", mock.Anything, input).Return(out, nil)
+				if page > tc.wantCalls {
+					call.Maybe()
+				} else {
+					call.Once()
+				}
+				if tc.cancel && page == 1 {
+					call.Run(func(mock.Arguments) { cancel() })
+				}
+			}
+			purchaseErr := fmt.Errorf("unexpected purchase sentinel")
+			if tc.wantBuy == 1 {
+				m.On("PurchaseReservedInstanceOffering", mock.Anything, mock.Anything).
+					Return(&opensearch.PurchaseReservedInstanceOfferingOutput{ReservedInstanceId: aws.String("new")}, nil).Once()
+			} else {
+				m.On("PurchaseReservedInstanceOffering", mock.Anything, mock.Anything).
+					Return((*opensearch.PurchaseReservedInstanceOfferingOutput)(nil), purchaseErr).Maybe()
+			}
+			result, err := client.PurchaseCommitment(ctx, osIdemRec(), common.PurchaseOptions{IdempotencyToken: token})
+			if tc.wantSuccess {
+				assert.NoError(t, err)
+				if tc.match {
+					assert.Equal(t, "existing", result.CommitmentID)
+				} else {
+					assert.Equal(t, "new", result.CommitmentID)
+				}
+			} else if tc.cancel {
+				assert.ErrorIs(t, err, context.Canceled)
+			} else if assert.Error(t, err) {
+				assert.Contains(t, err.Error(), "pagination cap reached after 10 pages")
+				assert.Contains(t, err.Error(), "refusing to purchase")
+			}
+			assert.Equal(t, tc.wantSuccess, result.Success)
+			assert.Equal(t, tc.match, result.ExistingCommitment)
+			m.AssertNumberOfCalls(t, "DescribeReservedInstances", tc.wantCalls)
+			m.AssertNumberOfCalls(t, "PurchaseReservedInstanceOffering", tc.wantBuy)
+			m.AssertExpectations(t)
+		})
+	}
+}
+
+func TestFindReservationByName_CanceledBeforeScan(t *testing.T) {
+	m := &MockOpenSearchClient{}
+	client := &Client{client: m}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	m.On("DescribeReservedInstances", mock.Anything, mock.Anything).
+		Return(&opensearch.DescribeReservedInstancesOutput{}, nil).Maybe()
+	id, found, err := client.findReservationByName(ctx, "name")
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Empty(t, id)
+	assert.False(t, found)
+	m.AssertNotCalled(t, "DescribeReservedInstances", mock.Anything, mock.Anything)
+}
+
 func osIdemRec() common.Recommendation {
 	return common.Recommendation{
 		Service:       common.ServiceSearch,
