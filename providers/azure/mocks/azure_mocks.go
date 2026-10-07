@@ -67,32 +67,6 @@ func (p *MockRecommendationsPager) NextPage(ctx context.Context) (armconsumption
 	}, nil
 }
 
-// MockReservationsDetailsPager mocks the reservations details pager.
-type MockReservationsDetailsPager struct {
-	mock.Mock
-	Results   []*armconsumption.ReservationDetail
-	HasMore   bool
-	pageCount int
-}
-
-// More returns whether there are more pages.
-func (p *MockReservationsDetailsPager) More() bool {
-	if p.pageCount == 0 {
-		return p.HasMore
-	}
-	return false
-}
-
-// NextPage returns the next page of results.
-func (p *MockReservationsDetailsPager) NextPage(ctx context.Context) (armconsumption.ReservationsDetailsClientListResponse, error) {
-	p.pageCount++
-	return armconsumption.ReservationsDetailsClientListResponse{
-		ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{
-			Value: p.Results,
-		},
-	}, nil
-}
-
 // MockResourceSKUsPager mocks the resource SKUs pager.
 type MockResourceSKUsPager struct {
 	mock.Mock
@@ -193,20 +167,6 @@ func CreateSampleResourceSKUs(region string) []*armcompute.ResourceSKU {
 			Name:         StringPtr("Standard_D8s_v3"),
 			ResourceType: &resourceType,
 			Locations:    []*string{StringPtr(region)},
-		},
-	}
-}
-
-// CreateSampleReservationDetails creates sample reservation details for testing.
-func CreateSampleReservationDetails(subscriptionID, region string) []*armconsumption.ReservationDetail {
-	skuName := "VirtualMachines/Standard_D2s_v3"
-	reservationID := "reservation-123"
-	return []*armconsumption.ReservationDetail{
-		{
-			Properties: &armconsumption.ReservationDetailProperties{
-				SKUName:       &skuName,
-				ReservationID: &reservationID,
-			},
 		},
 	}
 }
