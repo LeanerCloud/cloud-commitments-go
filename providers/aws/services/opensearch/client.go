@@ -477,18 +477,11 @@ func normalizeOpenSearchPaymentOption(option string) (types.ReservedInstancePaym
 }
 
 // requiredMonthsForTerm converts a reservation term string to the offering
-// duration in months. Returns an error on any unrecognized or empty input so
-// callers fail loud rather than silently matching (and buying) a 1-year
-// offering when another commitment length was intended.
+// duration in months, failing loud on any unrecognized or empty input.
+// The parsing logic lives in purchasecfg.ParseTermMonths; this wrapper only
+// supplies the service name for the error message.
 func requiredMonthsForTerm(term string) (int, error) {
-	switch term {
-	case "3yr", "3":
-		return 36, nil
-	case "1yr", "1":
-		return 12, nil
-	default:
-		return 0, fmt.Errorf("unsupported OpenSearch reservation term %q: must be one of 1yr, 1, 3yr, 3", term)
-	}
+	return purchasecfg.ParseTermMonths(term, "OpenSearch")
 }
 
 // matchesDuration checks if the offering duration matches the required term

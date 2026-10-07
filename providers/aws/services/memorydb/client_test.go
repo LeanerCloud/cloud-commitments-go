@@ -1064,12 +1064,10 @@ func TestFindOfferingID_InvalidTerm_ErrorsBeforeAPICall(t *testing.T) {
 		Term:          "0",
 	}
 
-	_, err := client.findOfferingID(context.Background(), rec, "")
+	err := client.ValidateOffering(context.Background(), rec)
 
-	if assert.Error(t, err, "findOfferingID must error on an unrecognized term (ARCH-04)") {
-		assert.Contains(t, err.Error(), "unsupported MemoryDB reservation term")
-	}
-	mockMDB.AssertNotCalled(t, "DescribeReservedNodesOfferings", mock.Anything, mock.Anything)
+	assert.EqualError(t, err, "unsupported MemoryDB reservation term \"0\": must be one of 1yr, 1, 12, 3yr, 3, 36")
+	assert.Empty(t, mockMDB.Calls, "invalid terms must fail before any SDK call")
 }
 
 // Issue #211: a duplicate-ID rejection whose recovery lookup finds nothing is a
