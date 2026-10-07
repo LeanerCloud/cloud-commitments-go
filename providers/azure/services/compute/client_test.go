@@ -337,7 +337,7 @@ func TestComputeClient_GetExistingCommitments_WithMock(t *testing.T) {
 	purchaseDate := time.Now().Add(-2 * time.Hour)
 	expiryDate := time.Now().Add(365 * 24 * time.Hour)
 	succeeded := armreservations.ProvisioningStateSucceeded
-	cancelled := armreservations.ProvisioningStateCancelled
+	canceled := armreservations.ProvisioningStateCancelled
 	vmType := armreservations.ReservedResourceTypeVirtualMachines
 	sqlType := armreservations.ReservedResourceTypeSQLDatabases
 
@@ -355,12 +355,12 @@ func TestComputeClient_GetExistingCommitments_WithMock(t *testing.T) {
 			},
 		},
 		{
-			ID:       mocks.StringPtr("reservation-cancelled"),
+			ID:       mocks.StringPtr("reservation-canceled"),
 			Location: mocks.StringPtr("eastus"),
 			SKU:      &armreservations.SKUName{Name: mocks.StringPtr("Standard_D4s_v3")},
 			Properties: &armreservations.Properties{
 				ReservedResourceType: &vmType,
-				ProvisioningState:    &cancelled,
+				ProvisioningState:    &canceled,
 				Quantity:             mocks.Int32Ptr(1),
 			},
 		},
@@ -401,7 +401,7 @@ func TestComputeClient_GetExistingCommitments_WithMock(t *testing.T) {
 	assert.Equal(t, expiryDate, active.EndDate)
 
 	terminal := commitments[1]
-	assert.Equal(t, common.CommitmentStateCanceled, terminal.State, "a Cancelled reservation must not be stamped active")
+	assert.Equal(t, common.CommitmentStateCanceled, terminal.State, "a Canceled reservation must not be stamped active")
 }
 
 func TestComputeClient_GetExistingCommitments_Empty(t *testing.T) {
