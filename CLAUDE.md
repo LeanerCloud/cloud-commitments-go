@@ -158,18 +158,36 @@ prompt verbatim.
 
 Merge only at the reviewed SHA, and only when all of these cover it:
 
-- An independent adversarial review of the full PR diff on Opus 5.5
-  (exact model `claude-opus-5-5`; never Fable, a floating alias, or a
-  cross-provider substitute) names the SHA.
+- An independent capable available model performs a thorough adversarial
+  review of the full PR diff and names the exact head SHA. No model pin
+  is required.
 - All actionable findings from any reviewer (independent review,
   CodeRabbit, CI) are resolved. CodeRabbit is optional when
   exact-revision local verification plus a thorough independent review
-  cover the SHA; otherwise run the loop above. CI is green on the SHA.
-- Local verification exercises the real affected scenario on macOS
-  (Linux via CI; Windows out of scope). Label fixture- or mock-based
-  evidence as such; it does not count as real-scenario verification.
+  cover the SHA; otherwise run the loop above.
+- Local verification exercises the actual affected user path and data
+  shape on macOS (Linux via CI; Windows out of scope). Realistic fixtures,
+  mocks, recorded responses, and local integration checks count when
+  they cover that scenario. Demonstrate fail-before and pass-after where
+  applicable, and run a fresh build and relevant tests at the reviewed
+  revision. Label the evidence honestly and record real-account gaps.
+  Live cloud acceptance or a purchase is not required solely to merge.
 - The verdict, the reviewed SHA and the local verification evidence are
   recorded on the PR itself.
+- Immediately before merging, recheck that the final head is unchanged,
+  mergeability is clean, and CI is freshly green on that SHA.
+
+When CodeRabbit is quota-exhausted or throttled, waive its review only
+when the independent adversarial review, local verification, and green
+CI above cover the exact final head. Resolve every existing actionable
+finding and record the quota or throttle evidence on the PR. Include
+this literal note in the merge evidence comment on the PR:
+
+`CR waived: quota, adversarial review + local verification + green CI`
+
+Track merged PRs that used this waiver. When quota returns, run a
+retrospective CodeRabbit review and address any actionable findings
+in follow-up PRs.
 
 Merge normally; never bypass failing or required checks (no
 `gh pr merge --admin`, no `--no-verify`). Verification never authorizes
