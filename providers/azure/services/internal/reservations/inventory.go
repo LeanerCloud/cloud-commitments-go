@@ -217,7 +217,9 @@ func appliedOrderIDs(resp armreservations.AzureReservationAPIClientGetAppliedRes
 // StartDate is pinned to Properties.PurchaseDate, NEVER EffectiveDateTime:
 // EffectiveDateTime is the start of the current reservation revision and
 // moves forward on exchanges and splits, while the duplicate-purchase guard's
-// recent-purchase cutoff (pkg/recfilter) must see the true purchase time.
+// recent-purchase cutoff (pkg/recfilter) needs the original purchase date.
+// The SDK exposes PurchaseDate at day precision, so this cannot establish
+// whether a purchase yesterday occurred within the last 24 hours.
 //
 // Cost stays at zero. The reservations API carries no per-reservation price,
 // so zero here means "unknown", not "free". The shared common.Commitment.Cost
