@@ -433,7 +433,7 @@ func TestExtract_Modern_RecurringMonthlyCostNilWhenSourcesAbsent(t *testing.T) {
 
 // baseRec mirrors what the service converters build from Extract: when
 // TotalCostWithReservedInstances is present, CommitmentCost and
-// RecurringMonthlyCost carry the same monthly run-rate.
+// RecurringMonthlyCost carry the same lookback-window amount.
 func baseRec(service common.ServiceType, term string, onDemand, commitment float64) common.Recommendation {
 	rec := common.Recommendation{
 		Provider:       common.ProviderAzure,
@@ -471,8 +471,9 @@ func expandLegacy(t *testing.T, opts ...mocks.LegacyOpt) (upfront, monthly commo
 }
 
 func TestExpandPaymentVariants_MonthlyRecurringIsRunRateNotDividedByTerm(t *testing.T) {
-	// Issue #43: TotalCostWithReservedInstances is a monthly run-rate, so the
-	// monthly variant's recurring charge is $600, not 600/36 = $16.67.
+	// Issue #43: TotalCostWithReservedInstances is an amount over the
+	// lookback window, not a term total, so the monthly variant's recurring
+	// charge is $600, not 600/36 = $16.67.
 	for _, term := range []string{"P1Y", "P3Y"} {
 		t.Run(term, func(t *testing.T) {
 			upfront, monthly := expandLegacy(t,

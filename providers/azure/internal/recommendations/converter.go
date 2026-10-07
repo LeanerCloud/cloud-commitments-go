@@ -381,11 +381,13 @@ func strDeref(s *string) string {
 //   - "upfront": the full reservation cost is paid today; no monthly
 //     recurring charge (RecurringMonthlyCost = pointer to 0).
 //   - "monthly": nothing is paid today; the recurring charge is the base's
-//     RecurringMonthlyCost, the covered monthly run-rate from Extract.
+//     RecurringMonthlyCost, the covered cost from Extract.
 //
-// CommitmentCost, OnDemandCost and EstimatedSavings are monthly run-rates
-// over Azure's lookback period (see ExtractedFields), so the monthly charge is
-// the run-rate itself and is not divided by the term length.
+// CommitmentCost, OnDemandCost and EstimatedSavings are amounts over Azure's
+// lookback window, not term totals (see ExtractedFields), so the recurring
+// charge is the base's RecurringMonthlyCost as reported and is not divided by
+// the term length. Rescaling a window amount to a monthly figure is the
+// producer's job (see ExtractConsumption); this function only splits cashflow.
 //
 // Azure charges the same total reservation price for both billing plans
 // (unlike AWS, which prices partial-upfront separately), so EstimatedSavings
