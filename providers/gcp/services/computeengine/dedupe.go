@@ -60,7 +60,7 @@ func (c *Client) FilterRecommendationsForRecentCommitments(recs []common.Recomme
 		if err := validateCUDIdentity(rec.Provider, rec.Service, rec.CommitmentType, rec.Account, rec.Region); err != nil {
 			return nil, nil, err
 		}
-		family, err := commitmentTypeForMachineType(rec.ResourceType)
+		family, err := commitmentTypeForRecommendation(*rec)
 		if err != nil {
 			return nil, nil, err
 		}

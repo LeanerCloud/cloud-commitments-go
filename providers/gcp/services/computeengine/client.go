@@ -873,7 +873,7 @@ func (c *Client) buildInsertRequest(rec common.Recommendation, opts common.Purch
 	// read into Description alone, so an N2/C3/M3/... recommendation bought a
 	// commitment that applied to none of its instances: full commitment spend
 	// plus undimmed on-demand charges, booked as realized savings (issue #1538).
-	commitType, err := commitmentTypeForMachineType(rec.ResourceType)
+	commitType, err := commitmentTypeForRecommendation(rec)
 	if err != nil {
 		return nil, "", fmt.Errorf("buildInsertRequest: %w", err)
 	}
