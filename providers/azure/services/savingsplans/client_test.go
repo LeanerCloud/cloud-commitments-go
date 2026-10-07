@@ -224,7 +224,7 @@ func TestGetExistingCommitments_SubscriptionOwnership(t *testing.T) {
 		{"whitespace-subscription", plan("blank", "/subscriptions/ ", "", ""), false, true},
 		{"internal-whitespace", plan("blank", "/subscriptions/sub b", "", ""), false, true},
 		{"control-character", plan("control", "/subscriptions/sub-b\x00", "", ""), false, true},
-		{"backslash", plan("backslash", "/subscriptions/sub-b\\other", "", ""), false, true},
+		{"backslash", plan("backslash", "/subscriptions/sub-b\\x", "", ""), false, true},
 		{"unknown-scope", plan("unknown", "/unknown", "", ""), false, true},
 		{"own-no-id", ownNoID, false, true},
 		{"own-empty-id", plan("", "/subscriptions/sub-a", "", ""), false, true},
