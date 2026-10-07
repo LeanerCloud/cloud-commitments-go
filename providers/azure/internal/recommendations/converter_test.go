@@ -431,8 +431,11 @@ func TestExtract_Modern_RecurringMonthlyCostNilWhenSourcesAbsent(t *testing.T) {
 
 // --- ExpandPaymentVariants --------------------------------------------------
 
+// baseRec mirrors what the service converters build from Extract: when
+// TotalCostWithReservedInstances is present, CommitmentCost and
+// RecurringMonthlyCost carry the same lookback-window amount.
 func baseRec(service common.ServiceType, term string, onDemand, commitment float64) common.Recommendation {
-	return common.Recommendation{
+	rec := common.Recommendation{
 		Provider:       common.ProviderAzure,
 		Service:        service,
 		Region:         "eastus",
@@ -443,6 +446,69 @@ func baseRec(service common.ServiceType, term string, onDemand, commitment float
 		OnDemandCost:   onDemand,
 		CommitmentCost: commitment,
 	}
+	if commitment != 0 {
+		rec.RecurringMonthlyCost = float64Ptr(commitment)
+	}
+	return rec
+}
+
+// expandLegacy runs a Legacy API payload through the same Extract ->
+// Recommendation -> ExpandPaymentVariants path the service converters use.
+func expandLegacy(t *testing.T, opts ...mocks.LegacyOpt) (upfront, monthly common.Recommendation) {
+	t.Helper()
+	f := Extract(mocks.BuildLegacyReservationRecommendation(opts...))
+	require.NotNil(t, f)
+	variants := ExpandPaymentVariants(common.Recommendation{
+		Term:                 f.Term,
+		PaymentOption:        "upfront",
+		OnDemandCost:         f.OnDemandCost,
+		CommitmentCost:       f.CommitmentCost,
+		EstimatedSavings:     f.EstimatedSavings,
+		RecurringMonthlyCost: f.RecurringMonthlyCost,
+	})
+	require.Len(t, variants, 2)
+	return variants[0], variants[1]
+}
+
+func TestExpandPaymentVariants_MonthlyRecurringIsRunRateNotDividedByTerm(t *testing.T) {
+	// Issue #43: TotalCostWithReservedInstances is an amount over the
+	// lookback window, not a term total, so the monthly variant's recurring
+	// charge is $600, not 600/36 = $16.67.
+	for _, term := range []string{"P1Y", "P3Y"} {
+		t.Run(term, func(t *testing.T) {
+			upfront, monthly := expandLegacy(t,
+				mocks.WithNormalizedSize("Standard_D2s_v3"),
+				mocks.WithTerm(term),
+				mocks.WithCosts(1000, 600, 400),
+			)
+			require.NotNil(t, monthly.RecurringMonthlyCost)
+			assert.InDelta(t, 600.0, *monthly.RecurringMonthlyCost, 1e-9)
+			require.NotNil(t, upfront.RecurringMonthlyCost)
+			assert.InDelta(t, 0.0, *upfront.RecurringMonthlyCost, 1e-9)
+		})
+	}
+}
+
+func TestExpandPaymentVariants_AbsentTotalWithRIKeepsProviderSavings(t *testing.T) {
+	// Issue #43 (A08-006): with TotalCostWithReservedInstances absent,
+	// CommitmentCost is 0. Savings must stay the provider's NetSavings (45 of
+	// 120, 37.5%), not OnDemandCost - 0 = 120 at 100%, and the monthly
+	// variant carries the reconstructed covered cost 120 - 45 = 75.
+	withoutTotalWithRI := func(_ *armconsumption.LegacyReservationRecommendation, props *armconsumption.LegacyReservationRecommendationProperties) {
+		onDemand, savings := 120.0, 45.0
+		props.CostWithNoReservedInstances = &onDemand
+		props.NetSavings = &savings
+		props.TotalCostWithReservedInstances = nil
+	}
+	upfront, monthly := expandLegacy(t, mocks.WithNormalizedSize("Standard_D2s_v3"), withoutTotalWithRI)
+	for _, v := range []common.Recommendation{upfront, monthly} {
+		assert.InDelta(t, 45.0, v.EstimatedSavings, 1e-9, v.PaymentOption)
+		assert.InDelta(t, 37.5, v.SavingsPercentage, 1e-9, v.PaymentOption)
+	}
+	require.NotNil(t, monthly.RecurringMonthlyCost)
+	assert.InDelta(t, 75.0, *monthly.RecurringMonthlyCost, 1e-9)
+	require.NotNil(t, upfront.RecurringMonthlyCost)
+	assert.InDelta(t, 0.0, *upfront.RecurringMonthlyCost, 1e-9)
 }
 
 func TestExpandPaymentVariants_ReturnsTwoVariants(t *testing.T) {
@@ -462,22 +528,6 @@ func TestExpandPaymentVariants_AllUpfrontCashflow(t *testing.T) {
 	allUpfront := variants[0]
 	require.NotNil(t, allUpfront.RecurringMonthlyCost)
 	assert.InDelta(t, 0.0, *allUpfront.RecurringMonthlyCost, 1e-9)
-}
-
-func TestExpandPaymentVariants_NoUpfront1yrCashflow(t *testing.T) {
-	// no-upfront 1yr: RecurringMonthlyCost = CommitmentCost / 12.
-	variants := ExpandPaymentVariants(baseRec(common.ServiceCompute, "1yr", 100, 72))
-	noUpfront := variants[1]
-	require.NotNil(t, noUpfront.RecurringMonthlyCost)
-	assert.InDelta(t, 72.0/12.0, *noUpfront.RecurringMonthlyCost, 1e-9)
-}
-
-func TestExpandPaymentVariants_NoUpfront3yrCashflow(t *testing.T) {
-	// no-upfront 3yr: RecurringMonthlyCost = CommitmentCost / 36.
-	variants := ExpandPaymentVariants(baseRec(common.ServiceCompute, "3yr", 200, 120))
-	noUpfront := variants[1]
-	require.NotNil(t, noUpfront.RecurringMonthlyCost)
-	assert.InDelta(t, 120.0/36.0, *noUpfront.RecurringMonthlyCost, 1e-9)
 }
 
 func TestExpandPaymentVariants_SavingsIdenticalAcrossVariants(t *testing.T) {

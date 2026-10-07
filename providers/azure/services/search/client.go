@@ -517,7 +517,7 @@ func (c *Client) convertAzureSearchRecommendation(_ context.Context, azureRec ar
 		EstimatedSavings:     extracted.EstimatedSavings,
 		Term:                 extracted.Term,
 		RecurringMonthlyCost: extracted.RecurringMonthlyCost,
-		PaymentOption:        "upfront", // Default, will be expanded by ExpandPaymentVariants
+		PaymentOption:        "upfront",
 	}
 
 	// Override region with client region if extraction didn't find one
