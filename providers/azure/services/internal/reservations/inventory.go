@@ -278,7 +278,7 @@ func populateCommitmentFields(commitment *common.Commitment, r *armreservations.
 //
 // A nil or unrecognized state maps to "" (empty), never to a fabricated
 // "active": pkg/recfilter's isRecentActiveCommitment treats an unrecognized
-// state as owned, which is the conservative direction — wrongly skipping a
+// state as owned, which is the conservative direction: wrongly skipping a
 // purchase is recoverable, a duplicate commitment is not.
 func commitmentStateFromProvisioning(state *armreservations.ProvisioningState, expiry *time.Time, now time.Time) common.CommitmentState {
 	if state == nil {

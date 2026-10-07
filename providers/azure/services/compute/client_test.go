@@ -339,7 +339,6 @@ func TestComputeClient_GetExistingCommitments_WithMock(t *testing.T) {
 	succeeded := armreservations.ProvisioningStateSucceeded
 	canceled := armreservations.ProvisioningStateCancelled
 	single := armreservations.AppliedScopeTypeSingle
-	shared := armreservations.AppliedScopeTypeShared
 	vmType := armreservations.ReservedResourceTypeVirtualMachines
 	sqlType := armreservations.ReservedResourceTypeSQLDatabases
 
@@ -374,7 +373,8 @@ func TestComputeClient_GetExistingCommitments_WithMock(t *testing.T) {
 			Location: mocks.StringPtr("eastus"),
 			SKU:      &armreservations.SKUName{Name: mocks.StringPtr("Standard_D4s_v3")},
 			Properties: &armreservations.Properties{
-				AppliedScopeType:     &shared,
+				AppliedScopeType:     &single,
+				AppliedScopes:        []*string{mocks.StringPtr("/subscriptions/test-subscription")},
 				ReservedResourceType: &vmType,
 				ProvisioningState:    &canceled,
 				Quantity:             mocks.Int32Ptr(1),
