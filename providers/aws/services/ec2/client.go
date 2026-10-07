@@ -662,23 +662,16 @@ func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 
 // Duration constants for RI term calculations.
 const (
-	OneYearSeconds   = 31536000 // 365 days in seconds
-	ThreeYearSeconds = 94608000 // 3 * 365 days in seconds
+	OneYearSeconds   = purchasecfg.OneYearSeconds   // 365 days in seconds
+	ThreeYearSeconds = purchasecfg.ThreeYearSeconds // 3 * 365 days in seconds
 )
 
-// getDurationValue converts a term string to seconds for the EC2 API.
-// Returns an error on any unrecognized or empty input so callers fail loud
-// rather than silently buying a 1-year reservation when another commitment
-// length was intended.
+// getDurationValue converts a term string to seconds for the EC2 API,
+// failing loud on any unrecognized or empty input. The parsing logic lives
+// in purchasecfg; this wrapper only supplies the service name for the error
+// message.
 func (c *Client) getDurationValue(term string) (int64, error) {
-	switch term {
-	case "3yr", "3":
-		return ThreeYearSeconds, nil
-	case "1yr", "1":
-		return OneYearSeconds, nil
-	default:
-		return 0, fmt.Errorf("unsupported EC2 reservation term %q: must be one of 1yr, 1, 3yr, 3", term)
-	}
+	return purchasecfg.DurationSeconds(term, "EC2")
 }
 
 // ConvertibleRI represents an active convertible Reserved Instance.

@@ -397,19 +397,19 @@ func isLastMemoryDBPage(nextToken *string) bool {
 // getDurationStringForAPI converts the term string to a duration value accepted
 // by DescribeReservedNodesOfferings (seconds as a string or "1yr"/"3yr").
 // The MemoryDB API accepts both numeric-seconds strings and year strings.
-// Returns an error on any unrecognized or empty input so callers fail loud
-// rather than silently buying a 1-year reservation when another commitment
-// length was intended. The month-count forms ("12", "36") were accepted by the
-// previous implementation and are kept for compatibility.
+// The parsing logic lives in purchasecfg; this wrapper only supplies the
+// service name for the error message. The month-count forms ("12", "36")
+// were accepted by the previous implementation and are kept for
+// compatibility, normalized here to the canonical domain rather than widening
+// purchasecfg.ParseTermMonths for every service on a money path.
 func (c *Client) getDurationStringForAPI(term string) (string, error) {
 	switch term {
-	case "3yr", "3", "36":
-		return "3yr", nil
-	case "1yr", "1", "12":
-		return "1yr", nil
-	default:
-		return "", fmt.Errorf("unsupported MemoryDB reservation term %q: must be one of 1yr, 1, 12, 3yr, 3, 36", term)
+	case "12":
+		term = "1yr"
+	case "36":
+		term = "3yr"
 	}
+	return purchasecfg.DurationYearString(term, "MemoryDB")
 }
 
 // ValidateOffering checks if an offering exists without purchasing.
