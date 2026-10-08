@@ -299,6 +299,21 @@ func TestDecodePlan(t *testing.T) {
 	assert.Equal(t, rat(t, "1095"), p.MonthlySavings)
 }
 
+func TestDecodePlan_RejectsExtremeNumbers(t *testing.T) {
+	for _, n := range []string{"1e999999", "1e-999999", "1E101", "1e-101", "1e99999999999", "0." + strings.Repeat("1", 70)} {
+		body := strings.Replace(validPlanJSON, `"fee_hourly": 0.25`, `"fee_hourly": `+n, 1)
+		require.NotEqual(t, validPlanJSON, body)
+		p, err := DecodePlan(strings.NewReader(body))
+		assert.Error(t, err, n)
+		assert.Nil(t, p, n)
+	}
+	// Python-style small exponents remain valid.
+	body := strings.Replace(validPlanJSON, `"fee_hourly": 0.25`, `"fee_hourly": 1e-05`, 1)
+	p, err := DecodePlan(strings.NewReader(body))
+	require.NoError(t, err)
+	assert.Equal(t, rat(t, "0.00001"), p.FeeHourly)
+}
+
 func TestDecodePlan_IsCalculating(t *testing.T) {
 	body := strings.Replace(validPlanJSON, `"is_calculating": false`, `"is_calculating": true`, 1)
 	require.NotEqual(t, validPlanJSON, body)

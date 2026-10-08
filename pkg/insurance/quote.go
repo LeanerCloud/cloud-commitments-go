@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -413,6 +415,9 @@ func decodeOne(r io.Reader, v any) error {
 		return err
 	}
 	if _, err := dec.Token(); err != io.EOF {
+		if errors.Is(err, errResponseTooLarge) {
+			return err
+		}
 		return errors.New("unexpected data after JSON value")
 	}
 	return nil
@@ -425,6 +430,9 @@ func ratOrNil(n wireNum) (*big.Rat, error) {
 	s := string(n)
 	if s == "" {
 		return nil, nil
+	}
+	if err := checkNumberBounds(s); err != nil {
+		return nil, err
 	}
 	return exchange.ParseDecimalRat(s)
 }
@@ -564,6 +572,30 @@ func fillRats(fields ...numField) error {
 			return fmt.Errorf("%s: %w", f.name, err)
 		}
 		*f.out = r
+	}
+	return nil
+}
+
+const (
+	// maxNumberLen and maxExponent bound a number token before it reaches
+	// big.Rat, which would otherwise materialize 1e999999 as a ~400 KB integer.
+	// Money here is dollars and ratios; these limits are generous for that.
+	maxNumberLen = 64
+	maxExponent  = 100
+)
+
+// checkNumberBounds rejects over-long number tokens and extreme exponents.
+func checkNumberBounds(s string) error {
+	if len(s) > maxNumberLen {
+		return fmt.Errorf("number token longer than %d bytes", maxNumberLen)
+	}
+	i := strings.IndexAny(s, "eE")
+	if i < 0 {
+		return nil
+	}
+	exp, err := strconv.Atoi(s[i+1:])
+	if err != nil || exp > maxExponent || exp < -maxExponent {
+		return fmt.Errorf("number exponent outside +/-%d", maxExponent)
 	}
 	return nil
 }
