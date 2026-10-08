@@ -171,7 +171,7 @@ func (w wireHypothetical) toHypothetical() (Hypothetical, error) {
 	if w.Delta == nil {
 		return h, fmt.Errorf("delta_vs_current: %w", errMissing)
 	}
-	if err = fillRats(
+	if err := fillRats(
 		numField{"delta_vs_current.monthly_net_savings", w.Delta.MonthlyNetSavings, &h.DeltaMonthlyNetSavings, true},
 		numField{"delta_vs_current.monthly_commitment_cost", w.Delta.MonthlyCommitmentCost, &h.DeltaMonthlyCommitmentCost, true},
 		numField{"delta_vs_current.upfront_cost", w.Delta.UpfrontCost, &h.DeltaUpfrontCost, true},
@@ -266,7 +266,7 @@ func (w *wireOfferEntry) toOfferEntry() (OfferEntry, error) {
 	if e.Monthly, err = w.Monthly.toFinancials(); err != nil {
 		return e, err
 	}
-	if err = fillRats(
+	if err := fillRats(
 		numField{"discount_rate", w.DiscountRate, &e.DiscountRate, true},
 		numField{"breakeven_days", w.BreakevenDays, &e.BreakevenDays, false},
 		numField{"commitment_upfront_cost", w.UpfrontCost, &e.UpfrontCost, true},

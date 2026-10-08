@@ -219,7 +219,7 @@ const (
 	PlanStatusDraft       PlanStatus = "draft"
 	PlanStatusNeedsReview PlanStatus = "needs_review"
 	PlanStatusInProgress  PlanStatus = "in_progress"
-	PlanStatusCancelled   PlanStatus = "cancelled"
+	PlanStatusCancelled   PlanStatus = "cancelled" //nolint:misspell // vendor wire value
 )
 
 // Plan mirrors the subset of the documented CommitmentPlan schema that

@@ -163,8 +163,12 @@ type boundedReader struct {
 func (b *boundedReader) Read(p []byte) (int, error) {
 	if b.n <= 0 {
 		var probe [1]byte
-		if n, _ := b.r.Read(probe[:]); n > 0 {
+		n, err := b.r.Read(probe[:])
+		if n > 0 {
 			return 0, errResponseTooLarge
+		}
+		if err != nil && err != io.EOF {
+			return 0, err
 		}
 		return 0, io.EOF
 	}
@@ -183,13 +187,14 @@ func (c *Client) get(ctx context.Context, path string, q url.Values) (io.ReadClo
 	if len(q) > 0 {
 		u += "?" + q.Encode()
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, http.NoBody)
 	if err != nil {
 		return nil, time.Time{}, fmt.Errorf("building archera request: %w", err)
 	}
 	req.Header.Set("x-api-key", c.cfg.APIKey)
 	req.Header.Set("Accept", "application/json")
-	resp, err := c.hc.Do(req)
+	// baseURL is the fixed BaseURL constant; only in-package tests override it.
+	resp, err := c.hc.Do(req) //nolint:gosec // G704: see comment above
 	if err != nil {
 		return nil, time.Time{}, fmt.Errorf("archera request failed: %w", sanitizeTransportError(err))
 	}
