@@ -167,11 +167,13 @@ func TestProcessAutoExchange_CompletionRetriesSameRecord(t *testing.T) {
 
 type brokenReservationStore struct {
 	*mockExchangeStore
-	missingID  bool
-	badCeiling bool
+	missingID       bool
+	ceilingOverride string
+	reserveCalls    int
 }
 
 func (s *brokenReservationStore) ReserveRIExchange(ctx context.Context, record *ExchangeRecord, dailyCapUSD, perExchangeCapUSD string) (string, error) {
+	s.reserveCalls++
 	ceiling, err := s.mockExchangeStore.ReserveRIExchange(ctx, record, dailyCapUSD, perExchangeCapUSD)
 	if err != nil {
 		return "", err
@@ -179,8 +181,8 @@ func (s *brokenReservationStore) ReserveRIExchange(ctx context.Context, record *
 	if s.missingID {
 		record.ID = ""
 	}
-	if s.badCeiling {
-		return "not-a-number", nil
+	if s.ceilingOverride != "" {
+		return s.ceilingOverride, nil
 	}
 	return ceiling, nil
 }
@@ -188,16 +190,17 @@ func (s *brokenReservationStore) ReserveRIExchange(ctx context.Context, record *
 func TestProcessAutoExchange_InvalidReservationResponseStopsRun(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name       string
-		missingID  bool
-		badCeiling bool
+		name            string
+		missingID       bool
+		ceilingOverride string
+		status          string
 	}{
-		{name: "missing ID", missingID: true},
-		{name: "invalid ceiling", badCeiling: true},
+		{name: "missing ID", missingID: true, status: "processing"},
+		{name: "invalid ceiling", ceilingOverride: "not-a-number", status: "failed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			store := &brokenReservationStore{mockExchangeStore: &mockExchangeStore{dailySpend: "0"}, missingID: tc.missingID, badCeiling: tc.badCeiling}
+			store := &brokenReservationStore{mockExchangeStore: &mockExchangeStore{dailySpend: "0"}, missingID: tc.missingID, ceilingOverride: tc.ceilingOverride}
 			client := &mockExchangeClient{executeResult: "must-not-execute"}
 			params := defaultParams(store, client)
 			params.Config.Mode = "auto"
@@ -208,7 +211,57 @@ func TestProcessAutoExchange_InvalidReservationResponseStopsRun(t *testing.T) {
 			assert.True(t, halt)
 			assert.Zero(t, client.executeCalls)
 			require.Len(t, store.savedRecords, 1)
-			assert.Equal(t, "processing", store.savedRecords[0].Status)
+			assert.Equal(t, tc.status, store.savedRecords[0].Status)
+		})
+	}
+}
+
+func TestRunAutoExchange_InvalidReservationCeilingReleasesKnownHold(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name       string
+		ceiling    string
+		cleanupErr error
+		status     string
+	}{
+		{name: "malformed ceiling", ceiling: "not-a-number", status: "failed"},
+		{name: "negative ceiling", ceiling: "-1", status: "failed"},
+		{name: "malformed ceiling cleanup fails", ceiling: "not-a-number", cleanupErr: errors.New("database unavailable"), status: "processing"},
+		{name: "negative ceiling cleanup fails", ceiling: "-1", cleanupErr: errors.New("database unavailable"), status: "processing"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			store := &brokenReservationStore{
+				mockExchangeStore: &mockExchangeStore{dailySpend: "0", failErr: tc.cleanupErr},
+				ceilingOverride:   tc.ceiling,
+			}
+			client := &mockExchangeClient{quoteResult: defaultQuote(), executeResult: "must-not-execute"}
+			params := defaultParams(store, client)
+			params.Config.Mode = "auto"
+			params.RIs = append(params.RIs, RIInfo{
+				ID: "ri-002", InstanceType: "m5.xlarge", InstanceCount: 1,
+				OfferingClass: "convertible", NormalizationFactor: 8,
+			})
+			params.Utilization = append(params.Utilization, UtilizationInfo{RIID: "ri-002", UtilizationPercent: 50})
+			params.RIMetadata["ri-002"] = params.RIMetadata["ri-001"]
+
+			result, err := RunAutoExchange(context.Background(), params)
+
+			require.NoError(t, err)
+			require.Len(t, result.Failed, 1)
+			assert.Empty(t, result.Completed)
+			assert.Contains(t, result.Failed[0].Error, "invalid ceiling")
+			assert.Zero(t, client.executeCalls)
+			assert.Equal(t, 1, store.reserveCalls)
+			assert.Equal(t, 1, store.failCalls)
+			require.Len(t, store.savedRecords, 1)
+			assert.Equal(t, result.Failed[0].RecordID, store.savedRecords[0].ID)
+			assert.Equal(t, tc.status, store.savedRecords[0].Status)
+			if tc.cleanupErr != nil {
+				assert.Equal(t, "100.000000", store.savedRecords[0].PaymentDue)
+			} else {
+				assert.Equal(t, result.Failed[0].Error, store.savedRecords[0].Error)
+			}
 		})
 	}
 }
