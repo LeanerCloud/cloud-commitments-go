@@ -450,6 +450,14 @@ func completeLedgerRecord(ctx context.Context, store RIExchangeStore, recordID, 
 	return err
 }
 
+func failLedgerRecord(ctx context.Context, store RIExchangeStore, recordID, reason string) bool {
+	if err := store.FailRIExchange(ctx, recordID, reason); err != nil {
+		logging.Errorf("failed to mark exchange reservation %s failed: %v", recordID, err)
+		return true
+	}
+	return false
+}
+
 // floorCapUSD keeps a six-decimal reservation cap at or below its source.
 func floorCapUSD(limit *big.Rat) string {
 	scale := big.NewInt(1_000_000)
@@ -468,8 +476,7 @@ func acceptedAmountFromQuote(freshQ *ExchangeQuoteSummary, fallback string) stri
 	return fallback
 }
 
-// processAutoExchange executes one auto exchange; halt=true means settlement
-// failed after money moved and the processing reservation remains in place.
+// processAutoExchange executes one auto exchange; halt=true stops further exchanges.
 func processAutoExchange(ctx context.Context, params RunAutoExchangeParams, rec ReshapeRecommendation, offeringID, paymentDueStr string, perExchangeCap *big.Rat) (ExchangeOutcome, bool) {
 	outcome := ExchangeOutcome{
 		SourceRIID:         rec.SourceRIID,
@@ -528,6 +535,7 @@ func processAutoExchange(ctx context.Context, params RunAutoExchangeParams, rec 
 	effectiveCap, err := ParseDecimalRat(reservedUSD)
 	if err != nil || effectiveCap.Sign() < 0 {
 		outcome.Error = fmt.Sprintf("exchange reservation returned invalid ceiling %q", reservedUSD)
+		_ = failLedgerRecord(ctx, params.Store, record.ID, outcome.Error)
 		return outcome, true
 	}
 
@@ -543,11 +551,7 @@ func processAutoExchange(ctx context.Context, params RunAutoExchangeParams, rec 
 	if execErr != nil {
 		logging.Errorf("exchange execution failed for %s: %v", rec.SourceRIID, execErr)
 		outcome.Error = execErr.Error()
-		if failErr := params.Store.FailRIExchange(ctx, record.ID, outcome.Error); failErr != nil {
-			logging.Errorf("failed to mark exchange reservation %s failed: %v", record.ID, failErr)
-			return outcome, true
-		}
-		return outcome, false
+		return outcome, failLedgerRecord(ctx, params.Store, record.ID, outcome.Error)
 	}
 
 	// H3: persist the amount AWS actually accepted, not the stale pre-execution
