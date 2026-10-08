@@ -45,9 +45,12 @@ func TestComputeRecommendationsThroughSDK(t *testing.T) {
 		failure    map[string]bool
 		resources  []string
 		stringVCPU bool
+		rootType   string
 		invalid    bool
 	}{
 		{name: "regional recommendations and pagination"},
+		{name: "root M4", rootType: "MEMORY_OPTIMIZED_M4_6TB"},
+		{name: "root X4", rootType: "MEMORY_OPTIMIZED_X4_480_6T"},
 		{name: "empty success", empty: true},
 		{name: "all regions denied", failure: map[string]bool{central: true, west: true}},
 		{name: "partial regional success", failure: map[string]bool{west: true}},
@@ -92,6 +95,9 @@ func TestComputeRecommendationsThroughSDK(t *testing.T) {
 			server := grpc.NewServer()
 			recommendation := func(savings int64, state recommenderpb.RecommendationStateInfo_State, region string) *recommenderpb.Recommendation {
 				rec := sdkCostRecommendation(savings, state)
+				if tc.rootType != "" {
+					rec.Content = sdkRootCommitment(tc.rootType, region)
+				}
 				if tc.resources != nil {
 					rec.Content = sdkResourceAmounts(tc.resources, tc.stringVCPU, region)
 				}
@@ -166,7 +172,10 @@ func TestComputeRecommendationsThroughSDK(t *testing.T) {
 					assert.Equal(t, common.ServiceCompute, rec.Service)
 					assert.Equal(t, "recommendation-project", rec.Account)
 					assert.Empty(t, rec.ResourceType)
-					if tc.resources != nil {
+					if tc.rootType != "" {
+						assert.Equal(t, 480, rec.Count)
+						assert.Equal(t, common.ComputeDetails{MemoryGB: 6144, GCPCommitmentType: tc.rootType}, rec.Details)
+					} else if tc.resources != nil {
 						assert.Equal(t, 4, rec.Count)
 						assert.Equal(t, common.ComputeDetails{MemoryGB: 6}, rec.Details)
 					} else {
@@ -232,4 +241,19 @@ func sdkCostRecommendation(savings int64, state recommenderpb.RecommendationStat
 			}},
 		},
 	}
+}
+
+// Schema root fixture, not a captured service response.
+func sdkRootCommitment(kind, region string) *recommenderpb.RecommendationContent {
+	value, _ := structpb.NewStruct(map[string]any{
+		"type": kind, "resources": []any{
+			map[string]any{"type": "MEMORY", "amount": "6291456"},
+			map[string]any{"type": "VCPU", "amount": "480"},
+		},
+	})
+	return &recommenderpb.RecommendationContent{OperationGroups: []*recommenderpb.OperationGroup{{Operations: []*recommenderpb.Operation{{
+		Action: "replace", Path: "/", ResourceType: "compute.googleapis.com/Commitment",
+		Resource:  "//compute.googleapis.com/projects/recommendation-project/regions/" + region + "/commitments/cud-001",
+		PathValue: &recommenderpb.Operation_Value{Value: structpb.NewStructValue(value)},
+	}}}}}
 }

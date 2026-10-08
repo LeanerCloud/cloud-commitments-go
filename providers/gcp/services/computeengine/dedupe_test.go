@@ -7,12 +7,83 @@ import (
 	"time"
 
 	"cloud.google.com/go/compute/apiv1/computepb"
+	"cloud.google.com/go/recommender/apiv1/recommenderpb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/recfilter"
 )
+
+// Schema fixture, not a captured service response.
+func rootCUDRecommendation(kind string) *recommenderpb.Recommendation {
+	value, _ := structpb.NewStruct(map[string]any{
+		"type": kind, "resources": []any{
+			map[string]any{"type": "MEMORY", "amount": "6291456"},
+			map[string]any{"type": "VCPU", "amount": "480"},
+		},
+	})
+	return &recommenderpb.Recommendation{
+		StateInfo: &recommenderpb.RecommendationStateInfo{State: recommenderpb.RecommendationStateInfo_ACTIVE},
+		Content: &recommenderpb.RecommendationContent{OperationGroups: []*recommenderpb.OperationGroup{{Operations: []*recommenderpb.Operation{{
+			Action: "ADD", Path: "/", ResourceType: "compute.googleapis.com/Commitment",
+			Resource:  "//compute.googleapis.com/projects/test-project/regions/us-central1/commitments/advice",
+			PathValue: &recommenderpb.Operation_Value{Value: structpb.NewStructValue(value)},
+		}}}}},
+	}
+}
+
+func TestRootCUDPublicPurchasePath(t *testing.T) {
+	for _, kind := range []string{"MEMORY_OPTIMIZED_M4_6TB", "MEMORY_OPTIMIZED_X4_480_6T"} {
+		for _, decoded := range []bool{false, true} {
+			for _, existingKind := range []string{"", kind, "MEMORY_OPTIMIZED_X4_960_12T"} {
+				t.Run(fmt.Sprintf("%s/decoded=%t/existing=%s", kind, decoded, existingKind), func(t *testing.T) {
+					ctx := context.Background()
+					client, err := NewClient(ctx, "test-project", "us-central1")
+					require.NoError(t, err)
+					client.SetRecommenderClient(&MockRecommenderClient{iterator: &MockRecommenderIterator{recommendations: []*recommenderpb.Recommendation{rootCUDRecommendation(kind)}}})
+					recs, err := client.GetRecommendations(ctx, &common.RecommendationParams{})
+					require.NoError(t, err)
+					require.Len(t, recs, 1)
+					assert.Equal(t, 480, recs[0].Count)
+					assert.Empty(t, recs[0].ResourceType)
+					if decoded {
+						raw, marshalErr := common.MarshalServiceDetails(recs[0].Details)
+						require.NoError(t, marshalErr)
+						recs[0].Details, err = common.DecodeServiceDetailsFor(string(common.ServiceCompute), raw)
+						require.NoError(t, err)
+					}
+					svc := &MockCommitmentsService{operation: &MockOperation{}}
+					if existingKind != "" {
+						cud := recentCUD()
+						cud.Type = stringPtr(existingKind)
+						svc.commitments = []*computepb.Commitment{cud}
+					}
+					client.SetCommitmentsService(svc)
+					passed, filtered, err := recfilter.NewDuplicateChecker(24).AdjustRecommendationsForExisting(ctx, recs, client)
+					require.NoError(t, err)
+					for _, rec := range passed {
+						_, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{})
+						require.NoError(t, err)
+					}
+					if existingKind == kind {
+						assert.Len(t, filtered, 1)
+						assert.Empty(t, svc.insertReqs)
+						return
+					}
+					require.Len(t, svc.insertReqs, 1)
+					request := svc.insertReqs[0]
+					assert.Equal(t, "test-project", request.GetProject())
+					assert.Equal(t, "us-central1", request.GetRegion())
+					assert.Equal(t, kind, request.CommitmentResource.GetType())
+					assert.Equal(t, int64(480), request.CommitmentResource.Resources[0].GetAmount())
+					assert.Equal(t, int64(6291456), request.CommitmentResource.Resources[1].GetAmount())
+				})
+			}
+		}
+	}
+}
 
 func TestCUDStoredTypePublicPath(t *testing.T) {
 	for _, kind := range []string{"", "MEMORY_OPTIMIZED_M4_6TB", "MEMORY_OPTIMIZED_X4_480_6T", "UNDEFINED_TYPE", "TYPE_UNSPECIFIED", "UNKNOWN", "ACCELERATOR_OPTIMIZED", "GRAPHICS_OPTIMIZED", "STORAGE_OPTIMIZED_Z3"} {
