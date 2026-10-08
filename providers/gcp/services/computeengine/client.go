@@ -868,11 +868,8 @@ func (c *Client) buildInsertRequest(rec common.Recommendation, opts common.Purch
 		return nil, "", fmt.Errorf("buildInsertRequest: %w", err)
 	}
 
-	// The commitment Type selects which machine series the CUD discounts. It was
-	// pinned to GENERAL_PURPOSE (N1-only) while the recommended machine type was
-	// read into Description alone, so an N2/C3/M3/... recommendation bought a
-	// commitment that applied to none of its instances: full commitment spend
-	// plus undimmed on-demand charges, booked as realized savings (issue #1538).
+	// Prefer the persisted commitment type over machine-family hints.
+	// Legacy advice without a type uses the machine-family mapping.
 	commitType, err := commitmentTypeForRecommendation(rec)
 	if err != nil {
 		return nil, "", fmt.Errorf("buildInsertRequest: %w", err)
