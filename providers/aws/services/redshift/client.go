@@ -219,6 +219,10 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	return result, nil
 }
 
+// maxReservedNodePages bounds the idempotency reserved-node scan.
+// An incomplete scan refuses purchase rather than reporting no match.
+const maxReservedNodePages = 10
+
 // findNodeByIdempotencyToken looks for a nonterminal Redshift
 // reserved node tagged with the given idempotency token (issue #641). Redshift
 // has no tag filter on DescribeReservedNodes and no reserved-node tag-search,
@@ -239,7 +243,10 @@ func (c *Client) findNodeByIdempotencyToken(ctx context.Context, token string) (
 	}
 
 	var marker *string
-	for {
+	for page := 0; page < maxReservedNodePages; page++ {
+		if err := ctx.Err(); err != nil {
+			return "", false, err
+		}
 		response, err := c.client.DescribeReservedNodes(ctx, &redshift.DescribeReservedNodesInput{
 			Marker:     marker,
 			MaxRecords: aws.Int32(100),
@@ -251,11 +258,11 @@ func (c *Client) findNodeByIdempotencyToken(ctx context.Context, token string) (
 			return nodeID, found, err
 		}
 		if response.Marker == nil || aws.ToString(response.Marker) == "" {
-			break
+			return "", false, nil
 		}
 		marker = response.Marker
 	}
-	return "", false, nil
+	return "", false, fmt.Errorf("pagination cap reached after %d pages for Redshift reserved-node idempotency lookup", maxReservedNodePages)
 }
 
 // scanNodesForToken checks each nonterminal node for the idempotency
