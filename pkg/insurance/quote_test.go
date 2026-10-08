@@ -314,6 +314,36 @@ func TestDecodePlan_RejectsExtremeNumbers(t *testing.T) {
 	assert.Equal(t, rat(t, "0.00001"), p.FeeHourly)
 }
 
+func TestDecodePlan_NumberTokenLengthBoundary(t *testing.T) {
+	at := "0." + strings.Repeat("1", 62)
+	require.Len(t, at, 64)
+	for tok, ok := range map[string]bool{at: true, at + "1": false} {
+		body := strings.Replace(validPlanJSON, `"fee_hourly": 0.25`, `"fee_hourly": `+tok, 1)
+		p, err := DecodePlan(strings.NewReader(body))
+		if ok {
+			assert.NoError(t, err, "%d bytes", len(tok))
+			assert.NotNil(t, p)
+		} else {
+			assert.Error(t, err, "%d bytes", len(tok))
+		}
+	}
+}
+
+func TestDecodePlan_LaterNullOverridesEarlierDuplicate(t *testing.T) {
+	body := strings.Replace(validPlanJSON, `"fee_hourly": 0.25`, `"fee_hourly": 0.25, "fee_hourly": null`, 1)
+	p, err := DecodePlan(strings.NewReader(body))
+	assert.Error(t, err, "last-wins null makes a required field missing")
+	assert.Nil(t, p)
+}
+
+func TestDecodePlan_BooleanAsNumberHasAccurateError(t *testing.T) {
+	body := strings.Replace(validPlanJSON, `"fee_hourly": 0.25`, `"fee_hourly": true`, 1)
+	_, err := DecodePlan(strings.NewReader(body))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "expected a JSON number")
+	assert.NotContains(t, err.Error(), "exponent")
+}
+
 func TestDecodePlan_IsCalculating(t *testing.T) {
 	body := strings.Replace(validPlanJSON, `"is_calculating": false`, `"is_calculating": true`, 1)
 	require.NotEqual(t, validPlanJSON, body)

@@ -388,3 +388,29 @@ func TestIsUUID(t *testing.T) {
 		assert.False(t, isUUID(s), s)
 	}
 }
+
+func TestClient_ErrorMessageIsSanitized(t *testing.T) {
+	c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"message":"bad key ` + testKey + ` \u001b[31mRED\nINJECTED\r\u0085line"}`))
+	}))
+	_, err := c.Plan(context.Background(), testPlan)
+	var he *HTTPError
+	require.ErrorAs(t, err, &he)
+	assert.Equal(t, "bad key [redacted] [31mREDINJECTEDline", he.Message)
+	assert.NotContains(t, err.Error(), testKey)
+	assert.NotContains(t, err.Error(), "\x1b")
+	assert.NotContains(t, err.Error(), "\n")
+}
+
+type probeErrReader struct{ err error }
+
+func (r probeErrReader) Read([]byte) (int, error) { return 0, r.err }
+
+func TestBoundedReader_SurfacesProbeError(t *testing.T) {
+	boom := errors.New("connection reset")
+	_, err := io.ReadAll(&boundedReader{r: probeErrReader{boom}, n: 0})
+	assert.ErrorIs(t, err, boom)
+	_, err = io.ReadAll(&boundedReader{r: probeErrReader{io.EOF}, n: 0})
+	assert.NoError(t, err)
+}

@@ -254,10 +254,8 @@ type ComparisonRequest struct {
 	PaymentOptions []PaymentOption
 }
 
-// QuoteClient is the read-only seam implemented by the real HTTP client and
-// by the test fake. It has no method that creates, updates, applies, or binds
-// anything. When a consumer is unconfigured, no vendor request is made; a
-// configured consumer calls it only on an explicit user action.
+// QuoteClient is the read-only seam implemented by Client. It has no method
+// that creates, updates, applies, or binds anything.
 type QuoteClient interface {
 	Comparison(ctx context.Context, req ComparisonRequest) (*Comparison, error)
 	Plan(ctx context.Context, planID string) (*Plan, error)

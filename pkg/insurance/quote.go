@@ -28,7 +28,8 @@ import (
 // checked. Unknown vendor properties are ignored so additive API changes do
 // not break reads. Known limit: for required-but-nullable fields, an absent
 // key and an explicit null both map to nil. Numbers must be JSON numbers; a
-// quoted numeric string is a contract break.
+// quoted numeric string is a contract break. Keys match case-insensitively
+// (encoding/json behavior), so "FEE_HOURLY" is read as fee_hourly.
 
 var errMissing = errors.New("required field missing or null")
 
@@ -39,6 +40,7 @@ var errMissing = errors.New("required field missing or null")
 type wireNum string
 
 func (n *wireNum) UnmarshalJSON(b []byte) error {
+	*n = "" // a later null overrides an earlier duplicate key, as encoding/json does
 	if string(b) != "null" {
 		*n = wireNum(b)
 	}
@@ -588,6 +590,9 @@ const (
 func checkNumberBounds(s string) error {
 	if len(s) > maxNumberLen {
 		return fmt.Errorf("number token longer than %d bytes", maxNumberLen)
+	}
+	if s[0] != '-' && (s[0] < '0' || s[0] > '9') {
+		return fmt.Errorf("expected a JSON number, got %.20q", s)
 	}
 	i := strings.IndexAny(s, "eE")
 	if i < 0 {

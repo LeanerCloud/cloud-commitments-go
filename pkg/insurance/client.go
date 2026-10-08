@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/httpclient"
 )
@@ -201,7 +202,7 @@ func (c *Client) get(ctx context.Context, path string, q url.Values) (io.ReadClo
 	fetchedAt := time.Now().UTC()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		defer func() { _ = resp.Body.Close() }()
-		return nil, fetchedAt, newHTTPError(resp)
+		return nil, fetchedAt, newHTTPError(resp, c.cfg.APIKey)
 	}
 	return resp.Body, fetchedAt, nil
 }
@@ -216,7 +217,7 @@ func sanitizeTransportError(err error) error {
 	return err
 }
 
-func newHTTPError(resp *http.Response) *HTTPError {
+func newHTTPError(resp *http.Response, apiKey string) *HTTPError {
 	e := &HTTPError{StatusCode: resp.StatusCode}
 	if s, err := strconv.Atoi(strings.TrimSpace(resp.Header.Get("Retry-After"))); err == nil && s > 0 {
 		// Compare before multiplying: s*time.Second overflows int64 for large s.
@@ -233,9 +234,24 @@ func newHTTPError(resp *http.Response) *HTTPError {
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	if err == nil && json.Unmarshal(raw, &shape) == nil {
-		e.Message = truncate(shape.Message, maxErrorMessageLen)
+		e.Message = truncate(cleanMessage(shape.Message, apiKey), maxErrorMessageLen)
 	}
 	return e
+}
+
+// cleanMessage drops control characters (log forging, ANSI injection) and
+// masks the API key if the vendor echoes it back.
+func cleanMessage(msg, apiKey string) string {
+	msg = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) {
+			return -1
+		}
+		return r
+	}, msg)
+	if apiKey != "" {
+		msg = strings.ReplaceAll(msg, apiKey, "[redacted]")
+	}
+	return msg
 }
 
 func truncate(s string, n int) string {
