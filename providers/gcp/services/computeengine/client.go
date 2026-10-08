@@ -900,8 +900,7 @@ func (c *Client) buildInsertRequest(rec common.Recommendation, opts common.Purch
 		return nil, "", err
 	}
 
-	// GCP requires both a VCPU and a MEMORY resource (memory Amount in MB) in a
-	// single commitment insert.
+	// This client supports VCPU+MEMORY commitments; memory Amount is in MB.
 	commitment := &computepb.Commitment{
 		Name:        stringPtr(commitmentName),
 		Plan:        stringPtr(plan),
@@ -1207,27 +1206,13 @@ func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommend
 		PaymentOption:  paymentOption,
 	}
 
-	// ResourceType is left EMPTY (not guessed, and not filled from some other
-	// operation's last path segment) when no machine-type operation is present.
-	// Everything downstream reads it as a machine type, and the purchase path
-	// refuses an empty one, so the recommendation stays visible while being
-	// unpurchasable rather than silently buying a commitment derived from a
-	// commitment name (issue #1538).
 	if err := extractResourceTypeFromRecommendation(gcpRec, rec); err != nil {
-		log.Printf("computeengine: recommendation %q has no machine type and cannot be purchased: %v",
+		log.Printf("computeengine: recommendation %q has no machine type hint: %v",
 			gcpRec.GetName(), err)
 	}
 
 	extractCostImpactFromRecommendation(gcpRec, rec)
-	if err := requireSingleAmountResource(gcpRec.GetContent()); err != nil {
-		return nil, err
-	}
-	count, err := vcpuCountFromOperationGroups(gcpRec.GetContent())
-	if err != nil {
-		return nil, err
-	}
-	rec.Count = count
-	if err := extractMemoryMBFromRecommendation(gcpRec, rec); err != nil {
+	if err := populateRecommendationResources(gcpRec, rec); err != nil {
 		return nil, err
 	}
 

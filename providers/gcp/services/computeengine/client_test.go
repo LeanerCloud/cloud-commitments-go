@@ -31,6 +31,131 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/scorer"
 )
 
+func TestRootCUDTypeValidationAndFallback(t *testing.T) {
+	for _, value := range []*structpb.Value{nil, structpb.NewStringValue("GENERAL_PURPOSE_N2"), structpb.NewStringValue(""), structpb.NewStringValue(" "), structpb.NewNullValue(), structpb.NewNumberValue(1), structpb.NewStringValue("general_purpose_n2"), structpb.NewStringValue("UNKNOWN"), structpb.NewStringValue("TYPE_UNSPECIFIED"), structpb.NewStringValue("UNDEFINED_TYPE"), structpb.NewStringValue("ACCELERATOR_OPTIMIZED"), structpb.NewStringValue("GRAPHICS_OPTIMIZED"), structpb.NewStringValue("STORAGE_OPTIMIZED_Z3")} {
+		t.Run(fmt.Sprint(value), func(t *testing.T) {
+			ctx := context.Background()
+			input := rootCUDRecommendation("MEMORY_OPTIMIZED_M4_6TB")
+			input.Content.OperationGroups[0].Operations[0].Action = "rEpLaCe"
+			fields := input.Content.OperationGroups[0].Operations[0].GetValue().GetStructValue().Fields
+			resources, _ := structpb.NewList([]any{map[string]any{"type": "VCPU", "amount": 480}, map[string]any{"type": "MEMORY", "amount": 6291456}})
+			fields["resources"] = structpb.NewListValue(resources)
+			if value == nil {
+				delete(fields, "type")
+			} else {
+				fields["type"] = value
+			}
+			input.Content.OperationGroups[0].Operations = append(input.Content.OperationGroups[0].Operations, &recommenderpb.Operation{Action: "test", ResourceType: "compute.googleapis.com/MachineType", Resource: "projects/test-project/zones/us-central1-a/machineTypes/n1-standard-4"})
+			client, err := NewClient(ctx, "test-project", "us-central1")
+			require.NoError(t, err)
+			client.SetBillingService(&MockBillingService{err: errors.New("fixture pricing unavailable")})
+			client.SetRecommenderClient(&MockRecommenderClient{iterator: &MockRecommenderIterator{recommendations: []*recommenderpb.Recommendation{input}}})
+			service := &MockCommitmentsService{operation: &MockOperation{}}
+			client.SetCommitmentsService(service)
+			recs, err := client.GetRecommendations(ctx, &common.RecommendationParams{})
+			if value != nil && value.GetStringValue() != "GENERAL_PURPOSE_N2" {
+				require.Error(t, err)
+				assert.Empty(t, service.insertReqs)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, recs, 1)
+			_, err = client.PurchaseCommitment(ctx, recs[0], common.PurchaseOptions{})
+			require.NoError(t, err)
+			want := "GENERAL_PURPOSE_N2"
+			if value == nil {
+				want = "GENERAL_PURPOSE"
+			}
+			assert.Equal(t, want, service.lastInsertReq.CommitmentResource.GetType())
+			assert.Equal(t, int64(480), service.lastInsertReq.CommitmentResource.Resources[0].GetAmount())
+			assert.Equal(t, int64(6291456), service.lastInsertReq.CommitmentResource.Resources[1].GetAmount())
+		})
+	}
+}
+
+func TestRootCUDUnsupportedShapesAndAmounts(t *testing.T) {
+	for _, name := range []string{"root", "resources", "entry", "missing VCPU", "missing MEMORY", "duplicate", "UNKNOWN", "ACCELERATOR", "LOCAL_SSD", "bad amount", "fractional", "zero", "overflow", "null amount"} {
+		t.Run(name, func(t *testing.T) {
+			input := rootCUDRecommendation("MEMORY_OPTIMIZED_M4_6TB")
+			op := input.Content.OperationGroups[0].Operations[0]
+			fields := op.GetValue().GetStructValue().Fields
+			list := fields["resources"].GetListValue()
+			badAmount := false
+			switch name {
+			case "root":
+				op.PathValue = &recommenderpb.Operation_Value{Value: structpb.NewNullValue()}
+			case "resources":
+				fields["resources"] = structpb.NewStringValue("bad")
+			case "entry":
+				list.Values[0] = structpb.NewNullValue()
+			case "missing VCPU":
+				list.Values = list.Values[:1]
+			case "missing MEMORY":
+				list.Values = list.Values[1:]
+			case "duplicate":
+				list.Values = append(list.Values, list.Values[0])
+			case "UNKNOWN", "ACCELERATOR", "LOCAL_SSD":
+				list.Values[0].GetStructValue().Fields["type"] = structpb.NewStringValue(name)
+			default:
+				badAmount = true
+				list.Values[0].GetStructValue().Fields["amount"] = map[string]*structpb.Value{"bad amount": structpb.NewStringValue("6Gi"), "fractional": structpb.NewNumberValue(1.5), "zero": structpb.NewNumberValue(0), "overflow": structpb.NewStringValue("9223372036854775808"), "null amount": structpb.NewNullValue()}[name]
+			}
+			ctx := context.Background()
+			client, err := NewClient(ctx, "test-project", "us-central1")
+			require.NoError(t, err)
+			service := &MockCommitmentsService{operation: &MockOperation{}}
+			client.SetCommitmentsService(service)
+			client.SetRecommenderClient(&MockRecommenderClient{iterator: &MockRecommenderIterator{recommendations: []*recommenderpb.Recommendation{input}}})
+			recs, err := client.GetRecommendations(ctx, &common.RecommendationParams{})
+			if badAmount {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+			assert.Empty(t, recs)
+			assert.Empty(t, service.insertReqs)
+		})
+	}
+}
+
+func TestRootCUDCompoundMutations(t *testing.T) {
+	for _, action := range []string{"add", "replace", "remove", "move", "copy", "custom", "", "test"} {
+		for _, path := range []string{"/", "/type", "/resources/0"} {
+			for _, resourceType := range []string{"compute.googleapis.com/Commitment", "compute.googleapis.com/MachineType"} {
+				for _, later := range []bool{false, true} {
+					t.Run(fmt.Sprintf("%s%s%s/later=%t", action, path, resourceType, later), func(t *testing.T) {
+						ctx := context.Background()
+						input := rootCUDRecommendation("MEMORY_OPTIMIZED_M4_6TB")
+						modifier := &recommenderpb.Operation{Action: action, Path: path, ResourceType: resourceType, Resource: input.Content.OperationGroups[0].Operations[0].Resource}
+						if later {
+							modifier.Resource += "-another"
+							input.Content.OperationGroups = append(input.Content.OperationGroups, &recommenderpb.OperationGroup{Operations: []*recommenderpb.Operation{modifier}})
+						} else {
+							input.Content.OperationGroups[0].Operations = append(input.Content.OperationGroups[0].Operations, modifier)
+						}
+						client, err := NewClient(ctx, "test-project", "us-central1")
+						require.NoError(t, err)
+						client.SetRecommenderClient(&MockRecommenderClient{iterator: &MockRecommenderIterator{recommendations: []*recommenderpb.Recommendation{input}}})
+						service := &MockCommitmentsService{operation: &MockOperation{}}
+						client.SetCommitmentsService(service)
+						recs, err := client.GetRecommendations(ctx, &common.RecommendationParams{})
+						if resourceType == "compute.googleapis.com/Commitment" && action != "test" {
+							require.ErrorContains(t, err, "compound")
+							assert.Empty(t, service.insertReqs)
+							return
+						}
+						require.NoError(t, err)
+						require.Len(t, recs, 1)
+						_, err = client.PurchaseCommitment(ctx, recs[0], common.PurchaseOptions{})
+						require.NoError(t, err)
+						assert.Len(t, service.insertReqs, 1)
+					})
+				}
+			}
+		}
+	}
+}
+
 // MockCommitmentsService mocks the CommitmentsService interface.
 type MockCommitmentsService struct {
 	listErr       error
