@@ -73,18 +73,19 @@ type sdkChild struct {
 	quantity                                           int
 }
 
-func sdkReservationChild(child sdkChild, now time.Time) string {
+func sdkReservationChild(child sdkChild, purchaseDate, expiryDate time.Time) string {
 	return fmt.Sprintf(`{"id":%q,"location":%q,"sku":{"name":"Standard_D2s_v3"},"properties":{"reservedResourceType":%q,"provisioningState":%q,"appliedScopeType":%s,"appliedScopes":%s,"quantity":%d,"purchaseDate":%q,"expiryDate":%q}}`,
 		"/providers/Microsoft.Capacity/reservationOrders/order-one/reservations/"+child.id,
 		child.region, child.resourceType, child.state, child.scopeType, child.scopes, child.quantity,
-		now.UTC().Format("2006-01-02"), now.UTC().AddDate(1, 0, 0).Format("2006-01-02"))
+		purchaseDate.UTC().Format(time.DateOnly), expiryDate.UTC().Format(time.DateOnly))
 }
 
 func TestGetExistingCommitmentsSDKSharedVMFailsClosed(t *testing.T) {
+	now := time.Now()
 	child := sdkReservationChild(sdkChild{
 		id: "child-one", resourceType: "VirtualMachines", scopeType: `"Shared"`, scopes: `null`,
 		region: "eastus", state: "Succeeded", quantity: 1,
-	}, time.Now())
+	}, now, now.AddDate(1, 0, 0))
 	for _, subscriptionID := range []string{"sub-a", "sub-b"} {
 		t.Run(subscriptionID, func(t *testing.T) {
 			client := sdkInventoryClient(t, subscriptionID, inventorySDKTransport{child: child})
@@ -126,7 +127,7 @@ func TestGetExistingCommitmentsSDKScopeBoundary(t *testing.T) {
 				child: sdkReservationChild(sdkChild{
 					id: "child-one", resourceType: tc.resourceType, scopeType: tc.scopeType, scopes: tc.scopes,
 					region: "westus2", state: "Succeeded", quantity: 2,
-				}, now),
+				}, now, now.AddDate(1, 0, 0)),
 			})
 			inventory, err := client.GetExistingCommitments(context.Background())
 			if tc.wantError {
@@ -155,11 +156,11 @@ func TestGetExistingCommitmentsSDKSplitSingleAndTerminal(t *testing.T) {
 	first := sdkReservationChild(sdkChild{
 		id: "child-a", resourceType: "VirtualMachines", scopeType: `"Single"`, scopes: `["/subscriptions/sub-a"]`,
 		region: "westus2", state: "Succeeded", quantity: 2,
-	}, now)
+	}, now, now.AddDate(1, 0, 0))
 	other := sdkReservationChild(sdkChild{
 		id: "child-b", resourceType: "VirtualMachines", scopeType: `"Single"`, scopes: `["/subscriptions/sub-b"]`,
 		region: "eastus", state: "Succeeded", quantity: 3,
-	}, now)
+	}, now, now.AddDate(1, 0, 0))
 	client := sdkInventoryClient(t, "sub-a", inventorySDKTransport{child: first + "," + other})
 	inventory, err := client.GetExistingCommitments(context.Background())
 	require.NoError(t, err)
@@ -177,7 +178,7 @@ func TestGetExistingCommitmentsSDKSplitSingleAndTerminal(t *testing.T) {
 	terminal := sdkReservationChild(sdkChild{
 		id: "child-c", resourceType: "VirtualMachines", scopeType: `"Single"`, scopes: `["/subscriptions/sub-a"]`,
 		region: "westus2", state: string(armreservations.ProvisioningStateCancelled), quantity: 2,
-	}, now)
+	}, now, now.AddDate(1, 0, 0))
 	client = sdkInventoryClient(t, "sub-a", inventorySDKTransport{child: terminal})
 	passed, filtered, err = recfilter.NewDuplicateChecker(24).AdjustRecommendationsForExisting(
 		context.Background(), []common.Recommendation{rec}, client)
@@ -198,4 +199,77 @@ func TestGetExistingCommitmentsSDKPageFailureFailsClosed(t *testing.T) {
 	require.ErrorContains(t, err, "list reservations")
 	require.Len(t, passed, 1)
 	require.Empty(t, filtered)
+}
+
+func TestGetExistingCommitmentsSDKExpiryTodayFailsClosed(t *testing.T) {
+	now := time.Now().UTC()
+	child := sdkChild{
+		id: "expiry-today", resourceType: "VirtualMachines", scopeType: `"Single"`, scopes: `["/subscriptions/sub-a"]`,
+		region: "eastus", state: "Succeeded", quantity: 1,
+	}
+	ambiguous := sdkReservationChild(child, now.AddDate(-1, 0, 0), now)
+	client := sdkInventoryClient(t, "sub-a", inventorySDKTransport{child: ambiguous})
+	inventory, err := client.GetExistingCommitments(context.Background())
+	require.ErrorContains(t, err, "date-only expiryDate")
+	require.ErrorContains(t, err, "expiry-today")
+	require.Nil(t, inventory)
+	rec := common.Recommendation{Provider: common.ProviderAzure, Service: common.ServiceCompute,
+		Account: "sub-a", Region: "eastus", ResourceType: "Standard_D2s_v3", Count: 1}
+	passed, filtered, err := recfilter.NewDuplicateChecker(24).AdjustRecommendationsForExisting(
+		context.Background(), []common.Recommendation{rec}, client)
+	require.ErrorContains(t, err, "date-only expiryDate")
+	require.Len(t, passed, 1)
+	require.Empty(t, filtered)
+
+	child.id = "valid-first"
+	valid := sdkReservationChild(child, now.AddDate(-1, 0, 0), now.AddDate(0, 0, 1))
+	client = sdkInventoryClient(t, "sub-a", inventorySDKTransport{child: valid + "," + ambiguous})
+	inventory, err = client.GetExistingCommitments(context.Background())
+	require.ErrorContains(t, err, "date-only expiryDate")
+	require.Nil(t, inventory)
+}
+
+func TestGetExistingCommitmentsSDKExpiryDateControls(t *testing.T) {
+	now := time.Now().UTC()
+	cases := []struct {
+		name         string
+		resourceType string
+		state        string
+		expiry       time.Time
+		nilState     bool
+		nilExpiry    bool
+		wantCount    int
+		wantState    common.CommitmentState
+	}{
+		{name: "future succeeded", resourceType: "VirtualMachines", state: "Succeeded", expiry: now.AddDate(0, 0, 1), wantCount: 1, wantState: common.CommitmentStateActive},
+		{name: "past succeeded", resourceType: "VirtualMachines", state: "Succeeded", expiry: now.AddDate(0, 0, -1), wantCount: 1, wantState: common.CommitmentStateExpired},
+		{name: "today canceled", resourceType: "VirtualMachines", state: string(armreservations.ProvisioningStateCancelled), expiry: now, wantCount: 1, wantState: common.CommitmentStateCanceled},
+		{name: "today nil state", resourceType: "VirtualMachines", state: "Succeeded", expiry: now, nilState: true, wantCount: 1},
+		{name: "today unknown state", resourceType: "VirtualMachines", state: "Mystery", expiry: now, wantCount: 1},
+		{name: "missing expiry succeeded", resourceType: "VirtualMachines", state: "Succeeded", expiry: now, nilExpiry: true, wantCount: 1, wantState: common.CommitmentStateActive},
+		{name: "today SQL", resourceType: "SQLDatabases", state: "Succeeded", expiry: now},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			child := sdkReservationChild(sdkChild{
+				id: "date-control", resourceType: tc.resourceType, scopeType: `"Single"`, scopes: `["/subscriptions/sub-a"]`,
+				region: "eastus", state: tc.state, quantity: 1,
+			}, now.AddDate(-1, 0, 0), tc.expiry)
+			if tc.nilState {
+				child = strings.Replace(child, `"provisioningState":"Succeeded"`, `"provisioningState":null`, 1)
+				require.Contains(t, child, `"provisioningState":null`)
+			}
+			if tc.nilExpiry {
+				child = strings.Replace(child, `"expiryDate":`+fmt.Sprintf("%q", tc.expiry.Format(time.DateOnly)), `"expiryDate":null`, 1)
+				require.Contains(t, child, `"expiryDate":null`)
+			}
+			client := sdkInventoryClient(t, "sub-a", inventorySDKTransport{child: child})
+			inventory, err := client.GetExistingCommitments(context.Background())
+			require.NoError(t, err)
+			require.Len(t, inventory, tc.wantCount)
+			if tc.wantCount == 1 {
+				require.Equal(t, tc.wantState, inventory[0].State)
+			}
+		})
+	}
 }
