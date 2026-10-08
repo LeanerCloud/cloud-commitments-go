@@ -157,6 +157,7 @@ func TestProcessAutoExchange_CompletionRetriesSameRecord(t *testing.T) {
 
 	assert.Empty(t, outcome.Error)
 	assert.False(t, halt)
+	assert.Equal(t, 1, client.executeCalls)
 	assert.Equal(t, 3, store.completeCalls)
 	assert.Equal(t, []string{outcome.RecordID, outcome.RecordID, outcome.RecordID}, settledIDs)
 	require.Len(t, store.savedRecords, 1)
