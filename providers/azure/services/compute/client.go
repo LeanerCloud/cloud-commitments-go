@@ -283,15 +283,27 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 		if commitment == nil {
 			continue
 		}
-		if r.Properties.AppliedScopeType == nil {
-			return nil, fmt.Errorf("compute: cannot attribute VM reservation %q to subscription %q: missing applied scope type", commitment.CommitmentID, c.subscriptionID)
-		}
-		if *r.Properties.AppliedScopeType != armreservations.AppliedScopeTypeSingle {
-			return nil, fmt.Errorf("compute: cannot attribute VM reservation %q to subscription %q: applied scope type %q is not Single", commitment.CommitmentID, c.subscriptionID, *r.Properties.AppliedScopeType)
+		if err := validateVMReservationInventory(r.Properties, commitment.CommitmentID, c.subscriptionID, now); err != nil {
+			return nil, err
 		}
 		commitments = append(commitments, *commitment)
 	}
 	return commitments, nil
+}
+
+func validateVMReservationInventory(props *armreservations.Properties, reservationID, subscriptionID string, now time.Time) error {
+	if props.AppliedScopeType == nil {
+		return fmt.Errorf("compute: cannot attribute VM reservation %q to subscription %q: missing applied scope type", reservationID, subscriptionID)
+	}
+	if *props.AppliedScopeType != armreservations.AppliedScopeTypeSingle {
+		return fmt.Errorf("compute: cannot attribute VM reservation %q to subscription %q: applied scope type %q is not Single", reservationID, subscriptionID, *props.AppliedScopeType)
+	}
+	if props.ProvisioningState != nil && *props.ProvisioningState == armreservations.ProvisioningStateSucceeded &&
+		props.ExpiryDate != nil && props.ExpiryDate.UTC().Format(time.DateOnly) == now.UTC().Format(time.DateOnly) {
+		return fmt.Errorf("compute: cannot determine lifecycle for VM reservation %q in subscription %q: reservations API date-only expiryDate %s falls on the current UTC date",
+			reservationID, subscriptionID, props.ExpiryDate.UTC().Format(time.DateOnly))
+	}
+	return nil
 }
 
 // providerRegistrationState is the JSON shape returned by the ARM providers API.
