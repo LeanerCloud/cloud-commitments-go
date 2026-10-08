@@ -49,8 +49,8 @@ func TestRootCUDPublicPurchasePath(t *testing.T) {
 					assert.Equal(t, 480, recs[0].Count)
 					assert.Empty(t, recs[0].ResourceType)
 					if decoded {
-						raw, err := common.MarshalServiceDetails(recs[0].Details)
-						require.NoError(t, err)
+						raw, marshalErr := common.MarshalServiceDetails(recs[0].Details)
+						require.NoError(t, marshalErr)
 						recs[0].Details, err = common.DecodeServiceDetailsFor(string(common.ServiceCompute), raw)
 						require.NoError(t, err)
 					}

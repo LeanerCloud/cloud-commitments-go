@@ -62,30 +62,29 @@ func selectRootCommitment(content *recommenderpb.RecommendationContent) (*recomm
 	return root, nil
 }
 
-func rootResourceAmount(resource *structpb.Value) (string, int64, error) {
+func rootResourceAmount(resource *structpb.Value) (kind string, amount int64, err error) {
 	entry := resource.GetStructValue()
 	if entry == nil {
 		return "", 0, fmt.Errorf("root Commitment resource must be an object")
 	}
-	kind := entry.Fields["type"].GetStringValue()
+	kind = entry.Fields["type"].GetStringValue()
 	if kind != computepb.ResourceCommitment_VCPU.String() && kind != computepb.ResourceCommitment_MEMORY.String() {
 		return "", 0, fmt.Errorf("root Commitment resource %q is unsupported by this VCPU+MEMORY client", kind)
 	}
 	if kind == computepb.ResourceCommitment_VCPU.String() {
-		count, err := recommendationVCPUAmount(entry.Fields["amount"])
-		return kind, int64(count), err
+		count, parseErr := recommendationVCPUAmount(entry.Fields["amount"])
+		return kind, int64(count), parseErr
 	}
-	amount, err := recommendationAmount(entry.Fields["amount"], kind)
+	amount, err = recommendationAmount(entry.Fields["amount"], kind)
 	return kind, amount, err
 }
 
-func rootCommitmentResources(resources []*structpb.Value) (int, int64, error) {
-	count, memory := 0, int64(0)
+func rootCommitmentResources(resources []*structpb.Value) (count int, memory int64, err error) {
 	seen := make(map[string]bool)
 	for _, resource := range resources {
-		kind, amount, err := rootResourceAmount(resource)
-		if err != nil {
-			return 0, 0, err
+		kind, amount, parseErr := rootResourceAmount(resource)
+		if parseErr != nil {
+			return 0, 0, parseErr
 		}
 		if seen[kind] {
 			return 0, 0, fmt.Errorf("duplicate root Commitment resource %q", kind)
@@ -121,9 +120,9 @@ func rootCommitmentDetails(content *recommenderpb.RecommendationContent) (int, *
 		if !ok {
 			return 0, nil, fmt.Errorf("root Commitment type must be a string")
 		}
-		typed, err := concreteCommitmentType(kind.StringValue)
-		if err != nil {
-			return 0, nil, err
+		typed, typeErr := concreteCommitmentType(kind.StringValue)
+		if typeErr != nil {
+			return 0, nil, typeErr
 		}
 		details.GCPCommitmentType = typed.String()
 	}
@@ -148,8 +147,8 @@ func populateRecommendationResources(gcpRec *recommenderpb.Recommendation, rec *
 		rec.Count, rec.Details = count, *details
 		return nil
 	}
-	if err := requireSingleAmountResource(gcpRec.GetContent()); err != nil {
-		return err
+	if resourceErr := requireSingleAmountResource(gcpRec.GetContent()); resourceErr != nil {
+		return resourceErr
 	}
 	count, err = vcpuCountFromOperationGroups(gcpRec.GetContent())
 	if err != nil {
