@@ -25,8 +25,12 @@ type mockExchangeStore struct {
 	staleRecords   []ExchangeRecord
 	dailySpend     string
 	dailySpendErr  error
+	reserveErr     error
 	completeErr    error
+	completeErrFor func(id, exchangeID, acceptedPaymentDue string, attempt int) error
+	failErr        error
 	completeCalls  int
+	failCalls      int
 	// cancelByOriginLast captures the origin argument of the last
 	// CancelPendingExchangesByOrigin call for assertion in scoping tests.
 	cancelByOriginLast *common.ExchangeOrigin
@@ -129,6 +133,9 @@ func (m *mockExchangeStore) ReserveRIExchange(_ context.Context, record *Exchang
 	if m.dailySpendErr != nil {
 		return "", m.dailySpendErr
 	}
+	if m.reserveErr != nil {
+		return "", m.reserveErr
+	}
 	dailyCap, err := ParseDecimalRat(dailyCapUSD)
 	if err != nil {
 		return "", err
@@ -174,6 +181,11 @@ func (m *mockExchangeStore) CompleteRIExchangeWithPayment(_ context.Context, id,
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.completeCalls++
+	if m.completeErrFor != nil {
+		if err := m.completeErrFor(id, exchangeID, acceptedPaymentDue, m.completeCalls); err != nil {
+			return err
+		}
+	}
 	if m.completeErr != nil {
 		return m.completeErr
 	}
@@ -191,6 +203,10 @@ func (m *mockExchangeStore) CompleteRIExchangeWithPayment(_ context.Context, id,
 func (m *mockExchangeStore) FailRIExchange(_ context.Context, id string, errorMsg string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	m.failCalls++
+	if m.failErr != nil {
+		return m.failErr
+	}
 	for _, record := range m.savedRecords {
 		if record.ID == id {
 			record.Status = "failed"
