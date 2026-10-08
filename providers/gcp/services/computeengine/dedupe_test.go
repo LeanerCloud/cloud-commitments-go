@@ -2,6 +2,7 @@ package computeengine
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -12,6 +13,83 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/recfilter"
 )
+
+func TestCUDStoredTypePublicPath(t *testing.T) {
+	for _, kind := range []string{"", "MEMORY_OPTIMIZED_M4_6TB", "MEMORY_OPTIMIZED_X4_480_6T", "UNDEFINED_TYPE", "TYPE_UNSPECIFIED", "UNKNOWN", "ACCELERATOR_OPTIMIZED", "GRAPHICS_OPTIMIZED", "STORAGE_OPTIMIZED_Z3"} {
+		for _, decoded := range []bool{false, true} {
+			want := kind
+			if want == "" {
+				want = "GENERAL_PURPOSE_N2"
+			}
+			valid := kind == "" || kind == "MEMORY_OPTIMIZED_M4_6TB" || kind == "MEMORY_OPTIMIZED_X4_480_6T"
+			for _, sameBucket := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/decoded=%t/same=%t", kind, decoded, sameBucket), func(t *testing.T) {
+					ctx := context.Background()
+					rec := cudRecommendation()
+					rec.Details = common.ComputeDetails{MemoryGB: 256, GCPCommitmentType: kind}
+					if decoded {
+						raw, err := common.MarshalServiceDetails(rec.Details)
+						require.NoError(t, err)
+						rec.Details, err = common.DecodeServiceDetailsFor(string(common.ServiceCompute), raw)
+						require.NoError(t, err)
+					}
+					client, err := NewClient(ctx, rec.Account, rec.Region)
+					require.NoError(t, err)
+					cud := recentCUD()
+					cud.Type = stringPtr("MEMORY_OPTIMIZED_X4_960_12T")
+					if sameBucket && valid {
+						cud.Type = stringPtr(want)
+					}
+					service := &MockCommitmentsService{operation: &MockOperation{}, commitments: []*computepb.Commitment{cud}}
+					client.SetCommitmentsService(service)
+					passed, filtered, err := recfilter.NewDuplicateChecker(24).AdjustRecommendationsForExisting(ctx, []common.Recommendation{rec}, client)
+					if !valid {
+						require.Error(t, err)
+						_, err = client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{})
+						require.Error(t, err)
+						assert.Empty(t, service.insertReqs)
+						return
+					}
+					require.NoError(t, err)
+					if sameBucket {
+						assert.Len(t, filtered, 1)
+						assert.Empty(t, passed)
+						assert.Empty(t, service.insertReqs)
+						return
+					}
+					require.Len(t, passed, 1)
+					_, err = client.PurchaseCommitment(ctx, passed[0], common.PurchaseOptions{})
+					require.NoError(t, err)
+					require.Len(t, service.insertReqs, 1)
+					request := service.insertReqs[0]
+					assert.Equal(t, want, request.CommitmentResource.GetType())
+					assert.Equal(t, rec.Account, request.GetProject())
+					assert.Equal(t, rec.Region, request.GetRegion())
+					assert.Equal(t, int64(32), request.CommitmentResource.Resources[0].GetAmount())
+					assert.Equal(t, int64(262144), request.CommitmentResource.Resources[1].GetAmount())
+				})
+			}
+		}
+	}
+}
+
+func TestCUDTypeFallbackWithAbsentDetails(t *testing.T) {
+	for _, details := range []common.ServiceDetails{nil, (*common.ComputeDetails)(nil)} {
+		rec := cudRecommendation()
+		rec.Details = details
+		client, err := NewClient(context.Background(), rec.Account, rec.Region)
+		require.NoError(t, err)
+		service := &MockCommitmentsService{operation: &MockOperation{}, commitments: []*computepb.Commitment{recentCUD()}}
+		client.SetCommitmentsService(service)
+		passed, filtered, err := recfilter.NewDuplicateChecker(24).AdjustRecommendationsForExisting(context.Background(), []common.Recommendation{rec}, client)
+		require.NoError(t, err)
+		assert.Empty(t, passed)
+		assert.Len(t, filtered, 1)
+		_, err = client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
+		require.ErrorContains(t, err, "MEMORY resource amount absent")
+		assert.Empty(t, service.insertReqs)
+	}
+}
 
 func recentCUD() *computepb.Commitment {
 	return &computepb.Commitment{
