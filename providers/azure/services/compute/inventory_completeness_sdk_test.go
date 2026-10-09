@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
 	"github.com/stretchr/testify/require"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -69,8 +70,8 @@ func TestGetExistingCommitmentsSDKIncompleteFailsClosed(t *testing.T) {
 }
 
 func TestGetExistingCommitmentsSDKIncompleteControls(t *testing.T) {
-	t.Run("cancelled with missing fields is not an error", func(t *testing.T) {
-		child := mustReplace(t, completenessChild("Cancelled", 0, ""), `"sku":{"name":"Standard_D2s_v3"},`, ``)
+	t.Run("canceled with missing fields is not an error", func(t *testing.T) {
+		child := mustReplace(t, completenessChild(string(armreservations.ProvisioningStateCancelled), 0, ""), `"sku":{"name":"Standard_D2s_v3"},`, ``)
 		client := sdkInventoryClient(t, "sub-a", inventorySDKTransport{child: child})
 		inventory, err := client.GetExistingCommitments(context.Background())
 		require.NoError(t, err)
