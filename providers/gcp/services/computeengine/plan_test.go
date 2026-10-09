@@ -24,7 +24,7 @@ func planClient(t *testing.T, recs ...*recommenderpb.Recommendation) (*Client, *
 }
 
 // Issue #291: a THIRTY_SIX_MONTH recommendation with no caller term must be
-// bought as THIRTY_SIX_MONTH. Pre-fix it was labelled 1yr and bought TWELVE_MONTH.
+// bought as THIRTY_SIX_MONTH. Pre-fix it was labeled 1yr and bought TWELVE_MONTH.
 func TestRecommendationPlanDrivesPurchaseTerm(t *testing.T) {
 	cases := []struct {
 		name, plan, paramTerm, wantTerm, wantPlan string
