@@ -21,7 +21,7 @@ There is no root Go module. Use the module directories above when you inspect, b
 
 ## Build and test
 
-Use the Go version declared in each module's `go.mod` (currently Go 1.26.6).
+Use the Go version declared in each module's `go.mod` (currently Go 1.26.9).
 
 ```bash
 make build

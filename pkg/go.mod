@@ -1,6 +1,6 @@
 module github.com/LeanerCloud/cloud-commitments-go/pkg
 
-go 1.26.6
+go 1.26.9
 
 // This module contains shared types, provider interfaces, and the exchange package.
 // The exchange package has AWS SDK dependencies for RI exchange operations.

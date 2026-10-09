@@ -1,6 +1,6 @@
 module github.com/LeanerCloud/cloud-commitments-go/providers/aws
 
-go 1.26.6
+go 1.26.9
 
 require (
 	github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261006104817-90e61e668b99
