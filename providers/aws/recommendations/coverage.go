@@ -172,9 +172,9 @@ func normaliseDeployment(deployment string) string {
 //
 // Missing pools (no demand in the pool over the window) are omitted from
 // the map; ApplyCoverageMapToRecommendations leaves
-// rec.ExistingCoveragePct at zero for those recs, which the sizing path
-// treats as "no signal" and falls back to the no-existing-commitments
-// formula.
+// rec.ExistingCoverageKnown false for those recs, which RI
+// --target-coverage sizing drops (target-coverage-unknown) rather than
+// treating them as 0% covered.
 func (c *Client) GetRICoverageMap(ctx context.Context, lookbackDays int, regions []string) (PoolCoverageMap, error) {
 	if lookbackDays <= 0 {
 		lookbackDays = 30
@@ -407,8 +407,8 @@ func extractGroupAttributes(attrs map[string]string) (instanceType, deployment s
 // shape depends on service: RDS recs (DatabaseDetails carrying an engine
 // + AZConfig) look up by "region:instance_type:engine:deployment"; other
 // services look up by "region:instance_type". Recs without a match stay
-// at zero, which the sizing path treats as "no signal" and falls back to
-// the no-existing-commitments formula.
+// at Known=false, which RI --target-coverage sizing drops
+// (target-coverage-unknown) rather than treating them as 0% covered.
 //
 // Why rebalance instead of just trusting per-rec avgs: AWS's
 // GetReservationPurchaseRecommendation returns one rec per (pool, account)
