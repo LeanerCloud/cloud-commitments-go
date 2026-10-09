@@ -168,6 +168,9 @@ func (c *Client) parseEC2Details(ctx context.Context, rec *common.Recommendation
 	}
 	ec2Info.Tenancy = tenancy
 	ec2Info.Scope = resolveEC2Scope(ec2Details.AvailabilityZone)
+	if ec2Details.AvailabilityZone != nil {
+		ec2Info.AvailabilityZone = strings.TrimSpace(*ec2Details.AvailabilityZone)
+	}
 	c.enrichFromCatalogue(ctx, ec2Info)
 
 	rec.Details = ec2Info
