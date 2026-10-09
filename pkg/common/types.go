@@ -536,11 +536,12 @@ type Region struct {
 // pollute the API payload.
 type ComputeDetails struct {
 	InstanceType      string  `json:"instance_type"`
-	Platform          string  `json:"platform"`            // linux, windows
-	Tenancy           string  `json:"tenancy"`             // default, dedicated, host
-	Scope             string  `json:"scope"`               // regional, zonal
-	VCPU              int     `json:"vcpu,omitempty"`      // 0 = unknown
-	MemoryGB          float64 `json:"memory_gb,omitempty"` // 0 = unknown
+	Platform          string  `json:"platform"`                    // linux, windows
+	Tenancy           string  `json:"tenancy"`                     // default, dedicated, host
+	Scope             string  `json:"scope"`                       // regional, zonal
+	AvailabilityZone  string  `json:"availability_zone,omitempty"` // required for zonal EC2 scope, empty for regional
+	VCPU              int     `json:"vcpu,omitempty"`              // 0 = unknown
+	MemoryGB          float64 `json:"memory_gb,omitempty"`         // 0 = unknown
 	GCPCommitmentType string  `json:"gcp_commitment_type,omitempty"`
 }
 
