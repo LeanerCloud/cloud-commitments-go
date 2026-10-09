@@ -63,8 +63,8 @@ func Price(in Input) (Pricing, error) {
 	if want != in.DurationSeconds {
 		return Pricing{}, fmt.Errorf("%s offering duration %ds does not match requested term %q (%ds)", in.Service, in.DurationSeconds, in.Term, want)
 	}
-	if err := checkAmount("FixedPrice", in.FixedPrice); err != nil {
-		return Pricing{}, err
+	if amountErr := checkAmount("FixedPrice", in.FixedPrice); amountErr != nil {
+		return Pricing{}, amountErr
 	}
 	hourly, err := hourlyRate(in)
 	if err != nil {
@@ -117,7 +117,7 @@ func Currency(service, code string) (string, error) {
 
 // AssumedUSD is for offering types whose SDK struct has no currency field
 // (ElastiCache, MemoryDB). Commercial and GovCloud AWS bill those in USD; the
-// China partitions do not, so they fail instead of being labelled USD.
+// China partitions do not, so they fail instead of being labeled USD.
 func AssumedUSD(service, region string) (string, error) {
 	if strings.HasPrefix(region, "cn-") {
 		return "", fmt.Errorf("%s offerings carry no currency code and region %q is not billed in USD", service, region)

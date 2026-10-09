@@ -647,6 +647,10 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	if err != nil {
 		return nil, err
 	}
+	usage, err := float32Exact(aws.ToFloat32(offering.UsagePrice))
+	if err != nil {
+		return nil, fmt.Errorf("EC2 offering %s: invalid UsagePrice: %w", offeringID, err)
+	}
 	charges := make([]offeringprice.Charge, 0, len(offering.RecurringCharges))
 	for _, rc := range offering.RecurringCharges {
 		charges = append(charges, offeringprice.Charge{Amount: aws.ToFloat64(rc.Amount), Frequency: string(rc.Frequency)})
@@ -655,7 +659,7 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 		Service:         "EC2",
 		Term:            rec.Term,
 		FixedPrice:      fixedPriceCents(*offering.FixedPrice) / 100,
-		UsagePrice:      float32Exact(aws.ToFloat32(offering.UsagePrice)),
+		UsagePrice:      usage,
 		Charges:         charges,
 		DurationSeconds: aws.ToInt64(offering.Duration),
 	})
@@ -1186,7 +1190,6 @@ func fixedPriceCents(price float32) float64 {
 
 // float32Exact widens a float32 price through its shortest decimal form, so
 // 0.05 stays 0.05 instead of 0.05000000074505806.
-func float32Exact(v float32) float64 {
-	f, _ := strconv.ParseFloat(strconv.FormatFloat(float64(v), 'g', -1, 32), 64) // shortest float32 form always parses
-	return f
+func float32Exact(v float32) (float64, error) {
+	return strconv.ParseFloat(strconv.FormatFloat(float64(v), 'g', -1, 32), 64)
 }

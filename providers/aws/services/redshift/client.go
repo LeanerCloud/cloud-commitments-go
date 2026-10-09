@@ -633,7 +633,7 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 		Charges: charges, DurationSeconds: int64(aws.ToInt32(offering.Duration)),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("Redshift offering %s: %w", offeringID, err)
+		return nil, fmt.Errorf("pricing offering %s: %w", offeringID, err)
 	}
 
 	details := &common.OfferingDetails{

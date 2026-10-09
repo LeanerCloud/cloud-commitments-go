@@ -125,3 +125,17 @@ func TestGetOfferingDetails_UpfrontMatchesPurchaseCost(t *testing.T) {
 	assert.Equal(t, 1234.56, d.UpfrontCost)
 	assert.Equal(t, d.UpfrontCost, *res.Cost)
 }
+
+func TestGetOfferingDetails_OneYearTermAndMultipleHourlyChargesSum(t *testing.T) {
+	t.Parallel()
+	d, err := detailsFor(t, priceRec("1yr"), priceOffering(func(o *types.ReservedInstancesOffering) {
+		o.Duration = aws.Int64(31536000)
+		o.RecurringCharges = []types.RecurringCharge{
+			{Amount: aws.Float64(0.03), Frequency: types.RecurringChargeFrequencyHourly},
+			{Amount: aws.Float64(0.02), Frequency: types.RecurringChargeFrequencyHourly},
+		}
+	}))
+	require.NoError(t, err)
+	assert.InDelta(t, 0.05, d.RecurringCost, 1e-12, "multiple Hourly charges are summed")
+	assert.InDelta(t, 500+0.05*8760, d.TotalCost, 1e-9)
+}
