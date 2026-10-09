@@ -117,6 +117,9 @@ func ApplyCoverage(recs []common.Recommendation, coverage float64, logf Logf, dr
 //
 //	If gap <= 0 (existing already at/above target) → drop with INFO log.
 //	If n_target == 0 (gap too small to fit one RI) → drop with INFO log.
+//	If ExistingCoverageKnown is false (no coverage data for the pool) and
+//	avg > 0 → drop with WARNING log (target-coverage-unknown); unknown is
+//	never sized as 0% covered.
 //	If AverageInstancesUsedPerHour <= 0 → pass through (no signal); counted
 //	in the per-run skip summary.
 //	If avg, existing% or target is NaN/Inf, existing% is negative, or
@@ -127,9 +130,10 @@ func ApplyCoverage(recs []common.Recommendation, coverage float64, logf Logf, dr
 //	avg/n_target * 100 clamped to 100.
 //
 //	ExistingCoveragePct is sourced from CE GetReservationCoverage in the
-//	same pool; zero means "no signal" and the formula reduces to
-//	floor(avg * target/100) — i.e. plain target% of the pool's average
-//	hourly demand.
+//	same pool and is only trusted when ExistingCoverageKnown is true. A
+//	known zero means the pool has demand but no RI coverage, and the formula
+//	reduces to floor(avg * target/100), i.e. plain target% of the pool's
+//	average hourly demand.
 //	For RDS the coverage lookup keys by (region, instance_type, engine).
 //	Floor (rather than ceil or round) gives strict "at-most-target"
 //	sizing. Pools too small to approximate the target meaningfully
@@ -255,6 +259,16 @@ func applyTargetCoverageRI(rec common.Recommendation, targetPct float64, logf Lo
 	if rec.AverageInstancesUsedPerHour <= 0 {
 		// No signal — caller will pass through and count in the summary.
 		return rec, false, ""
+	}
+
+	// Unknown existing coverage is not 0%: sizing it as such oversizes the
+	// buy. Placed after the avg<=0 pass-through because that sizes nothing,
+	// and Azure/GCP RI recs have avg=0 and no coverage data, so they must
+	// pass through.
+	if !rec.ExistingCoverageKnown {
+		logf.printf("WARNING: --target-coverage=%.1f%% has no existing coverage data for %s/%s/%s; dropped recommendation rather than sizing it as 0%% covered\n",
+			targetPct, rec.Service, rec.Region, rec.ResourceType)
+		return rec, false, common.DropTargetCoverageUnknown
 	}
 
 	avg := rec.AverageInstancesUsedPerHour

@@ -240,9 +240,10 @@ type Recommendation struct {
 	// the SP commitment is dollar-denominated rather than count-denominated.
 	// ExistingCoveragePct is the share of demand already covered by existing
 	// commitments in the same pool (from CE GetReservationCoverage /
-	// GetSavingsPlansCoverage). Zero = "no signal" (CE returned nothing for
-	// this pool, or the fetch step wasn't run); sizing then degenerates to
-	// the no-existing-commitments path. See cmd/helpers.go.
+	// GetSavingsPlansCoverage). Only meaningful when ExistingCoverageKnown is
+	// true; zero with Known=false means CE returned nothing for this pool (or
+	// the fetch step wasn't run), and RI target-coverage sizing drops such
+	// recs. See cmd/helpers.go.
 	AverageInstancesUsedPerHour float64 `json:"average_instances_used_per_hour,omitempty" csv:"AverageInstancesUsedPerHour"`
 	RecommendedUtilization      float64 `json:"recommended_utilization,omitempty" csv:"RecommendedUtilization"`
 	RecommendedCount            int     `json:"recommended_count,omitempty" csv:"RecommendedCount"`
@@ -258,7 +259,8 @@ type Recommendation struct {
 	// ApplyCoverageMapToRecommendations whenever a pool lookup hits, and
 	// by family-NU sizing when a family-level existing% lands on the rec.
 	// CSV writers use this to render "n/a" for unknown vs "0.0" for
-	// genuine zero-coverage pools.
+	// genuine zero-coverage pools. RI --target-coverage sizing drops recs
+	// with Known=false and positive average demand (target-coverage-unknown).
 	ExistingCoverageKnown bool    `json:"existing_coverage_known,omitempty" csv:"-"`
 	ProjectedUtilization  float64 `json:"projected_utilization,omitempty" csv:"ProjectedUtilization"`
 	ProjectedCoverage     float64 `json:"projected_coverage,omitempty" csv:"ProjectedCoverage"`
