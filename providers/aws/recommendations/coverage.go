@@ -3,6 +3,7 @@ package recommendations
 import (
 	"context"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -172,9 +173,9 @@ func normaliseDeployment(deployment string) string {
 //
 // Missing pools (no demand in the pool over the window) are omitted from
 // the map; ApplyCoverageMapToRecommendations leaves
-// rec.ExistingCoveragePct at zero for those recs, which the sizing path
-// treats as "no signal" and falls back to the no-existing-commitments
-// formula.
+// rec.ExistingCoverageKnown false for those recs, which RI
+// --target-coverage sizing drops (target-coverage-unknown) rather than
+// treating them as 0% covered.
 func (c *Client) GetRICoverageMap(ctx context.Context, lookbackDays int, regions []string) (PoolCoverageMap, error) {
 	if lookbackDays <= 0 {
 		lookbackDays = 30
@@ -252,7 +253,13 @@ func (c *Client) fetchCoverageForServiceRegion(ctx context.Context, startStr, en
 }
 
 type riCoveragePool struct{ instanceType, deployment string }
-type riCoverageTotals struct{ average, weightedPct, lastPct float64 }
+type riCoverageTotals struct {
+	average, weightedPct, lastPct float64
+	// invalid poisons the whole pool: groups are summed across periods and
+	// pages, so one unparsable value would otherwise leave a partial pool
+	// that looks like a real (Known) coverage figure.
+	invalid bool
+}
 type riCoverageAccumulator map[riCoveragePool]riCoverageTotals
 
 func (a riCoverageAccumulator) addGroup(group types.ReservationCoverageGroup, windowHours float64) {
@@ -260,12 +267,18 @@ func (a riCoverageAccumulator) addGroup(group types.ReservationCoverageGroup, wi
 	if instType == "" {
 		return
 	}
-	cov, ok := poolCoverageFromGroup(group, windowHours)
+	cov, ok, err := poolCoverageFromGroup(group, windowHours)
+	key := riCoveragePool{instType, normaliseDeployment(deployment)}
+	sum := a[key]
+	if err != nil {
+		log.Printf("warning: dropping RI coverage pool %s/%s: %v", key.instanceType, key.deployment, err)
+		sum.invalid = true
+		a[key] = sum
+		return
+	}
 	if !ok {
 		return
 	}
-	key := riCoveragePool{instType, normaliseDeployment(deployment)}
-	sum := a[key]
 	sum.lastPct = cov.Pct
 	if cov.AvgInstancesPerHour > 0 {
 		sum.average += cov.AvgInstancesPerHour
@@ -301,14 +314,23 @@ func (c *Client) fetchCoveragePaged(
 		}
 		token = result.NextPageToken
 	}
-	for key, sum := range acc {
+	acc.record(record)
+	return nil
+}
+
+// record emits one PoolCoverage per valid pool, skipping pools poisoned by an
+// unparsable value (see riCoverageTotals.invalid).
+func (a riCoverageAccumulator) record(record func(instType, deployment string, cov PoolCoverage)) {
+	for key, sum := range a {
+		if sum.invalid {
+			continue
+		}
 		pct := sum.lastPct
 		if sum.average > 0 {
 			pct = sum.weightedPct / sum.average
 		}
 		record(key.instanceType, key.deployment, PoolCoverage{Pct: pct, AvgInstancesPerHour: sum.average})
 	}
-	return nil
 }
 
 // rdsEngineRegionFilter builds the CE Filter expression scoping a
@@ -363,22 +385,32 @@ func (c *Client) fetchCoveragePage(ctx context.Context, input *costexplorer.GetR
 }
 
 // poolCoverageFromGroup pulls the (pct, avg) pair from a CE response
-// group's CoverageHours block. Returns (zero-value, false) when the block
-// is absent or missing the percentage field — caller drops the group.
+// group's CoverageHours block. Returns (zero-value, false, nil) when the
+// block is absent or missing the percentage field: the caller skips the
+// group silently. A present but unparsable, non-finite or negative
+// CoverageHoursPercentage or TotalRunningHours returns an error: the caller
+// must treat the whole pool as having no coverage data, never as 0%.
 // AvgInstancesPerHour = TotalRunningHours / windowHours, matching the AWS
 // console's "instances over the lookback window" view. windowHours is
 // 24 * lookbackDays from the GetRICoverageMap caller.
-func poolCoverageFromGroup(group types.ReservationCoverageGroup, windowHours float64) (PoolCoverage, bool) {
+func poolCoverageFromGroup(group types.ReservationCoverageGroup, windowHours float64) (PoolCoverage, bool, error) {
 	if group.Coverage == nil || group.Coverage.CoverageHours == nil ||
 		group.Coverage.CoverageHours.CoverageHoursPercentage == nil {
-		return PoolCoverage{}, false
+		return PoolCoverage{}, false, nil
 	}
-	pct := parseFloat(aws.ToString(group.Coverage.CoverageHours.CoverageHoursPercentage))
+	pct, err := parseSPFloat(aws.ToString(group.Coverage.CoverageHours.CoverageHoursPercentage), "CoverageHoursPercentage")
+	if err != nil {
+		return PoolCoverage{}, false, err
+	}
 	var avg float64
 	if windowHours > 0 && group.Coverage.CoverageHours.TotalRunningHours != nil {
-		avg = parseFloat(aws.ToString(group.Coverage.CoverageHours.TotalRunningHours)) / windowHours
+		hours, err := parseSPFloat(aws.ToString(group.Coverage.CoverageHours.TotalRunningHours), "TotalRunningHours")
+		if err != nil {
+			return PoolCoverage{}, false, err
+		}
+		avg = hours / windowHours
 	}
-	return PoolCoverage{Pct: pct, AvgInstancesPerHour: avg}, true
+	return PoolCoverage{Pct: pct, AvgInstancesPerHour: avg}, true, nil
 }
 
 // extractGroupAttributes reads INSTANCE_TYPE and DEPLOYMENT_OPTION values
@@ -407,8 +439,8 @@ func extractGroupAttributes(attrs map[string]string) (instanceType, deployment s
 // shape depends on service: RDS recs (DatabaseDetails carrying an engine
 // + AZConfig) look up by "region:instance_type:engine:deployment"; other
 // services look up by "region:instance_type". Recs without a match stay
-// at zero, which the sizing path treats as "no signal" and falls back to
-// the no-existing-commitments formula.
+// at Known=false, which RI --target-coverage sizing drops
+// (target-coverage-unknown) rather than treating them as 0% covered.
 //
 // Why rebalance instead of just trusting per-rec avgs: AWS's
 // GetReservationPurchaseRecommendation returns one rec per (pool, account)

@@ -312,7 +312,7 @@ func TestParseEC2Details(t *testing.T) {
 						Platform:         aws.String("Linux/UNIX"),
 						Region:           aws.String("US East (N. Virginia)"),
 						Tenancy:          aws.String("shared"),
-						AvailabilityZone: aws.String("us-east-1a"),
+						AvailabilityZone: aws.String(" us-east-1b "),
 					},
 				},
 			},
@@ -329,6 +329,28 @@ func TestParseEC2Details(t *testing.T) {
 				assert.Equal(t, "default", ec2Details.Tenancy)
 				// AZ present -> "Availability Zone" (not "availability-zone")
 				assert.Equal(t, "Availability Zone", ec2Details.Scope)
+				assert.Equal(t, "us-east-1b", ec2Details.AvailabilityZone)
+			},
+		},
+		{
+			name: "EC2 with whitespace-only AZ is regional scope",
+			details: &types.ReservationPurchaseRecommendationDetail{
+				InstanceDetails: &types.InstanceDetails{
+					EC2InstanceDetails: &types.EC2InstanceDetails{
+						InstanceType:     aws.String("t3.medium"),
+						Platform:         aws.String("Linux/UNIX"),
+						Region:           aws.String("us-west-2"),
+						Tenancy:          aws.String("shared"),
+						AvailabilityZone: aws.String("  "),
+					},
+				},
+			},
+			expectError: false,
+			validate: func(t *testing.T, rec *common.Recommendation) {
+				ec2Details, ok := rec.Details.(*common.ComputeDetails)
+				require.True(t, ok)
+				assert.Equal(t, "Region", ec2Details.Scope)
+				assert.Equal(t, "", ec2Details.AvailabilityZone)
 			},
 		},
 		{

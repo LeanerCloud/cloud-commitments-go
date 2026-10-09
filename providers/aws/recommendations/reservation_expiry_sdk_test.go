@@ -201,7 +201,7 @@ func TestReservationExpirySDKDates(t *testing.T) {
 func expiryRecommendation(resource string) common.Recommendation {
 	return common.Recommendation{Provider: common.ProviderAWS, Service: common.ServiceCache, CommitmentType: common.CommitmentReservedInstance,
 		Region: "us-east-1", ResourceType: resource, Count: 2, Term: "1yr", PaymentOption: "no-upfront",
-		AverageInstancesUsedPerHour: 10, ExistingCoveragePct: 80, CommitmentCost: 100, EstimatedSavings: 20,
+		AverageInstancesUsedPerHour: 10, ExistingCoveragePct: 80, ExistingCoverageKnown: true, CommitmentCost: 100, EstimatedSavings: 20,
 		Details: &common.CacheDetails{Engine: "redis"}}
 }
 
