@@ -36,8 +36,8 @@ github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/cloudmock v0
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/cloudmock v0.54.0/go.mod h1:vB2GH9GAYYJTO3mEn8oYwzEdhlayZIdQz6zdzgUIRvA=
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.54.0 h1:s0WlVbf9qpvkh1c/uDAPElam0WrL7fHRIidgZJ7UqZI=
 github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.54.0/go.mod h1:Mf6O40IAyB9zR/1J8nGDDPirZQQPbYJni8Yisy7NTMc=
-github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261007231611-07d8b1fb3e3c h1:y+nU75809vG1ZyXnhoV1DxVVTWOTdT/D9vVzweWmdMc=
-github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261007231611-07d8b1fb3e3c/go.mod h1:ApWBliDXe099f3oDXBz41K/I9v4bHvn1dG/BGoRmHlw=
+github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261009141026-a450912d1d4e h1:guLTNuzHesGLDTCvEjz91ClEpzN9PT8CHPWDnynRKww=
+github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261009141026-a450912d1d4e/go.mod h1:8RTmzPazA8IeVZfn7wNaU7ILx0VK5eHZQozO21Mvtq8=
 github.com/aws/aws-sdk-go-v2 v1.41.5 h1:dj5kopbwUsVUVFgO4Fi5BIT3t4WyqIDjGKCangnV/yY=
 github.com/aws/aws-sdk-go-v2 v1.41.5/go.mod h1:mwsPRE8ceUUpiTgF7QmQIJ7lgsKUPQOUl3o72QBrE1o=
 github.com/aws/smithy-go v1.24.2 h1:FzA3bu/nt/vDvmnkg+R8Xl46gmzEDam6mZ1hzmwXFng=
