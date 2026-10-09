@@ -14,6 +14,7 @@ const (
 	DropTargetAlreadyMet      = "target-already-met"
 	DropTargetSizedToZero     = "target-sized-to-zero"
 	DropTargetInputInvalid    = "target-input-invalid"
+	DropTargetCoverageUnknown = "target-coverage-unknown"
 	DropFamilyAlreadyAtTarget = "family-nu-already-at-target"
 	DropFamilyNoNUSignal      = "family-nu-no-nu-signal"
 	DropFamilySizedToZero     = "family-nu-sized-to-zero"
