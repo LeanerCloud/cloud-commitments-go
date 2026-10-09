@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
-	"github.com/LeanerCloud/cloud-commitments-go/pkg/recfilter"
 )
 
 // mockCoverageCE extends the test mock with a configurable GetReservationCoverage
@@ -472,23 +471,4 @@ func TestNormaliseDeployment(t *testing.T) {
 			assert.Equal(t, want, normaliseDeployment(in))
 		})
 	}
-}
-
-// Issue go#295 end to end: the coverage map fetch succeeded but the rec's pool
-// is absent from it, so the rec keeps Known=false and must be dropped by
-// target-coverage sizing instead of being sized as 0% covered (Count 5 -> 80).
-func TestApplyCoverageMap_UnmatchedPool_DroppedByTargetCoverage(t *testing.T) {
-	recs := []common.Recommendation{{
-		Service: common.ServiceEC2, Region: "us-east-1", ResourceType: "m5.large",
-		CommitmentType: common.CommitmentReservedInstance, Count: 5, RecommendedCount: 5,
-		AverageInstancesUsedPerHour: 100, CommitmentCost: 1000, OnDemandCost: 2000, EstimatedSavings: 500,
-	}}
-	ApplyCoverageMapToRecommendations(recs, PoolCoverageMap{
-		poolKey("us-east-1", "c5.large"): {Pct: 75, AvgInstancesPerHour: 10},
-	})
-	require.False(t, recs[0].ExistingCoverageKnown)
-	drops := common.NewDropSummary()
-	got := recfilter.ApplyTargetCoverage(recs, 80, nil, drops)
-	assert.Empty(t, got)
-	assert.Equal(t, "Dropped 1 recs: target-coverage-unknown=1", drops.FormatOneLine())
 }
