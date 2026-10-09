@@ -30,6 +30,41 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   new-style `es:*ReservedInstance*` OpenSearch actions (replacing the legacy
   `es:*ReservedElasticsearch*` names).
 
+### Added
+
+- **`pkg/insurance`:** a read-only Archera insured-commitment comparison
+  contract (#284, #285). `NewClient` returns a client with `Comparison` and
+  `Plan` for Archera's documented
+  `GET /v1/org/{org_id}/commitment-plans/{plan_id}/comparison` and
+  `GET /v1/org/{org_id}/commitment-plans/{plan_id}` endpoints (`DecodeComparison`
+  and `DecodePlan` parse already-fetched bodies). The origin is fixed at
+  `https://api.archera.ai`, the key is sent only in the `x-api-key` header, and
+  the client never follows redirects and never retries. It has no purchase or
+  binding capability and nothing in the repo calls it yet. Contract points
+  consumers must keep:
+  - Money is `*big.Rat`; nil means unknown, never zero. `archera_premium` is
+    already inside `commitment_cost.total`, so do not add it again. Monthly
+    rates are 730-hour rates and the one-time upfront cost is a separate field;
+    do not sum them.
+  - The vendor schema has no currency or expiry field, so both stay nil
+    (unknown). `FetchedAt` records retrieval time and freshness policy is the
+    consumer's.
+  - Nullable vendor identity (term, payment option, commitment type) stays
+    nullable. Each comparison row keeps its current offer and all candidate
+    offers.
+  - A comparison is a hypothetical rollup, not a bindable quote. An insured
+    target of 100% is a requested target subject to Archera underwriting, not
+    a guarantee.
+  - `AssessProductSupport` returns `supported` only for the two AWS rows quoted
+    from Archera's Supported Reservable Services page (`aws/AmazonEC2` and
+    `aws/savingsplan/Compute`); every other product is `unknown`. Support is
+    not underwriting eligibility.
+  - The API key is redacted from `fmt` output for `Config` and `Client`,
+    except `%p` (and `%T` on a non-pointer value), which `fmt` handles before
+    redaction.
+  - Verified with offline tests only; no live Archera call has been made, so
+    response shapes come from the published schema.
+
 ### Changed
 
 - **Breaking (source):** `common.PurchaseResult` gained an `ExistingCommitment`
