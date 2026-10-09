@@ -331,14 +331,14 @@ func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation, 
 
 // rdsOfferingPageResult holds the outcome of a single DescribeReservedDBInstancesOfferings page.
 type rdsOfferingPageResult struct {
-	id     string  // non-empty when a match was found
+	id     string  // non-empty when an exact match was found on this page
 	marker *string // pagination cursor for the next page; nil when exhausted
 }
 
 // fetchRDSOfferingPage calls DescribeReservedDBInstancesOfferings for one page and
 // scans the results. It returns a match ID when found, a non-nil marker when more
 // pages remain, or an error on API/offering-validation failure.
-func (c *Client) fetchRDSOfferingPage(ctx context.Context, baseInput *rds.DescribeReservedDBInstancesOfferingsInput, marker *string, rec common.Recommendation, offeringType, tag string, page int, t0 time.Time) (rdsOfferingPageResult, error) {
+func (c *Client) fetchRDSOfferingPage(ctx context.Context, baseInput *rds.DescribeReservedDBInstancesOfferingsInput, marker *string, want rdsOfferingKey, tag string, page int, t0 time.Time) (rdsOfferingPageResult, error) {
 	input := *baseInput
 	input.Marker = marker
 
@@ -352,19 +352,18 @@ func (c *Client) fetchRDSOfferingPage(ctx context.Context, baseInput *rds.Descri
 	log.Printf("purchase[%s]: RDS findOfferingID page %d: %d offerings in %s",
 		tag, page, len(result.ReservedDBInstancesOfferings), time.Since(pageStart))
 
-	id, scanErr := scanRDSOfferingPage(result.ReservedDBInstancesOfferings, rec, offeringType)
+	id, scanErr := scanRDSOfferingPage(result.ReservedDBInstancesOfferings, want)
 	if scanErr != nil {
 		return rdsOfferingPageResult{}, scanErr
 	}
 	if id != "" {
 		log.Printf("purchase[%s]: RDS findOfferingID found match on page %d after %s total", tag, page, time.Since(t0))
-		return rdsOfferingPageResult{id: id}, nil
 	}
 	var nextMarker *string
 	if result.Marker != nil && aws.ToString(result.Marker) != "" {
 		nextMarker = result.Marker
 	}
-	return rdsOfferingPageResult{marker: nextMarker}, nil
+	return rdsOfferingPageResult{id: id, marker: nextMarker}, nil
 }
 
 // paginateRDSOfferings walks DescribeReservedDBInstancesOfferings pages and returns
@@ -372,11 +371,11 @@ func (c *Client) fetchRDSOfferingPage(ctx context.Context, baseInput *rds.Descri
 // timeout exhaustion (issue #688).
 func (c *Client) paginateRDSOfferings(ctx context.Context, rec common.Recommendation, details *common.DatabaseDetails, offeringType, execID string) (string, error) {
 	multiAZ := details.AZConfig == "multi-az"
-	normalizedEngine, err := c.normalizeEngineName(details.Engine)
+	normalizedEngine, err := c.lookupEngineName(details.Engine)
 	if err != nil {
 		return "", fmt.Errorf("cannot look up RDS offering: %w", err)
 	}
-	duration, err := c.getDurationString(rec.Term)
+	duration, durationSeconds, err := c.offeringDuration(rec.Term)
 	if err != nil {
 		return "", err
 	}
@@ -398,49 +397,136 @@ func (c *Client) paginateRDSOfferings(ctx context.Context, rec common.Recommenda
 		MaxRecords:         aws.Int32(100),
 	}
 
+	want := rdsOfferingKey{
+		class:        rec.ResourceType,
+		engine:       normalizedEngine,
+		multiAZ:      multiAZ,
+		duration:     durationSeconds,
+		offeringType: offeringType,
+	}
+
+	desc := fmt.Sprintf("%s %s multi-az=%v %s", rec.ResourceType, details.Engine, multiAZ, rec.PaymentOption)
+
+	// Walk every page: a second distinct exact match on a later page must fail
+	// loud rather than leave the first one chosen (issue #288).
 	var marker *string
+	var found string
+	pages := 0
 	for page := 1; ; page++ {
-		if err := ctx.Err(); err != nil {
+		if err := offeringPageAllowed(ctx, page, desc); err != nil {
 			return "", err
 		}
-		if page > maxOfferingPages {
-			return "", fmt.Errorf("pagination cap reached after %d pages for RDS %s %s multi-az=%v %s (issue #688)",
-				maxOfferingPages, rec.ResourceType, details.Engine, multiAZ, rec.PaymentOption)
-		}
-		pr, err := c.fetchRDSOfferingPage(ctx, baseInput, marker, rec, offeringType, tag, page, t0)
+		pr, err := c.fetchRDSOfferingPage(ctx, baseInput, marker, want, tag, page, t0)
 		if err != nil {
 			return "", err
 		}
-		if pr.id != "" {
-			return pr.id, nil
+		pages = page
+		if found, err = pickOfferingID(found, pr.id, want); err != nil {
+			return "", err
 		}
 		if pr.marker == nil {
 			break
 		}
 		marker = pr.marker
 	}
+	if found != "" {
+		return found, nil
+	}
 	log.Printf("purchase[%s]: RDS findOfferingID exhausted pages in %s -- no match", tag, time.Since(t0))
-	return "", fmt.Errorf("no offerings found for RDS %s %s multi-az=%v %s after %d page(s) (issue #688)",
-		rec.ResourceType, details.Engine, multiAZ, rec.PaymentOption, maxOfferingPages)
+	return "", fmt.Errorf("no offerings found for RDS %s after %d page(s) (issue #688)", desc, pages)
 }
 
-// scanRDSOfferingPage finds a matching offering in a single page of results.
-// Returns ("", nil) when no match is found on the page so the caller can continue paginating.
-func scanRDSOfferingPage(offerings []types.ReservedDBInstancesOffering, rec common.Recommendation, wantType string) (string, error) {
-	if len(offerings) == 0 {
-		return "", nil
+// offeringPageAllowed stops the page walk on cancellation or at the page cap.
+func offeringPageAllowed(ctx context.Context, page int, desc string) error {
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	// The DescribeReservedDBInstancesOfferings call already filters server-side
-	// by offering type, so only the first result is examined; a mismatch here
-	// indicates an AWS API-side anomaly worth a hard error, not a scan target.
-	o := &offerings[0]
-	got := aws.ToString(o.OfferingType)
-	if got != wantType {
-		return "", fmt.Errorf("RDS offering %s has payment option %q, want %q (rec: %s %s) -- API filter mismatch",
-			aws.ToString(o.ReservedDBInstancesOfferingId), got, wantType,
-			rec.ResourceType, rec.PaymentOption)
+	if page > maxOfferingPages {
+		return fmt.Errorf("pagination cap reached after %d pages for RDS %s (issue #688)", maxOfferingPages, desc)
 	}
-	return aws.ToString(o.ReservedDBInstancesOfferingId), nil
+	return nil
+}
+
+// pickOfferingID folds a newly found exact-match ID into the one found so far
+// and fails when two distinct IDs match.
+func pickOfferingID(found, id string, want rdsOfferingKey) (string, error) {
+	if id == "" || id == found {
+		return found, nil
+	}
+	if found != "" {
+		return "", fmt.Errorf("ambiguous RDS offering: %q and %q both match %s %s multi-az=%v %s",
+			found, id, want.class, want.engine, want.multiAZ, want.offeringType)
+	}
+	return id, nil
+}
+
+// lookupEngineName normalizes the engine and refuses Oracle and SQL Server.
+// Their reserved-offering ProductDescription carries a license model, for
+// example "oracle-se2(li)" or "oracle-se2(byol)", which the recommendation does
+// not supply, so an exact match is impossible and picking a row would guess the
+// license model.
+func (c *Client) lookupEngineName(engine string) (string, error) {
+	name, err := c.normalizeEngineName(engine)
+	if err != nil {
+		return "", err
+	}
+	if strings.HasPrefix(name, "oracle") || strings.HasPrefix(name, "sqlserver") || strings.HasPrefix(name, "sql-server") {
+		return "", fmt.Errorf("engine %q: license model is not known; refusing to guess", engine)
+	}
+	return name, nil
+}
+
+// offeringDuration returns the term as the API's duration string and as seconds
+// for the exact-match check.
+func (c *Client) offeringDuration(term string) (string, int64, error) {
+	duration, err := c.getDurationString(term)
+	if err != nil {
+		return "", 0, err
+	}
+	seconds, err := strconv.ParseInt(duration, 10, 64)
+	if err != nil {
+		return "", 0, fmt.Errorf("RDS duration %q is not a number of seconds: %w", duration, err)
+	}
+	return duration, seconds, nil
+}
+
+// rdsOfferingKey is the exact identity an offering row must have. The
+// DescribeReservedDBInstancesOfferings filters are partial matches (an engine
+// filter of "mysql" also returns aurora-mysql rows), so every field is
+// re-checked on the returned rows (issue #288).
+type rdsOfferingKey struct {
+	class        string
+	engine       string
+	multiAZ      bool
+	duration     int64
+	offeringType string
+}
+
+func (k rdsOfferingKey) matches(o *types.ReservedDBInstancesOffering) bool {
+	return o.ProductDescription != nil && *o.ProductDescription == k.engine &&
+		o.DBInstanceClass != nil && *o.DBInstanceClass == k.class &&
+		o.MultiAZ != nil && *o.MultiAZ == k.multiAZ &&
+		o.Duration != nil && int64(*o.Duration) == k.duration &&
+		o.OfferingType != nil && *o.OfferingType == k.offeringType
+}
+
+// scanRDSOfferingPage finds the exact-match offering in a single page of results.
+// Rows that differ in engine, class, multi-AZ, duration or payment option are
+// skipped. Returns ("", nil) when no row matches so the caller can continue
+// paginating, and an error when the page holds more than one distinct match.
+func scanRDSOfferingPage(offerings []types.ReservedDBInstancesOffering, want rdsOfferingKey) (string, error) {
+	var found string
+	for i := range offerings {
+		o := &offerings[i]
+		if !want.matches(o) {
+			continue
+		}
+		var err error
+		if found, err = pickOfferingID(found, aws.ToString(o.ReservedDBInstancesOfferingId), want); err != nil {
+			return "", err
+		}
+	}
+	return found, nil
 }
 
 // ValidateOffering checks if an offering exists without purchasing.
