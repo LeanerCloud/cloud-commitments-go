@@ -7,6 +7,7 @@ import (
 	"log"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/exchange"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/retry"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/offeringprice"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
 )
 
@@ -180,8 +182,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		// The purchase response carries no price; the offering's FixedPrice is per
 		// instance, so the total upfront is FixedPrice x the purchased count.
 		if offering.FixedPrice != nil {
-			unitCents := math.Round(float64(*offering.FixedPrice) * 100)
-			total := unitCents * float64(rec.Count) / 100
+			total := fixedPriceCents(*offering.FixedPrice) * float64(rec.Count) / 100
 			result.Cost = &total
 		}
 	} else {
@@ -378,6 +379,7 @@ type ec2OfferingQuery struct {
 	productDesc      types.RIProductDescription
 	tenancy          types.Tenancy
 	scope            types.Scope
+	availabilityZone string // set only for zonal scope
 	duration         int64
 	wantOfferingType types.OfferingTypeValues
 	offeringClass    types.OfferingClassType
@@ -420,12 +422,28 @@ func buildEC2OfferingQuery(rec common.Recommendation, details *common.ComputeDet
 	if err != nil {
 		return ec2OfferingQuery{}, fmt.Errorf("EC2 recommendation for %s: %w", rec.ResourceType, err)
 	}
+	az := strings.TrimSpace(details.AvailabilityZone)
+	if scope == types.ScopeAvailabilityZone && az == "" {
+		return ec2OfferingQuery{}, fmt.Errorf(
+			"EC2 recommendation for %s has zonal scope but no AvailabilityZone: "+
+				"refusing to buy a zonal RI in an arbitrary AZ; re-fetch the recommendation",
+			rec.ResourceType,
+		)
+	}
+	if scope == types.ScopeRegional && az != "" {
+		return ec2OfferingQuery{}, fmt.Errorf(
+			"EC2 recommendation for %s has regional scope but AvailabilityZone %q: "+
+				"contradictory input; re-fetch the recommendation",
+			rec.ResourceType, az,
+		)
+	}
 	return ec2OfferingQuery{
-		instanceType: types.InstanceType(rec.ResourceType),
-		productDesc:  types.RIProductDescription(details.Platform),
-		tenancy:      tenancy,
-		scope:        scope,
-		duration:     duration,
+		instanceType:     types.InstanceType(rec.ResourceType),
+		productDesc:      types.RIProductDescription(details.Platform),
+		tenancy:          tenancy,
+		scope:            scope,
+		availabilityZone: az,
+		duration:         duration,
 	}, nil
 }
 
@@ -433,7 +451,12 @@ func buildEC2OfferingQuery(rec common.Recommendation, details *common.ComputeDet
 // typed lookup. Typed fields land on AWS's primary indices; only scope has no
 // typed equivalent and stays in Filters[].
 func describeInputFromQuery(q ec2OfferingQuery, nextToken *string) *ec2.DescribeReservedInstancesOfferingsInput {
+	var az *string
+	if q.availabilityZone != "" {
+		az = aws.String(q.availabilityZone)
+	}
 	return &ec2.DescribeReservedInstancesOfferingsInput{
+		AvailabilityZone:   az,
 		InstanceType:       q.instanceType,
 		ProductDescription: q.productDesc,
 		InstanceTenancy:    q.tenancy,
@@ -529,7 +552,7 @@ func (c *Client) findOffering(ctx context.Context, rec common.Recommendation, ex
 		}
 		log.Printf("purchase[%s]: EC2 findOffering page %d: %d offerings in %s",
 			tag, page, len(result.ReservedInstancesOfferings), time.Since(pageStart))
-		if o := scanEC2OfferingPage(result.ReservedInstancesOfferings, q.wantOfferingType); o != nil {
+		if o := scanEC2OfferingPage(result.ReservedInstancesOfferings, q); o != nil {
 			log.Printf("purchase[%s]: EC2 findOffering found match on page %d after %s total",
 				tag, page, time.Since(t0))
 			return o, nil
@@ -554,14 +577,21 @@ func isLastEC2Page(nextToken *string) bool {
 }
 
 // scanEC2OfferingPage returns the first offering whose OfferingType matches
-// wantType, or nil. With the typed OfferingType field set on the request this should
+// q.wantOfferingType (and whose AvailabilityZone matches q.availabilityZone for
+// zonal scope; a nil offering AZ is a mismatch), or nil. With the typed OfferingType field set on the request this should
 // always be the first offering, but the check is kept as defense in depth.
 // Mismatched offerings are skipped (logged), not treated as errors -- a
 // mismatch indicates an API-side anomaly worth observing, not a reason to fail
 // the rec while a valid offering may still be on a later page.
-func scanEC2OfferingPage(offerings []types.ReservedInstancesOffering, wantType types.OfferingTypeValues) *types.ReservedInstancesOffering {
+func scanEC2OfferingPage(offerings []types.ReservedInstancesOffering, q ec2OfferingQuery) *types.ReservedInstancesOffering {
+	wantType := q.wantOfferingType
 	for i := range offerings {
 		o := &offerings[i]
+		if q.availabilityZone != "" && aws.ToString(o.AvailabilityZone) != q.availabilityZone {
+			log.Printf("EC2 findOffering skipping offering %s in AZ %q (want %q)",
+				aws.ToString(o.ReservedInstancesOfferingId), aws.ToString(o.AvailabilityZone), q.availabilityZone)
+			continue
+		}
 		if o.OfferingType != wantType {
 			log.Printf("EC2 findOffering skipping mismatched variant %s (got %q want %q)",
 				aws.ToString(o.ReservedInstancesOfferingId), o.OfferingType, wantType)
@@ -580,7 +610,10 @@ func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation
 	return err
 }
 
-// GetOfferingDetails retrieves offering details.
+// GetOfferingDetails retrieves offering details. All prices are per ONE
+// reservation (callers multiply by rec.Count): UpfrontCost is FixedPrice,
+// RecurringCost is the hourly rate, TotalCost is upfront plus hourly over the
+// term. The offering class does not change any price field.
 // Uses the convertible class (empty = convertible default) since the
 // details-fetch path has no GlobalConfig context.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
@@ -605,23 +638,45 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 
 	offering := result.ReservedInstancesOfferings[0]
 
-	// Extract fixed price from pricing details
-	var fixedPrice float64
-	for _, pricing := range offering.PricingDetails {
-		if pricing.Price != nil {
-			fixedPrice = *pricing.Price
-			break
-		}
+	// FixedPrice is the upfront price per instance; PricingDetails is the
+	// marketplace reservation-count field and must not be read as a price.
+	if offering.FixedPrice == nil {
+		return nil, fmt.Errorf("EC2 offering %s has no FixedPrice; cannot price it", offeringID)
+	}
+	currency, err := offeringprice.Currency("EC2", string(offering.CurrencyCode))
+	if err != nil {
+		return nil, err
+	}
+	usage, err := float32Exact(aws.ToFloat32(offering.UsagePrice))
+	if err != nil {
+		return nil, fmt.Errorf("EC2 offering %s: invalid UsagePrice: %w", offeringID, err)
+	}
+	charges := make([]offeringprice.Charge, 0, len(offering.RecurringCharges))
+	for _, rc := range offering.RecurringCharges {
+		charges = append(charges, offeringprice.Charge{Amount: aws.ToFloat64(rc.Amount), Frequency: string(rc.Frequency)})
+	}
+	priced, err := offeringprice.Price(offeringprice.Input{
+		Service:         "EC2",
+		Term:            rec.Term,
+		FixedPrice:      fixedPriceCents(*offering.FixedPrice) / 100,
+		UsagePrice:      usage,
+		Charges:         charges,
+		DurationSeconds: aws.ToInt64(offering.Duration),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("EC2 offering %s: %w", offeringID, err)
 	}
 
 	details := &common.OfferingDetails{
-		OfferingID:    aws.ToString(offering.ReservedInstancesOfferingId),
-		ResourceType:  string(offering.InstanceType),
-		Term:          rec.Term,
-		PaymentOption: string(offering.OfferingType),
-		UpfrontCost:   fixedPrice,
-		RecurringCost: float64(aws.ToFloat32(offering.UsagePrice)),
-		Currency:      string(offering.CurrencyCode),
+		OfferingID:          aws.ToString(offering.ReservedInstancesOfferingId),
+		ResourceType:        string(offering.InstanceType),
+		Term:                rec.Term,
+		PaymentOption:       string(offering.OfferingType),
+		UpfrontCost:         priced.Upfront,
+		RecurringCost:       priced.Hourly,
+		TotalCost:           priced.Total,
+		EffectiveHourlyRate: priced.EffectiveHourly,
+		Currency:            currency,
 	}
 
 	return details, nil
@@ -1123,4 +1178,18 @@ func (c *Client) CancelMarketplaceListing(ctx context.Context, listingID string)
 		resolvedID = listingID
 	}
 	return MarketplaceListingResult{ListingID: resolvedID, State: state}, nil
+}
+
+// fixedPriceCents returns the offering's per-instance FixedPrice in whole
+// cents. The API reports it as a float32, so it is rounded to cents before any
+// multiplication; GetOfferingDetails and PurchaseCommitment share it so the
+// priced upfront and the purchase result cost agree.
+func fixedPriceCents(price float32) float64 {
+	return math.Round(float64(price) * 100)
+}
+
+// float32Exact widens a float32 price through its shortest decimal form, so
+// 0.05 stays 0.05 instead of 0.05000000074505806.
+func float32Exact(v float32) (float64, error) {
+	return strconv.ParseFloat(strconv.FormatFloat(float64(v), 'g', -1, 32), 64)
 }
