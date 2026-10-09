@@ -193,9 +193,11 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		NodeCount:              aws.Int32(int32(rec.Count)), // #nosec G115 -- Count from CE recommendation; AWS RI purchase limits keep this far below math.MaxInt32
 	}
 
-	response, err := c.client.PurchaseReservedNodeOffering(ctx, input)
+	// A single attempt: the API has no ClientToken or caller ID, so an SDK retry
+	// after a lost response would buy a second node (MON-02).
+	response, err := c.client.PurchaseReservedNodeOffering(ctx, input, func(o *redshift.Options) { o.RetryMaxAttempts = 1 })
 	if err != nil {
-		result.Error = fmt.Errorf("failed to purchase Redshift Reserved Node: %w", err)
+		result.Error = fmt.Errorf("failed to purchase Redshift Reserved Node: %w", purchasecfg.ClassifyPurchaseError(err))
 		return result, result.Error
 	}
 
@@ -208,7 +210,8 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 			result.Cost = &total
 		}
 	} else {
-		result.Error = fmt.Errorf("purchase response was empty")
+		// A 200 without a node: the buy most likely happened.
+		result.Error = fmt.Errorf("purchase response was empty: %w", purchasecfg.ErrOutcomeUnknown)
 		return result, result.Error
 	}
 
