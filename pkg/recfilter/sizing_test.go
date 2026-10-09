@@ -2,6 +2,7 @@ package recfilter
 
 import (
 	"fmt"
+	"math/big"
 	"strings"
 	"testing"
 
@@ -173,6 +174,7 @@ func mkRI(count int, avg, existingCov float64) common.Recommendation {
 		EstimatedSavings:            500,
 		AverageInstancesUsedPerHour: avg,
 		ExistingCoveragePct:         existingCov,
+		ExistingCoverageKnown:       true,
 	}
 }
 
@@ -381,4 +383,60 @@ func TestApplyTargetCoverage_NilLogfSafe(t *testing.T) {
 	assert.NotPanics(t, func() {
 		ApplyTargetCoverage(recs, 0, nil, nil) // out-of-range -> WARNING log
 	})
+}
+
+// --- go#295: unknown existing coverage ---
+
+// Issue go#295 shape: pool missed the CE coverage map, AWS recommends 5, avg
+// demand is 100. Sizing it as 0% covered bought 80 RIs.
+func TestApplyTargetCoverage_UnknownCoverage_DropsInsteadOfOverbuying(t *testing.T) {
+	t.Parallel()
+	rec := mkRI(5, 100, 0)
+	rec.ExistingCoverageKnown = false
+	d := common.NewDropSummary()
+	var logs []string
+	out := ApplyTargetCoverage([]common.Recommendation{rec}, 80, captureLogf(&logs), d)
+	assert.Empty(t, out, "unknown coverage must not be sized as 0% covered")
+	assert.Equal(t, "Dropped 1 recs: target-coverage-unknown=1", d.FormatOneLine())
+	require.Len(t, logs, 1)
+	assert.Contains(t, logs[0], "WARNING")
+}
+
+func TestApplyTargetCoverage_UnknownCoverageWithPositivePct_Drops(t *testing.T) {
+	t.Parallel()
+	rec := mkRI(5, 100, 40)
+	rec.ExistingCoverageKnown = false
+	d := common.NewDropSummary()
+	out := ApplyTargetCoverage([]common.Recommendation{rec}, 80, nil, d)
+	assert.Empty(t, out)
+	assert.Equal(t, "Dropped 1 recs: target-coverage-unknown=1", d.FormatOneLine())
+}
+
+func TestApplyTargetCoverage_KnownZeroCoverage_StillSizes(t *testing.T) {
+	t.Parallel()
+	out := ApplyTargetCoverage([]common.Recommendation{mkRI(5, 100, 0)}, 80, nil, nil)
+	require.Len(t, out, 1)
+	assert.Equal(t, 80, out[0].Count, "known 0% coverage sizes above rec.Count by design")
+}
+
+func TestApplyTargetCoverage_KnownWithExactPercent_SizesExactly(t *testing.T) {
+	t.Parallel()
+	rec := mkRI(30, 15, 0)
+	rec.ExistingCoveragePercentExact = big.NewRat(0, 1)
+	out := ApplyTargetCoverage([]common.Recommendation{rec}, 80, nil, nil)
+	require.Len(t, out, 1)
+	assert.Equal(t, 12, out[0].Count)
+}
+
+// Azure/GCP RI recs carry no coverage data and avg=0, so Known is never set.
+// They must keep passing through unchanged rather than being dropped as unknown.
+func TestApplyTargetCoverage_UnknownCoverageNoAvg_AzureGCPPassThrough(t *testing.T) {
+	t.Parallel()
+	rec := mkRI(5, 0, 0)
+	rec.ExistingCoverageKnown = false
+	d := common.NewDropSummary()
+	out := ApplyTargetCoverage([]common.Recommendation{rec}, 80, nil, d)
+	require.Len(t, out, 1)
+	assert.Equal(t, rec, out[0])
+	assert.True(t, d.IsEmpty())
 }
