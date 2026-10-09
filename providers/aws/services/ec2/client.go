@@ -7,6 +7,7 @@ import (
 	"log"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/exchange"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/retry"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/offeringprice"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
 )
 
@@ -180,8 +182,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		// The purchase response carries no price; the offering's FixedPrice is per
 		// instance, so the total upfront is FixedPrice x the purchased count.
 		if offering.FixedPrice != nil {
-			unitCents := math.Round(float64(*offering.FixedPrice) * 100)
-			total := unitCents * float64(rec.Count) / 100
+			total := fixedPriceCents(*offering.FixedPrice) * float64(rec.Count) / 100
 			result.Cost = &total
 		}
 	} else {
@@ -609,7 +610,10 @@ func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation
 	return err
 }
 
-// GetOfferingDetails retrieves offering details.
+// GetOfferingDetails retrieves offering details. All prices are per ONE
+// reservation (callers multiply by rec.Count): UpfrontCost is FixedPrice,
+// RecurringCost is the hourly rate, TotalCost is upfront plus hourly over the
+// term. The offering class does not change any price field.
 // Uses the convertible class (empty = convertible default) since the
 // details-fetch path has no GlobalConfig context.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
@@ -634,23 +638,41 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 
 	offering := result.ReservedInstancesOfferings[0]
 
-	// Extract fixed price from pricing details
-	var fixedPrice float64
-	for _, pricing := range offering.PricingDetails {
-		if pricing.Price != nil {
-			fixedPrice = *pricing.Price
-			break
-		}
+	// FixedPrice is the upfront price per instance; PricingDetails is the
+	// marketplace reservation-count field and must not be read as a price.
+	if offering.FixedPrice == nil {
+		return nil, fmt.Errorf("EC2 offering %s has no FixedPrice; cannot price it", offeringID)
+	}
+	currency, err := offeringprice.Currency("EC2", string(offering.CurrencyCode))
+	if err != nil {
+		return nil, err
+	}
+	charges := make([]offeringprice.Charge, 0, len(offering.RecurringCharges))
+	for _, rc := range offering.RecurringCharges {
+		charges = append(charges, offeringprice.Charge{Amount: aws.ToFloat64(rc.Amount), Frequency: string(rc.Frequency)})
+	}
+	priced, err := offeringprice.Price(offeringprice.Input{
+		Service:         "EC2",
+		Term:            rec.Term,
+		FixedPrice:      fixedPriceCents(*offering.FixedPrice) / 100,
+		UsagePrice:      float32Exact(aws.ToFloat32(offering.UsagePrice)),
+		Charges:         charges,
+		DurationSeconds: aws.ToInt64(offering.Duration),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("EC2 offering %s: %w", offeringID, err)
 	}
 
 	details := &common.OfferingDetails{
-		OfferingID:    aws.ToString(offering.ReservedInstancesOfferingId),
-		ResourceType:  string(offering.InstanceType),
-		Term:          rec.Term,
-		PaymentOption: string(offering.OfferingType),
-		UpfrontCost:   fixedPrice,
-		RecurringCost: float64(aws.ToFloat32(offering.UsagePrice)),
-		Currency:      string(offering.CurrencyCode),
+		OfferingID:          aws.ToString(offering.ReservedInstancesOfferingId),
+		ResourceType:        string(offering.InstanceType),
+		Term:                rec.Term,
+		PaymentOption:       string(offering.OfferingType),
+		UpfrontCost:         priced.Upfront,
+		RecurringCost:       priced.Hourly,
+		TotalCost:           priced.Total,
+		EffectiveHourlyRate: priced.EffectiveHourly,
+		Currency:            currency,
 	}
 
 	return details, nil
@@ -1152,4 +1174,19 @@ func (c *Client) CancelMarketplaceListing(ctx context.Context, listingID string)
 		resolvedID = listingID
 	}
 	return MarketplaceListingResult{ListingID: resolvedID, State: state}, nil
+}
+
+// fixedPriceCents returns the offering's per-instance FixedPrice in whole
+// cents. The API reports it as a float32, so it is rounded to cents before any
+// multiplication; GetOfferingDetails and PurchaseCommitment share it so the
+// priced upfront and the purchase result cost agree.
+func fixedPriceCents(price float32) float64 {
+	return math.Round(float64(price) * 100)
+}
+
+// float32Exact widens a float32 price through its shortest decimal form, so
+// 0.05 stays 0.05 instead of 0.05000000074505806.
+func float32Exact(v float32) float64 {
+	f, _ := strconv.ParseFloat(strconv.FormatFloat(float64(v), 'g', -1, 32), 64) // shortest float32 form always parses
+	return f
 }

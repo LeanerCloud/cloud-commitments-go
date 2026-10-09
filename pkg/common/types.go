@@ -482,6 +482,14 @@ type Commitment struct {
 }
 
 // OfferingDetails represents cloud provider offering details.
+//
+// All amounts are per ONE reservation or commitment unit, in Currency; callers
+// multiply by the purchase count. AWS providers fill every field:
+// RecurringCost is per HOUR, TotalCost is UpfrontCost plus RecurringCost times
+// the term's hours, and EffectiveHourlyRate is TotalCost divided by those hours.
+// Other providers may use a different RecurringCost period (GCP Compute Engine
+// reports it per month), so compare offerings on TotalCost, which does not
+// depend on the recurring period.
 type OfferingDetails struct {
 	OfferingID          string  `json:"offering_id"`
 	ResourceType        string  `json:"resource_type"`

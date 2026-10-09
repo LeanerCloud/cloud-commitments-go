@@ -871,7 +871,7 @@ func TestClient_GetOfferingDetails_Success(t *testing.T) {
 				Duration:                 aws.Int32(31536000),
 				ReservedNodeOfferingType: types.ReservedNodeOfferingType("Regular"),
 				FixedPrice:               aws.Float64(500.0),
-				UsagePrice:               aws.Float64(0.10),
+				UsagePrice:               aws.Float64(0),
 				CurrencyCode:             aws.String("USD"),
 				RecurringCharges: []types.RecurringCharge{
 					{

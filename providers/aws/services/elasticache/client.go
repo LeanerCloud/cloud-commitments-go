@@ -14,6 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/elasticache/types"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/offeringprice"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/reservationexpiry"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/reservationstate"
@@ -374,6 +375,9 @@ func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation
 }
 
 // GetOfferingDetails retrieves offering details.
+// All prices are per ONE reservation (callers multiply by rec.Count): UpfrontCost is
+// FixedPrice, RecurringCost the hourly rate, TotalCost upfront plus hourly over the
+// offering duration.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	offeringID, err := c.findOfferingID(ctx, rec, "")
 	if err != nil {
@@ -395,14 +399,33 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 
 	offering := result.ReservedCacheNodesOfferings[0]
 
+	// The SDK offering type has no currency field.
+	currency, err := offeringprice.AssumedUSD("ElastiCache", c.region)
+	if err != nil {
+		return nil, err
+	}
+	charges := make([]offeringprice.Charge, 0, len(offering.RecurringCharges))
+	for _, rc := range offering.RecurringCharges {
+		charges = append(charges, offeringprice.Charge{Amount: aws.ToFloat64(rc.RecurringChargeAmount), Frequency: aws.ToString(rc.RecurringChargeFrequency)})
+	}
+	priced, err := offeringprice.Price(offeringprice.Input{
+		Service: "ElastiCache", Term: rec.Term, FixedPrice: aws.ToFloat64(offering.FixedPrice), UsagePrice: aws.ToFloat64(offering.UsagePrice),
+		Charges: charges, DurationSeconds: int64(aws.ToInt32(offering.Duration)),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("ElastiCache offering %s: %w", offeringID, err)
+	}
+
 	details := &common.OfferingDetails{
-		OfferingID:    aws.ToString(offering.ReservedCacheNodesOfferingId),
-		ResourceType:  aws.ToString(offering.CacheNodeType),
-		Term:          fmt.Sprintf("%d", aws.ToInt32(offering.Duration)),
-		PaymentOption: aws.ToString(offering.OfferingType),
-		UpfrontCost:   aws.ToFloat64(offering.FixedPrice),
-		RecurringCost: aws.ToFloat64(offering.UsagePrice),
-		Currency:      "USD",
+		OfferingID:          aws.ToString(offering.ReservedCacheNodesOfferingId),
+		ResourceType:        aws.ToString(offering.CacheNodeType),
+		Term:                fmt.Sprintf("%d", aws.ToInt32(offering.Duration)),
+		PaymentOption:       aws.ToString(offering.OfferingType),
+		UpfrontCost:         priced.Upfront,
+		RecurringCost:       priced.Hourly,
+		TotalCost:           priced.Total,
+		EffectiveHourlyRate: priced.EffectiveHourly,
+		Currency:            currency,
 	}
 
 	return details, nil

@@ -16,6 +16,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/retry"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/offeringprice"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/reservationexpiry"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/reservationstate"
@@ -594,6 +595,9 @@ func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation
 }
 
 // GetOfferingDetails retrieves offering details.
+// All prices are per ONE reservation (callers multiply by rec.Count): UpfrontCost is
+// FixedPrice, RecurringCost the hourly rate, TotalCost upfront plus hourly over the
+// offering duration.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	offeringID, err := c.findOfferingID(ctx, rec, "")
 	if err != nil {
@@ -616,6 +620,22 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 
 	offering := result.ReservedNodeOfferings[0]
 
+	currency, err := offeringprice.Currency("Redshift", aws.ToString(offering.CurrencyCode))
+	if err != nil {
+		return nil, err
+	}
+	charges := make([]offeringprice.Charge, 0, len(offering.RecurringCharges))
+	for _, rc := range offering.RecurringCharges {
+		charges = append(charges, offeringprice.Charge{Amount: aws.ToFloat64(rc.RecurringChargeAmount), Frequency: aws.ToString(rc.RecurringChargeFrequency)})
+	}
+	priced, err := offeringprice.Price(offeringprice.Input{
+		Service: "Redshift", Term: rec.Term, FixedPrice: aws.ToFloat64(offering.FixedPrice), UsagePrice: aws.ToFloat64(offering.UsagePrice),
+		Charges: charges, DurationSeconds: int64(aws.ToInt32(offering.Duration)),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("Redshift offering %s: %w", offeringID, err)
+	}
+
 	details := &common.OfferingDetails{
 		OfferingID:   aws.ToString(offering.ReservedNodeOfferingId),
 		ResourceType: aws.ToString(offering.NodeType),
@@ -623,10 +643,12 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 		// Report the derived payment option (08-H2): the offering's price shape,
 		// not the Regular/Upgradable ReservedNodeOfferingType enum, which is not
 		// a payment option. Lets the caller reconcile the bought terms.
-		PaymentOption: derivePaymentOption(offering),
-		UpfrontCost:   aws.ToFloat64(offering.FixedPrice),
-		RecurringCost: offeringRecurringRate(offering),
-		Currency:      aws.ToString(offering.CurrencyCode),
+		PaymentOption:       derivePaymentOption(offering),
+		UpfrontCost:         priced.Upfront,
+		RecurringCost:       priced.Hourly,
+		TotalCost:           priced.Total,
+		EffectiveHourlyRate: priced.EffectiveHourly,
+		Currency:            currency,
 	}
 
 	return details, nil
