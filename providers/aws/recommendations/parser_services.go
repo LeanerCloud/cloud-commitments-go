@@ -116,7 +116,7 @@ func resolveEC2Tenancy(tenancy *string) (string, error) {
 // resolveEC2Scope maps a Cost Explorer availability zone value to the EC2 RI
 // API scope string. A non-empty AZ means AZ scope; otherwise region scope.
 func resolveEC2Scope(az *string) string {
-	if az != nil && *az != "" {
+	if az != nil && strings.TrimSpace(*az) != "" {
 		return string(ec2types.ScopeAvailabilityZone)
 	}
 	return string(ec2types.ScopeRegional)
@@ -168,6 +168,9 @@ func (c *Client) parseEC2Details(ctx context.Context, rec *common.Recommendation
 	}
 	ec2Info.Tenancy = tenancy
 	ec2Info.Scope = resolveEC2Scope(ec2Details.AvailabilityZone)
+	if ec2Details.AvailabilityZone != nil {
+		ec2Info.AvailabilityZone = strings.TrimSpace(*ec2Details.AvailabilityZone)
+	}
 	c.enrichFromCatalogue(ctx, ec2Info)
 
 	rec.Details = ec2Info
