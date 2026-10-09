@@ -2,6 +2,8 @@ package common //nolint:revive // pkg/common is the module's core domain package
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -541,4 +543,12 @@ func TestNormalizeSource(t *testing.T) {
 			assert.Equal(t, tc.want, got)
 		})
 	}
+}
+
+func TestErrOutcomeUnknown(t *testing.T) {
+	wrapped := fmt.Errorf("failed to purchase: %w", ErrOutcomeUnknown)
+	assert.ErrorIs(t, wrapped, ErrOutcomeUnknown)
+	assert.NotErrorIs(t, errors.New("purchase outcome unknown"), ErrOutcomeUnknown)
+	// Platform stores errors as strings: the text is a contract (platform #778).
+	assert.Equal(t, "purchase outcome unknown", ErrOutcomeUnknown.Error())
 }
