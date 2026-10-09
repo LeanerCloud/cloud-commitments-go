@@ -41,8 +41,9 @@ type Client struct {
 }
 
 // NewClient creates a new EC2 client with purchase-path retry/timeout settings.
-// The tightened config (2 retries, 15s HTTP timeout) bounds worst-case wall
-// clock to 30s, preventing Lambda budget exhaustion on transient API slowness.
+// The tightened config (2 attempts, 15s HTTP timeout) bounds read-only calls to
+// 30s wall clock. The purchase call itself is sent exactly once (no ClientToken
+// exists, so a retry could double-buy); see PurchaseCommitment.
 func NewClient(cfg aws.Config) *Client {
 	pcfg := purchasecfg.NewConfig(cfg)
 	return &Client{
@@ -164,10 +165,11 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		InstanceCount:               aws.Int32(int32(rec.Count)), // #nosec G115 -- Count from CE recommendation; AWS RI purchase limits keep this far below math.MaxInt32
 	}
 
-	// Execute the purchase
-	response, err := c.client.PurchaseReservedInstancesOffering(ctx, input)
+	// Execute the purchase. A single attempt: the API has no ClientToken, so an
+	// SDK retry after a lost response would buy a second RI (MON-02).
+	response, err := c.client.PurchaseReservedInstancesOffering(ctx, input, func(o *ec2.Options) { o.RetryMaxAttempts = 1 })
 	if err != nil {
-		result.Error = fmt.Errorf("failed to purchase EC2 RI: %w", err)
+		result.Error = fmt.Errorf("failed to purchase EC2 RI: %w", purchasecfg.ClassifyPurchaseError(err))
 		return result, result.Error
 	}
 
@@ -183,7 +185,8 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 			result.Cost = &total
 		}
 	} else {
-		result.Error = fmt.Errorf("purchase response was empty")
+		// A 200 without an ID: the buy most likely happened.
+		result.Error = fmt.Errorf("purchase response was empty: %w", purchasecfg.ErrOutcomeUnknown)
 		return result, result.Error
 	}
 
