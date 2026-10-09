@@ -246,7 +246,7 @@ func sdkCostRecommendation(savings int64, state recommenderpb.RecommendationStat
 // Schema root fixture, not a captured service response.
 func sdkRootCommitment(kind, region string) *recommenderpb.RecommendationContent {
 	value, _ := structpb.NewStruct(map[string]any{
-		"type": kind, "resources": []any{
+		"type": kind, "plan": "TWELVE_MONTH", "resources": []any{
 			map[string]any{"type": "MEMORY", "amount": "6291456"},
 			map[string]any{"type": "VCPU", "amount": "480"},
 		},

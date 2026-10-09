@@ -465,7 +465,7 @@ func (c *Client) GetRecommendations(ctx context.Context, p *common.Recommendatio
 // Structural payload errors are still returned and abort the batch.
 func (c *Client) convertOrSkipBadAmount(ctx context.Context, rec *recommenderpb.Recommendation, params common.RecommendationParams) (*common.Recommendation, error) {
 	converted, err := c.convertGCPRecommendation(ctx, rec, params)
-	if errors.Is(err, errBadAmount) {
+	if errors.Is(err, errBadAmount) || errors.Is(err, errBadPlan) {
 		log.Printf("computeengine: skipping recommendation %q: %v", rec.GetName(), err)
 		return nil, nil
 	}
@@ -1171,8 +1171,11 @@ func skuMatchesMachineType(sku *cloudbilling.Sku, machineType, region string) bo
 // BreakEvenMonths so the scorer can filter and rank GCP recommendations correctly
 // (issue #1022 C2). Pricing failures are logged but do not discard the recommendation:
 // EstimatedSavings from the Recommender payload is the authoritative savings signal.
-// Returns nil when the params.Term is unrecognized so the caller skips an
-// unroutable recommendation rather than queuing a purchase with an invalid plan.
+// The term comes from the root Commitment plan when present (issue #291); an
+// explicit params.Term that disagrees, or a root without a plan and without
+// params.Term, returns errBadPlan so the caller skips the recommendation.
+// Returns nil when the term is unrecognized so the caller skips an unroutable
+// recommendation rather than queuing a purchase with an invalid plan.
 func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommenderpb.Recommendation, params common.RecommendationParams) (*common.Recommendation, error) {
 	// GCP CUDs are billed monthly with no upfront option; force "monthly"
 	// unconditionally and log any non-monthly input so scheduler
@@ -1184,11 +1187,12 @@ func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommend
 	}
 	paymentOption := "monthly"
 
-	// H-3: propagate params.Term (default "1yr") and validate it so an
-	// unrecognized term fails loud here rather than reaching buildInsertRequest.
-	term := params.Term
-	if term == "" {
-		term = "1yr"
+	// The root Commitment plan is authoritative (issue #291); resolveRecTerm
+	// reconciles it with params.Term and validates the result so an unrecognized
+	// term never reaches buildInsertRequest.
+	term, err := resolveRecTerm(gcpRec, params)
+	if err != nil {
+		return nil, err
 	}
 	if _, err := termPlan(term); err != nil {
 		log.Printf("computeengine: skipping recommendation with unrecognized term %q: %v", term, err)
