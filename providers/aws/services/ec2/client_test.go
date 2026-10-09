@@ -1713,3 +1713,127 @@ func TestPurchaseCommitment_ExistingCommitmentFlag(t *testing.T) {
 		m.AssertNotCalled(t, "PurchaseReservedInstancesOffering", mock.Anything, mock.Anything)
 	})
 }
+
+func zonalRec(az string) common.Recommendation {
+	return common.Recommendation{
+		ResourceType:  "m5.large",
+		PaymentOption: "all-upfront",
+		Term:          "1yr",
+		Details: &common.ComputeDetails{
+			Platform:         "Linux/UNIX",
+			Tenancy:          "default",
+			Scope:            "Availability Zone",
+			AvailabilityZone: az,
+		},
+	}
+}
+
+func azOffering(id, az string) types.ReservedInstancesOffering {
+	o := types.ReservedInstancesOffering{
+		ReservedInstancesOfferingId: aws.String(id),
+		InstanceType:                types.InstanceTypeM5Large,
+		OfferingType:                types.OfferingTypeValuesAllUpfront,
+	}
+	if az != "" {
+		o.AvailabilityZone = aws.String(az)
+	}
+	return o
+}
+
+// Issue #289: the query builder must refuse zonal scope without an AZ and
+// regional scope with one.
+func TestBuildEC2OfferingQuery_AvailabilityZone(t *testing.T) {
+	t.Parallel()
+
+	t.Run("zonal without AZ errors", func(t *testing.T) {
+		t.Parallel()
+		rec := zonalRec("")
+		_, err := buildEC2OfferingQuery(rec, rec.Details.(*common.ComputeDetails), OneYearSeconds)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "re-fetch")
+	})
+	t.Run("whitespace-only AZ errors", func(t *testing.T) {
+		t.Parallel()
+		rec := zonalRec("  ")
+		_, err := buildEC2OfferingQuery(rec, rec.Details.(*common.ComputeDetails), OneYearSeconds)
+		require.Error(t, err)
+	})
+	t.Run("regional with AZ errors", func(t *testing.T) {
+		t.Parallel()
+		rec := zonalRec("us-east-1b")
+		d := rec.Details.(*common.ComputeDetails)
+		d.Scope = "Region"
+		_, err := buildEC2OfferingQuery(rec, d, OneYearSeconds)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "re-fetch")
+	})
+	t.Run("zonal with AZ carries it", func(t *testing.T) {
+		t.Parallel()
+		rec := zonalRec("us-east-1b")
+		q, err := buildEC2OfferingQuery(rec, rec.Details.(*common.ComputeDetails), OneYearSeconds)
+		require.NoError(t, err)
+		assert.Equal(t, "us-east-1b", q.availabilityZone)
+	})
+}
+
+// Request layer: AZ is sent for zonal queries and absent for regional ones.
+func TestDescribeInputFromQuery_AvailabilityZone(t *testing.T) {
+	t.Parallel()
+	q := ec2OfferingQuery{scope: types.ScopeAvailabilityZone, availabilityZone: "us-east-1b", duration: OneYearSeconds}
+	assert.Equal(t, "us-east-1b", aws.ToString(describeInputFromQuery(q, nil).AvailabilityZone))
+
+	q = ec2OfferingQuery{scope: types.ScopeRegional, duration: OneYearSeconds}
+	assert.Nil(t, describeInputFromQuery(q, nil).AvailabilityZone)
+}
+
+// Scan layer: wrong-AZ and nil-AZ offerings are skipped for zonal queries;
+// a regional query does no AZ filtering.
+func TestScanEC2OfferingPage_AvailabilityZone(t *testing.T) {
+	t.Parallel()
+	offerings := []types.ReservedInstancesOffering{
+		azOffering("nil-az", ""),
+		azOffering("in-1a", "us-east-1a"),
+		azOffering("in-1b", "us-east-1b"),
+	}
+	zonal := ec2OfferingQuery{availabilityZone: "us-east-1b", wantOfferingType: types.OfferingTypeValuesAllUpfront}
+	got := scanEC2OfferingPage(offerings, zonal)
+	require.NotNil(t, got)
+	assert.Equal(t, "in-1b", aws.ToString(got.ReservedInstancesOfferingId))
+
+	assert.Nil(t, scanEC2OfferingPage(offerings[:2], zonal), "no 1b offering must yield nil, not a 1a buy")
+
+	regional := ec2OfferingQuery{wantOfferingType: types.OfferingTypeValuesAllUpfront}
+	got = scanEC2OfferingPage(offerings, regional)
+	require.NotNil(t, got)
+	assert.Equal(t, "nil-az", aws.ToString(got.ReservedInstancesOfferingId))
+}
+
+// End to end through findOffering: a CE rec for us-east-1b sends the AZ and
+// buys the 1b offering even when the server returns 1a first.
+func TestFindOffering_ZonalRecKeepsAZ(t *testing.T) {
+	t.Parallel()
+	cap := &capturingMockEC2Client{}
+	cap.On("DescribeReservedInstancesOfferings", mock.Anything, mock.Anything).
+		Return(&ec2.DescribeReservedInstancesOfferingsOutput{
+			ReservedInstancesOfferings: []types.ReservedInstancesOffering{
+				azOffering("in-1a", "us-east-1a"),
+				azOffering("in-1b", "us-east-1b"),
+			},
+		}, nil).Once()
+	client := &Client{client: cap, region: "us-east-1"}
+
+	offering, err := client.findOffering(context.Background(), zonalRec("us-east-1b"), "", "")
+	require.NoError(t, err)
+	assert.Equal(t, "in-1b", aws.ToString(offering.ReservedInstancesOfferingId))
+	require.NotNil(t, cap.LastDescribeOfferingsInput)
+	assert.Equal(t, "us-east-1b", aws.ToString(cap.LastDescribeOfferingsInput.AvailabilityZone))
+}
+
+func TestFindOffering_ZonalRecWithoutAZRefusedBeforeAPICall(t *testing.T) {
+	t.Parallel()
+	cap := &capturingMockEC2Client{}
+	client := &Client{client: cap, region: "us-east-1"}
+	_, err := client.findOffering(context.Background(), zonalRec(""), "", "")
+	require.Error(t, err)
+	assert.Nil(t, cap.LastDescribeOfferingsInput)
+}

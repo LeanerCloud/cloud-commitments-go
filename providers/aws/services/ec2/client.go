@@ -378,6 +378,7 @@ type ec2OfferingQuery struct {
 	productDesc      types.RIProductDescription
 	tenancy          types.Tenancy
 	scope            types.Scope
+	availabilityZone string // set only for zonal scope
 	duration         int64
 	wantOfferingType types.OfferingTypeValues
 	offeringClass    types.OfferingClassType
@@ -420,12 +421,28 @@ func buildEC2OfferingQuery(rec common.Recommendation, details *common.ComputeDet
 	if err != nil {
 		return ec2OfferingQuery{}, fmt.Errorf("EC2 recommendation for %s: %w", rec.ResourceType, err)
 	}
+	az := strings.TrimSpace(details.AvailabilityZone)
+	if scope == types.ScopeAvailabilityZone && az == "" {
+		return ec2OfferingQuery{}, fmt.Errorf(
+			"EC2 recommendation for %s has zonal scope but no AvailabilityZone: "+
+				"refusing to buy a zonal RI in an arbitrary AZ; re-fetch the recommendation",
+			rec.ResourceType,
+		)
+	}
+	if scope == types.ScopeRegional && az != "" {
+		return ec2OfferingQuery{}, fmt.Errorf(
+			"EC2 recommendation for %s has regional scope but AvailabilityZone %q: "+
+				"contradictory input; re-fetch the recommendation",
+			rec.ResourceType, az,
+		)
+	}
 	return ec2OfferingQuery{
-		instanceType: types.InstanceType(rec.ResourceType),
-		productDesc:  types.RIProductDescription(details.Platform),
-		tenancy:      tenancy,
-		scope:        scope,
-		duration:     duration,
+		instanceType:     types.InstanceType(rec.ResourceType),
+		productDesc:      types.RIProductDescription(details.Platform),
+		tenancy:          tenancy,
+		scope:            scope,
+		availabilityZone: az,
+		duration:         duration,
 	}, nil
 }
 
@@ -433,7 +450,12 @@ func buildEC2OfferingQuery(rec common.Recommendation, details *common.ComputeDet
 // typed lookup. Typed fields land on AWS's primary indices; only scope has no
 // typed equivalent and stays in Filters[].
 func describeInputFromQuery(q ec2OfferingQuery, nextToken *string) *ec2.DescribeReservedInstancesOfferingsInput {
+	var az *string
+	if q.availabilityZone != "" {
+		az = aws.String(q.availabilityZone)
+	}
 	return &ec2.DescribeReservedInstancesOfferingsInput{
+		AvailabilityZone:   az,
 		InstanceType:       q.instanceType,
 		ProductDescription: q.productDesc,
 		InstanceTenancy:    q.tenancy,
@@ -529,7 +551,7 @@ func (c *Client) findOffering(ctx context.Context, rec common.Recommendation, ex
 		}
 		log.Printf("purchase[%s]: EC2 findOffering page %d: %d offerings in %s",
 			tag, page, len(result.ReservedInstancesOfferings), time.Since(pageStart))
-		if o := scanEC2OfferingPage(result.ReservedInstancesOfferings, q.wantOfferingType); o != nil {
+		if o := scanEC2OfferingPage(result.ReservedInstancesOfferings, q); o != nil {
 			log.Printf("purchase[%s]: EC2 findOffering found match on page %d after %s total",
 				tag, page, time.Since(t0))
 			return o, nil
@@ -554,14 +576,21 @@ func isLastEC2Page(nextToken *string) bool {
 }
 
 // scanEC2OfferingPage returns the first offering whose OfferingType matches
-// wantType, or nil. With the typed OfferingType field set on the request this should
+// q.wantOfferingType (and whose AvailabilityZone matches q.availabilityZone for
+// zonal scope; a nil offering AZ is a mismatch), or nil. With the typed OfferingType field set on the request this should
 // always be the first offering, but the check is kept as defense in depth.
 // Mismatched offerings are skipped (logged), not treated as errors -- a
 // mismatch indicates an API-side anomaly worth observing, not a reason to fail
 // the rec while a valid offering may still be on a later page.
-func scanEC2OfferingPage(offerings []types.ReservedInstancesOffering, wantType types.OfferingTypeValues) *types.ReservedInstancesOffering {
+func scanEC2OfferingPage(offerings []types.ReservedInstancesOffering, q ec2OfferingQuery) *types.ReservedInstancesOffering {
+	wantType := q.wantOfferingType
 	for i := range offerings {
 		o := &offerings[i]
+		if q.availabilityZone != "" && aws.ToString(o.AvailabilityZone) != q.availabilityZone {
+			log.Printf("EC2 findOffering skipping offering %s in AZ %q (want %q)",
+				aws.ToString(o.ReservedInstancesOfferingId), aws.ToString(o.AvailabilityZone), q.availabilityZone)
+			continue
+		}
 		if o.OfferingType != wantType {
 			log.Printf("EC2 findOffering skipping mismatched variant %s (got %q want %q)",
 				aws.ToString(o.ReservedInstancesOfferingId), o.OfferingType, wantType)
