@@ -21,8 +21,9 @@ import (
 )
 
 const (
-	// MaxAttempts is the maximum number of SDK-level retries for purchase-path
-	// API calls. 2 total attempts (1 initial + 1 retry) means a worst-case
+	// MaxAttempts is the maximum number of SDK-level attempts for purchase-path
+	// API calls. Purchase operations without a ClientToken or caller-chosen ID
+	// (EC2, Redshift) override this to a single attempt at the call site. 2 total attempts (1 initial + 1 retry) means a worst-case
 	// wall-clock of 2 * HTTPTimeout = 30s, well within the 300s Lambda budget.
 	MaxAttempts = 2
 
