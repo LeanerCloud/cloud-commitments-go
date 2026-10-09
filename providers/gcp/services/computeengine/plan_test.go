@@ -80,7 +80,7 @@ func TestRecommendationPlanSkips(t *testing.T) {
 	}
 }
 
-// A conflicting recommendation is skipped without dropping its good neighbour.
+// A conflicting recommendation is skipped without dropping its good neighbor.
 func TestRecommendationPlanConflictKeepsGoodRecommendation(t *testing.T) {
 	bad := rootCUDRecommendationWithPlan("MEMORY_OPTIMIZED_M4_6TB", "TWELVE_MONTH")
 	bad.Name = "bad"
@@ -104,9 +104,9 @@ func TestRootCommitmentTermMapping(t *testing.T) {
 	}
 }
 
-// An explicit non-canonical Term must be canonicalised so pricing and grouping
+// An explicit non-canonical Term must be canonicalized so pricing and grouping
 // see "3yr", not "36mo" (which GetOfferingDetails would price as one year).
-func TestExplicitTermIsCanonicalised(t *testing.T) {
+func TestExplicitTermIsCanonicalized(t *testing.T) {
 	for _, raw := range []string{"36mo", " 3 ", "3yr"} {
 		for _, plan := range []string{"", "THIRTY_SIX_MONTH"} {
 			client, _ := planClient(t, rootCUDRecommendationWithPlan("MEMORY_OPTIMIZED_M4_6TB", plan))
