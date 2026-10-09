@@ -586,9 +586,10 @@ func TestParseRecommendations_EmptyInput(t *testing.T) {
 
 // TestParseRIUtilizationSignals covers the AverageNumberOfInstancesUsedPerHour
 // and AverageUtilization fields added for issue #338 (--target-coverage).
-// Verifies both successful parses, nil-pointer fallback to zero, and
-// parse-failure fallback to zero — the sizing path in cmd/helpers.go treats
-// zero as "no signal" so the fallback behavior matters.
+// Verifies successful parses and nil-pointer fallback to zero. A present but
+// invalid average-instances value is an error (zero means "no signal" to the
+// sizing path, so it must not be fabricated); an invalid AverageUtilization is
+// display-only and degrades to zero.
 func TestParseRIUtilizationSignals(t *testing.T) {
 	client := &Client{}
 
@@ -597,6 +598,7 @@ func TestParseRIUtilizationSignals(t *testing.T) {
 		details          *types.ReservationPurchaseRecommendationDetail
 		wantAvgInstances float64
 		wantUtilization  float64
+		wantErr          bool
 	}{
 		{
 			name: "both fields parsed",
@@ -614,13 +616,12 @@ func TestParseRIUtilizationSignals(t *testing.T) {
 			wantUtilization:  0,
 		},
 		{
-			name: "unparseable AverageNumberOfInstancesUsedPerHour → that field zero, other still parses",
+			name: "unparseable AverageNumberOfInstancesUsedPerHour is an error",
 			details: &types.ReservationPurchaseRecommendationDetail{
 				AverageNumberOfInstancesUsedPerHour: aws.String("not-a-number"),
 				AverageUtilization:                  aws.String("90.0"),
 			},
-			wantAvgInstances: 0,
-			wantUtilization:  90.0,
+			wantErr: true,
 		},
 		{
 			name: "unparseable AverageUtilization → that field zero, other still parses",
@@ -641,15 +642,22 @@ func TestParseRIUtilizationSignals(t *testing.T) {
 			wantUtilization:  0,
 		},
 		{
-			// NaN/Inf parse to a nil error under strconv.ParseFloat; they must
-			// degrade to 0, not be stored as a live signal (NaN <= 0 is false,
-			// so a stored NaN would drive NaN purchase counts in sizing).
-			name: "non-finite values degrade to zero",
+			// NaN parses to a nil error under strconv.ParseFloat; it must be
+			// rejected, not stored as a live signal (NaN <= 0 is false, so a
+			// stored NaN would drive NaN purchase counts in sizing).
+			name: "non-finite AverageNumberOfInstancesUsedPerHour is an error",
 			details: &types.ReservationPurchaseRecommendationDetail{
 				AverageNumberOfInstancesUsedPerHour: aws.String("NaN"),
+			},
+			wantErr: true,
+		},
+		{
+			name: "non-finite AverageUtilization degrades to zero (display only)",
+			details: &types.ReservationPurchaseRecommendationDetail{
+				AverageNumberOfInstancesUsedPerHour: aws.String("3"),
 				AverageUtilization:                  aws.String("+Inf"),
 			},
-			wantAvgInstances: 0,
+			wantAvgInstances: 3,
 			wantUtilization:  0,
 		},
 	}
@@ -657,7 +665,12 @@ func TestParseRIUtilizationSignals(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			rec := &common.Recommendation{}
-			client.parseRIUtilizationSignals(rec, tt.details)
+			err := client.parseRIUtilizationSignals(rec, tt.details)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
 			assert.Equal(t, tt.wantAvgInstances, rec.AverageInstancesUsedPerHour)
 			assert.Equal(t, tt.wantUtilization, rec.RecommendedUtilization)
 		})
@@ -766,4 +779,42 @@ func captureStdoutAndLog(t *testing.T, fn func()) (stdout, logged string) {
 	stdout = <-drained
 	require.NoError(t, r.Close())
 	return stdout, logBuf.String()
+}
+
+// FIXTURE-BASED (CE-shaped ReservationPurchaseRecommendationDetail, not live AWS).
+// go#54: a present-but-invalid AverageNumberOfInstancesUsedPerHour used to
+// become 0 = "no signal", so --target-coverage passed the rec through unsized
+// and --min-pool-size kept it. It must now drop the detail and report it.
+func TestParseRecommendations_InvalidAverageInstancesIsReportedNotZeroed(t *testing.T) {
+	detail := func(avg *string) types.ReservationPurchaseRecommendationDetail {
+		return types.ReservationPurchaseRecommendationDetail{
+			RecommendedNumberOfInstancesToPurchase: aws.String("5"),
+			EstimatedMonthlySavingsAmount:          aws.String("100.00"),
+			AverageNumberOfInstancesUsedPerHour:    avg,
+			InstanceDetails: &types.InstanceDetails{EC2InstanceDetails: &types.EC2InstanceDetails{
+				InstanceType: aws.String("m5.large"), Platform: aws.String("Linux/UNIX"), Region: aws.String("us-east-1"),
+			}},
+		}
+	}
+	params := common.RecommendationParams{Service: common.ServiceEC2, Term: "1yr", PaymentOption: "no-upfront"}
+	for _, bad := range []string{"abc", "NaN", "-1", "Inf", ""} {
+		t.Run("invalid "+bad, func(t *testing.T) {
+			awsRecs := []types.ReservationPurchaseRecommendation{{RecommendationDetails: []types.ReservationPurchaseRecommendationDetail{
+				detail(aws.String("10")), detail(aws.String(bad)),
+			}}}
+			recs, err := (&Client{}).parseRecommendations(context.Background(), awsRecs, params)
+			var incomplete *IncompleteRecommendationsError
+			require.ErrorAs(t, err, &incomplete)
+			assert.Equal(t, 1, incomplete.FailedDetails)
+			require.Len(t, recs, 1, "the valid sibling survives")
+			assert.Equal(t, 10.0, recs[0].AverageInstancesUsedPerHour)
+		})
+	}
+	t.Run("nil stays a kept rec with no signal", func(t *testing.T) {
+		awsRecs := []types.ReservationPurchaseRecommendation{{RecommendationDetails: []types.ReservationPurchaseRecommendationDetail{detail(nil)}}}
+		recs, err := (&Client{}).parseRecommendations(context.Background(), awsRecs, params)
+		require.NoError(t, err)
+		require.Len(t, recs, 1)
+		assert.Zero(t, recs[0].AverageInstancesUsedPerHour)
+	})
 }
