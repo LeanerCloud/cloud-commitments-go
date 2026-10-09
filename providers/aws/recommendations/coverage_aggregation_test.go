@@ -144,7 +144,7 @@ func TestGetRICoverageMap_AggregatesBucketsSDK(t *testing.T) {
 }
 
 func TestGetRICoverageMap_ZeroWeightBuckets(t *testing.T) {
-	for _, hours := range []*string{nil, aws.String("0"), aws.String("invalid"), aws.String("NaN"), aws.String("Inf"), aws.String("-720")} {
+	for _, hours := range []*string{nil, aws.String("0")} {
 		for _, reverse := range []bool{false, true} {
 			groups := []types.ReservationCoverageGroup{
 				coverageGroup("m5.large", "", "50", aws.String("720")),
@@ -165,4 +165,72 @@ func TestGetRICoverageMap_ZeroWeightBuckets(t *testing.T) {
 	got, err := NewClientWithAPI(mock, "us-east-1").GetRICoverageMap(context.Background(), 30, []string{"us-east-1"})
 	require.NoError(t, err)
 	assert.Equal(t, PoolCoverage{Pct: 99}, got["us-east-1:m5.large"])
+}
+
+// Issue go#308: an unparsable, non-finite or negative value must remove the
+// whole pool from the map, never leave it as a known 0%.
+func TestGetRICoverageMap_InvalidTotalRunningHoursDropsPool(t *testing.T) {
+	for _, hours := range []string{"invalid", "NaN", "Inf", "-720"} {
+		for _, reverse := range []bool{false, true} {
+			groups := []types.ReservationCoverageGroup{
+				coverageGroup("m5.large", "", "50", aws.String("720")),
+				coverageGroup("m5.large", "", "99", aws.String(hours)),
+				coverageGroup("m5.xlarge", "", "20", aws.String("720")),
+			}
+			if reverse {
+				slices.Reverse(groups)
+			}
+			mock := &mockCoverageCE{coverageOutput: &costexplorer.GetReservationCoverageOutput{CoveragesByTime: []types.CoverageByTime{{Groups: groups}}}}
+			got, err := NewClientWithAPI(mock, "us-east-1").GetRICoverageMap(context.Background(), 30, []string{"us-east-1"})
+			require.NoError(t, err)
+			assert.NotContains(t, got, "us-east-1:m5.large", hours)
+			assert.Equal(t, PoolCoverage{Pct: 20, AvgInstancesPerHour: 1}, got["us-east-1:m5.xlarge"])
+		}
+	}
+}
+
+func TestGetRICoverageMap_BadPercentageInOnePeriodDropsWholePool(t *testing.T) {
+	periods := []types.CoverageByTime{
+		{Groups: []types.ReservationCoverageGroup{coverageGroup("m5.large", "", "50", aws.String("720")), coverageGroup("m5.xlarge", "", "20", aws.String("720"))}},
+		{Groups: []types.ReservationCoverageGroup{coverageGroup("m5.large", "", "abc", aws.String("720"))}},
+	}
+	mock := &mockCoverageCE{coverageOutput: &costexplorer.GetReservationCoverageOutput{CoveragesByTime: periods}}
+	got, err := NewClientWithAPI(mock, "us-east-1").GetRICoverageMap(context.Background(), 30, []string{"us-east-1"})
+	require.NoError(t, err)
+	assert.NotContains(t, got, "us-east-1:m5.large")
+	assert.Equal(t, PoolCoverage{Pct: 20, AvgInstancesPerHour: 1}, got["us-east-1:m5.xlarge"])
+	recs := []common.Recommendation{{Region: "us-east-1", ResourceType: "m5.large", AverageInstancesUsedPerHour: 10}}
+	ApplyCoverageMapToRecommendations(recs, got)
+	assert.False(t, recs[0].ExistingCoverageKnown, "go#308: bad value must not become a known 0%")
+}
+
+func TestPoolCoverageFromGroup_Parse(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		pct     *string
+		hours   *string
+		want    PoolCoverage
+		ok, err bool
+	}{
+		{name: "nil percentage skipped silently"},
+		{name: "empty percentage is invalid", pct: aws.String(""), err: true},
+		{name: "zero percentage is present", pct: aws.String("0"), hours: aws.String("720"), want: PoolCoverage{AvgInstancesPerHour: 1}, ok: true},
+		{name: "valid", pct: aws.String("75.5"), hours: aws.String("1440"), want: PoolCoverage{Pct: 75.5, AvgInstancesPerHour: 2}, ok: true},
+		{name: "unparsable", pct: aws.String("abc"), err: true},
+		{name: "NaN", pct: aws.String("NaN"), err: true},
+		{name: "Inf", pct: aws.String("Inf"), err: true},
+		{name: "negative", pct: aws.String("-5"), err: true},
+		{name: "bad hours", pct: aws.String("50"), hours: aws.String("x"), err: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var group types.ReservationCoverageGroup
+			if tc.pct != nil {
+				group.Coverage = &types.Coverage{CoverageHours: &types.CoverageHours{CoverageHoursPercentage: tc.pct, TotalRunningHours: tc.hours}}
+			}
+			got, ok, err := poolCoverageFromGroup(group, 720)
+			assert.Equal(t, tc.err, err != nil)
+			assert.Equal(t, tc.ok, ok)
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }
