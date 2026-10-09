@@ -32,6 +32,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **`common.ErrOutcomeUnknown`:** exported sentinel for a purchase whose
+  response was lost and whose commitment may exist (#301). Consumers can use
+  `errors.Is` to tell it from a definite failure. The AWS EC2 and Redshift
+  clients switch to it in a follow-up once the aws module pins this commit.
 - **`pkg/insurance`:** a read-only Archera insured-commitment comparison
   contract (#284, #285). `NewClient` returns a client with `Comparison` and
   `Plan` for Archera's documented
