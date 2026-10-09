@@ -478,12 +478,12 @@ func (c *Client) lookupEngineName(engine string) (string, error) {
 
 // offeringDuration returns the term as the API's duration string and as seconds
 // for the exact-match check.
-func (c *Client) offeringDuration(term string) (string, int64, error) {
-	duration, err := c.getDurationString(term)
+func (c *Client) offeringDuration(term string) (duration string, seconds int64, err error) {
+	duration, err = c.getDurationString(term)
 	if err != nil {
 		return "", 0, err
 	}
-	seconds, err := strconv.ParseInt(duration, 10, 64)
+	seconds, err = strconv.ParseInt(duration, 10, 64)
 	if err != nil {
 		return "", 0, fmt.Errorf("RDS duration %q is not a number of seconds: %w", duration, err)
 	}
