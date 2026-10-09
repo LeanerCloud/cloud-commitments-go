@@ -49,7 +49,7 @@ By participating in this project, you agree to maintain a respectful and inclusi
 
 ### Prerequisites
 
-- Go 1.26.6 or later, as declared by the module files
+- Go 1.26.9 or later, as declared by the module files
 - Cloud credentials only when intentionally running a cloud-backed sanity binary
 - Git
 

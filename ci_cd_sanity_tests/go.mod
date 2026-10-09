@@ -1,6 +1,6 @@
 module github.com/LeanerCloud/cloud-commitments-go/ci_cd_sanity_tests
 
-go 1.26.6
+go 1.26.9
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.41.5
@@ -32,10 +32,10 @@ require (
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	golang.org/x/crypto v0.56.0 // indirect
-	golang.org/x/net v0.57.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
