@@ -231,7 +231,7 @@ func CommitmentFromReservation(r *armreservations.ReservationResponse, account s
 		return nil
 	}
 	props := r.Properties
-	if props.ReservedResourceType == nil || *props.ReservedResourceType != wantType {
+	if props.ReservedResourceType == nil || !strings.EqualFold(string(*props.ReservedResourceType), string(wantType)) {
 		return nil
 	}
 
