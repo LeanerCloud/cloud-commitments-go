@@ -169,8 +169,15 @@ var errBadPlan = errors.New("bad recommendation plan")
 // key. A present but malformed plan returns an error wrapping errBadPlan.
 func rootCommitmentTerm(content *recommenderpb.RecommendationContent) (term string, found bool, err error) {
 	root, err := selectRootCommitment(content)
-	if err != nil || root == nil {
+	if err != nil {
 		return "", false, err
+	}
+	return rootPlanTerm(root)
+}
+
+func rootPlanTerm(root *recommenderpb.Operation) (term string, found bool, err error) {
+	if root == nil {
+		return "", false, nil
 	}
 	object := root.GetValue().GetStructValue()
 	if object == nil {
@@ -194,46 +201,53 @@ func rootCommitmentTerm(content *recommenderpb.RecommendationContent) (term stri
 	}
 }
 
-// resolveRecTerm picks the term for a recommendation. A root Commitment plan
-// is authoritative: an explicit params.Term must agree with it. A root
-// Commitment without a plan needs an explicit params.Term. A payload with no
-// root Commitment keeps the params.Term / "1yr" fallback (issue #291 follow-up).
+// canonicalTerm maps any accepted term spelling to "1yr" or "3yr". An
+// unrecognized term is returned unchanged so the caller skips it, as before.
+func canonicalTerm(term string) string {
+	plan, err := termPlan(term)
+	if err != nil {
+		return term
+	}
+	if plan == computepb.Commitment_THIRTY_SIX_MONTH.String() {
+		return "3yr"
+	}
+	return "1yr"
+}
+
+// resolveRecTerm picks the canonical term ("1yr"/"3yr") for a recommendation.
+// A root Commitment plan is authoritative: an explicit params.Term must agree
+// with it. A root Commitment without a plan needs an explicit params.Term. A
+// payload with no root Commitment keeps the params.Term / "1yr" fallback
+// (issue #291 follow-up).
 func resolveRecTerm(gcpRec *recommenderpb.Recommendation, params common.RecommendationParams) (string, error) {
-	planTerm, found, err := rootCommitmentTerm(gcpRec.GetContent())
+	root, err := selectRootCommitment(gcpRec.GetContent())
+	if err != nil {
+		return "", err
+	}
+	planTerm, found, err := rootPlanTerm(root)
 	if err != nil {
 		return "", err
 	}
 	if !found {
-		return termWithoutPlan(gcpRec.GetContent(), params.Term)
+		return termWithoutPlan(root != nil, params.Term)
 	}
 	if params.Term == "" {
 		return planTerm, nil
 	}
-	want, err := termPlan(params.Term)
-	if err != nil {
-		// Unrecognized explicit term: the caller skips it, as before.
-		return params.Term, nil
-	}
-	got, err := termPlan(planTerm)
-	if err != nil {
-		return "", err
-	}
-	if want != got {
-		return "", fmt.Errorf("%w: params term %q conflicts with recommendation plan %s", errBadPlan, params.Term, got)
+	if want := canonicalTerm(params.Term); want != "1yr" && want != "3yr" {
+		return want, nil
+	} else if want != planTerm {
+		return "", fmt.Errorf("%w: params term %q conflicts with recommendation plan term %s", errBadPlan, params.Term, planTerm)
 	}
 	return planTerm, nil
 }
 
 // termWithoutPlan resolves the term when the payload carries no plan.
-func termWithoutPlan(content *recommenderpb.RecommendationContent, paramTerm string) (string, error) {
-	root, err := selectRootCommitment(content)
-	if err != nil {
-		return "", err
-	}
+func termWithoutPlan(hasRoot bool, paramTerm string) (string, error) {
 	if paramTerm != "" {
-		return paramTerm, nil
+		return canonicalTerm(paramTerm), nil
 	}
-	if root != nil {
+	if hasRoot {
 		return "", fmt.Errorf("%w: root Commitment has no plan and no explicit term was given", errBadPlan)
 	}
 	return "1yr", nil

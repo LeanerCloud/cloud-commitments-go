@@ -103,3 +103,19 @@ func TestRootCommitmentTermMapping(t *testing.T) {
 		assert.Equal(t, want, got)
 	}
 }
+
+// An explicit non-canonical Term must be canonicalised so pricing and grouping
+// see "3yr", not "36mo" (which GetOfferingDetails would price as one year).
+func TestExplicitTermIsCanonicalised(t *testing.T) {
+	for _, raw := range []string{"36mo", " 3 ", "3yr"} {
+		for _, plan := range []string{"", "THIRTY_SIX_MONTH"} {
+			client, _ := planClient(t, rootCUDRecommendationWithPlan("MEMORY_OPTIMIZED_M4_6TB", plan))
+			recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{Term: raw})
+			require.NoError(t, err)
+			require.Len(t, recs, 1)
+			assert.Equal(t, "3yr", recs[0].Term, "raw %q plan %q", raw, plan)
+			assert.Equal(t, 3, termYearsFromTerm(recs[0].Term))
+		}
+	}
+	assert.Equal(t, "3yr", canonicalTerm("36mo"))
+}
