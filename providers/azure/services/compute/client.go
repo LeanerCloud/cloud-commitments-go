@@ -279,16 +279,84 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 	now := time.Now()
 	commitments := make([]common.Commitment, 0, len(responses))
 	for _, r := range responses {
-		commitment := reservations.CommitmentFromReservation(r, c.subscriptionID, common.ServiceCompute, armreservations.ReservedResourceTypeVirtualMachines, now)
-		if commitment == nil {
-			continue
-		}
-		if err := validateVMReservationInventory(r.Properties, commitment.CommitmentID, c.subscriptionID, now); err != nil {
+		commitment, err := c.commitmentFromVMReservation(r, now)
+		if err != nil {
 			return nil, err
 		}
-		commitments = append(commitments, *commitment)
+		if commitment != nil {
+			commitments = append(commitments, *commitment)
+		}
 	}
 	return commitments, nil
+}
+
+// commitmentFromVMReservation validates and converts one reservation. It
+// returns a nil commitment for non-VM types.
+func (c *Client) commitmentFromVMReservation(r *armreservations.ReservationResponse, now time.Time) (*common.Commitment, error) {
+	// filterAppliedReservations passes nil and property-less rows through;
+	// dropping them would hide a possibly just-bought reservation.
+	if r == nil || r.Properties == nil || r.Properties.ReservedResourceType == nil {
+		return nil, fmt.Errorf("compute: cannot classify reservation %s in subscription %q: missing properties or reservedResourceType",
+			reservationLabel(r), c.subscriptionID)
+	}
+	commitment := reservations.CommitmentFromReservation(r, c.subscriptionID, common.ServiceCompute, armreservations.ReservedResourceTypeVirtualMachines, now)
+	if commitment == nil {
+		return nil, nil
+	}
+	if err := validateVMReservationInventory(r.Properties, commitment.CommitmentID, c.subscriptionID, now); err != nil {
+		return nil, err
+	}
+	if !isTerminalCommitmentState(commitment.State) {
+		if err := validateLiveVMReservationFields(r, commitment.CommitmentID, c.subscriptionID); err != nil {
+			return nil, err
+		}
+	}
+	return commitment, nil
+}
+
+func reservationLabel(r *armreservations.ReservationResponse) string {
+	if r == nil || r.ID == nil {
+		return "(no id)"
+	}
+	return fmt.Sprintf("%q", *r.ID)
+}
+
+// isTerminalCommitmentState reports lifecycle states that no longer count as
+// coverage. It works on the converted state so a Succeeded reservation with a
+// past expiry is terminal too.
+func isTerminalCommitmentState(s common.CommitmentState) bool {
+	switch s {
+	case common.CommitmentStateCanceled, common.CommitmentStateExpired,
+		common.CommitmentStateFailed, common.CommitmentStateRetired:
+		return true
+	}
+	return false
+}
+
+// validateLiveVMReservationFields rejects a live VM reservation missing a field
+// the duplicate guard keys or sizes on: a blank SKU or location never matches a
+// recommendation, a missing quantity counts as zero capacity, and a missing
+// purchase date makes a fresh purchase look old. Erroring (not skipping) is
+// deliberate: the row may be the reservation bought an hour ago.
+func validateLiveVMReservationFields(r *armreservations.ReservationResponse, reservationID, subscriptionID string) error {
+	var missing []string
+	if r.SKU == nil || r.SKU.Name == nil || strings.TrimSpace(*r.SKU.Name) == "" {
+		missing = append(missing, "sku.name")
+	}
+	if r.Location == nil || strings.TrimSpace(*r.Location) == "" {
+		missing = append(missing, "location")
+	}
+	if r.Properties.Quantity == nil || *r.Properties.Quantity <= 0 {
+		missing = append(missing, "quantity")
+	}
+	if r.Properties.PurchaseDate == nil {
+		missing = append(missing, "purchaseDate")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("compute: incomplete live VM reservation %q in subscription %q: missing or invalid %s",
+			reservationID, subscriptionID, strings.Join(missing, ", "))
+	}
+	return nil
 }
 
 func validateVMReservationInventory(props *armreservations.Properties, reservationID, subscriptionID string, now time.Time) error {

@@ -389,7 +389,6 @@ func TestComputeClient_GetExistingCommitments_WithMock(t *testing.T) {
 				ProvisioningState:    &succeeded,
 			},
 		},
-		{ID: mocks.StringPtr("reservation-no-props")}, // nil Properties: skipped
 	}}
 	client.SetInventoryFactories(&reservations.InventoryFactories{
 		NewAppliedLister: func() (reservations.AppliedReservationsLister, error) {
