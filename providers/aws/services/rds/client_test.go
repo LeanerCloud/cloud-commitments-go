@@ -549,7 +549,7 @@ func TestClient_GetOfferingDetails(t *testing.T) {
 					Duration:                      aws.Int32(31536000),
 					OfferingType:                  aws.String("All Upfront"),
 					MultiAZ:                       aws.Bool(true),
-					ProductDescription:            aws.String("postgres"),
+					ProductDescription:            aws.String("postgresql"),
 					FixedPrice:                    aws.Float64(3500.0),
 					UsagePrice:                    aws.Float64(0.0),
 					CurrencyCode:                  aws.String("USD"),
@@ -725,13 +725,15 @@ func idempotencyTestRec() common.Recommendation {
 	}
 }
 
-func expectOffering(m *MockRDSClient) {
+func expectOffering(m *MockRDSClient) { expectOfferingForClass(m, "db.r6g.large") }
+
+func expectOfferingForClass(m *MockRDSClient, class string) {
 	m.On("DescribeReservedDBInstancesOfferings", mock.Anything, mock.Anything).
 		Return(&rds.DescribeReservedDBInstancesOfferingsOutput{
 			ReservedDBInstancesOfferings: []types.ReservedDBInstancesOffering{
 				{
 					ReservedDBInstancesOfferingId: aws.String("offering-1"),
-					DBInstanceClass:               aws.String("db.r6g.large"),
+					DBInstanceClass:               aws.String(class),
 					ProductDescription:            aws.String("mysql"),
 					MultiAZ:                       aws.Bool(false),
 					OfferingType:                  aws.String("All Upfront"),
@@ -875,9 +877,9 @@ func TestFindOfferingID_PaginationCapFires(t *testing.T) {
 	mockRDS.AssertNumberOfCalls(t, "DescribeReservedDBInstancesOfferings", maxOfferingPages)
 }
 
-// TestFindOfferingID_WrongVariantRejected asserts that findOfferingID rejects an
-// offering whose OfferingType does not match the requested payment option
-// (issue #688).
+// TestFindOfferingID_WrongVariantRejected asserts that findOfferingID never
+// returns an offering whose OfferingType does not match the requested payment
+// option (issues #688, #288).
 func TestFindOfferingID_WrongVariantRejected(t *testing.T) {
 	mockRDS := &MockRDSClient{}
 	t.Cleanup(func() { mockRDS.AssertExpectations(t) })
@@ -900,8 +902,7 @@ func TestFindOfferingID_WrongVariantRejected(t *testing.T) {
 	_, err := client.findOfferingID(context.Background(), rec, "")
 
 	if assert.Error(t, err) {
-		assert.Contains(t, err.Error(), "payment option")
-		assert.Contains(t, err.Error(), "mismatch")
+		assert.Contains(t, err.Error(), "no offerings found")
 	}
 }
 
@@ -920,6 +921,8 @@ func TestFindOfferingID_HappyPath(t *testing.T) {
 				{
 					ReservedDBInstancesOfferingId: aws.String("offering-ok"),
 					DBInstanceClass:               aws.String("db.r6g.large"),
+					ProductDescription:            aws.String("mysql"),
+					MultiAZ:                       aws.Bool(false),
 					OfferingType:                  aws.String("All Upfront"),
 					Duration:                      aws.Int32(31536000),
 				},
@@ -1144,7 +1147,7 @@ func TestClient_PurchaseCommitment_NoToken_RichReservationName(t *testing.T) {
 		},
 	}
 
-	expectOffering(mockRDS)
+	expectOfferingForClass(mockRDS, "db.t4g.medium")
 	var capturedID string
 	mockRDS.On("PurchaseReservedDBInstancesOffering", mock.Anything, mock.MatchedBy(func(in *rds.PurchaseReservedDBInstancesOfferingInput) bool {
 		capturedID = aws.ToString(in.ReservedDBInstanceId)
@@ -1179,4 +1182,157 @@ func TestClient_PurchaseCommitment_Idempotent_RejectedNotFlagged(t *testing.T) {
 	assert.Error(t, err)
 	assert.False(t, result.Success)
 	assert.False(t, result.ExistingCommitment)
+}
+
+func exactOffering(id string) types.ReservedDBInstancesOffering {
+	return types.ReservedDBInstancesOffering{
+		ReservedDBInstancesOfferingId: aws.String(id),
+		DBInstanceClass:               aws.String("db.r6g.large"),
+		ProductDescription:            aws.String("mysql"),
+		MultiAZ:                       aws.Bool(false),
+		OfferingType:                  aws.String("All Upfront"),
+		Duration:                      aws.Int32(31536000),
+	}
+}
+
+func findWithPage(t *testing.T, offerings ...types.ReservedDBInstancesOffering) (string, error) {
+	t.Helper()
+	mockRDS := &MockRDSClient{}
+	t.Cleanup(func() { mockRDS.AssertExpectations(t) })
+	client := &Client{client: mockRDS, region: "us-east-1"}
+	mockRDS.On("DescribeReservedDBInstancesOfferings", mock.Anything, mock.Anything).
+		Return(&rds.DescribeReservedDBInstancesOfferingsOutput{ReservedDBInstancesOfferings: offerings}, nil).Once()
+	return client.findOfferingID(context.Background(), idempotencyTestRec(), "")
+}
+
+// TestFindOfferingID_PartialEngineMatchSkipped is the #288 regression: the
+// server-side ProductDescription filter is a partial match, so an aurora-mysql
+// row listed first must not be bought for a mysql recommendation.
+func TestFindOfferingID_PartialEngineMatchSkipped(t *testing.T) {
+	aurora := exactOffering("offering-aurora")
+	aurora.ProductDescription = aws.String("aurora-mysql")
+
+	id, err := findWithPage(t, aurora, exactOffering("offering-mysql"))
+
+	assert.NoError(t, err)
+	assert.Equal(t, "offering-mysql", id)
+}
+
+func TestFindOfferingID_OnlyNonExactRowsIsNoMatch(t *testing.T) {
+	mut := map[string]func(*types.ReservedDBInstancesOffering){
+		"engine":      func(o *types.ReservedDBInstancesOffering) { o.ProductDescription = aws.String("aurora-mysql") },
+		"class":       func(o *types.ReservedDBInstancesOffering) { o.DBInstanceClass = aws.String("db.r6g.xlarge") },
+		"multiaz":     func(o *types.ReservedDBInstancesOffering) { o.MultiAZ = aws.Bool(true) },
+		"term":        func(o *types.ReservedDBInstancesOffering) { o.Duration = aws.Int32(94608000) },
+		"payment":     func(o *types.ReservedDBInstancesOffering) { o.OfferingType = aws.String("No Upfront") },
+		"nil-engine":  func(o *types.ReservedDBInstancesOffering) { o.ProductDescription = nil },
+		"nil-multiaz": func(o *types.ReservedDBInstancesOffering) { o.MultiAZ = nil },
+	}
+	for name, m := range mut {
+		t.Run(name, func(t *testing.T) {
+			o := exactOffering("offering-x")
+			m(&o)
+
+			id, err := findWithPage(t, o)
+
+			assert.Empty(t, id)
+			if assert.Error(t, err) {
+				assert.Contains(t, err.Error(), "no offerings found")
+			}
+		})
+	}
+}
+
+func TestFindOfferingID_TwoDistinctExactMatchesIsError(t *testing.T) {
+	id, err := findWithPage(t, exactOffering("offering-a"), exactOffering("offering-b"))
+
+	assert.Empty(t, id)
+	if assert.Error(t, err) {
+		assert.Contains(t, err.Error(), "ambiguous")
+	}
+}
+
+func TestFindOfferingID_RepeatedSameIDIsNotAmbiguous(t *testing.T) {
+	id, err := findWithPage(t, exactOffering("offering-a"), exactOffering("offering-a"))
+
+	assert.NoError(t, err)
+	assert.Equal(t, "offering-a", id)
+}
+
+func findAcrossPages(t *testing.T, pages ...[]types.ReservedDBInstancesOffering) (string, error) {
+	t.Helper()
+	mockRDS := &MockRDSClient{}
+	t.Cleanup(func() { mockRDS.AssertExpectations(t) })
+	client := &Client{client: mockRDS, region: "us-east-1"}
+	for i, p := range pages {
+		out := &rds.DescribeReservedDBInstancesOfferingsOutput{ReservedDBInstancesOfferings: p}
+		if i < len(pages)-1 {
+			out.Marker = aws.String(fmt.Sprintf("tok-%d", i+1))
+		}
+		mockRDS.On("DescribeReservedDBInstancesOfferings", mock.Anything, mock.Anything).Return(out, nil).Once()
+	}
+	return client.findOfferingID(context.Background(), idempotencyTestRec(), "")
+}
+
+func TestFindOfferingID_ExactMatchesOnDifferentPagesIsError(t *testing.T) {
+	id, err := findAcrossPages(t,
+		[]types.ReservedDBInstancesOffering{exactOffering("offering-a")},
+		[]types.ReservedDBInstancesOffering{exactOffering("offering-b")})
+
+	assert.Empty(t, id)
+	if assert.Error(t, err) {
+		assert.Contains(t, err.Error(), "ambiguous")
+	}
+}
+
+func TestFindOfferingID_SameIDOnDifferentPagesIsNotAmbiguous(t *testing.T) {
+	id, err := findAcrossPages(t,
+		[]types.ReservedDBInstancesOffering{exactOffering("offering-a")},
+		[]types.ReservedDBInstancesOffering{exactOffering("offering-a")})
+
+	assert.NoError(t, err)
+	assert.Equal(t, "offering-a", id)
+}
+
+func TestFindOfferingID_MatchOnLaterPageAfterNonExactFirstPage(t *testing.T) {
+	aurora := exactOffering("offering-aurora")
+	aurora.ProductDescription = aws.String("aurora-mysql")
+
+	id, err := findAcrossPages(t,
+		[]types.ReservedDBInstancesOffering{aurora},
+		[]types.ReservedDBInstancesOffering{exactOffering("offering-mysql")})
+
+	assert.NoError(t, err)
+	assert.Equal(t, "offering-mysql", id)
+}
+
+func TestFindOfferingID_NoMatchReportsPagesFetched(t *testing.T) {
+	_, err := findAcrossPages(t, nil, nil)
+
+	if assert.Error(t, err) {
+		assert.Contains(t, err.Error(), "after 2 page(s)")
+	}
+}
+
+// TestFindOfferingID_LicensedEnginesRefusedBeforeAPICall: Oracle and SQL Server
+// offerings are listed as "oracle-se2(li)" / "oracle-se2(byol)", so the license
+// model must be known; the lookup refuses without calling the API.
+func TestFindOfferingID_LicensedEnginesRefusedBeforeAPICall(t *testing.T) {
+	for _, engine := range []string{"oracle-se2", "oracle-ee", "sqlserver-se", "sqlserver-web", "sql-server-ex"} {
+		t.Run(engine, func(t *testing.T) {
+			mockRDS := &MockRDSClient{}
+			t.Cleanup(func() { mockRDS.AssertExpectations(t) })
+			client := &Client{client: mockRDS, region: "us-east-1"}
+			rec := idempotencyTestRec()
+			rec.Details = &common.DatabaseDetails{Engine: engine, AZConfig: "single-az"}
+
+			id, err := client.findOfferingID(context.Background(), rec, "")
+
+			assert.Empty(t, id)
+			if assert.Error(t, err) {
+				assert.Contains(t, err.Error(), "license model")
+			}
+			mockRDS.AssertNotCalled(t, "DescribeReservedDBInstancesOfferings", mock.Anything, mock.Anything)
+		})
+	}
 }
