@@ -33,9 +33,10 @@ const maxErrorMessageLen = 200
 // Config identifies the vendor organization and credential. APIKey is sent
 // only as the x-api-key header. Format redacts it for every fmt verb except %p
 // and %T on a non-pointer Config, which fmt handles before consulting Format;
-// never pass a Config value to %p. fmt also cannot call methods on unexported
-// struct fields, so a consumer must hold a *Client, or a Config only in an
-// exported field, and never log a Config stored in an unexported field.
+// never pass a Config value to %p. fmt cannot call methods on unexported
+// struct fields, so a Config held by the caller in an unexported field still
+// prints the key raw: drop the Config once NewClient has returned, and never
+// log one. NewClient does not retain the Config.
 type Config struct {
 	APIKey string `json:"-"`
 	OrgID  string
@@ -67,19 +68,21 @@ func (e *HTTPError) Error() string {
 
 // Client is the real read-only QuoteClient. It issues single-shot GETs and
 // never follows redirects, so the API key cannot be forwarded to another host.
+//
+// The API key is held only inside the setAuth and redact closures, never in a
+// field fmt or reflection can read, so no fmt verb prints it wherever the
+// Client (or a pointer to it) is stored.
 type Client struct {
 	baseURL string
-	cfg     Config
+	orgID   string
 	hc      *http.Client
+	// setAuth adds the credential to one outgoing request.
+	setAuth func(*http.Request)
+	// redact masks the credential in a vendor-supplied message.
+	redact func(string) string
 }
 
 var _ QuoteClient = (*Client)(nil)
-
-// Format keeps the embedded configuration, and with it the key, out of any
-// fmt output of a Client (same %p/%T limit as Config).
-func (c Client) Format(s fmt.State, _ rune) {
-	_, _ = fmt.Fprintf(s, "insurance.Client{OrgID:%q, APIKey:[redacted]}", c.cfg.OrgID)
-}
 
 // NewClient returns a Client for the fixed Archera origin. hc is optional; nil
 // uses the shared SSRF-hardened client with a 30-second timeout.
@@ -99,7 +102,19 @@ func newClient(baseURL string, cfg Config, hc *http.Client) (*Client, error) {
 	}
 	noRedirect := *hc
 	noRedirect.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &Client{baseURL: baseURL, cfg: cfg, hc: &noRedirect}, nil
+	key := cfg.APIKey
+	return &Client{
+		baseURL: baseURL,
+		orgID:   cfg.OrgID,
+		hc:      &noRedirect,
+		setAuth: func(req *http.Request) { req.Header.Set("x-api-key", key) },
+		redact: func(msg string) string {
+			if key == "" {
+				return msg
+			}
+			return strings.ReplaceAll(msg, key, "[redacted]")
+		},
+	}, nil
 }
 
 // Comparison reads the documented comparison operation. Empty request slices
@@ -132,7 +147,7 @@ func (c *Client) Comparison(ctx context.Context, req ComparisonRequest) (*Compar
 		return nil, err
 	}
 	defer func() { _ = body.Close() }()
-	return DecodeComparison(&boundedReader{r: body, n: maxResponseBytes}, c.cfg.OrgID, req.PlanID, fetchedAt)
+	return DecodeComparison(&boundedReader{r: body, n: maxResponseBytes}, c.orgID, req.PlanID, fetchedAt)
 }
 
 // Plan reads the documented CommitmentPlan operation.
@@ -149,7 +164,7 @@ func (c *Client) Plan(ctx context.Context, planID string) (*Plan, error) {
 }
 
 func (c *Client) planPath(planID string) string {
-	return "/v1/org/" + c.cfg.OrgID + "/commitment-plans/" + planID
+	return "/v1/org/" + c.orgID + "/commitment-plans/" + planID
 }
 
 var errResponseTooLarge = fmt.Errorf("response exceeds %d bytes", maxResponseBytes)
@@ -192,7 +207,7 @@ func (c *Client) get(ctx context.Context, path string, q url.Values) (io.ReadClo
 	if err != nil {
 		return nil, time.Time{}, fmt.Errorf("building archera request: %w", err)
 	}
-	req.Header.Set("x-api-key", c.cfg.APIKey)
+	c.setAuth(req)
 	req.Header.Set("Accept", "application/json")
 	// baseURL is the fixed BaseURL constant; only in-package tests override it.
 	resp, err := c.hc.Do(req) //nolint:gosec // G704: see comment above
@@ -202,7 +217,7 @@ func (c *Client) get(ctx context.Context, path string, q url.Values) (io.ReadClo
 	fetchedAt := time.Now().UTC()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		defer func() { _ = resp.Body.Close() }()
-		return nil, fetchedAt, newHTTPError(resp, c.cfg.APIKey)
+		return nil, fetchedAt, newHTTPError(resp, c.redact)
 	}
 	return resp.Body, fetchedAt, nil
 }
@@ -217,7 +232,7 @@ func sanitizeTransportError(err error) error {
 	return err
 }
 
-func newHTTPError(resp *http.Response, apiKey string) *HTTPError {
+func newHTTPError(resp *http.Response, redact func(string) string) *HTTPError {
 	e := &HTTPError{StatusCode: resp.StatusCode}
 	if s, err := strconv.Atoi(strings.TrimSpace(resp.Header.Get("Retry-After"))); err == nil && s > 0 {
 		// Compare before multiplying: s*time.Second overflows int64 for large s.
@@ -234,24 +249,19 @@ func newHTTPError(resp *http.Response, apiKey string) *HTTPError {
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 	if err == nil && json.Unmarshal(raw, &shape) == nil {
-		e.Message = truncate(cleanMessage(shape.Message, apiKey), maxErrorMessageLen)
+		e.Message = truncate(redact(cleanMessage(shape.Message)), maxErrorMessageLen)
 	}
 	return e
 }
 
-// cleanMessage drops control characters (log forging, ANSI injection) and
-// masks the API key if the vendor echoes it back.
-func cleanMessage(msg, apiKey string) string {
-	msg = strings.Map(func(r rune) rune {
+// cleanMessage drops control characters (log forging, ANSI injection).
+func cleanMessage(msg string) string {
+	return strings.Map(func(r rune) rune {
 		if unicode.IsControl(r) {
 			return -1
 		}
 		return r
 	}, msg)
-	if apiKey != "" {
-		msg = strings.ReplaceAll(msg, apiKey, "[redacted]")
-	}
-	return msg
 }
 
 func truncate(s string, n int) string {
