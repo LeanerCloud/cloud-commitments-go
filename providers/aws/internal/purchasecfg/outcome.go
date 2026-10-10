@@ -5,19 +5,13 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/aws/aws-sdk-go-v2/aws/retry"
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/smithy-go"
 )
 
-// ErrOutcomeUnknown marks a purchase whose request may have reached AWS but
-// whose result is not known: the commitment may already exist. Services whose
-// purchase API has no idempotency token or caller-chosen ID (EC2, Redshift)
-// must not be re-sent automatically after such an error; reconcile against
-// DescribeReservedInstances / DescribeReservedNodes first.
-var ErrOutcomeUnknown = errors.New("purchase outcome unknown")
-
-// ClassifyPurchaseError wraps err with ErrOutcomeUnknown unless AWS definitely
+// ClassifyPurchaseError wraps err with common.ErrOutcomeUnknown unless AWS definitely
 // rejected the request before processing it. It errs toward "unknown": a false
 // unknown makes a human check, a false definite allows a double-buy.
 //
@@ -29,7 +23,7 @@ var ErrOutcomeUnknown = errors.New("purchase outcome unknown")
 // cancellation, 5xx, a 200 whose body could not be deserialized, and pre-send
 // failures (credentials, DNS, endpoint), which are treated conservatively.
 func ClassifyPurchaseError(err error) error {
-	if err == nil || errors.Is(err, ErrOutcomeUnknown) {
+	if err == nil || errors.Is(err, common.ErrOutcomeUnknown) {
 		return err
 	}
 	var apiErr smithy.APIError
@@ -41,7 +35,7 @@ func ClassifyPurchaseError(err error) error {
 			return err
 		}
 	}
-	return fmt.Errorf("%w: the request may have been sent and the commitment may exist; reconcile before retrying: %w", ErrOutcomeUnknown, err)
+	return fmt.Errorf("%w: the request may have been sent and the commitment may exist; reconcile before retrying: %w", common.ErrOutcomeUnknown, err)
 }
 
 // httpStatus returns the HTTP status carried by err, or 0 when there is none.

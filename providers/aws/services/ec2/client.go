@@ -187,7 +187,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		}
 	} else {
 		// A 200 without an ID: the buy most likely happened.
-		result.Error = fmt.Errorf("purchase response was empty: %w", purchasecfg.ErrOutcomeUnknown)
+		result.Error = fmt.Errorf("purchase response was empty: %w", common.ErrOutcomeUnknown)
 		return result, result.Error
 	}
 
