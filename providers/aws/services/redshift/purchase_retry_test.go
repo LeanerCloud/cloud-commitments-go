@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
-	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/redshift"
@@ -69,7 +68,7 @@ func TestPurchaseCommitment_LostResponseIsNotRetriedBySDK(t *testing.T) {
 
 	require.Error(t, err, "a purchase whose response was lost must surface as an error, not a success")
 	assert.False(t, result.Success)
-	assert.ErrorIs(t, err, purchasecfg.ErrOutcomeUnknown, "a lost response must be reported as outcome-unknown, not as a definite failure")
+	assert.ErrorIs(t, err, common.ErrOutcomeUnknown, "a lost response must be reported as outcome-unknown, not as a definite failure")
 	assert.EqualValues(t, 1, purchases.Load(), "the SDK must not re-send a non-idempotent Redshift purchase (no ClientToken)")
 }
 
@@ -90,5 +89,5 @@ func TestPurchaseCommitment_EmptyResponseIsOutcomeUnknown(t *testing.T) {
 	rec := common.Recommendation{ResourceType: "dc2.large", Count: 1, PaymentOption: "all-upfront", Term: "1yr",
 		Details: common.DataWarehouseDetails{NodeType: "dc2.large", NumberOfNodes: 1}}
 	_, err := c.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
-	assert.ErrorIs(t, err, purchasecfg.ErrOutcomeUnknown)
+	assert.ErrorIs(t, err, common.ErrOutcomeUnknown)
 }

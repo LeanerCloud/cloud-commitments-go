@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/aws/aws-sdk-go-v2/aws/retry"
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/smithy-go"
@@ -63,7 +64,7 @@ func TestClassifyPurchaseError(t *testing.T) {
 				assert.NoError(t, got)
 				return
 			}
-			assert.Equal(t, tc.unknown, errors.Is(got, ErrOutcomeUnknown))
+			assert.Equal(t, tc.unknown, errors.Is(got, common.ErrOutcomeUnknown))
 			assert.ErrorIs(t, got, tc.err, "the original error must stay in the chain")
 		})
 	}
