@@ -32,6 +32,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **`insurance.ContractTerms()`:** returns the documented Archera
+  `contract_term` values that `Comparison` accepts and the decoder returns, as a
+  new sorted slice on every call (#316). The order is lexicographic, not by
+  duration. Consumers should call it instead of copying the list.
 - **`common.ErrOutcomeUnknown`:** exported sentinel for a purchase whose
   response was lost and whose commitment may exist (#301). Consumers can use
   `errors.Is` to tell it from a definite failure. The AWS EC2 and Redshift
