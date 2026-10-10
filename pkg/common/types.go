@@ -18,6 +18,16 @@ import (
 // infrastructure. Callers can detect it with errors.Is(err, ErrCommitmentPurchaseNotSupported).
 var ErrCommitmentPurchaseNotSupported = errors.New("commitment purchase not supported for this service")
 
+// ErrOutcomeUnknown marks a purchase whose request may have reached the cloud
+// provider but whose result is not known: the commitment may already exist.
+// Services whose purchase API has no idempotency token or caller-chosen ID
+// (AWS EC2, Redshift) must not be re-sent automatically after such an error;
+// reconcile against the provider first. Detect it with
+// errors.Is(err, ErrOutcomeUnknown). Consumers such as the platform persist
+// errors as strings, so the text "purchase outcome unknown" is effectively a
+// contract until the platform persists a typed flag (platform #778).
+var ErrOutcomeUnknown = errors.New("purchase outcome unknown")
+
 // ProviderType identifies the cloud provider.
 type ProviderType string
 
