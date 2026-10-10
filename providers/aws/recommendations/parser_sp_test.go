@@ -167,6 +167,7 @@ func TestParseSavingsPlanDetail_RecommendedUtilization(t *testing.T) {
 		utilizationStr     *string
 		wantUtilization    float64
 		wantAvgInstancesIs float64
+		wantErr            bool
 	}{
 		{
 			name:               "field present and parseable",
@@ -181,10 +182,9 @@ func TestParseSavingsPlanDetail_RecommendedUtilization(t *testing.T) {
 			wantAvgInstancesIs: 0,
 		},
 		{
-			name:               "field unparseable → zero (parseOptionalFloat logs warn)",
-			utilizationStr:     aws.String("not-a-number"),
-			wantUtilization:    0,
-			wantAvgInstancesIs: 0,
+			name:           "field unparseable is an error (sizing input, go#54)",
+			utilizationStr: aws.String("not-a-number"),
+			wantErr:        true,
 		},
 	}
 
@@ -195,8 +195,11 @@ func TestParseSavingsPlanDetail_RecommendedUtilization(t *testing.T) {
 				EstimatedAverageUtilization: tt.utilizationStr,
 			}
 			rec, err := client.parseSavingsPlanDetail(detail, &params, types.SupportedSavingsPlansTypeComputeSp)
-			require.NoError(t, err,
-				"EstimatedAverageUtilization is a non-money field; parse failures must not propagate as errors")
+			if tt.wantErr {
+				require.Error(t, err, "EstimatedAverageUtilization is a sizing input; zero means no signal, so a bad value must fail the detail")
+				return
+			}
+			require.NoError(t, err)
 			require.NotNil(t, rec)
 			assert.Equal(t, tt.wantUtilization, rec.RecommendedUtilization,
 				"SP utilization should be parsed into rec.RecommendedUtilization")
@@ -501,5 +504,41 @@ func TestExtractEC2SPFieldsNormalizesRegion(t *testing.T) {
 		got := extractEC2SPFields(types.SupportedSavingsPlansTypeComputeSp, newDetail("US East (N. Virginia)"))
 		assert.Empty(t, got.region, "account-level plans are region-agnostic")
 		assert.Empty(t, got.instanceFamily)
+	})
+}
+
+// FIXTURE-BASED (CE-shaped SavingsPlansPurchaseRecommendationDetail, not live AWS).
+// go#54: a present-but-invalid EstimatedAverageUtilization used to become 0 =
+// "no signal", so --target-coverage left the SP unsized at AWS's commitment.
+func TestParseSavingsPlansRecommendations_InvalidEstimatedUtilizationIsReported(t *testing.T) {
+	detail := func(util *string) types.SavingsPlansPurchaseRecommendationDetail {
+		return types.SavingsPlansPurchaseRecommendationDetail{
+			HourlyCommitmentToPurchase:    aws.String("1.5"),
+			EstimatedMonthlySavingsAmount: aws.String("100"),
+			UpfrontCost:                   aws.String("0"),
+			EstimatedAverageUtilization:   util,
+		}
+	}
+	params := &common.RecommendationParams{Service: common.ServiceSavingsPlansCompute, Term: "1yr", PaymentOption: "no-upfront"}
+	planType := types.SupportedSavingsPlansTypeComputeSp
+	for _, bad := range []string{"abc", "NaN", "-1", "Inf", ""} {
+		t.Run("invalid "+bad, func(t *testing.T) {
+			spRec := &types.SavingsPlansPurchaseRecommendation{SavingsPlansPurchaseRecommendationDetails: []types.SavingsPlansPurchaseRecommendationDetail{
+				detail(aws.String("90")), detail(aws.String(bad)),
+			}}
+			recs, err := (&Client{}).parseSavingsPlansRecommendations(spRec, params, planType, 0)
+			var incomplete *IncompleteRecommendationsError
+			require.ErrorAs(t, err, &incomplete)
+			assert.Equal(t, 1, incomplete.FailedDetails)
+			require.Len(t, recs, 1)
+			assert.Equal(t, 90.0, recs[0].RecommendedUtilization)
+		})
+	}
+	t.Run("nil stays a kept rec with no signal", func(t *testing.T) {
+		spRec := &types.SavingsPlansPurchaseRecommendation{SavingsPlansPurchaseRecommendationDetails: []types.SavingsPlansPurchaseRecommendationDetail{detail(nil)}}
+		recs, err := (&Client{}).parseSavingsPlansRecommendations(spRec, params, planType, 0)
+		require.NoError(t, err)
+		require.Len(t, recs, 1)
+		assert.Zero(t, recs[0].RecommendedUtilization)
 	})
 }
