@@ -81,9 +81,10 @@ func parseOptionalFloat(field string, s *string) (float64, error) {
 
 // parseOptionalFloatOrWarn parses a *string as float64 but treats present-but-
 // unparseable as a non-fatal warning (logs and returns 0). Use ONLY for
-// non-money fields (utilization percentages, averages) where a bad value
-// degrades gracefully. For money fields use parseOptionalFloat and propagate
-// the error.
+// display-only fields (savings percentage, RI AverageUtilization, SP on-demand
+// spend) where a bad value degrades gracefully. Money fields and any value a
+// sizing path reads (average instances used, SP estimated utilization) must use
+// parseOptionalFloat and propagate the error: 0 means "no signal" to sizing.
 func parseOptionalFloatOrWarn(field string, s *string) float64 {
 	val, err := parseOptionalFloat(field, s)
 	if err != nil {
@@ -171,10 +172,14 @@ func (c *Client) parseSavingsPlanDetail(
 	// two-tier treatment (hard error on cost, warn-and-continue on percentages).
 	savingsPercent := parseOptionalFloatOrWarn("EstimatedSavingsPercentage", detail.EstimatedSavingsPercentage)
 	// EstimatedAverageUtilization carries the "if you buy exactly this commitment,
-	// what % of it will AWS expect to be used" signal. Used by --target-coverage
-	// sizing in cmd/helpers.go; zero (nil pointer or parse failure) means "no signal"
-	// and the sizing path leaves the recommendation unchanged.
-	recommendedUtilization := parseOptionalFloatOrWarn("EstimatedAverageUtilization", detail.EstimatedAverageUtilization)
+	// what % of it will AWS expect to be used" signal. It is a sizing input:
+	// --target-coverage treats zero as "no signal" and leaves the recommendation
+	// unsized, so a nil pointer stays 0 but a present-but-invalid value fails the
+	// detail rather than degrading to 0.
+	recommendedUtilization, err := parseOptionalFloat("EstimatedAverageUtilization", detail.EstimatedAverageUtilization)
+	if err != nil {
+		return nil, err
+	}
 	// onDemandCost is the canonical monthly on-demand baseline for this SP
 	// recommendation. AWS Cost Explorer returns the average hourly on-demand
 	// spend over the lookback period in CurrentAverageHourlyOnDemandSpend;
