@@ -92,7 +92,9 @@ func (c *Client) parseRecommendationDetail(ctx context.Context, details *types.R
 	}
 
 	// Parse RI utilization signals used by --target-coverage sizing
-	c.parseRIUtilizationSignals(rec, details)
+	if err := c.parseRIUtilizationSignals(rec, details); err != nil {
+		return nil, fmt.Errorf("failed to parse RI utilization signals: %w", err)
+	}
 
 	// Parse service-specific details
 	if err := c.parseServiceSpecificDetails(ctx, rec, details, params.Service); err != nil {
@@ -108,23 +110,26 @@ func (c *Client) parseRecommendationDetail(ctx context.Context, details *types.R
 }
 
 // parseRIUtilizationSignals populates AverageInstancesUsedPerHour and
-// RecommendedUtilization from the CE response. Both fields are *string in the
-// SDK; nil or unparseable values leave the destination at zero, which the
-// --target-coverage sizing path treats as "no signal" and skips.
-func (c *Client) parseRIUtilizationSignals(rec *common.Recommendation, details *types.ReservationPurchaseRecommendationDetail) {
-	// Route through parseOptionalFloatOrWarn so a non-finite/negative value
-	// (which strconv.ParseFloat accepts / passes through) degrades to 0 rather
-	// than being stored as a live signal. The downstream --target-coverage
-	// guards are all `<= 0`, and NaN <= 0 is false, so a stored NaN would be
-	// treated as a real signal and produce NaN purchase counts.
-	//
-	// The field label carries service/account context so a warning still
-	// identifies which row was corrupt (the pre-refactor inline logs did).
+// RecommendedUtilization from the CE response.
+//
+// AverageNumberOfInstancesUsedPerHour is a sizing input: --target-coverage
+// treats zero as "no signal" and passes the rec through at AWS's full count
+// (and --min-pool-size keeps avg<=0 recs), so a present-but-invalid value
+// (unparsable, non-finite, negative, empty) must fail the detail instead of
+// degrading to 0. A nil field is genuinely absent and stays 0. AverageUtilization
+// is display-only here and degrades to 0 with a warning.
+func (c *Client) parseRIUtilizationSignals(rec *common.Recommendation, details *types.ReservationPurchaseRecommendationDetail) error {
+	// The field label carries service/account context so an error still
+	// identifies which row was corrupt.
 	ctx := fmt.Sprintf("service=%s account=%s", rec.Service, rec.Account)
-	rec.AverageInstancesUsedPerHour = parseOptionalFloatOrWarn(
-		"AverageNumberOfInstancesUsedPerHour ("+ctx+")", details.AverageNumberOfInstancesUsedPerHour)
+	avg, err := parseOptionalFloat("AverageNumberOfInstancesUsedPerHour ("+ctx+")", details.AverageNumberOfInstancesUsedPerHour)
+	if err != nil {
+		return err
+	}
+	rec.AverageInstancesUsedPerHour = avg
 	rec.RecommendedUtilization = parseOptionalFloatOrWarn(
 		"AverageUtilization ("+ctx+")", details.AverageUtilization)
+	return nil
 }
 
 // parseRecommendedQuantity extracts the recommended quantity from details. The
