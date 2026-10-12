@@ -32,6 +32,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **`recommendations.Client.GetSPCommitmentRate`:** commitment dollars per
+  on-demand dollar (r) of the used part of a new Savings Plan, derived from CE
+  purchase recommendations as `(utilization/100) * EstimatedSPCost /
+  (EstimatedSPCost + EstimatedSavingsAmount)` (ratio of sums over matching
+  details). Strict raw-detail parsing; an absent field or no matching detail is
+  `ErrNoSPCommitmentRate`, never a 1:1 fallback. Nothing consumes it yet
+  (go#349, groundwork for converting on-demand ladder sizing to commitment
+  dollars).
+
 - **`recommendations.ApplyFamilyNUSizingRDSWithExpiryOptions`:** the
   rebuy-window RDS family sizing, plus credit for replacements already bought.
   Coverage is a lookback average, so RIs bought inside `CoverageLookbackDays`
