@@ -159,12 +159,12 @@ func populateRecommendationResources(gcpRec *recommenderpb.Recommendation, rec *
 	return extractMemoryMBFromRecommendation(gcpRec, rec)
 }
 
-// errBadPlan marks a recommendation whose commitment plan is malformed,
+// errBadPlan (EXPERIMENTAL plan-term path, see resolveRecTerm) marks a recommendation whose commitment plan is malformed,
 // missing where required, or in conflict with the caller's term. The
 // recommendation is skipped rather than purchased with a guessed term.
 var errBadPlan = errors.New("bad recommendation plan")
 
-// rootCommitmentTerm reads the root Commitment's plan and returns the
+// rootCommitmentTerm (EXPERIMENTAL, unverified payload shape) reads the root Commitment's plan and returns the
 // canonical term ("1yr" or "3yr"). found is false when the root has no plan
 // key. A present but malformed plan returns an error wrapping errBadPlan.
 func rootCommitmentTerm(content *recommenderpb.RecommendationContent) (term string, found bool, err error) {
@@ -219,7 +219,17 @@ func canonicalTerm(term string) string {
 // with it. A root Commitment without a plan needs an explicit params.Term. A
 // payload with no root Commitment keeps the params.Term / "1yr" fallback
 // (issue #291 follow-up).
+//
+// EXPERIMENTAL: the plan path runs only when params.ExperimentalGCPPlanTerm is
+// set. The root-plan payload shape is unverified against a live Recommender.
+// When unset, the pre-#291 behaviour applies: params.Term, default "1yr".
 func resolveRecTerm(gcpRec *recommenderpb.Recommendation, params common.RecommendationParams) (string, error) {
+	if !params.ExperimentalGCPPlanTerm {
+		if params.Term == "" {
+			return "1yr", nil
+		}
+		return params.Term, nil
+	}
 	root, err := selectRootCommitment(gcpRec.GetContent())
 	if err != nil {
 		return "", err

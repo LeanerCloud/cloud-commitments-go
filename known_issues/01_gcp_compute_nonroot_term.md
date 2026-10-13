@@ -15,3 +15,7 @@ to read, so its term still comes from `params.Term`, defaulting to "1yr".
 unverified, and #291 was scoped to the root path. Tracked in #304.
 
 **Status:** Open.
+
+**Experimental gate:** the plan-derived term path is EXPERIMENTAL and off by
+default (`RecommendationParams.ExperimentalGCPPlanTerm`). The root `plan`
+payload shape is unverified against a live Recommender.

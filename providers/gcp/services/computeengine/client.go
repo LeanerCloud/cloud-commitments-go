@@ -1205,6 +1205,9 @@ func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommend
 	if err != nil {
 		return nil, err
 	}
+	if params.ExperimentalGCPPlanTerm {
+		log.Printf("computeengine: EXPERIMENTAL plan-term path: term %q for %q; root plan payload shape is unverified", term, gcpRec.GetName())
+	}
 	if _, err := termPlan(term); err != nil {
 		log.Printf("computeengine: skipping recommendation with unrecognized term %q: %v", term, err)
 		return nil, nil

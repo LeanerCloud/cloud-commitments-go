@@ -39,7 +39,7 @@ func TestRecommendationPlanDrivesPurchaseTerm(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			client, service := planClient(t, rootCUDRecommendationWithPlan("MEMORY_OPTIMIZED_M4_6TB", tc.plan))
-			recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{Term: tc.paramTerm})
+			recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{Term: tc.paramTerm, ExperimentalGCPPlanTerm: true})
 			require.NoError(t, err)
 			require.Len(t, recs, 1)
 			assert.Equal(t, tc.wantTerm, recs[0].Term)
@@ -72,7 +72,7 @@ func TestRecommendationPlanSkips(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			client, service := planClient(t, tc.rec)
-			recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{Term: tc.term})
+			recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{Term: tc.term, ExperimentalGCPPlanTerm: true})
 			require.NoError(t, err)
 			assert.Empty(t, recs)
 			assert.Empty(t, service.insertReqs)
@@ -87,7 +87,7 @@ func TestRecommendationPlanConflictKeepsGoodRecommendation(t *testing.T) {
 	good := rootCUDRecommendationWithPlan("MEMORY_OPTIMIZED_M4_6TB", "THIRTY_SIX_MONTH")
 	good.Name = "good"
 	client, service := planClient(t, bad, good)
-	recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{Term: "3yr"})
+	recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{Term: "3yr", ExperimentalGCPPlanTerm: true})
 	require.NoError(t, err)
 	require.Len(t, recs, 1)
 	assert.Equal(t, "3yr", recs[0].Term)
@@ -110,7 +110,7 @@ func TestExplicitTermIsCanonicalized(t *testing.T) {
 	for _, raw := range []string{"36mo", " 3 ", "3yr"} {
 		for _, plan := range []string{"", "THIRTY_SIX_MONTH"} {
 			client, _ := planClient(t, rootCUDRecommendationWithPlan("MEMORY_OPTIMIZED_M4_6TB", plan))
-			recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{Term: raw})
+			recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{Term: raw, ExperimentalGCPPlanTerm: true})
 			require.NoError(t, err)
 			require.Len(t, recs, 1)
 			assert.Equal(t, "3yr", recs[0].Term, "raw %q plan %q", raw, plan)
@@ -118,4 +118,28 @@ func TestExplicitTermIsCanonicalized(t *testing.T) {
 		}
 	}
 	assert.Equal(t, "3yr", canonicalTerm("36mo"))
+}
+
+// Default (flag off) keeps the pre-#291 behaviour: Term or "1yr", plan ignored,
+// nothing skipped.
+func TestPlanTermOffByDefault(t *testing.T) {
+	cases := []struct {
+		name, plan, paramTerm, wantTerm, wantPlan string
+	}{
+		{"36mo plan, empty term", "THIRTY_SIX_MONTH", "", "1yr", "TWELVE_MONTH"},
+		{"12mo plan, 3yr term (conflict kept)", "TWELVE_MONTH", "3yr", "3yr", "THIRTY_SIX_MONTH"},
+		{"missing plan, no term", "", "", "1yr", "TWELVE_MONTH"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client, service := planClient(t, rootCUDRecommendationWithPlan("MEMORY_OPTIMIZED_M4_6TB", tc.plan))
+			recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{Term: tc.paramTerm})
+			require.NoError(t, err)
+			require.Len(t, recs, 1)
+			assert.Equal(t, tc.wantTerm, recs[0].Term)
+			_, err = client.PurchaseCommitment(context.Background(), recs[0], common.PurchaseOptions{})
+			require.NoError(t, err)
+			assert.Equal(t, tc.wantPlan, service.lastInsertReq.CommitmentResource.GetPlan())
+		})
+	}
 }

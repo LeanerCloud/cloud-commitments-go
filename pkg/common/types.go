@@ -529,6 +529,11 @@ type RecommendationParams struct {
 	// recommendations: "linked" or "payer" (case-insensitive). Empty means
 	// linked. Payer scope only applies to a management account.
 	SPAccountScope string
+	// ExperimentalGCPPlanTerm (GCP Compute Engine only, ignored elsewhere)
+	// takes the CUD term from the recommendation's root Commitment plan
+	// instead of Term. EXPERIMENTAL: the payload shape is unverified against a
+	// live Recommender. Default false keeps Term, defaulting to "1yr".
+	ExperimentalGCPPlanTerm bool
 }
 
 // Account represents a cloud account/subscription/project.
