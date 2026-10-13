@@ -222,7 +222,7 @@ func canonicalTerm(term string) string {
 //
 // EXPERIMENTAL: the plan path runs only when params.ExperimentalGCPPlanTerm is
 // set. The root-plan payload shape is unverified against a live Recommender.
-// When unset, the pre-#291 behaviour applies: params.Term, default "1yr".
+// When unset, the pre-#291 behavior applies: params.Term, default "1yr".
 func resolveRecTerm(gcpRec *recommenderpb.Recommendation, params common.RecommendationParams) (string, error) {
 	if !params.ExperimentalGCPPlanTerm {
 		if params.Term == "" {

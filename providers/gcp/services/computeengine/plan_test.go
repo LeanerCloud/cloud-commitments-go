@@ -120,7 +120,7 @@ func TestExplicitTermIsCanonicalized(t *testing.T) {
 	assert.Equal(t, "3yr", canonicalTerm("36mo"))
 }
 
-// Default (flag off) keeps the pre-#291 behaviour: Term or "1yr", plan ignored,
+// Default (flag off) keeps the pre-#291 behavior: Term or "1yr", plan ignored,
 // nothing skipped.
 func TestPlanTermOffByDefault(t *testing.T) {
 	cases := []struct {
