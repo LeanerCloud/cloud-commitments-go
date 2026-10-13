@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	compute "cloud.google.com/go/compute/apiv1"
@@ -30,7 +31,6 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/retry"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skulist"
-	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skumatch"
 )
 
 // maxRecsPages caps GCP Recommender API iteration to avoid burning a Lambda
@@ -268,6 +268,9 @@ type Client struct {
 	machineTypesService MachineTypesService
 	billingService      BillingService
 	recommenderClient   RecommenderClient
+
+	skuMu    sync.Mutex
+	skuCache []*cloudbilling.Sku
 }
 
 // NewClient creates a new GCP Compute Engine client.
@@ -293,6 +296,9 @@ func (c *Client) SetMachineTypesService(svc MachineTypesService) {
 // SetBillingService sets the billing service (for testing).
 func (c *Client) SetBillingService(svc BillingService) {
 	c.billingService = svc
+	c.skuMu.Lock()
+	c.skuCache = nil
+	c.skuMu.Unlock()
 }
 
 // SetRecommenderClient sets the recommender client (for testing).
@@ -971,7 +977,11 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 		termYears = 3
 	}
 
-	pricing, err := c.getComputePricing(ctx, rec.ResourceType, c.region, termYears)
+	res, err := resourcesFromRecommendation(rec)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pricing: %w", err)
+	}
+	pricing, err := c.getComputePricing(ctx, rec.ResourceType, c.region, termYears, res)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pricing: %w", err)
 	}
@@ -1053,52 +1063,6 @@ func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	return machineTypes, nil
 }
 
-// ComputePricing contains pricing information for Compute Engine.
-type ComputePricing struct {
-	HourlyRate        float64
-	CommitmentPrice   float64
-	OnDemandPrice     float64
-	Currency          string
-	SavingsPercentage float64
-}
-
-// getComputePricing gets pricing from GCP Cloud Billing Catalog API.
-// It returns an error when commitment pricing is absent from the catalog rather
-// than fabricating a price from a hardcoded discount factor (issue #1020).
-func (c *Client) getComputePricing(ctx context.Context, machineType, region string, termYears int) (*ComputePricing, error) {
-	svc, err := c.getOrCreateBillingService(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	skus, err := svc.ListSKUs("services/6F81-5844-456A")
-	if err != nil {
-		return nil, fmt.Errorf("failed to list SKUs: %w", err)
-	}
-
-	onDemandPrice, commitmentPrice, currency, err := extractComputePricingFromSKUs(skus.Skus, machineType, region)
-	if err != nil {
-		return nil, err
-	}
-	if onDemandPrice == 0 {
-		return nil, fmt.Errorf("no on-demand pricing found for machine type %s", machineType)
-	}
-	if commitmentPrice == 0 {
-		return nil, fmt.Errorf("no commitment pricing found for machine type %s in region %s: catalog has no CUD SKU; cannot compute savings percentage", machineType, region)
-	}
-
-	hoursInTerm := 8760.0 * float64(termYears)
-	savingsPercentage := calculateComputeSavingsPercentage(onDemandPrice, hoursInTerm, commitmentPrice)
-
-	return &ComputePricing{
-		HourlyRate:        commitmentPrice / hoursInTerm,
-		CommitmentPrice:   commitmentPrice,
-		OnDemandPrice:     onDemandPrice * hoursInTerm,
-		Currency:          currency,
-		SavingsPercentage: savingsPercentage,
-	}, nil
-}
-
 // getOrCreateBillingService returns the billing service, creating it if needed.
 func (c *Client) getOrCreateBillingService(ctx context.Context) (BillingService, error) {
 	if c.billingService != nil {
@@ -1113,73 +1077,9 @@ func (c *Client) getOrCreateBillingService(ctx context.Context) (BillingService,
 	return &realBillingService{ctx: ctx, service: service}, nil
 }
 
-// extractComputePricingFromSKUs extracts on-demand and commitment pricing from SKU list.
-func extractComputePricingFromSKUs(skus []*cloudbilling.Sku, machineType, region string) (onDemand, commitment float64, currency string, err error) {
-	currency = "USD"
-
-	for _, sku := range skus {
-		if !skuMatchesMachineType(sku, machineType, region) {
-			continue
-		}
-
-		price, curr := extractComputePriceFromSKU(sku)
-		if price == 0 {
-			continue
-		}
-
-		if curr != "" {
-			currency = curr
-		}
-
-		slot, slotErr := skumatch.Slot(sku)
-		if slotErr != nil {
-			return 0, 0, "", slotErr
-		}
-		switch slot {
-		case skumatch.SlotCommitment:
-			commitment = price
-		case skumatch.SlotOnDemand:
-			onDemand = price
-		}
-	}
-
-	return onDemand, commitment, currency, nil
-}
-
-// extractComputePriceFromSKU extracts the unit price from a SKU.
-func extractComputePriceFromSKU(sku *cloudbilling.Sku) (price float64, currency string) {
-	if len(sku.PricingInfo) == 0 {
-		return 0, ""
-	}
-
-	pricingInfo := sku.PricingInfo[0]
-	if pricingInfo.PricingExpression == nil || len(pricingInfo.PricingExpression.TieredRates) == 0 {
-		return 0, ""
-	}
-
-	rate := pricingInfo.PricingExpression.TieredRates[0]
-	if rate.UnitPrice == nil {
-		return 0, ""
-	}
-
-	price = float64(rate.UnitPrice.Units) + float64(rate.UnitPrice.Nanos)/1e9
-	return price, rate.UnitPrice.CurrencyCode
-}
-
-// calculateComputeSavingsPercentage calculates the savings percentage.
-func calculateComputeSavingsPercentage(onDemandPrice, hoursInTerm, commitmentPrice float64) float64 {
-	onDemandTotal := onDemandPrice * hoursInTerm
-	return ((onDemandTotal - commitmentPrice) / onDemandTotal) * 100
-}
-
-// skuMatchesMachineType checks if a SKU matches the machine type and region.
-func skuMatchesMachineType(sku *cloudbilling.Sku, machineType, region string) bool {
-	return skumatch.HasToken(sku.Description, machineType) && skumatch.InRegion(sku, region)
-}
-
 // convertGCPRecommendation converts a GCP Recommender recommendation to common format.
-// It also calls getComputePricing to fill CommitmentCost/OnDemandCost/SavingsPercentage/
-// BreakEvenMonths so the scorer can filter and rank GCP recommendations correctly
+// It also calls getComputePricing to fill RecurringMonthlyCost/OnDemandCost/SavingsPercentage
+// so the scorer can filter and rank GCP recommendations correctly
 // (issue #1022 C2). Pricing failures are logged but do not discard the recommendation:
 // EstimatedSavings from the Recommender payload is the authoritative savings signal.
 // The term comes from the root Commitment plan when present (issue #291); an
@@ -1236,51 +1136,38 @@ func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommend
 
 	c.enrichRecWithPricing(ctx, rec)
 
-	// GCP Compute CUDs are monthly-payment commitments (PaymentOption is forced
-	// to "monthly" above), so the per-month charge is CommitmentCost /
-	// termMonths. enrichRecWithPricing performs the single billing lookup and
-	// populates CommitmentCost; reuse it here rather than issuing a second call.
-	// When the billing lookup failed CommitmentCost stays 0 and we leave
-	// RecurringMonthlyCost nil (unknown) so the frontend renders "—" rather than
-	// an incorrect explicit "$0" (nil means unavailable, 0 means known-zero fee).
-	if rec.CommitmentCost > 0 {
-		termYears := termYearsFromTerm(rec.Term)
-		monthly := rec.CommitmentCost / float64(termYears*12)
-		rec.RecurringMonthlyCost = &monthly
-	}
-
 	return rec, nil
 }
 
-// enrichRecWithPricing fills CommitmentCost, OnDemandCost, SavingsPercentage,
-// and BreakEvenMonths on rec by querying the billing catalog. Extracted from
-// convertGCPRecommendation to keep that function's cyclomatic complexity under
-// the gocyclo gate. A missing or invalid pricing entry is logged but does not
-// discard the recommendation -- the Recommender-derived EstimatedSavings is
-// still the authoritative savings signal (issue #1022 C2).
+// enrichRecWithPricing fills OnDemandCost, SavingsPercentage and
+// RecurringMonthlyCost on rec from the billing catalog. The recommendation is a
+// monthly CUD with no upfront payment, so CommitmentCost (the upfront amount)
+// stays 0 and the committed price is the monthly recurring cost. OnDemandCost is
+// the monthly on-demand price of the same resources, like the AWS and Azure
+// providers and the platform baseline. A missing or invalid pricing entry is logged
+// and leaves RecurringMonthlyCost nil (unknown, not zero) without discarding the
+// recommendation: the Recommender EstimatedSavings is still the authoritative
+// savings signal (issue #1022 C2).
 func (c *Client) enrichRecWithPricing(ctx context.Context, rec *common.Recommendation) {
 	if rec.ResourceType == "" {
 		return
 	}
 	termYears := termYearsFromTerm(rec.Term)
-	pricing, err := c.getComputePricing(ctx, rec.ResourceType, c.region, termYears)
+	res, err := resourcesFromRecommendation(*rec)
+	if err != nil {
+		log.Printf("computeengine: pricing unavailable for %s in %s: %v", rec.ResourceType, c.region, err)
+		return
+	}
+	pricing, err := c.getComputePricing(ctx, rec.ResourceType, c.region, termYears, res)
 	if err != nil {
 		log.Printf("computeengine: pricing unavailable for %s in %s (issue #1020): %v", rec.ResourceType, c.region, err)
 		return
 	}
-	rec.CommitmentCost = pricing.CommitmentPrice
-	rec.OnDemandCost = pricing.OnDemandPrice
+	termMonths := float64(termYears * 12)
+	monthly := pricing.CommitmentPrice / termMonths
+	rec.RecurringMonthlyCost = &monthly
+	rec.OnDemandCost = pricing.OnDemandPrice / termMonths
 	rec.SavingsPercentage = pricing.SavingsPercentage
-	// BreakEvenMonths: months of accrued savings required to cover the
-	// commitment cost (conservative: treats the whole period cost as sunk,
-	// which is accurate for all-upfront and overestimates for monthly CUDs).
-	// monthlySavings = monthly spend difference between on-demand and CUD.
-	if pricing.OnDemandPrice > 0 && pricing.SavingsPercentage > 0 {
-		monthlySavings := pricing.OnDemandPrice * pricing.SavingsPercentage / 100.0 / float64(termYears*12)
-		if monthlySavings > 0 {
-			rec.BreakEvenMonths = pricing.CommitmentPrice / monthlySavings
-		}
-	}
 }
 
 // machineTypePathSegment precedes the machine type in a GCP resource path, e.g.

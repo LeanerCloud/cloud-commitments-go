@@ -345,90 +345,6 @@ func TestComputeEngineClient_GetRegion(t *testing.T) {
 	}
 }
 
-func TestSkuMatchesMachineType(t *testing.T) {
-	tests := []struct {
-		name        string
-		sku         *cloudbilling.Sku
-		machineType string
-		region      string
-		expected    bool
-	}{
-		{
-			name: "SKU matches machine type and region",
-			sku: &cloudbilling.Sku{
-				Description:    "n1-standard-1 VM running in Americas",
-				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
-				ServiceRegions: []string{"us-central1"},
-			},
-			machineType: "n1-standard-1",
-			region:      "us-central1",
-			expected:    true,
-		},
-		{
-			name: "SKU matches machine type but not region",
-			sku: &cloudbilling.Sku{
-				Description:    "n1-standard-1 VM running in Europe",
-				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
-				ServiceRegions: []string{"europe-west1"},
-			},
-			machineType: "n1-standard-1",
-			region:      "us-central1",
-			expected:    false,
-		},
-		{
-			name: "SKU does not match machine type",
-			sku: &cloudbilling.Sku{
-				Description:    "n2-highmem-4 VM running in Americas",
-				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
-				ServiceRegions: []string{"us-central1"},
-			},
-			machineType: "n1-standard-1",
-			region:      "us-central1",
-			expected:    false,
-		},
-		{
-			name: "SKU with nil service regions matches no region",
-			sku: &cloudbilling.Sku{
-				Description:    "n1-standard-1 VM",
-				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
-				ServiceRegions: nil,
-			},
-			machineType: "n1-standard-1",
-			region:      "us-central1",
-			expected:    false,
-		},
-		{
-			name: "SKU for a longer machine type that starts with the same text is a decoy",
-			sku: &cloudbilling.Sku{
-				Description:    "n1-standard-16 VM running in Americas",
-				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
-				ServiceRegions: []string{"us-central1"},
-			},
-			machineType: "n1-standard-1",
-			region:      "us-central1",
-			expected:    false,
-		},
-		{
-			name: "Case insensitive machine type match",
-			sku: &cloudbilling.Sku{
-				Description:    "N1-STANDARD-1 VM running in Americas",
-				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
-				ServiceRegions: []string{"us-central1"},
-			},
-			machineType: "n1-standard-1",
-			region:      "us-central1",
-			expected:    true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := skuMatchesMachineType(tt.sku, tt.machineType, tt.region)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
 func TestComputePricingStructure(t *testing.T) {
 	pricing := ComputePricing{
 		HourlyRate:        0.10,
@@ -1076,69 +992,24 @@ func TestComputeEngineClient_PurchaseCommitment_WaitError(t *testing.T) {
 func TestComputeEngineClient_GetOfferingDetails_WithMock(t *testing.T) {
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	// Both on-demand and commitment SKUs are required; without a commitment SKU
-	// getComputePricing now returns an error (issue #1020 fix).
-	mockService := &MockBillingService{
-		skus: &cloudbilling.ListSkusResponse{
-			Skus: []*cloudbilling.Sku{
-				{
-					Description:    "n1-standard-1 VM running in Americas",
-					Category:       &cloudbilling.Category{UsageType: "OnDemand"},
-					ServiceRegions: []string{"us-central1"},
-					PricingInfo: []*cloudbilling.PricingInfo{
-						{
-							PricingExpression: &cloudbilling.PricingExpression{
-								TieredRates: []*cloudbilling.TierRate{
-									{
-										UnitPrice: &cloudbilling.Money{
-											Units:        0,
-											Nanos:        50000000,
-											CurrencyCode: "USD",
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-				{
-					Description:    "n1-standard-1 commitment 1yr in Americas",
-					Category:       &cloudbilling.Category{UsageType: "Commit1Yr"},
-					ServiceRegions: []string{"us-central1"},
-					PricingInfo: []*cloudbilling.PricingInfo{
-						{
-							PricingExpression: &cloudbilling.PricingExpression{
-								TieredRates: []*cloudbilling.TierRate{
-									{
-										UnitPrice: &cloudbilling.Money{
-											Units:        0,
-											Nanos:        32000000,
-											CurrencyCode: "USD",
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	client.SetBillingService(mockService)
+	client.SetBillingService(mockBillingWithCommitment())
 
 	rec := common.Recommendation{
-		ResourceType:  "n1-standard-1",
+		ResourceType:  "n1-standard-4",
 		Term:          "1yr",
-		PaymentOption: "upfront",
+		PaymentOption: "monthly",
+		Count:         4,
+		Details:       common.ComputeDetails{MemoryGB: 15},
 	}
 
 	details, err := client.GetOfferingDetails(ctx, rec)
 	require.NoError(t, err)
-	assert.Equal(t, "n1-standard-1", details.ResourceType)
+	assert.Equal(t, "n1-standard-4", details.ResourceType)
 	assert.Equal(t, "1yr", details.Term)
 	assert.Equal(t, "USD", details.Currency)
-	assert.Greater(t, details.TotalCost, float64(0))
+	// (4 vCPU * 0.019915 + 15 GiB * 0.002669) per hour over 8760 h.
+	assert.InDelta(t, (4*0.019915+15*0.002669)*8760, details.TotalCost, 1e-6)
+	assert.InDelta(t, details.TotalCost/12, details.RecurringCost, 1e-6)
 }
 
 func TestComputeEngineClient_GetOfferingDetails_NoPricing(t *testing.T) {
@@ -1152,11 +1023,11 @@ func TestComputeEngineClient_GetOfferingDetails_NoPricing(t *testing.T) {
 	}
 	client.SetBillingService(mockService)
 
-	rec := common.Recommendation{ResourceType: "n1-standard-1"}
+	rec := common.Recommendation{ResourceType: "n1-standard-1", Count: 1, Details: common.ComputeDetails{MemoryGB: 3.75}}
 
 	_, err := client.GetOfferingDetails(ctx, rec)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "no on-demand pricing found")
+	assert.Contains(t, err.Error(), "no on-demand core and RAM pricing found")
 }
 
 func TestComputeEngineClient_GetRecommendations_WithMock(t *testing.T) {
@@ -1308,8 +1179,8 @@ func TestComputeEngineClient_ConvertGCPRecommendation(t *testing.T) {
 	assert.Equal(t, 50.5, rec.EstimatedSavings)
 	assert.Equal(t, "monthly", rec.PaymentOption,
 		`GCP CUDs are billed monthly; PaymentOption must match ValidPaymentOptionsByProvider["gcp"]`)
-	// GCP Compute CUDs are monthly-billed and RecurringMonthlyCost is derived
-	// from CommitmentCost. No billing service is injected here, so the pricing
+	// GCP Compute CUDs are monthly-billed and RecurringMonthlyCost is priced from
+	// the billing catalog. No billing service is injected here, so the pricing
 	// lookup fails and the field stays nil (unknown) rather than an incorrect
 	// explicit 0 (nil means unavailable, 0 means a known-zero recurring fee).
 	assert.Nil(t, rec.RecurringMonthlyCost)
@@ -1392,55 +1263,11 @@ func realisticCUDRecommendation() *recommenderpb.Recommendation {
 	}
 }
 
-// mockBillingWithCommitment returns a MockBillingService that has both an
-// on-demand SKU and a commitment SKU for n1-standard machines in us-central1.
+// mockBillingWithCommitment returns the live-catalog-shaped N1 core and RAM SKUs
+// (on demand and 1-year commitment, us-central1) that the n1-standard-4 fixtures
+// are priced against.
 func mockBillingWithCommitment() *MockBillingService {
-	return &MockBillingService{
-		skus: &cloudbilling.ListSkusResponse{
-			Skus: []*cloudbilling.Sku{
-				{
-					Description:    "n1-standard-4 VM running in Americas",
-					Category:       &cloudbilling.Category{UsageType: "OnDemand"},
-					ServiceRegions: []string{"us-central1"},
-					PricingInfo: []*cloudbilling.PricingInfo{
-						{
-							PricingExpression: &cloudbilling.PricingExpression{
-								TieredRates: []*cloudbilling.TierRate{
-									{
-										UnitPrice: &cloudbilling.Money{
-											Units:        0,
-											Nanos:        190000000,
-											CurrencyCode: "USD",
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-				{
-					Description:    "n1-standard-4 commitment 1yr in Americas",
-					Category:       &cloudbilling.Category{UsageType: "Commit1Yr"},
-					ServiceRegions: []string{"us-central1"},
-					PricingInfo: []*cloudbilling.PricingInfo{
-						{
-							PricingExpression: &cloudbilling.PricingExpression{
-								TieredRates: []*cloudbilling.TierRate{
-									{
-										UnitPrice: &cloudbilling.Money{
-											Units:        0,
-											Nanos:        120000000,
-											CurrencyCode: "USD",
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
+	return &MockBillingService{skus: &cloudbilling.ListSkusResponse{Skus: n1Americas1YrSKUs()}}
 }
 
 // TestConverterToInsert_CountNonZero_VCPUAmountSet is the primary regression test
@@ -1521,7 +1348,11 @@ func TestConverterFillsPricingForScorer(t *testing.T) {
 	// C2: SavingsPercentage must be > 0 so a MinSavingsPct filter doesn't silently drop the rec.
 	require.Greater(t, rec.SavingsPercentage, float64(0),
 		"convertGCPRecommendation must set SavingsPercentage > 0 from billing pricing (issue #1022 C2)")
-	assert.Greater(t, rec.CommitmentCost, float64(0), "CommitmentCost must be > 0")
+	assert.Zero(t, rec.CommitmentCost, "a monthly CUD has no upfront payment, so CommitmentCost is 0 (platform computes upfront + monthly x term)")
+	require.NotNil(t, rec.RecurringMonthlyCost)
+	// 4 vCPU and 6 GiB at the 1-year N1 commitment rates, per month.
+	assert.InDelta(t, (4*0.019915+6*0.002669)*8760/12, *rec.RecurringMonthlyCost, 1e-6)
+	assert.Zero(t, rec.BreakEvenMonths, "no upfront payment, so there is nothing to break even on")
 	assert.Greater(t, rec.OnDemandCost, float64(0), "OnDemandCost must be > 0")
 
 	// Apply a non-trivial MinSavingsPct filter and confirm the rec passes.
@@ -1567,35 +1398,12 @@ func TestGetComputePricing_NoCommitmentSKUReturnsError(t *testing.T) {
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
-	// Only on-demand SKU -- no commitment SKU.
+	// Only the on-demand SKUs -- no commitment SKU.
 	client.SetBillingService(&MockBillingService{
-		skus: &cloudbilling.ListSkusResponse{
-			Skus: []*cloudbilling.Sku{
-				{
-					Description:    "n1-standard-4 VM running in Americas",
-					Category:       &cloudbilling.Category{UsageType: "OnDemand"},
-					ServiceRegions: []string{"us-central1"},
-					PricingInfo: []*cloudbilling.PricingInfo{
-						{
-							PricingExpression: &cloudbilling.PricingExpression{
-								TieredRates: []*cloudbilling.TierRate{
-									{
-										UnitPrice: &cloudbilling.Money{
-											Units:        0,
-											Nanos:        190000000,
-											CurrencyCode: "USD",
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
+		skus: &cloudbilling.ListSkusResponse{Skus: n1Americas1YrSKUs()[:2]},
 	})
 
-	pricing, err := client.getComputePricing(ctx, "n1-standard-4", "us-central1", 1)
+	pricing, err := client.getComputePricing(ctx, "n1-standard-4", "us-central1", 1, computeResources{vcpus: 4, memoryGiB: 15})
 	require.Error(t, err, "getComputePricing must return an error when no commitment SKU exists (issue #1020)")
 	assert.Contains(t, err.Error(), "no commitment pricing found")
 	assert.Nil(t, pricing, "no pricing struct must be returned when commitment SKU is missing")
