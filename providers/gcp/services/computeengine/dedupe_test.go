@@ -18,12 +18,22 @@ import (
 
 // Schema fixture, not a captured service response.
 func rootCUDRecommendation(kind string) *recommenderpb.Recommendation {
-	value, _ := structpb.NewStruct(map[string]any{
+	return rootCUDRecommendationWithPlan(kind, "TWELVE_MONTH")
+}
+
+// rootCUDRecommendationWithPlan builds the fixture with the given root plan;
+// an empty plan omits the key.
+func rootCUDRecommendationWithPlan(kind, plan string) *recommenderpb.Recommendation {
+	fields := map[string]any{
 		"type": kind, "resources": []any{
 			map[string]any{"type": "MEMORY", "amount": "6291456"},
 			map[string]any{"type": "VCPU", "amount": "480"},
 		},
-	})
+	}
+	if plan != "" {
+		fields["plan"] = plan
+	}
+	value, _ := structpb.NewStruct(fields)
 	return &recommenderpb.Recommendation{
 		StateInfo: &recommenderpb.RecommendationStateInfo{State: recommenderpb.RecommendationStateInfo_ACTIVE},
 		Content: &recommenderpb.RecommendationContent{OperationGroups: []*recommenderpb.OperationGroup{{Operations: []*recommenderpb.Operation{{
