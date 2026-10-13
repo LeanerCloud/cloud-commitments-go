@@ -30,6 +30,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/retry"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skulist"
 )
 
 // maxRecsPages caps GCP Recommender API iteration to avoid burning a Lambda
@@ -341,12 +342,22 @@ func (r *realMachineTypesService) Close() error {
 
 // realBillingService wraps the real cloudbilling.APIService.
 type realBillingService struct {
+	ctx     context.Context
 	service *cloudbilling.APIService
 }
 
+// ListSKUs returns every SKU of the service: the Compute Engine catalog is
+// 33,453 SKUs over 7 pages of 5000, so a single call misses most of it.
 func (r *realBillingService) ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error) {
-	return r.service.Services.Skus.List(serviceID).Do()
+	skus, err := skulist.All(r.ctx, r.service.Services.Skus.List(serviceID).PageSize(skuPageSize), skulist.DefaultMaxPages)
+	if err != nil {
+		return nil, fmt.Errorf("computeengine: list SKUs for %s: %w", serviceID, err)
+	}
+	return &cloudbilling.ListSkusResponse{Skus: skus}, nil
 }
+
+// skuPageSize is the largest page the catalog serves.
+const skuPageSize = 5000
 
 // realRecommenderIterator wraps the real recommender iterator.
 type realRecommenderIterator struct {
@@ -1063,7 +1074,7 @@ func (c *Client) getOrCreateBillingService(ctx context.Context) (BillingService,
 		return nil, fmt.Errorf("failed to create billing service: %w", err)
 	}
 
-	return &realBillingService{service: service}, nil
+	return &realBillingService{ctx: ctx, service: service}, nil
 }
 
 // convertGCPRecommendation converts a GCP Recommender recommendation to common format.
