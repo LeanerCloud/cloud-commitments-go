@@ -106,6 +106,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **BREAKING `ladder.Allocate` converts the on-demand-equivalent gap to
+  commitment dollars (go#349).** Tranches were bought 1:1 against an
+  on-demand-priced gap, over-buying by 1/rate (a 30% discount bought 43% too
+  much). `AllocationInput.InFlightUSDPerHour *float64` is replaced by
+  `InFlight []InFlightTranche` (commitment USD/hr plus the rate stored with
+  each tranche, netted as commitment/rate) and a required `CommitmentRates`
+  map (a partial map is fine: a layer that receives an allocation without a
+  rate is held, never bought 1:1; a rate outside (0, 1] or non-finite is an
+  error). `Allocation.GapUSDPerHour` is now commitment USD/hr, with
+  `OnDemandEquivalentUSDPerHour` and `Rate` alongside; the per-run cap applies
+  to commitment dollars. The base split now also counts in-flight base
+  commitment against the stable level. `BuildTranches` rejects an `Allocation`
+  without a rate in (0, 1] and stamps it on `Tranche.CommitmentRate`. The
+  amounts are exact; the purchase boundary must round commitment DOWN.
+  Tranches persisted before this change are in the old unit and carry no
+  rate. Consumer: the platform's `internal/server/handler_ladder.go` only.
+
 - **BREAKING `ladder.TrancheResult.BuyNow` removed; `BuildTranches` now emits a
   `Tranche` for every ramp step, including `AfterDays == 0`** (its `FireAfter`
   equals `TrancheInput.Now`). The immediate step was returned as a `BuyNow`

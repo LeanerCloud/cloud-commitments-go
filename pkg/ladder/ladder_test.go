@@ -77,6 +77,7 @@ func mkAlloc(layer LayerType, gapUSD int64) Allocation {
 	return Allocation{
 		Layer:         layer,
 		GapUSDPerHour: new(big.Rat).SetInt64(gapUSD),
+		Rate:          big.NewRat(1, 1),
 		Rationale:     fmt.Sprintf("test rationale for %s", layer),
 		DataSources:   []string{"test-source"},
 	}
@@ -157,6 +158,7 @@ func TestBuildTranches_ThreeStepRamp(t *testing.T) {
 		{
 			Layer:         LayerComputeSP,
 			GapUSDPerHour: gap,
+			Rate:          big.NewRat(1, 1),
 			Rationale:     "flex layer gap",
 			DataSources:   []string{"cost-explorer"},
 		},
@@ -218,6 +220,7 @@ func TestBuildTranches_FullyDelayedRamp(t *testing.T) {
 		{
 			Layer:         LayerComputeSP,
 			GapUSDPerHour: gap,
+			Rate:          big.NewRat(1, 1),
 			Rationale:     "delayed ramp test",
 			DataSources:   []string{"cost-explorer"},
 		},
@@ -254,6 +257,7 @@ func TestBuildTranches_SingleStep(t *testing.T) {
 		{
 			Layer:         LayerComputeSP,
 			GapUSDPerHour: gap,
+			Rate:          big.NewRat(1, 1),
 			Rationale:     "single step test",
 			DataSources:   []string{"cost-explorer"},
 		},
@@ -376,6 +380,7 @@ func TestBuildTranches_InexactFractionRemainder(t *testing.T) {
 		{
 			Layer:         LayerComputeSP,
 			GapUSDPerHour: gap,
+			Rate:          big.NewRat(1, 1),
 			Rationale:     "inexact fraction test",
 			DataSources:   []string{"test"},
 		},
@@ -419,6 +424,7 @@ func TestBuildTranches_TinyGapExactness(t *testing.T) {
 		{
 			Layer:         LayerComputeSP,
 			GapUSDPerHour: gap,
+			Rate:          big.NewRat(1, 1),
 			Rationale:     "tiny gap test",
 			DataSources:   []string{"test"},
 		},
@@ -766,6 +772,7 @@ func TestBuildTranches_EpsilonOvershootClamped(t *testing.T) {
 		{
 			Layer:         LayerComputeSP,
 			GapUSDPerHour: gap,
+			Rate:          big.NewRat(1, 1),
 			Rationale:     "epsilon overshoot test",
 			DataSources:   []string{"test"},
 		},

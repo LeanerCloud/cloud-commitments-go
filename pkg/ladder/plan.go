@@ -16,7 +16,8 @@ import (
 type PlannedAction struct {
 	Action ActionType
 	Layer  LayerType
-	// AmountUSDPerHour is the hourly commitment delta. It must be non-nil and
+	// AmountUSDPerHour is the hourly commitment delta in commitment USD/hr
+	// (not on-demand-equivalent). It must be non-nil and
 	// positive for ActionPurchase, and must be nil for ActionHold and
 	// ActionReshape (whose financial impact is implicit in the underlying
 	// exchange operation).

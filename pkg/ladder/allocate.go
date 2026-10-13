@@ -35,19 +35,27 @@ func minAllocatableGap() *big.Rat {
 // and causes Allocate to return an error (fail loud: incomplete provider data
 // aborts the run).
 //
-// InFlightUSDPerHour is the hourly commitment already in flight for this
-// config's scope: the sum of its scheduled (not-yet-fired) ladder tranches
-// ONLY. Fired/completed tranches are deliberately excluded because they are
-// executed purchases already reflected in each layer's ExistingUSDPerHour;
-// counting them here as well would double-subtract and under-purchase. Its
-// unit is the gap's: on-demand-equivalent USD/hr until the OD-to-commitment
-// conversion lands in Allocate (go#349), commitment USD/hr after. It is
-// required non-nil (fail loud) so callers must always explicitly account for
-// in-flight commitment. A genuinely zero in-flight must be passed as a pointer
-// to 0.0, not nil. Subtracting in-flight from the gap prevents new runs from
-// re-planning commitment that is already scheduled, eliminating the pile-up
-// that occurs when multiple daily runs each see the full gap before prior
-// scheduled tranches fire.
+// Units (go#349): Baseline, LayerStates and the gap are on-demand-equivalent
+// (OD) USD/hr. InFlight and everything Allocate returns as GapUSDPerHour are
+// commitment USD/hr (what is actually bought). CommitmentRates bridges them.
+//
+// InFlight is the commitment already in flight for this config's scope: its
+// scheduled (not-yet-fired) ladder tranches ONLY, each with the rate stored
+// when it was planned. Fired/completed tranches are deliberately excluded
+// because they are executed purchases already reflected in each layer's
+// ExistingUSDPerHour; counting them here as well would double-subtract and
+// under-purchase. Allocate converts each tranche back to OD (commitment /
+// rate) before netting, so an OD figure and a commitment figure are never
+// mixed. It is required non-nil (fail loud): callers must always explicitly
+// account for in-flight commitment; pass an empty non-nil slice for none.
+// Subtracting in-flight from the gap prevents new runs from re-planning
+// commitment that is already scheduled.
+//
+// CommitmentRates holds, per layer, the commitment dollars needed per OD
+// dollar covered for a NEW purchase (in (0, 1]). It is required non-nil and
+// may be partial: a layer that would receive an allocation but has no rate is
+// held with an explanation (never bought 1:1, never re-routed to another
+// layer). A present value outside (0, 1] or non-finite is an error.
 //
 // DataSources lists the data feeds (e.g. "cost-explorer", "cloudwatch") used
 // to derive the inputs. The slice is propagated verbatim to every Allocation
@@ -56,24 +64,33 @@ func minAllocatableGap() *big.Rat {
 //
 // Now must be set by the caller; Allocate never calls time.Now internally.
 type AllocationInput struct {
-	Now                time.Time
-	LayerStates        map[LayerType]LayerState
-	Layers             []LayerSpec
-	DataSources        []string
-	Baseline           UsageBaseline
-	Config             LadderConfig
-	InFlightUSDPerHour *float64
+	Now             time.Time
+	LayerStates     map[LayerType]LayerState
+	Layers          []LayerSpec
+	DataSources     []string
+	Baseline        UsageBaseline
+	Config          LadderConfig
+	InFlight        []InFlightTranche
+	CommitmentRates map[LayerType]float64
 }
 
-// Allocation is a per-layer sizing decision produced by Allocate. The
-// GapUSDPerHour field carries the positive hourly commitment delta this layer
-// should grow by. Ramp and tranche logic (PR 3) converts Allocations into
-// time-indexed purchase tranches.
+// Allocation is a per-layer sizing decision produced by Allocate.
+// GapUSDPerHour is the positive hourly COMMITMENT delta this layer should grow
+// by (what is bought and stored in tranches); it equals
+// OnDemandEquivalentUSDPerHour * Rate, exactly. The purchase boundary must
+// round it DOWN to the provider's commitment precision, never up. Ramp and
+// tranche logic (BuildTranches) converts Allocations into time-indexed
+// purchase tranches.
 type Allocation struct {
 	Layer         LayerType
 	GapUSDPerHour *big.Rat
-	Rationale     string
-	DataSources   []string
+	// OnDemandEquivalentUSDPerHour is the on-demand-priced usage this
+	// commitment covers; the unit of target/existing/gap in plan displays.
+	OnDemandEquivalentUSDPerHour *big.Rat
+	// Rate is the commitment rate applied (commitment per OD dollar), in (0, 1].
+	Rate        *big.Rat
+	Rationale   string
+	DataSources []string
 }
 
 // AllocateResult is the output of Allocate.
@@ -115,9 +132,12 @@ func (r *AllocateResult) IsNoOp() bool {
 //  4. Compute net existing per layer; derive gap.
 //  5. Gap <= minimum threshold -> Hold with numbers in rationale, plus any
 //     buffer maintenance from step 2.
-//  6. Split gap across base, flex, and buffer roles.
-//  7. Apply per-run spend cap (proportional scaling), then drop sub-minimum
-//     allocations with an informational hold each (never silently lost).
+//  6. Split the OD gap across base, flex, and buffer roles, then convert each
+//     allocation to commitment dollars with its layer's rate (a layer without
+//     a rate is held, never bought 1:1).
+//  7. Apply per-run spend cap (proportional scaling, in commitment dollars),
+//     then drop sub-minimum allocations with an informational hold each
+//     (never silently lost).
 //  8. Truncate to MaxActionsPerRun: sort purchases by GapUSDPerHour descending,
 //     keep the largest, emit one ActionHold per dropped action for auditability
 //     (reshapes are always retained first; no truncated money action is silently lost).
@@ -140,9 +160,13 @@ func Allocate(in *AllocationInput) (*AllocateResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	inFlight, err := ratFromFloat("in_flight_usd_hr", *in.InFlightUSDPerHour)
+	rates, err := parseCommitmentRates(in.CommitmentRates)
 	if err != nil {
-		return nil, fmt.Errorf("in_flight_usd_hr: %w", err)
+		return nil, err
+	}
+	inFlightByLayer, inFlight, err := inFlightToOD(in.Layers, in.InFlight)
+	if err != nil {
+		return nil, err
 	}
 	// gap = min(target-E, lowWater-E) - inFlight.
 	// The two-arm min is defensive: it guards against future target derivations
@@ -158,7 +182,7 @@ func Allocate(in *AllocationInput) (*AllocateResult, error) {
 	if gap.Cmp(minAllocatableGap()) <= 0 {
 		return withMaintenance(gapBelowMinHold(gap, lowWater, target, existingTotal, inFlight, in), reshapes, maintHolds), nil
 	}
-	return buildResult(in, lowWater, target, existingTotal, gap, nets, reshapes, maintHolds)
+	return buildResult(in, lowWater, target, existingTotal, gap, nets, inFlightByLayer, rates, reshapes, maintHolds)
 }
 
 // withMaintenance merges independently detected buffer maintenance actions
@@ -205,8 +229,11 @@ func fmtRatUSD(r *big.Rat) string {
 // validateAllocateInput validates the config, layer list, layer states, and
 // the required in-flight commitment figure. Returns the first error encountered.
 func validateAllocateInput(in *AllocationInput) error {
-	if in.InFlightUSDPerHour == nil {
-		return fmt.Errorf("InFlightUSDPerHour must not be nil: callers must always supply the in-flight commitment; pass a pointer to 0.0 when there is no in-flight commitment")
+	if in.InFlight == nil {
+		return fmt.Errorf("InFlight must not be nil: callers must always supply the in-flight commitment; pass an empty slice when there is none")
+	}
+	if in.CommitmentRates == nil {
+		return fmt.Errorf("CommitmentRates must not be nil: callers must always supply commitment rates (a layer without one is held, never bought 1:1)")
 	}
 	if err := in.Config.Validate(); err != nil {
 		return fmt.Errorf("config: %w", err)
@@ -470,19 +497,21 @@ func gapBelowMinHold(gap, lowWater, target, existingTotal, inFlight *big.Rat, in
 // confirmed to exceed the minimum threshold. Buffer maintenance actions
 // (reshapes and their informational holds) are detected by the caller,
 // independently of the gap, and merged here.
-func buildResult(in *AllocationInput, lowWater, target, existingTotal, gap *big.Rat, nets map[LayerType]*big.Rat, reshapes, maintHolds []PlannedAction) (*AllocateResult, error) {
-	allocs, err := splitGap(in, gap, nets, lowWater, target, existingTotal)
+func buildResult(in *AllocationInput, lowWater, target, existingTotal, gap *big.Rat, nets, inFlight, rates map[LayerType]*big.Rat, reshapes, maintHolds []PlannedAction) (*AllocateResult, error) {
+	allocs, err := splitGap(in, gap, nets, inFlight, lowWater, target, existingTotal)
 	if err != nil {
 		return nil, err
 	}
+	allocs, rateHolds := convertAllocations(allocs, rates, in.DataSources)
 	allocs, err = applyCapGuardrail(allocs, in.Config.MaxHourlyCommitPerRun)
 	if err != nil {
 		return nil, err
 	}
 	allocs, skipHolds := dropSubMinimumAllocations(allocs, in.DataSources)
 	allocs, reshapes, truncHolds := truncateToMaxActions(allocs, reshapes, in.Config.MaxActionsPerRun, in.LayerStates, in.DataSources)
-	holds := make([]PlannedAction, 0, len(maintHolds)+len(skipHolds)+len(truncHolds))
+	holds := make([]PlannedAction, 0, len(maintHolds)+len(rateHolds)+len(skipHolds)+len(truncHolds))
 	holds = append(holds, maintHolds...)
+	holds = append(holds, rateHolds...)
 	holds = append(holds, skipHolds...)
 	holds = append(holds, truncHolds...)
 	return &AllocateResult{
@@ -648,7 +677,7 @@ func layerUtilPctOrMax(states map[LayerType]LayerState, layer LayerType) float64
 // nonexistent layer (fail loud: a purchase directive must always name a real
 // layer). BufferFraction == 0 with no buffer layer is valid: the buffer gap is
 // zero and nothing is allocated to it.
-func splitGap(in *AllocationInput, gap *big.Rat, nets map[LayerType]*big.Rat, lowWater, target, existingTotal *big.Rat) ([]Allocation, error) {
+func splitGap(in *AllocationInput, gap *big.Rat, nets, inFlight map[LayerType]*big.Rat, lowWater, target, existingTotal *big.Rat) ([]Allocation, error) {
 	bufferFracRat, err := ratFromFloat("buffer_fraction", in.Config.BufferFraction)
 	if err != nil {
 		return nil, err
@@ -663,7 +692,7 @@ func splitGap(in *AllocationInput, gap *big.Rat, nets map[LayerType]*big.Rat, lo
 		return nil, fmt.Errorf("buffer_fraction %g > 0 but no buffer-role layer configured", in.Config.BufferFraction)
 	}
 
-	baseGap, baseNote, err := computeBaseGap(coreGap, hasBase, in.Baseline, baseLayer, nets)
+	baseGap, baseNote, err := computeBaseGap(coreGap, hasBase, in.Baseline, baseLayer, nets, inFlight)
 	if err != nil {
 		return nil, err
 	}
@@ -699,7 +728,7 @@ type allocationContext struct {
 // everything base covers, at a slightly lower discount). The two conditions
 // produce distinct rationale notes so the approval email states the actual
 // reason.
-func computeBaseGap(coreGap *big.Rat, hasBase bool, baseline UsageBaseline, baseLayer LayerType, nets map[LayerType]*big.Rat) (*big.Rat, string, error) {
+func computeBaseGap(coreGap *big.Rat, hasBase bool, baseline UsageBaseline, baseLayer LayerType, nets, inFlight map[LayerType]*big.Rat) (*big.Rat, string, error) {
 	if !hasBase {
 		return new(big.Rat), "no base layer configured; routing all core gap to flex", nil
 	}
@@ -714,7 +743,12 @@ func computeBaseGap(coreGap *big.Rat, hasBase bool, baseline UsageBaseline, base
 	if existingBaseNet == nil {
 		existingBaseNet = new(big.Rat)
 	}
+	// In-flight base tranches (OD) count toward the stable level too, or the
+	// base layer could be allocated past stable while earlier tranches wait.
 	stableLeft := new(big.Rat).Sub(stableRat, existingBaseNet)
+	if f := inFlight[baseLayer]; f != nil {
+		stableLeft.Sub(stableLeft, f)
+	}
 	if stableLeft.Sign() < 0 {
 		stableLeft = new(big.Rat) // already at or above stable level
 	}
@@ -765,8 +799,9 @@ func flexRoutingNote(baseNote string, hasBase bool, baseGap *big.Rat) string {
 	return ""
 }
 
-// mkAllocation constructs a single Allocation with a self-explanatory rationale
-// that embeds the concrete numbers used in the decision.
+// mkAllocation constructs a single OD-sized Allocation (commitment amount and
+// rate are set by convertAllocations) with a self-explanatory rationale that
+// embeds the concrete numbers used in the decision.
 func mkAllocation(ctx *allocationContext, layer LayerType, layerGap *big.Rat, role, extraNote string) Allocation {
 	detail := ""
 	if extraNote != "" {
@@ -786,15 +821,15 @@ func mkAllocation(ctx *allocationContext, layer LayerType, layerGap *big.Rat, ro
 		detail,
 	)
 	return Allocation{
-		Layer:         layer,
-		GapUSDPerHour: layerGap,
-		Rationale:     rationale,
-		DataSources:   ctx.dataSources,
+		Layer:                        layer,
+		OnDemandEquivalentUSDPerHour: layerGap,
+		Rationale:                    rationale,
+		DataSources:                  ctx.dataSources,
 	}
 }
 
 // applyCapGuardrail scales all allocations proportionally when the total
-// exceeds Config.MaxHourlyCommitPerRun. Returns the original slice unchanged
+// commitment exceeds Config.MaxHourlyCommitPerRun (commitment USD/hr). Returns the original slice unchanged
 // when no cap is configured or the total is within the cap.
 func applyCapGuardrail(allocs []Allocation, maxPerRun *float64) ([]Allocation, error) {
 	if maxPerRun == nil || len(allocs) == 0 {
@@ -817,8 +852,10 @@ func applyCapGuardrail(allocs []Allocation, maxPerRun *float64) ([]Allocation, e
 	for i, a := range allocs {
 		scaledGap := new(big.Rat).Mul(a.GapUSDPerHour, scale)
 		scaled[i] = Allocation{
-			Layer:         a.Layer,
-			GapUSDPerHour: scaledGap,
+			Layer:                        a.Layer,
+			GapUSDPerHour:                scaledGap,
+			OnDemandEquivalentUSDPerHour: new(big.Rat).Mul(a.OnDemandEquivalentUSDPerHour, scale),
+			Rate:                         a.Rate,
 			Rationale: a.Rationale + fmt.Sprintf("; capped by max_hourly_commit_per_run: scaled to %s (%.2f%% of requested)",
 				fmtRatUSD(scaledGap), scalePct),
 			DataSources: a.DataSources,

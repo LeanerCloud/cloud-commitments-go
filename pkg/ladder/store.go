@@ -149,11 +149,10 @@ type Tranche struct {
 	FireAfter time.Time
 	// FiredAt is nil until the tranche actually fires.
 	FiredAt *time.Time
-	// AmountUSDPerHour is the hourly commitment delta for this tranche step.
-	// Unit: the same unit as Allocation.GapUSDPerHour, which is on-demand-
-	// equivalent USD/hr until the OD-to-commitment conversion lands in
-	// Allocate (go#349); after that it is commitment USD/hr, and tranches
-	// persisted before it are in the old unit.
+	// AmountUSDPerHour is the hourly commitment delta for this tranche step,
+	// in commitment USD/hr (the unit of Allocation.GapUSDPerHour, and what the
+	// executor buys unchanged). Tranches persisted before go#349 are in the
+	// old on-demand-equivalent unit and carry no CommitmentRate.
 	// Validation requires any string that big.Rat.SetString parses as a
 	// positive rational (e.g. "3/2", "1.5"); producers should emit the
 	// canonical big.Rat.RatString() form, which is lossless and round-trips
@@ -176,7 +175,14 @@ type Tranche struct {
 	// PaymentNoUpfront). Must pass PaymentOption.Validate, for the same
 	// reason as Term.
 	PaymentOption PaymentOption
-	StepIndex     int
+	// CommitmentRate is the commitment rate (commitment per on-demand dollar,
+	// in (0, 1]) the amount was sized with, as a big.Rat string. Netting
+	// divides AmountUSDPerHour by it to get back to on-demand-equivalent.
+	// BuildTranches always sets it; empty only on rows persisted before
+	// go#349, which must not be netted or executed. When set it must parse
+	// into (0, 1].
+	CommitmentRate string
+	StepIndex      int
 }
 
 // Validate checks that the tranche is self-consistent: non-empty ID and
@@ -230,6 +236,22 @@ func (t *Tranche) validateExecutionFields() error {
 	}
 	if err := t.PaymentOption.Validate(); err != nil {
 		return fmt.Errorf("payment_option: %w", err)
+	}
+	return t.validateCommitmentRate()
+}
+
+// validateCommitmentRate accepts an empty rate (legacy rows) and otherwise
+// requires a rational in (0, 1].
+func (t *Tranche) validateCommitmentRate() error {
+	if t.CommitmentRate == "" {
+		return nil
+	}
+	r, ok := new(big.Rat).SetString(t.CommitmentRate)
+	if !ok {
+		return fmt.Errorf("commitment_rate %q must parse as a rational (big.Rat SetString)", t.CommitmentRate)
+	}
+	if r.Sign() <= 0 || r.Cmp(big.NewRat(1, 1)) > 0 {
+		return fmt.Errorf("commitment_rate %s must be in (0, 1]", t.CommitmentRate)
 	}
 	return nil
 }

@@ -119,6 +119,9 @@ func validateInputAllocations(allocs []Allocation) error {
 		if a.Rationale == "" {
 			return fmt.Errorf("allocation[%d]: rationale is required (money-path auditability)", i)
 		}
+		if a.Rate == nil || a.Rate.Sign() <= 0 || a.Rate.Cmp(big.NewRat(1, 1)) > 0 {
+			return fmt.Errorf("allocation[%d]: rate must be in (0, 1] (an unconverted allocation must never be bought 1:1)", i)
+		}
 	}
 	return nil
 }
@@ -262,6 +265,7 @@ func buildTranche(in *TrancheInput, alloc Allocation, step RampStep, stepIdx int
 		Layer:            alloc.Layer,
 		Term:             in.Term,
 		PaymentOption:    in.PaymentOption,
+		CommitmentRate:   alloc.Rate.RatString(),
 	}
 	if err := tr.Validate(); err != nil {
 		return Tranche{}, fmt.Errorf("tranche (layer %s, step %d): %w", alloc.Layer, stepIdx, err)
