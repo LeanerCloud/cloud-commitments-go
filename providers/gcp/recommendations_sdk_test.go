@@ -22,6 +22,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -237,7 +238,8 @@ func sdkCostRecommendation(savings int64, state recommenderpb.RecommendationStat
 		PrimaryImpact: &recommenderpb.Impact{
 			Category: recommenderpb.Impact_COST,
 			Projection: &recommenderpb.Impact_CostProjection{CostProjection: &recommenderpb.CostProjection{
-				Cost: &money.Money{CurrencyCode: "USD", Units: -savings},
+				Duration: durationpb.New(730 * time.Hour),
+				Cost:     &money.Money{CurrencyCode: "USD", Units: -savings},
 			}},
 		},
 	}

@@ -1129,7 +1129,9 @@ func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommend
 			gcpRec.GetName(), err)
 	}
 
-	extractCostImpactFromRecommendation(gcpRec, rec)
+	if err := extractCostImpactFromRecommendation(gcpRec, rec); err != nil {
+		return nil, err
+	}
 	if err := populateRecommendationResources(gcpRec, rec); err != nil {
 		return nil, err
 	}
@@ -1232,27 +1234,40 @@ func machineTypeFromResourcePath(resource string) (string, bool) {
 	return machineType, true
 }
 
-// extractCostImpactFromRecommendation extracts the cost impact from a GCP recommendation.
-func extractCostImpactFromRecommendation(gcpRec *recommenderpb.Recommendation, rec *common.Recommendation) {
+// savingsWindow is the period EstimatedSavings is reported over: a 730-hour
+// month (8760 / 12), the month length used across the providers.
+const savingsWindow = 730 * time.Hour
+
+// extractCostImpactFromRecommendation extracts the cost impact from a GCP
+// recommendation and normalizes it to savingsWindow using the projection's
+// Duration. A non-zero cost with a missing or non-positive Duration is an error
+// wrapping errBadAmount: the window is unknown, so the amount cannot be trusted
+// as monthly.
+func extractCostImpactFromRecommendation(gcpRec *recommenderpb.Recommendation, rec *common.Recommendation) error {
 	if gcpRec.PrimaryImpact == nil {
-		return
+		return nil
 	}
 
 	costProj := gcpRec.PrimaryImpact.GetCostProjection()
 	if costProj == nil || costProj.Cost == nil {
-		return
+		return nil
 	}
 
 	cost := costProj.Cost
-	if cost.Units != 0 || cost.Nanos != 0 {
-		// Cost savings is the negative of the cost projection impact.
-		// GCP Recommender sizes CUD recommendations for 100% coverage of
-		// the project's historical on-demand usage; this is the 100%-coverage
-		// baseline the dashboard scaler in summarizeRecommendationsWithCoverage
-		// depends on (issue #215 audit).
-		savings := -(float64(cost.Units) + float64(cost.Nanos)/1e9)
-		rec.EstimatedSavings = savings
+	if cost.Units == 0 && cost.Nanos == 0 {
+		return nil
 	}
+	if costProj.GetDuration() == nil || costProj.GetDuration().AsDuration() <= 0 {
+		return fmt.Errorf("%w: cost projection has a non-zero cost but no positive duration", errBadAmount)
+	}
+	// Cost savings is the negative of the cost projection impact.
+	// GCP Recommender sizes CUD recommendations for 100% coverage of
+	// the project's historical on-demand usage; this is the 100%-coverage
+	// baseline the dashboard scaler in summarizeRecommendationsWithCoverage
+	// depends on (issue #215 audit).
+	projected := -(float64(cost.Units) + float64(cost.Nanos)/1e9)
+	rec.EstimatedSavings = projected * float64(savingsWindow) / float64(costProj.GetDuration().AsDuration())
+	return nil
 }
 
 // requireSingleAmountResource rejects a payload whose VCPU and MEMORY amounts
