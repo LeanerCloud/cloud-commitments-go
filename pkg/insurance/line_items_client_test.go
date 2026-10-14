@@ -130,27 +130,33 @@ func TestClientLineItemsEmpty(t *testing.T) {
 func TestClientLineItemsRejectsIncompletePages(t *testing.T) {
 	t.Parallel()
 	cases := map[string]struct{ header, body string }{
-		"missing header": {"", "[]"},
-		"null header":    {"null", "[]"},
-		"missing total":  {`{"total_pages":0,"page":1,"first_page":1,"last_page":0}`, "[]"},
-		"null total":     {`{"total":null,"total_pages":0,"page":1,"first_page":1,"last_page":0}`, "[]"},
-		"wrong page":     {paginationJSON(1, 1, 2), lineItemsPage(1, 1)},
-		"bad pages":      {paginationJSON(101, 1, 1), lineItemsPage(1, 100)},
-		"short page":     {paginationJSON(101, 2, 1), lineItemsPage(1, 99)},
-		"empty middle":   {paginationJSON(201, 3, 1), "[]"},
-		"overflow":       {`{"total":9223372036854775808,"total_pages":1,"page":1,"first_page":1,"last_page":1}`, "[]"},
-		"max int":        {`{"total":9223372036854775807,"total_pages":1,"page":1,"first_page":1,"last_page":1}`, "[]"},
-		"bad next":       {strings.Replace(paginationJSON(101, 2, 1), `"next_page":2`, `"next_page":3`, 1), lineItemsPage(1, 100)},
+		"missing header":          {"", "[]"},
+		"null header":             {"null", "[]"},
+		"missing total":           {`{"total_pages":0,"page":1,"first_page":1,"last_page":0}`, "[]"},
+		"null total":              {`{"total":null,"total_pages":0,"page":1,"first_page":1,"last_page":0}`, "[]"},
+		"wrong page":              {paginationJSON(1, 1, 2), lineItemsPage(1, 1)},
+		"bad pages":               {paginationJSON(101, 1, 1), lineItemsPage(1, 100)},
+		"short page":              {paginationJSON(101, 2, 1), lineItemsPage(1, 99)},
+		"empty middle":            {paginationJSON(201, 3, 1), "[]"},
+		"terminal missing row":    {paginationJSON(1, 1, 1), "[]"},
+		"terminal unexpected row": {paginationJSON(0, 0, 1), lineItemsPage(1, 1)},
+		"terminal excess row":     {paginationJSON(1, 1, 1), lineItemsPage(1, 2)},
+		"overflow":                {`{"total":9223372036854775808,"total_pages":1,"page":1,"first_page":1,"last_page":1}`, "[]"},
+		"max int":                 {`{"total":9223372036854775807,"total_pages":1,"page":1,"first_page":1,"last_page":1}`, "[]"},
+		"bad next":                {strings.Replace(paginationJSON(101, 2, 1), `"next_page":2`, `"next_page":3`, 1), lineItemsPage(1, 100)},
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
+			requests := 0
 			c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				requests++
 				w.Header().Set("X-Pagination", tc.header)
 				_, _ = w.Write([]byte(tc.body))
 			}))
 			rows, err := c.LineItems(context.Background(), testPlan)
 			require.Error(t, err)
 			assert.Nil(t, rows)
+			assert.Equal(t, 1, requests)
 		})
 	}
 }
@@ -176,7 +182,13 @@ func TestClientLineItemsSecondPageFailure(t *testing.T) {
 				case "duplicate":
 					_, _ = w.Write([]byte(lineItemsPage(1, 1)))
 				case "size":
-					_, _ = w.Write([]byte(lineItemsPage(101, 1) + strings.Repeat(" ", maxResponseBytes-100)))
+					firstSize := len(lineItemsPage(1, 100))
+					second := lineItemsPage(101, 1)
+					second += strings.Repeat(" ", maxResponseBytes-firstSize/2-len(second))
+					assert.Less(t, firstSize, maxResponseBytes)
+					assert.Less(t, len(second), maxResponseBytes)
+					assert.Greater(t, firstSize+len(second), maxResponseBytes)
+					_, _ = w.Write([]byte(second))
 				case "previous":
 					w.Header().Set("X-Pagination", strings.Replace(paginationJSON(101, 2, 2), `"previous_page":1`, `"previous_page":0`, 1))
 					_, _ = w.Write([]byte(lineItemsPage(101, 1)))
