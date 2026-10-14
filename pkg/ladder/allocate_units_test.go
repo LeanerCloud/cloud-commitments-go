@@ -201,6 +201,64 @@ func TestAllocate_NilRatesRejected(t *testing.T) {
 	}
 }
 
+func TestAllocate_NilBaselineRejectsInvalidRates(t *testing.T) {
+	t.Parallel()
+	for name, rate := range map[string]float64{
+		"NaN": math.NaN(), "zero": 0, "above one": 1.5,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			in := unitsInput(10, 0, map[LayerType]float64{LayerComputeSP: rate}, noInFlight())
+			in.Baseline.LowWaterUSDPerHour = nil
+			in.LayerStates = withBufferUtilization(withExisting(in.LayerStates, LayerConvertibleRI, 2), 70)
+			res, err := Allocate(in)
+			if err == nil || !strings.Contains(err.Error(), "commitment_rates") || res != nil {
+				t.Fatalf("Allocate = %+v, %v; want rate error and no maintenance result", res, err)
+			}
+		})
+	}
+}
+
+func TestAllocate_NilBaselineRejectsInvalidInFlight(t *testing.T) {
+	t.Parallel()
+	for name, tr := range map[string]InFlightTranche{
+		"zero stored rate":      {Layer: LayerComputeSP, CommitmentUSDPerHour: 1},
+		"NaN stored rate":       {Layer: LayerComputeSP, CommitmentUSDPerHour: 1, Rate: math.NaN()},
+		"stored rate above one": {Layer: LayerComputeSP, CommitmentUSDPerHour: 1, Rate: 1.5},
+		"negative amount":       {Layer: LayerComputeSP, CommitmentUSDPerHour: -1, Rate: 0.5},
+		"unknown layer":         {Layer: LayerAzureSavingsPlan, CommitmentUSDPerHour: 1, Rate: 0.5},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			in := unitsInput(10, 0, map[LayerType]float64{LayerComputeSP: 0.5}, []InFlightTranche{tr})
+			in.Baseline.LowWaterUSDPerHour = nil
+			in.LayerStates = withBufferUtilization(withExisting(in.LayerStates, LayerConvertibleRI, 2), 70)
+			res, err := Allocate(in)
+			if err == nil || !strings.Contains(err.Error(), "in_flight[0]") || res != nil {
+				t.Fatalf("Allocate = %+v, %v; want in-flight error and no maintenance result", res, err)
+			}
+		})
+	}
+}
+
+func TestAllocate_NilBaselineMaintainsBufferWithPartialOrEmptyRates(t *testing.T) {
+	t.Parallel()
+	for name, rates := range map[string]map[LayerType]float64{
+		"partial": {LayerComputeSP: 0.5}, "empty": {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			in := unitsInput(10, 0, rates, noInFlight())
+			in.Baseline.LowWaterUSDPerHour = nil
+			in.LayerStates = withBufferUtilization(withExisting(in.LayerStates, LayerConvertibleRI, 2), 70)
+			res := mustAllocate(t, in)
+			if len(res.Allocations) != 0 || len(res.Reshapes) != 1 || res.Reshapes[0].Layer != LayerConvertibleRI || len(res.Holds) != 1 || !strings.Contains(res.Holds[0].Rationale, "baseline unavailable") {
+				t.Fatalf("Allocate = %+v; want buffer reshape and baseline hold", res)
+			}
+		})
+	}
+}
+
 func TestAllocate_InvalidInFlightIsError(t *testing.T) {
 	t.Parallel()
 	rates := map[LayerType]float64{LayerComputeSP: 0.5}

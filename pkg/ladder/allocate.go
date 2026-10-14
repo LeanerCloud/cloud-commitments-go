@@ -148,6 +148,14 @@ func Allocate(in *AllocationInput) (*AllocateResult, error) {
 	if err := validateAllocateInput(in); err != nil {
 		return nil, err
 	}
+	rates, err := parseCommitmentRates(in.CommitmentRates)
+	if err != nil {
+		return nil, err
+	}
+	inFlightByLayer, inFlight, err := inFlightToOD(in.Layers, in.InFlight)
+	if err != nil {
+		return nil, err
+	}
 	reshapes, maintHolds := detectReshapes(in.Layers, in.LayerStates, in.Config.BufferUtilizationThresholdPct, in.DataSources)
 	if in.Baseline.LowWaterUSDPerHour == nil {
 		return withMaintenance(baselineUnavailableHold(in), reshapes, maintHolds), nil
@@ -157,14 +165,6 @@ func Allocate(in *AllocationInput) (*AllocateResult, error) {
 		return nil, err
 	}
 	lowWater, target, err := computeBaselineAndTarget(in)
-	if err != nil {
-		return nil, err
-	}
-	rates, err := parseCommitmentRates(in.CommitmentRates)
-	if err != nil {
-		return nil, err
-	}
-	inFlightByLayer, inFlight, err := inFlightToOD(in.Layers, in.InFlight)
 	if err != nil {
 		return nil, err
 	}
@@ -477,7 +477,7 @@ func baselineUnavailableHold(in *AllocationInput) *AllocateResult {
 func gapBelowMinHold(gap, lowWater, target, existingTotal, inFlight *big.Rat, in *AllocationInput) *AllocateResult {
 	flexLayer, _ := findLayerForRole(in.Layers, RoleFlex)
 	rationale := fmt.Sprintf(
-		"target already met: low_water=%s, target=%.2f%%, existing=%s, in_flight=%s, target_commitment=%s, gap=%s <= min_allocatable=%s",
+		"target already met: low_water=%s, target=%.2f%%, existing=%s, in_flight=%s, target_od=%s, gap=%s <= min_allocatable=%s",
 		fmtRatUSD(lowWater), in.Config.TargetCoveragePct, fmtRatUSD(existingTotal), fmtRatUSD(inFlight),
 		fmtRatUSD(target), fmtRatUSD(gap), fmtRatUSD(minAllocatableGap()),
 	)
@@ -808,7 +808,7 @@ func mkAllocation(ctx *allocationContext, layer LayerType, layerGap *big.Rat, ro
 		detail = "; " + extraNote
 	}
 	rationale := fmt.Sprintf(
-		"%s layer: low_water=%s, target=%.2f%%, existing=%s, target_commitment=%s, total_gap=%s, %s_gap=%s, buffer_fraction=%.2f%s",
+		"%s layer: low_water=%s, target=%.2f%%, existing=%s, target_od=%s, total_gap=%s, %s_gap=%s, buffer_fraction=%.2f%s",
 		role,
 		fmtRatUSD(ctx.lowWater),
 		ctx.cfg.TargetCoveragePct,

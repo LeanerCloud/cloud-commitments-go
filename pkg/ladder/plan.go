@@ -99,14 +99,14 @@ func (a *PlannedAction) validatePurchaseFields() error {
 type LadderPlan struct {
 	Scope       Scope
 	GeneratedAt time.Time
-	// TargetUSDPerHour is the hourly commitment target derived from
+	// TargetUSDPerHour is the on-demand-equivalent USD/hr target derived from
 	// Baseline * TargetCoveragePct. nil means it could not be computed.
 	TargetUSDPerHour *big.Rat
-	// ExistingUSDPerHour is the sum of hourly amortized costs across all
+	// ExistingUSDPerHour is the sum of on-demand-equivalent USD/hr across all
 	// active commitment layers. nil means it could not be measured.
 	ExistingUSDPerHour *big.Rat
 	// GapUSDPerHour is TargetUSDPerHour - ExistingUSDPerHour. nil when either
-	// input is nil.
+	// input is nil. All three summary fields are on-demand-equivalent USD/hr.
 	GapUSDPerHour *big.Rat
 	Actions       []PlannedAction
 	Baseline      UsageBaseline

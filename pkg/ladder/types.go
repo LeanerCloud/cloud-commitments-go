@@ -470,11 +470,11 @@ type UsageBaseline struct {
 // All monetary and percentage fields are pointers to distinguish "not yet
 // measured" from "measured zero" (project rule: absent numbers are nil).
 type LayerState struct {
-	// ExistingUSDPerHour is the total hourly amortized cost of active
-	// commitments in this layer.
+	// ExistingUSDPerHour may be native amortized commitment cost in provider
+	// snapshots; callers must normalize it to on-demand-equivalent USD/hr for Allocate.
 	ExistingUSDPerHour *float64
 	// ExpiringUSDPerHour is the share of ExistingUSDPerHour whose commitments
-	// expire within the current run cadence window.
+	// expire within the current run cadence window; normalize to OD USD/hr for Allocate.
 	ExpiringUSDPerHour *float64
 	// CoveragePct is the percentage of eligible on-demand spend currently
 	// covered by commitments in this layer.
