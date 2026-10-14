@@ -201,27 +201,32 @@ func (b *boundedReader) Read(p []byte) (int, error) {
 // get performs one GET and returns the body of a 2xx response. Any other
 // status, including a 3xx that was not followed, becomes an *HTTPError.
 func (c *Client) get(ctx context.Context, path string, q url.Values) (io.ReadCloser, time.Time, error) {
+	body, _, fetchedAt, err := c.getWithHeaders(ctx, path, q)
+	return body, fetchedAt, err
+}
+
+func (c *Client) getWithHeaders(ctx context.Context, path string, q url.Values) (io.ReadCloser, http.Header, time.Time, error) {
 	u := c.baseURL + path
 	if len(q) > 0 {
 		u += "?" + q.Encode()
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, http.NoBody)
 	if err != nil {
-		return nil, time.Time{}, fmt.Errorf("building archera request: %w", err)
+		return nil, nil, time.Time{}, fmt.Errorf("building archera request: %w", err)
 	}
 	c.setAuth(req)
 	req.Header.Set("Accept", "application/json")
 	// baseURL is the fixed BaseURL constant; only in-package tests override it.
 	resp, err := c.hc.Do(req) //nolint:gosec // G704: see comment above
 	if err != nil {
-		return nil, time.Time{}, fmt.Errorf("archera request failed: %w", sanitizeTransportError(err))
+		return nil, nil, time.Time{}, fmt.Errorf("archera request failed: %w", sanitizeTransportError(err))
 	}
 	fetchedAt := time.Now().UTC()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		defer func() { _ = resp.Body.Close() }()
-		return nil, fetchedAt, newHTTPError(resp, c.redact)
+		return nil, nil, fetchedAt, newHTTPError(resp, c.redact)
 	}
-	return resp.Body, fetchedAt, nil
+	return resp.Body, resp.Header, fetchedAt, nil
 }
 
 // sanitizeTransportError drops the *url.Error wrapper so the request URL (org
