@@ -29,7 +29,7 @@ type SPCommitmentRateParams struct {
 	// Region restricts details to this region. CE reports it on
 	// SavingsPlansDetails only for EC2 Instance SP; Compute SP details carry no
 	// region, so for COMPUTE_SP the result is the account-wide blend across
-	// EC2, Lambda and Fargate (an upper bound on the EC2 rate, see go#349 D6).
+	// EC2, Lambda and Fargate.
 	Region string
 	// Term is 1yr or 3yr; PaymentOption and LookbackPeriod use the same
 	// vocabulary as common.RecommendationParams.
@@ -57,7 +57,7 @@ type SPCommitmentRateParams struct {
 //
 // MANUAL VERIFICATION REQUIRED before relying on it with real money: the
 // semantics of the CE cost fields are verified only against the SDK docs and
-// a recorded fixture, not a live response.
+// a constructed CE-shaped fixture, not a live response.
 func (c *Client) GetSPCommitmentRate(ctx context.Context, p SPCommitmentRateParams) (float64, error) {
 	input, err := spRateInput(p)
 	if err != nil {
@@ -89,23 +89,22 @@ func (c *Client) sumSPRateDetails(ctx context.Context, input *costexplorer.GetSa
 		if fetchErr != nil {
 			return 0, 0, 0, fmt.Errorf("sp commitment rate: %w", fetchErr)
 		}
-		if out == nil {
-			break
+		if out == nil || out.SavingsPlansPurchaseRecommendation == nil {
+			return 0, 0, 0, fmt.Errorf("%w: recommendation absent on page %d", ErrNoSPCommitmentRate, page)
 		}
-		if rec := out.SavingsPlansPurchaseRecommendation; rec != nil {
-			for i := range rec.SavingsPlansPurchaseRecommendationDetails {
-				d := &rec.SavingsPlansPurchaseRecommendationDetails[i]
-				if !spRateDetailMatches(d, p) {
-					continue
-				}
-				used, cov, err := spRateTerms(d)
-				if err != nil {
-					return 0, 0, 0, err
-				}
-				spCost += used
-				covered += cov
-				matched++
+		rec := out.SavingsPlansPurchaseRecommendation
+		for i := range rec.SavingsPlansPurchaseRecommendationDetails {
+			d := &rec.SavingsPlansPurchaseRecommendationDetails[i]
+			if !spRateDetailMatches(d, p) {
+				continue
 			}
+			used, cov, err := spRateTerms(d)
+			if err != nil {
+				return 0, 0, 0, err
+			}
+			spCost += used
+			covered += cov
+			matched++
 		}
 		input.NextPageToken = out.NextPageToken
 		if aws.ToString(input.NextPageToken) == "" {

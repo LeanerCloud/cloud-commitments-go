@@ -14,7 +14,7 @@ import (
 
 const lookback30dHours = 720.0
 
-// rateDetail builds a recorded-shape CE detail. All amounts are lookback
+// rateDetail builds a constructed CE-shaped detail. All amounts are lookback
 // totals as CE returns them.
 func rateDetail(acct, region, spCost, savings, util string) types.SavingsPlansPurchaseRecommendationDetail {
 	d := types.SavingsPlansPurchaseRecommendationDetail{
@@ -161,5 +161,63 @@ func TestGetSPCommitmentRate_BadParams(t *testing.T) {
 				t.Fatal("want error")
 			}
 		})
+	}
+}
+
+func TestGetSPCommitmentRate_SDKPageCompleteness(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{"absent-first", "absent-later", "empty-first", "empty-middle"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+			fixture := &spSDKFixture{respond: func(in spSDKRequest) (map[string]any, error) {
+				if kind == "absent-first" || (kind == "absent-later" && in.NextPageToken == "next") {
+					return map[string]any{}, nil
+				}
+				if kind == "empty-first" && in.NextPageToken == "" {
+					return spSDKPage("next"), nil
+				}
+				if kind == "empty-middle" && in.NextPageToken == "next" {
+					return spSDKPage("last"), nil
+				}
+				token := ""
+				if in.NextPageToken == "" {
+					token = "next"
+				}
+				return spSDKPage(token, map[string]any{
+					"AccountId": "acct-a", "EstimatedSPCost": "70", "EstimatedSavingsAmount": "30",
+					"EstimatedAverageUtilization": "100", "SavingsPlansDetails": map[string]any{"Region": "us-east-1"},
+				}), nil
+			}}
+			rate, err := spSDKClient(fixture).GetSPCommitmentRate(context.Background(), rateParams(types.SupportedSavingsPlansTypeEc2InstanceSp))
+			if kind == "absent-first" || kind == "absent-later" {
+				if !errors.Is(err, ErrNoSPCommitmentRate) || rate != 0 {
+					t.Fatalf("rate = %g, err %v, want ErrNoSPCommitmentRate", rate, err)
+				}
+			} else if err != nil || math.Abs(rate-0.7) > 1e-12 {
+				t.Fatalf("rate = %g, err %v, want 0.7", rate, err)
+			}
+			wantTokens := []string{"", "next"}
+			if kind == "absent-first" {
+				wantTokens = wantTokens[:1]
+			} else if kind == "empty-middle" {
+				wantTokens = append(wantTokens, "last")
+			}
+			if len(fixture.requests) != len(wantTokens) {
+				t.Fatalf("requests = %v, want tokens %v", fixture.requests, wantTokens)
+			}
+			for i, token := range wantTokens {
+				if fixture.requests[i].NextPageToken != token {
+					t.Fatalf("request %d token = %q, want %q", i, fixture.requests[i].NextPageToken, token)
+				}
+			}
+		})
+	}
+}
+
+func TestGetSPCommitmentRate_NilOutput(t *testing.T) {
+	c := NewClientWithAPI(&mockCostExplorerAPI{}, "us-east-1")
+	rate, err := c.GetSPCommitmentRate(context.Background(), rateParams(types.SupportedSavingsPlansTypeEc2InstanceSp))
+	if !errors.Is(err, ErrNoSPCommitmentRate) || rate != 0 {
+		t.Fatalf("rate = %g, err %v, want ErrNoSPCommitmentRate", rate, err)
 	}
 }
