@@ -16,6 +16,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/spcommitment"
 )
 
 // API defines the interface for Savings Plans operations (enables mocking).
@@ -218,11 +219,12 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		Timestamp:      time.Now(),
 	}
 
-	spDetails, ok := rec.Details.(*common.SavingsPlanDetails)
-	if !ok {
-		result.Error = fmt.Errorf("invalid service details for Savings Plans")
+	commitment, err := spcommitment.Normalize(&rec)
+	if err != nil {
+		result.Error = err
 		return result, result.Error
 	}
+	result.Recommendation = rec
 
 	offeringID, err := c.findOfferingID(ctx, rec, opts.ExecutionID)
 	if err != nil {
@@ -232,7 +234,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 
 	input := &savingsplans.CreateSavingsPlanInput{
 		SavingsPlanOfferingId: aws.String(offeringID),
-		Commitment:            aws.String(fmt.Sprintf("%.2f", spDetails.HourlyCommitment)),
+		Commitment:            aws.String(commitment),
 		UpfrontPaymentAmount:  nil, // AWS calculates this based on payment option
 		PurchaseTime:          aws.Time(time.Now()),
 		Tags:                  buildSavingsPlanTags(opts.Source),
@@ -452,7 +454,7 @@ func (c *Client) collectSPOfferings(ctx context.Context, input *savingsplans.Des
 // calling outside of a purchase flow (ValidateOffering, GetOfferingDetails).
 func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation, execID string) (string, error) {
 	spDetails, ok := rec.Details.(*common.SavingsPlanDetails)
-	if !ok {
+	if !ok || spDetails == nil {
 		return "", fmt.Errorf("invalid service details for Savings Plans")
 	}
 
@@ -647,6 +649,9 @@ func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation
 
 // GetOfferingDetails retrieves offering details.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
+	if _, err := spcommitment.Normalize(&rec); err != nil {
+		return nil, err
+	}
 	offeringID, err := c.findOfferingID(ctx, rec, "")
 	if err != nil {
 		return nil, err
