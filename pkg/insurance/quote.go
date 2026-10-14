@@ -217,12 +217,11 @@ func (w wireHypothetical) toHypothetical() (Hypothetical, error) {
 }
 
 // wireOfferEntry mirrors the consumed subset of OfferComparisonEntry.
-// selected_amount and offer_org_id feed the vendor's update operation and are
-// deliberately not decoded.
 type wireOfferEntry struct {
-	IsCurrent *bool  `json:"is_current"`
-	OfferID   string `json:"offer_id"`
-	Offer     *struct {
+	IsCurrent      *bool   `json:"is_current"`
+	OfferID        string  `json:"offer_id"`
+	SelectedAmount wireNum `json:"selected_amount"`
+	Offer          *struct {
 		Provider              *string `json:"provider"`
 		Region                *string `json:"region"`
 		GuaranteedDisplayName *string `json:"guaranteed_display_name"`
@@ -273,11 +272,15 @@ func (w *wireOfferEntry) toOfferEntry() (OfferEntry, error) {
 	}
 	e.IsCurrent = *w.IsCurrent
 	e.OfferID = w.OfferID
+	amount, err := nonnegativeRat(w.SelectedAmount)
+	if err != nil {
+		return e, fmt.Errorf("selected_amount: %w", err)
+	}
+	e.SelectedAmount = amount
 	e.CommitmentType = w.CommitmentType
 	e.LeaseMenuItemID = w.LeaseMenuItemID
 	e.GuaranteedDisplayName = w.Offer.GuaranteedDisplayName
 	e.Region = w.Offer.Region
-	var err error
 	if e.Provider, err = parseProvider(w.Offer.Provider); err != nil {
 		return e, fmt.Errorf("offer.provider: %w", err)
 	}

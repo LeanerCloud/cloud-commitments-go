@@ -122,6 +122,7 @@ func TestDecodeComparison_Golden(t *testing.T) {
 	row := c.Rows[0]
 	assert.Equal(t, "22222222-2222-4222-8222-222222222222", row.LineItemID)
 	assert.True(t, row.Current.IsCurrent)
+	assert.Equal(t, rat(t, "3"), row.Current.SelectedAmount)
 	assert.False(t, row.Current.LeaseBacked())
 	assert.Nil(t, row.Current.ContractTerm)
 	assert.Nil(t, row.Current.PaymentOption)
@@ -139,6 +140,19 @@ func TestDecodeComparison_Golden(t *testing.T) {
 	assert.Equal(t, rat(t, "10"), cand.Monthly.Premium)
 	assert.Equal(t, rat(t, "0"), cand.Delta.MonthlyNetSavings)
 	assert.Nil(t, cand.Delta.BreakevenDays)
+}
+
+func TestDecodeComparisonSelectedAmount(t *testing.T) {
+	t.Parallel()
+	for _, value := range []string{"null", "-1", `"3"`} {
+		_, err := decodeComparison(t, strings.ReplaceAll(validComparisonJSON(), `"selected_amount": 3`, `"selected_amount": `+value))
+		require.ErrorContains(t, err, "selected_amount")
+	}
+	_, err := decodeComparison(t, strings.ReplaceAll(validComparisonJSON(), `"selected_amount": 3,`, ``))
+	require.ErrorContains(t, err, "selected_amount")
+	c, err := decodeComparison(t, strings.ReplaceAll(validComparisonJSON(), `"selected_amount": 3`, `"selected_amount": 0.1234567890123456789`))
+	require.NoError(t, err)
+	assert.Equal(t, rat(t, "0.1234567890123456789"), c.Rows[0].Current.SelectedAmount)
 }
 
 func TestDecodeComparison_EmptyArraysAreValid(t *testing.T) {
@@ -428,6 +442,7 @@ func TestDecodeComparison_DistinctValuesForEveryMappedField(t *testing.T) {
 			"line_item_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
 			"current": {
 				"is_current": true, "offer_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+				"selected_amount": 3.25,
 				"offer": {"provider": "gcp", "region": "europe-west4", "guaranteed_display_name": "Current G"},
 				"lease_menu_item_id": null, "commitment_type": "gcp/cud",
 				"contract_term": "three_year", "payment_option": "all_upfront",
@@ -437,6 +452,7 @@ func TestDecodeComparison_DistinctValuesForEveryMappedField(t *testing.T) {
 			},
 			"candidates": [{
 				"is_current": false, "offer_id": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+				"selected_amount": 4.125,
 				"offer": {"provider": "azure", "region": "eu-west-1", "guaranteed_display_name": "Cand G"},
 				"lease_menu_item_id": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", "commitment_type": "azure/Virtual Machines",
 				"contract_term": "one_year_gris", "payment_option": "partial_upfront",
@@ -480,6 +496,7 @@ func TestDecodeComparison_DistinctValuesForEveryMappedField(t *testing.T) {
 	cur := row.Current
 	assert.True(t, cur.IsCurrent)
 	assert.Equal(t, "cccccccc-cccc-4ccc-8ccc-cccccccccccc", cur.OfferID)
+	assert.Equal(t, rat(t, "3.25"), cur.SelectedAmount)
 	assert.Equal(t, "gcp/cud", cur.CommitmentType)
 	assert.Equal(t, common.ProviderGCP, cur.Provider)
 	require.NotNil(t, cur.Region)
@@ -497,6 +514,7 @@ func TestDecodeComparison_DistinctValuesForEveryMappedField(t *testing.T) {
 	cand := row.Candidates[0]
 	assert.False(t, cand.IsCurrent)
 	assert.Equal(t, "dddddddd-dddd-4ddd-8ddd-dddddddddddd", cand.OfferID)
+	assert.Equal(t, rat(t, "4.125"), cand.SelectedAmount)
 	assert.Equal(t, "azure/Virtual Machines", cand.CommitmentType)
 	assert.Equal(t, common.ProviderAzure, cand.Provider)
 	require.NotNil(t, cand.Region)
