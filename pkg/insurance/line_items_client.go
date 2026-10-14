@@ -85,7 +85,7 @@ func (p lineItemsPagination) rowCount() int64 {
 	return lineItemsPageSize
 }
 
-// LineItems returns a complete snapshot or an error; partial pages never escape.
+// LineItems returns all paginated rows or an error; partial pages never escape.
 func (c *Client) LineItems(ctx context.Context, planID string) ([]LineItem, error) {
 	if !isUUID(planID) {
 		return nil, errors.New("archera plan ID must be a UUID")
