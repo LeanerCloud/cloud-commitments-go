@@ -3,10 +3,10 @@ package ladder
 import (
 	"context"
 	"fmt"
-	"math"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/ladder"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/spcommitment"
 )
 
 // PurchaseLayer buys a commitment for the given layer by dispatching to the
@@ -136,8 +136,8 @@ func validateSPPurchaseRec(rec *common.Recommendation, wantPlanType string) erro
 	if details.PlanType != wantPlanType {
 		return fmt.Errorf("recommendation plan type %q does not match the dispatched layer's plan type %q", details.PlanType, wantPlanType)
 	}
-	if math.IsNaN(details.HourlyCommitment) || math.IsInf(details.HourlyCommitment, 0) || details.HourlyCommitment <= 0 {
-		return fmt.Errorf("SavingsPlanDetails.HourlyCommitment must be a positive finite value, got %g", details.HourlyCommitment)
+	if _, err := spcommitment.Normalize(rec); err != nil {
+		return err
 	}
 	return validateTermAndPayment(rec)
 }
