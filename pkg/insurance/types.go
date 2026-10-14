@@ -135,14 +135,14 @@ type OfferDelta struct {
 }
 
 // OfferEntry mirrors the consumed subset of OfferComparisonEntry: one offer
-// (current or candidate) for a line item. Fields that feed the vendor's
-// line-item update operation (selected_amount, offer_org_id) are deliberately
-// not mapped.
+// (current or candidate) for a line item.
 type OfferEntry struct {
 	// IsCurrent is true when this entry matches the line item's current
 	// offer and lease.
 	IsCurrent bool
 	OfferID   string
+	// SelectedAmount is a count for RI/unit CUD, or $/hour for spend commitments.
+	SelectedAmount *big.Rat
 	// CommitmentType is the vendor's offer type string. The docs give both
 	// "aws/AmazonEC2"-style and "ri"/"savings_plan"/"cud"-style examples;
 	// treat it as opaque display text.
