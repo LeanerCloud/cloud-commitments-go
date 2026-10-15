@@ -1,9 +1,12 @@
 package ladder_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -29,9 +32,20 @@ type ceLoopback struct {
 
 func (c ceLoopback) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.URL.Scheme != "https" || req.URL.Host != "ce.us-east-1.amazonaws.com" {
-		return nil, fmt.Errorf("fixture rejects host %s", req.URL.Host)
+		err := fmt.Errorf("fixture rejects host %s", req.URL.Host)
+		if req.Body != nil {
+			err = errors.Join(err, req.Body.Close())
+		}
+		return nil, err
 	}
 	local := req.Clone(req.Context())
+	if req.Body != nil && req.Body != http.NoBody {
+		payload, readErr := io.ReadAll(req.Body)
+		if err := errors.Join(readErr, req.Body.Close()); err != nil {
+			return nil, fmt.Errorf("fixture request body: %w", err)
+		}
+		local.Body = io.NopCloser(bytes.NewReader(payload))
+	}
 	local.URL.Scheme, local.URL.Host = c.endpoint.Scheme, c.endpoint.Host
 	local.Host = c.endpoint.Host
 	return c.transport.RoundTrip(local)
