@@ -3,6 +3,7 @@ package memorystore
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"cloud.google.com/go/recommender/apiv1/recommenderpb"
@@ -14,6 +15,8 @@ import (
 	"google.golang.org/api/iterator"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/reporter"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/scorer"
 )
 
 // Mock implementations
@@ -817,9 +820,9 @@ func TestMemorystoreClient_ConvertGCPRecommendation_RecurringMonthlyCost(t *test
 	// commitment SKU. getRedisPricing derives CommitmentPrice from the
 	// "commitment" SKU (CommitmentPrice = commitmentHourly * 8760), so
 	// RecurringMonthlyCost must equal CommitmentPrice / 12 (one year = 12 months).
-	const onDemandHourly = 0.10   // USD/h -- representative basic Memorystore value
-	const commitmentHourly = 0.07 // USD/h -- 1yr CUD rate from the catalog
-	client.SetBillingService(&MockBillingService{
+	const onDemandHourly = 0.20
+	const commitmentHourly = 0.136986301 // Catalog precision gives a 1yr total within 0.00001 of 1200.
+	mockBilling := &MockBillingService{
 		skus: &cloudbilling.ListSkusResponse{
 			Skus: []*cloudbilling.Sku{
 				{
@@ -866,7 +869,8 @@ func TestMemorystoreClient_ConvertGCPRecommendation_RecurringMonthlyCost(t *test
 				},
 			},
 		},
-	})
+	}
+	client.SetBillingService(mockBilling)
 
 	gcpRec := &recommenderpb.Recommendation{
 		Name: "test-rec",
@@ -881,35 +885,71 @@ func TestMemorystoreClient_ConvertGCPRecommendation_RecurringMonthlyCost(t *test
 		},
 	}
 
-	rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
-	require.NotNil(t, rec)
-
-	// RecurringMonthlyCost must be a non-nil pointer to a positive value for
-	// a monthly Memorystore CUD recommendation.
-	require.NotNil(t, rec.RecurringMonthlyCost, "RecurringMonthlyCost must be non-nil when billing lookup succeeds")
-	assert.Greater(t, *rec.RecurringMonthlyCost, 0.0, "RecurringMonthlyCost must be positive for a monthly Memorystore CUD")
-
-	// Verify the value matches CommitmentPrice / 12 exactly. CommitmentPrice is
-	// the commitment SKU's hourly rate scaled to the 1yr term total.
-	const hoursIn1yr = 8760.0
-	expectedMonthly := commitmentHourly * hoursIn1yr / 12
-	assert.InDelta(t, expectedMonthly, *rec.RecurringMonthlyCost, 1e-6)
+	for _, term := range []string{"1yr", "3yr"} {
+		for _, payment := range []string{"", "monthly", "no-upfront"} {
+			t.Run(term+"/"+payment, func(t *testing.T) {
+				rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{Term: term, PaymentOption: payment})
+				rec.Count = 3
+				rec.AccountName = "fixture"
+				require.NotNil(t, rec.RecurringMonthlyCost)
+				assert.Zero(t, rec.CommitmentCost)
+				assert.InDelta(t, 100, *rec.RecurringMonthlyCost, 0.00001)
+				months := float64(termYearsFromLabel(term) * 12)
+				assert.InDelta(t, 1200*months/12, rec.CommitmentCost+*rec.RecurringMonthlyCost*months, 0.0001)
+				monthsToRecover, known := common.BreakEven(*rec)
+				assert.True(t, known)
+				assert.Zero(t, monthsToRecover)
+				result := scorer.Score([]common.Recommendation{*rec}, scorer.Config{MaxBreakEvenMonths: 1})
+				require.Len(t, result.Passed, 1)
+				assert.Contains(t, reporter.RenderSummary(result), "upfront commitment $0.00")
+				row := strings.Fields(strings.Split(reporter.RenderTable(result), "\n")[2])
+				assert.Equal(t, "$0.00", row[7])
+				scaled, err := common.ResizeCount(*rec, 2)
+				require.NoError(t, err)
+				assert.Equal(t, 2, scaled.Count)
+				assert.InDelta(t, 800*months/12, scaled.CommitmentCost+*scaled.RecurringMonthlyCost*months, 0.0001)
+				assert.InDelta(t, 100, *rec.RecurringMonthlyCost, 0.00001)
+				quote, err := client.GetOfferingDetails(ctx, *rec)
+				require.NoError(t, err)
+				assert.InDelta(t, 1200*months/12, quote.TotalCost, 0.0001)
+				assert.Zero(t, quote.UpfrontCost)
+				assert.InDelta(t, 100, quote.RecurringCost, 0.00001)
+			})
+		}
+	}
+	t.Run("negative catalog price", func(t *testing.T) {
+		mockBilling.skus.Skus[1].PricingInfo[0].PricingExpression.TieredRates[0].UnitPrice.Nanos = -1
+		rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
+		assert.Zero(t, rec.CommitmentCost)
+		assert.Zero(t, rec.BreakEvenMonths)
+		assert.Nil(t, rec.RecurringMonthlyCost)
+	})
 }
 
 func TestMemorystoreClient_ConvertGCPRecommendation_RecurringMonthlyCost_BillingFailure(t *testing.T) {
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	// Inject a billing mock that always errors; RecurringMonthlyCost must
-	// remain nil (frontend renders "—") rather than a zero or stale value.
-	client.SetBillingService(&MockBillingService{err: errors.New("billing unavailable")})
 
 	gcpRec := &recommenderpb.Recommendation{
-		Name:    "test-rec",
-		Content: &recommenderpb.RecommendationContent{},
+		Name: "test-rec",
+		Content: &recommenderpb.RecommendationContent{
+			OperationGroups: []*recommenderpb.OperationGroup{
+				{Operations: []*recommenderpb.Operation{{Resource: "projects/test/instances/redis-basic"}}},
+			},
+		},
 	}
 
-	rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
-	require.NotNil(t, rec)
-	assert.Nil(t, rec.RecurringMonthlyCost, "RecurringMonthlyCost must be nil when billing lookup fails")
+	for name, billing := range map[string]*MockBillingService{
+		"API error":     {err: errors.New("billing unavailable")},
+		"empty catalog": {skus: &cloudbilling.ListSkusResponse{}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			client, err := NewClient(ctx, "test-project", "us-central1")
+			require.NoError(t, err)
+			client.SetBillingService(billing)
+			rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
+			assert.Zero(t, rec.CommitmentCost)
+			assert.Zero(t, rec.BreakEvenMonths)
+			assert.Nil(t, rec.RecurringMonthlyCost)
+		})
+	}
 }

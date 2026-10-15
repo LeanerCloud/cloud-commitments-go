@@ -517,24 +517,19 @@ func extractGCPSavings(rec *recommenderpb.Recommendation) float64 {
 	return -(float64(cost.Units) + float64(cost.Nanos)/1e9)
 }
 
-// fillSQLPricing calls getSQLPricing and, on success, writes CommitmentCost,
-// OnDemandCost, SavingsPercentage, and BreakEvenMonths into rec. Pricing
-// failures are logged and do not discard the recommendation.
+// Pricing failures preserve the recommendation with an unknown monthly charge.
 func (c *Client) fillSQLPricing(ctx context.Context, rec *common.Recommendation, termYears int) {
 	pricing, err := c.getSQLPricing(ctx, rec.ResourceType, c.region, termYears)
 	if err != nil {
 		log.Printf("cloudsql: pricing unavailable for %s in %s (issue #1020): %v", rec.ResourceType, c.region, err)
 		return
 	}
-	rec.CommitmentCost = pricing.CommitmentPrice
+	if pricing.CommitmentPrice > 0 {
+		monthly := pricing.CommitmentPrice / float64(termYears*12)
+		rec.RecurringMonthlyCost = &monthly
+	}
 	rec.OnDemandCost = pricing.OnDemandPrice
 	rec.SavingsPercentage = pricing.SavingsPercentage
-	if pricing.OnDemandPrice > 0 && pricing.SavingsPercentage > 0 {
-		monthlySavings := pricing.OnDemandPrice * pricing.SavingsPercentage / 100.0 / float64(termYears*12)
-		if monthlySavings > 0 {
-			rec.BreakEvenMonths = pricing.CommitmentPrice / monthlySavings
-		}
-	}
 }
 
 // termYearsFromLabel converts a term string such as "1yr" or "3yr" to an
@@ -547,9 +542,6 @@ func termYearsFromLabel(term string) int {
 }
 
 // convertGCPRecommendation converts a GCP Recommender recommendation to common format.
-// It also calls getSQLPricing to fill CommitmentCost/OnDemandCost/SavingsPercentage/
-// BreakEvenMonths so the scorer can filter and rank GCP recommendations correctly
-// (issue #1022 C2). Pricing failures are logged but do not discard the recommendation.
 func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommenderpb.Recommendation, params common.RecommendationParams) *common.Recommendation {
 	paymentOption := params.PaymentOption
 	if paymentOption == "" {
@@ -575,22 +567,9 @@ func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommend
 	rec.ResourceType = extractGCPResourceType(gcpRec)
 	rec.EstimatedSavings = extractGCPSavings(gcpRec)
 
-	// Thread pricing into the converter so the scorer can rank/filter GCP recs
-	// correctly (issue #1022 C2). fillSQLPricing performs the single billing
-	// lookup and populates CommitmentCost; we reuse that value below to derive
-	// RecurringMonthlyCost rather than issuing a second SKU call.
 	if rec.ResourceType != "" {
 		termYears := termYearsFromLabel(rec.Term)
 		c.fillSQLPricing(ctx, rec, termYears)
-
-		// Cloud SQL CUDs are monthly-payment commitments, so the per-month
-		// charge is CommitmentCost / termMonths. When the billing lookup
-		// failed, CommitmentCost stays 0 and RecurringMonthlyCost remains nil
-		// so the frontend renders "—" rather than a stale value.
-		if rec.CommitmentCost > 0 {
-			monthly := rec.CommitmentCost / float64(termYears*12)
-			rec.RecurringMonthlyCost = &monthly
-		}
 	}
 
 	return rec
