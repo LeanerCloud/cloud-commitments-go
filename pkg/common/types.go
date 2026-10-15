@@ -228,6 +228,9 @@ type Recommendation struct {
 	// frontend renders nil as "—" rather than "$0" to avoid misleading users.
 	// Populated by cloud parsers when the API exposes it; left nil otherwise.
 	RecurringMonthlyCost *float64 `json:"recurring_monthly_cost,omitempty" csv:"RecurringMonthlyCost"`
+	// CommitmentCurrency covers CommitmentCost and RecurringMonthlyCost, not savings or baseline.
+	// Empty means unknown; presence requires source-proven amounts and currency for every required payment leg.
+	CommitmentCurrency string `json:"commitment_currency,omitempty" csv:"CommitmentCurrency"`
 
 	// Service-specific details (polymorphic)
 	Details ServiceDetails `json:"details,omitempty" csv:"-"`

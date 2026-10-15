@@ -45,6 +45,42 @@ func TestPurchaseResult_ExistingCommitmentJSON(t *testing.T) {
 	assert.True(t, decoded.ExistingCommitment)
 }
 
+func TestRecommendation_CommitmentCurrencyJSONAndScaling(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name     string
+		input    string
+		currency string
+	}{
+		{"known EUR", `{"commitment_cost":120,"recurring_monthly_cost":10,"commitment_currency":"EUR"}`, "EUR"},
+		{"explicit unknown", `{"commitment_cost":120,"recurring_monthly_cost":10,"commitment_currency":""}`, ""},
+		{"legacy absent", `{"commitment_cost":120,"recurring_monthly_cost":10}`, ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var rec Recommendation
+			require.NoError(t, json.Unmarshal([]byte(tt.input), &rec))
+			for _, ratio := range []float64{1, 2} {
+				scaled := ScaleRecommendationCosts(rec, ratio)
+				payload, err := json.Marshal(scaled)
+				require.NoError(t, err)
+				var fields map[string]any
+				require.NoError(t, json.Unmarshal(payload, &fields))
+				if tt.currency == "" {
+					assert.NotContains(t, fields, "commitment_currency")
+				} else {
+					assert.Equal(t, tt.currency, fields["commitment_currency"])
+				}
+				assert.Equal(t, 120*ratio, fields["commitment_cost"])
+				assert.Equal(t, 10*ratio, fields["recurring_monthly_cost"])
+				var roundTrip Recommendation
+				require.NoError(t, json.Unmarshal(payload, &roundTrip))
+				assert.Equal(t, scaled, roundTrip)
+			}
+		})
+	}
+}
+
 func TestProviderType_String(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
