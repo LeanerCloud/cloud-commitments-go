@@ -6,6 +6,7 @@ import (
 	"log"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -223,7 +224,29 @@ func (c *Client) parseAWSCostDetails(rec *common.Recommendation, details *types.
 		}
 		rec.RecurringMonthlyCost = &monthly
 	}
+	currency := aws.ToString(details.CurrencyCode)
+	if strings.TrimSpace(currency) == "" {
+		currency = ""
+	}
+	rec.CommitmentCurrency = commitmentCurrency(currency, rec.PaymentOption, details.UpfrontCost != nil, rec.CommitmentCost, rec.RecurringMonthlyCost)
 	return nil
+}
+
+func commitmentCurrency(currency, payment string, hasUpfront bool, upfront float64, monthly *float64) string {
+	monthlyKnown := monthly != nil && math.Abs(*monthly) <= math.MaxFloat64
+	var complete bool
+	switch payment {
+	case "all-upfront":
+		complete = hasUpfront && (monthly == nil || *monthly == 0)
+	case "partial-upfront":
+		complete = hasUpfront && monthlyKnown
+	case "no-upfront":
+		complete = upfront == 0 && monthlyKnown
+	}
+	if complete {
+		return currency
+	}
+	return ""
 }
 
 // serviceParserFunc defines the signature for service-specific parsers.

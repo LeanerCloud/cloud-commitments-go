@@ -250,6 +250,10 @@ func (c *Client) parseSavingsPlanDetail(
 		}
 		recurringMonthlyCost = &monthly
 	}
+	currency := aws.ToString(detail.CurrencyCode)
+	if strings.TrimSpace(currency) == "" {
+		currency = ""
+	}
 
 	return &common.Recommendation{
 		Provider:               common.ProviderAWS,
@@ -261,6 +265,7 @@ func (c *Client) parseSavingsPlanDetail(
 		EstimatedSavings:       monthlySavings,
 		SavingsPercentage:      savingsPercent,
 		CommitmentCost:         upfrontCost,
+		CommitmentCurrency:     commitmentCurrency(currency, params.PaymentOption, detail.UpfrontCost != nil, upfrontCost, recurringMonthlyCost),
 		OnDemandCost:           onDemandCost,
 		RecurringMonthlyCost:   recurringMonthlyCost,
 		RecommendedUtilization: recommendedUtilization,
