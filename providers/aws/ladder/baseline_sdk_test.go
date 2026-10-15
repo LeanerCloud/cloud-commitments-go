@@ -25,11 +25,18 @@ import (
 
 // Constructed CE responses exercise the public factory without cloud access.
 func TestScopedBaselineParentCompatible(t *testing.T) {
+	runLoopbackFixture(t, scopedBaselineFixture)
+}
+
+func scopedBaselineFixture(t *testing.T) {
 	for _, mode := range []string{"account", "reverse", "zero", "lag2", "lag3", "duplicate", "page-duplicate", "hole", "leading", "outside", "future", "bad-start", "nil-start", "nil-period", "nil-end", "bad-end", "short-period", "long-period", "backward-period", "empty", "all-zero", "missing-total", "missing-metric", "missing-amount", "bad-amount", "NaN", "Inf", "negative", "stale", "few", "provider-error"} {
-		t.Run(mode, func(t *testing.T) {
+		if !t.Run(mode, func(t *testing.T) {
+			d := newLoopDiagnostic(t)
 			var calls atomic.Int32
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				calls.Add(1)
+				page := calls.Add(1)
+				d.record(loopEvent{Kind: "handler_begin", Page: int(page)}, r.Context(), nil)
+				defer d.record(loopEvent{Kind: "handler_end", Page: int(page)}, r.Context(), nil)
 				assert.Equal(t, "AWSInsightsIndexService.GetCostAndUsage", r.Header.Get("X-Amz-Target"))
 				var in costexplorer.GetCostAndUsageInput
 				if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&in)) {
@@ -82,12 +89,18 @@ func TestScopedBaselineParentCompatible(t *testing.T) {
 				w.Header().Set("Content-Type", "application/x-amz-json-1.1")
 				assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"ResultsByTime": rows, "NextPageToken": token}))
 			}))
-			defer srv.Close()
+			defer func() {
+				d.record(loopEvent{Kind: "server_close_begin"}, nil, nil)
+				srv.Close()
+				d.record(loopEvent{Kind: "server_close_end"}, nil, nil)
+			}()
+			transport := d.transport(srv.Client().Transport)
+			defer transport.http.CloseIdleConnections()
 			endpoint, err := url.Parse(srv.URL)
 			require.NoError(t, err)
 			a, err := awsladder.NewFromConfig(aws.Config{Region: "eu-west-1", RetryMaxAttempts: 1,
 				Credentials: credentials.NewStaticCredentialsProvider("synthetic", "synthetic", ""),
-				HTTPClient:  &http.Client{Transport: ceLoopback{endpoint: endpoint, transport: srv.Client().Transport}},
+				HTTPClient:  &http.Client{Transport: ceLoopback{endpoint: endpoint, transport: transport}},
 			}, awsladder.Config{Region: "eu-west-1", AccountID: "fixture-account"})
 			require.NoError(t, err)
 			scope := ladder.Scope{Provider: common.ProviderAWS, AccountID: "wrong"}
@@ -119,7 +132,9 @@ func TestScopedBaselineParentCompatible(t *testing.T) {
 			if mode == "account" || mode == "reverse" {
 				assert.Equal(t, int32(2), calls.Load())
 			}
-		})
+		}) {
+			return
+		}
 	}
 }
 
