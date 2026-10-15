@@ -890,7 +890,7 @@ func TestCloudSQLClient_ConvertGCPRecommendation_RecurringMonthlyCost(t *testing
 										UnitPrice: &cloudbilling.Money{
 											Units:        0,
 											Nanos:        int64(onDemandHourly * 1e9),
-											CurrencyCode: "USD",
+											CurrencyCode: "EUR",
 										},
 									},
 								},
@@ -912,7 +912,7 @@ func TestCloudSQLClient_ConvertGCPRecommendation_RecurringMonthlyCost(t *testing
 										UnitPrice: &cloudbilling.Money{
 											Units:        0,
 											Nanos:        int64(commitmentHourly * 1e9),
-											CurrencyCode: "USD",
+											CurrencyCode: "EUR",
 										},
 									},
 								},
@@ -931,7 +931,7 @@ func TestCloudSQLClient_ConvertGCPRecommendation_RecurringMonthlyCost(t *testing
 			Category: recommenderpb.Impact_COST,
 			Projection: &recommenderpb.Impact_CostProjection{
 				CostProjection: &recommenderpb.CostProjection{
-					Cost: &money.Money{Units: -100, CurrencyCode: "USD"},
+					Cost: &money.Money{Units: -100, CurrencyCode: "JPY"},
 				},
 			},
 		},
@@ -952,6 +952,8 @@ func TestCloudSQLClient_ConvertGCPRecommendation_RecurringMonthlyCost(t *testing
 				rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{Term: term, PaymentOption: payment})
 				rec.Count = 3
 				rec.AccountName = "fixture"
+				assert.Equal(t, "EUR", rec.CommitmentCurrency)
+				assert.Equal(t, float64(100), rec.EstimatedSavings)
 				require.NotNil(t, rec.RecurringMonthlyCost)
 				assert.Zero(t, rec.CommitmentCost)
 				assert.InDelta(t, 100, *rec.RecurringMonthlyCost, 0.00001)
@@ -968,6 +970,7 @@ func TestCloudSQLClient_ConvertGCPRecommendation_RecurringMonthlyCost(t *testing
 				scaled, err := common.ResizeCount(*rec, 2)
 				require.NoError(t, err)
 				assert.Equal(t, 2, scaled.Count)
+				assert.Equal(t, "EUR", scaled.CommitmentCurrency)
 				assert.InDelta(t, 800*months/12, scaled.CommitmentCost+*scaled.RecurringMonthlyCost*months, 0.0001)
 				assert.InDelta(t, 100, *rec.RecurringMonthlyCost, 0.00001)
 				quote, err := client.GetOfferingDetails(ctx, *rec)
@@ -984,6 +987,7 @@ func TestCloudSQLClient_ConvertGCPRecommendation_RecurringMonthlyCost(t *testing
 		assert.Zero(t, rec.CommitmentCost)
 		assert.Zero(t, rec.BreakEvenMonths)
 		assert.Nil(t, rec.RecurringMonthlyCost)
+		assert.Empty(t, rec.CommitmentCurrency)
 	})
 }
 
@@ -1012,6 +1016,7 @@ func TestCloudSQLClient_ConvertGCPRecommendation_RecurringMonthlyCost_BillingFai
 			assert.Zero(t, rec.CommitmentCost)
 			assert.Zero(t, rec.BreakEvenMonths)
 			assert.Nil(t, rec.RecurringMonthlyCost)
+			assert.Empty(t, rec.CommitmentCurrency)
 		})
 	}
 }

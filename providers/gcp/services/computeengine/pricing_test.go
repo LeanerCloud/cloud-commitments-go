@@ -149,9 +149,28 @@ func TestEnrichRecWithPricing_MonthlyFiguresPerTerm(t *testing.T) {
 			client.enrichRecWithPricing(ctx, &rec)
 
 			assert.Zero(t, rec.CommitmentCost)
+			assert.Equal(t, "USD", rec.CommitmentCurrency)
 			require.NotNil(t, rec.RecurringMonthlyCost)
 			assert.InDelta(t, tc.commitHourly*730, *rec.RecurringMonthlyCost, 1e-6)
 			assert.InDelta(t, tc.odHourly*730, rec.OnDemandCost, 1e-6, "OnDemandCost is the monthly on-demand price")
+		})
+	}
+}
+
+func TestEnrichRecWithPricing_InvalidCurrency(t *testing.T) {
+	for _, currency := range []string{"", "EUR"} {
+		t.Run("commitment currency "+currency, func(t *testing.T) {
+			ctx := context.Background()
+			client, err := NewClient(ctx, "test-project", "us-central1")
+			require.NoError(t, err)
+			skus := n2AmericasSKUs()
+			skus[2].PricingInfo[0].PricingExpression.TieredRates[0].UnitPrice.CurrencyCode = currency
+			client.SetBillingService(&MockBillingService{skus: &cloudbilling.ListSkusResponse{Skus: skus}})
+			rec := newRec("n2-standard-4", 4, 16)
+			rec.Term = "1yr"
+			client.enrichRecWithPricing(ctx, &rec)
+			assert.Empty(t, rec.CommitmentCurrency)
+			assert.Nil(t, rec.RecurringMonthlyCost)
 		})
 	}
 }

@@ -1168,6 +1168,7 @@ func (c *Client) enrichRecWithPricing(ctx context.Context, rec *common.Recommend
 	termMonths := float64(termYears * 12)
 	monthly := pricing.CommitmentPrice / termMonths
 	rec.RecurringMonthlyCost = &monthly
+	rec.CommitmentCurrency = pricing.Currency
 	rec.OnDemandCost = pricing.OnDemandPrice / termMonths
 	rec.SavingsPercentage = pricing.SavingsPercentage
 }

@@ -1342,12 +1342,19 @@ func TestConverterToInsert_CountNonZero_VCPUAmountSet(t *testing.T) {
 func TestConverterFillsPricingForScorer(t *testing.T) {
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
-	client.SetBillingService(mockBillingWithCommitment())
+	billing := mockBillingWithCommitment()
+	for _, sku := range billing.skus.Skus {
+		sku.PricingInfo[0].PricingExpression.TieredRates[0].UnitPrice.CurrencyCode = "EUR"
+	}
+	client.SetBillingService(billing)
 
 	gcpRec := realisticCUDRecommendation()
+	gcpRec.PrimaryImpact.GetCostProjection().Cost.CurrencyCode = "JPY"
 	rec, err := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
 	require.NoError(t, err)
 	require.NotNil(t, rec)
+	assert.Equal(t, "EUR", rec.CommitmentCurrency)
+	assert.Equal(t, float64(200), rec.EstimatedSavings)
 
 	// C2: SavingsPercentage must be > 0 so a MinSavingsPct filter doesn't silently drop the rec.
 	require.Greater(t, rec.SavingsPercentage, float64(0),

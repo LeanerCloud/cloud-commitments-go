@@ -495,6 +495,7 @@ func (c *Client) fillRedisPricing(ctx context.Context, rec *common.Recommendatio
 	if pricing.CommitmentPrice > 0 {
 		monthly := pricing.CommitmentPrice / float64(termYears*12)
 		rec.RecurringMonthlyCost = &monthly
+		rec.CommitmentCurrency = pricing.Currency
 	}
 	rec.OnDemandCost = pricing.OnDemandPrice
 	rec.SavingsPercentage = pricing.SavingsPercentage

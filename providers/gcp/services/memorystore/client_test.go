@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/cloudbilling/v1"
 	"google.golang.org/api/iterator"
+	"google.golang.org/genproto/googleapis/type/money"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/reporter"
@@ -837,7 +838,7 @@ func TestMemorystoreClient_ConvertGCPRecommendation_RecurringMonthlyCost(t *test
 										UnitPrice: &cloudbilling.Money{
 											Units:        0,
 											Nanos:        int64(onDemandHourly * 1e9),
-											CurrencyCode: "USD",
+											CurrencyCode: "EUR",
 										},
 									},
 								},
@@ -859,7 +860,7 @@ func TestMemorystoreClient_ConvertGCPRecommendation_RecurringMonthlyCost(t *test
 										UnitPrice: &cloudbilling.Money{
 											Units:        0,
 											Nanos:        int64(commitmentHourly * 1e9),
-											CurrencyCode: "USD",
+											CurrencyCode: "EUR",
 										},
 									},
 								},
@@ -874,6 +875,11 @@ func TestMemorystoreClient_ConvertGCPRecommendation_RecurringMonthlyCost(t *test
 
 	gcpRec := &recommenderpb.Recommendation{
 		Name: "test-rec",
+		PrimaryImpact: &recommenderpb.Impact{
+			Projection: &recommenderpb.Impact_CostProjection{
+				CostProjection: &recommenderpb.CostProjection{Cost: &money.Money{Units: -100, CurrencyCode: "JPY"}},
+			},
+		},
 		Content: &recommenderpb.RecommendationContent{
 			OperationGroups: []*recommenderpb.OperationGroup{
 				{
@@ -891,6 +897,8 @@ func TestMemorystoreClient_ConvertGCPRecommendation_RecurringMonthlyCost(t *test
 				rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{Term: term, PaymentOption: payment})
 				rec.Count = 3
 				rec.AccountName = "fixture"
+				assert.Equal(t, "EUR", rec.CommitmentCurrency)
+				assert.Equal(t, float64(100), rec.EstimatedSavings)
 				require.NotNil(t, rec.RecurringMonthlyCost)
 				assert.Zero(t, rec.CommitmentCost)
 				assert.InDelta(t, 100, *rec.RecurringMonthlyCost, 0.00001)
@@ -907,6 +915,7 @@ func TestMemorystoreClient_ConvertGCPRecommendation_RecurringMonthlyCost(t *test
 				scaled, err := common.ResizeCount(*rec, 2)
 				require.NoError(t, err)
 				assert.Equal(t, 2, scaled.Count)
+				assert.Equal(t, "EUR", scaled.CommitmentCurrency)
 				assert.InDelta(t, 800*months/12, scaled.CommitmentCost+*scaled.RecurringMonthlyCost*months, 0.0001)
 				assert.InDelta(t, 100, *rec.RecurringMonthlyCost, 0.00001)
 				quote, err := client.GetOfferingDetails(ctx, *rec)
@@ -923,6 +932,7 @@ func TestMemorystoreClient_ConvertGCPRecommendation_RecurringMonthlyCost(t *test
 		assert.Zero(t, rec.CommitmentCost)
 		assert.Zero(t, rec.BreakEvenMonths)
 		assert.Nil(t, rec.RecurringMonthlyCost)
+		assert.Empty(t, rec.CommitmentCurrency)
 	})
 }
 
@@ -950,6 +960,7 @@ func TestMemorystoreClient_ConvertGCPRecommendation_RecurringMonthlyCost_Billing
 			assert.Zero(t, rec.CommitmentCost)
 			assert.Zero(t, rec.BreakEvenMonths)
 			assert.Nil(t, rec.RecurringMonthlyCost)
+			assert.Empty(t, rec.CommitmentCurrency)
 		})
 	}
 }
