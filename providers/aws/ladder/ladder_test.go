@@ -855,14 +855,14 @@ func TestGetUsageBaseline_WrongScope_ReturnsError(t *testing.T) {
 // it as though it were current. Now GetUsageBaseline must return an explicit error
 // naming the last date when the most-recent point is older than maxSeriesAgeDays.
 func TestGetUsageBaseline_StaleSeries_ReturnsError(t *testing.T) {
-	// Build a 30-point series whose most-recent point is maxSeriesAgeDays+1 days
+	// Build a 27-point series whose most-recent point is maxSeriesAgeDays+1 days
 	// in the past, simulating a CE feed that stopped (or a wrong date range).
 	// The date is built from the UTC calendar day so it is hour-independent.
 	staleEnd := utcDay(time.Now()).AddDate(0, 0, -(maxSeriesAgeDays + 1))
-	points := make([]DailyPoint, 30)
+	points := make([]DailyPoint, 27)
 	for i := range points {
 		points[i] = DailyPoint{
-			Date:       staleEnd.AddDate(0, 0, -(29 - i)),
+			Date:       staleEnd.AddDate(0, 0, -(26 - i)),
 			USDPerHour: float64(i + 1),
 		}
 	}
@@ -946,9 +946,9 @@ func TestGetUsageBaseline_AgeExactlyAtBoundary_NoError(t *testing.T) {
 	// built directly from the UTC calendar day (no hour arithmetic) so the test
 	// does not depend on the current UTC hour.
 	end := utcDay(time.Now()).AddDate(0, 0, -maxSeriesAgeDays)
-	points := make([]DailyPoint, 30)
+	points := make([]DailyPoint, 28)
 	for i := range points {
-		points[i] = DailyPoint{Date: end.AddDate(0, 0, -(29 - i)), USDPerHour: float64(i + 1)}
+		points[i] = DailyPoint{Date: end.AddDate(0, 0, -(27 - i)), USDPerHour: float64(i + 1)}
 	}
 	cov := &fakeCoverageSource{onDemandPoints: points}
 	a := newTestLadder(t, &fakeRILister{}, &fakeSPLister{}, cov, &fakeUtilizationSource{})
@@ -963,10 +963,8 @@ func TestGetUsageBaseline_AgeExactlyAtBoundary_NoError(t *testing.T) {
 func TestGetUsageBaseline_CoverageExactlyAtBoundary_NoError(t *testing.T) {
 	const lookbackDays = 30
 	n := lookbackDays - maxMissingDays // exactly the minimum required, all in-window
-	cov := &fakeCoverageSource{onDemandPoints: makeRecentPoints(n)}
-	a := newTestLadder(t, &fakeRILister{}, &fakeSPLister{}, cov, &fakeUtilizationSource{})
-
-	_, err := a.GetUsageBaseline(context.Background(), testScope(), lookbackDays, 5.0)
+	points := makeRecentPoints(lookbackDays)[:n]
+	err := validateInWindowCoverage(points, lookbackDays, utcDay(time.Now()))
 	require.NoError(t, err, "exactly lookbackDays-maxMissingDays in-window points must pass (boundary is inWindow < minRequired)")
 }
 

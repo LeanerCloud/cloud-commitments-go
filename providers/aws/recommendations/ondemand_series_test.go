@@ -79,6 +79,47 @@ func newOnDemandClient(m *mockOnDemandCE) *Client {
 	return NewClientWithAPI(m, "us-east-1")
 }
 
+func TestGetOnDemandSeriesForAccount_RejectsMissingScopeBeforeIO(t *testing.T) {
+	for _, args := range []struct {
+		account, region string
+		days            int
+	}{{"", "eu-west-1", 30}, {"fixture-account", "", 30}, {"fixture-account", "eu-west-1", 0}} {
+		mock := &mockOnDemandCE{}
+		_, err := newOnDemandClient(mock).GetOnDemandSeriesForAccount(context.Background(), args.account, args.region, args.days)
+		require.Error(t, err)
+		assert.Empty(t, mock.gotInputs)
+	}
+}
+
+func TestGetOnDemandSeriesForAccount_ValidatesPeriods(t *testing.T) {
+	end := time.Now().UTC().Truncate(24 * time.Hour)
+	for _, mode := range []string{"valid", "duplicate", "outside", "end"} {
+		t.Run(mode, func(t *testing.T) {
+			day := end.AddDate(0, 0, -1)
+			if mode == "outside" {
+				day = end
+			}
+			row := dailyResult(day.Format(ceDateLayout), 24)
+			if mode != "end" {
+				row.TimePeriod.End = aws.String(day.AddDate(0, 0, 1).Format(ceDateLayout))
+			}
+			rows := []types.ResultByTime{row}
+			if mode == "duplicate" {
+				rows = append(rows, row)
+			}
+			mock := &mockOnDemandCE{pages: []*costexplorer.GetCostAndUsageOutput{{ResultsByTime: rows}}}
+			series, err := newOnDemandClient(mock).GetOnDemandSeriesForAccount(context.Background(), "fixture-account", "eu-west-1", 30)
+			if mode == "valid" {
+				require.NoError(t, err)
+				require.Len(t, series, 1)
+				assert.Equal(t, 1.0, series[0].USDPerHour)
+			} else {
+				require.Error(t, err)
+			}
+		})
+	}
+}
+
 // utcDate parses a "2006-01-02" string into midnight UTC, failing the test
 // on malformed input. Mirrors the production ceDateLayout parse so date
 // assertions compare like with like.

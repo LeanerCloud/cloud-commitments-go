@@ -476,8 +476,9 @@ func (m *ladderCEMock) GetCostAndUsage(
 // SCREAMING_SNAKE lookup, the r.Total lookup would miss this key and the
 // mapping test below would fail with a missing-metric error.
 func ceDailyRow(dateStr, amount string) cetypes.ResultByTime {
+	day, _ := time.Parse(time.DateOnly, dateStr)
 	return cetypes.ResultByTime{
-		TimePeriod: &cetypes.DateInterval{Start: aws.String(dateStr), End: aws.String(dateStr)},
+		TimePeriod: &cetypes.DateInterval{Start: aws.String(dateStr), End: aws.String(day.AddDate(0, 0, 1).Format(time.DateOnly))},
 		Total: map[string]cetypes.MetricValue{
 			"UnblendedCost": {Amount: aws.String(amount)},
 		},
@@ -488,21 +489,22 @@ func ceDailyRow(dateStr, amount string) cetypes.ResultByTime {
 // []recommendations.DailyCost -> []DailyPoint mapping: dates and values are
 // copied index-for-index, oldest-first.
 func TestOnDemandSeriesAdapter_MapsDailyCostToDailyPoint(t *testing.T) {
+	day := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -2)
 	mock := &ladderCEMock{costAndUsage: &costexplorer.GetCostAndUsageOutput{
 		ResultsByTime: []cetypes.ResultByTime{
-			ceDailyRow("2026-01-02", "480"), // $20/hr, newer
-			ceDailyRow("2026-01-01", "240"), // $10/hr, older
+			ceDailyRow(day.AddDate(0, 0, 1).Format(time.DateOnly), "480"),
+			ceDailyRow(day.Format(time.DateOnly), "240"),
 		},
 	}}
-	adapter := &onDemandSeriesAdapter{client: recommendations.NewClientWithAPI(mock, testRegion)}
+	adapter := &onDemandSeriesAdapter{client: recommendations.NewClientWithAPI(mock, testRegion), accountID: "fixture-account"}
 
 	points, err := adapter.GetOnDemandSeries(context.Background(), testRegion, 7)
 
 	require.NoError(t, err)
 	require.Len(t, points, 2)
-	assert.Equal(t, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), points[0].Date, "oldest first")
+	assert.Equal(t, day, points[0].Date, "oldest first")
 	assert.InDelta(t, 10.0, points[0].USDPerHour, 1e-9)
-	assert.Equal(t, time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC), points[1].Date)
+	assert.Equal(t, day.AddDate(0, 0, 1), points[1].Date)
 	assert.InDelta(t, 20.0, points[1].USDPerHour, 1e-9)
 }
 
@@ -510,7 +512,7 @@ func TestOnDemandSeriesAdapter_MapsDailyCostToDailyPoint(t *testing.T) {
 // adapter unchanged (no silent fallback).
 func TestOnDemandSeriesAdapter_PropagatesError(t *testing.T) {
 	// Empty CE output -> the client errors on the empty series.
-	adapter := &onDemandSeriesAdapter{client: recommendations.NewClientWithAPI(&ladderCEMock{}, testRegion)}
+	adapter := &onDemandSeriesAdapter{client: recommendations.NewClientWithAPI(&ladderCEMock{}, testRegion), accountID: "fixture-account"}
 
 	_, err := adapter.GetOnDemandSeries(context.Background(), testRegion, 7)
 

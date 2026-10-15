@@ -86,7 +86,7 @@ func NewFromConfig(awsCfg aws.Config, cfg Config) (*AWSLadder, error) {
 		ec2Client, // riLister
 		&spListerAdapter{api: spSDKClient, region: cfg.Region}, // spLister (region-scoped)
 		recoClient, // riCoverageSource
-		&onDemandSeriesAdapter{client: recoClient}, // onDemandSeriesSource
+		&onDemandSeriesAdapter{client: recoClient, accountID: cfg.AccountID}, // onDemandSeriesSource
 		recoClient,                                // utilizationSource
 		&spCoverageAdapter{client: recoClient},    // spCoverageSource
 		&spUtilizationAdapter{client: recoClient}, // spUtilizationSource

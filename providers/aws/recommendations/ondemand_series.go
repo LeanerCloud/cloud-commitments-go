@@ -91,9 +91,7 @@ type DailyCost struct {
 // Fail-loud conditions (feedback_no_silent_fallbacks):
 //   - Empty result: error.
 //   - A result row missing the requested metric key (or with a nil Amount):
-//     error. CE echoes every requested metric on every row (genuine $0 days
-//     arrive as Amount:"0"), so a missing key means the request vocabulary is
-//     wrong, and fabricating a 0 would silently corrupt the baseline.
+//     error. Missing observations are not treated as measured zero.
 //   - An all-zero series: error. When a filter or metric name is wrong, CE
 //     returns a complete, fresh, chronological series of $0 rows that would
 //     pass every downstream validation and make the engine size purchases
@@ -101,6 +99,18 @@ type DailyCost struct {
 //     spend for the whole lookback has nothing to ladder, so erroring is
 //     correct there too.
 func (c *Client) GetOnDemandSeries(ctx context.Context, region string, lookbackDays int) ([]DailyCost, error) {
+	return c.getOnDemandSeries(ctx, "", region, lookbackDays)
+}
+
+// GetOnDemandSeriesForAccount restricts residual observations to the usage account.
+func (c *Client) GetOnDemandSeriesForAccount(ctx context.Context, accountID, region string, lookbackDays int) ([]DailyCost, error) {
+	if accountID == "" {
+		return nil, fmt.Errorf("GetOnDemandSeriesForAccount: accountID must not be empty")
+	}
+	return c.getOnDemandSeries(ctx, accountID, region, lookbackDays)
+}
+
+func (c *Client) getOnDemandSeries(ctx context.Context, accountID, region string, lookbackDays int) ([]DailyCost, error) {
 	if err := validateOnDemandSeriesArgs(region, lookbackDays); err != nil {
 		return nil, err
 	}
@@ -116,6 +126,11 @@ func (c *Client) GetOnDemandSeries(ctx context.Context, region string, lookbackD
 		Granularity: types.GranularityDaily,
 		Metrics:     []string{onDemandMetric},
 		Filter:      onDemandSeriesFilter(region),
+	}
+	if accountID != "" {
+		input.Filter.And = append(input.Filter.And, types.Expression{Dimensions: &types.DimensionValues{
+			Key: types.DimensionLinkedAccount, Values: []string{accountID},
+		}})
 	}
 
 	byDate := make(map[string]float64)
@@ -137,7 +152,12 @@ func (c *Client) GetOnDemandSeries(ctx context.Context, region string, lookbackD
 			return nil, fmt.Errorf("GetOnDemandSeries: %w", err)
 		}
 
-		if err := accumulateDailyResults(byDate, out); err != nil {
+		if accountID != "" {
+			err = accumulateScopedDailyResults(byDate, out, start, end)
+		} else {
+			err = accumulateDailyResults(byDate, out)
+		}
+		if err != nil {
 			return nil, fmt.Errorf("GetOnDemandSeries: %w", err)
 		}
 
@@ -149,11 +169,33 @@ func (c *Client) GetOnDemandSeries(ctx context.Context, region string, lookbackD
 		nextToken = out.NextPageToken
 	}
 
-	series, err := buildDailySeries(byDate, region, lookbackDays)
-	if err != nil {
-		return nil, fmt.Errorf("GetOnDemandSeries: %w", err)
+	return buildDailySeries(byDate, region, lookbackDays)
+}
+
+func accumulateScopedDailyResults(byDate map[string]float64, out *costexplorer.GetCostAndUsageOutput, start, end time.Time) error {
+	for _, row := range out.ResultsByTime {
+		if row.TimePeriod == nil {
+			return fmt.Errorf("CE daily result is missing its time period")
+		}
+		day, err := time.Parse(ceDateLayout, aws.ToString(row.TimePeriod.Start))
+		if err != nil {
+			return fmt.Errorf("CE daily period start: %w", err)
+		}
+		next, err := time.Parse(ceDateLayout, aws.ToString(row.TimePeriod.End))
+		if err != nil {
+			return fmt.Errorf("CE daily period end: %w", err)
+		}
+		if !next.Equal(day.AddDate(0, 0, 1)) || day.Before(start) || next.After(end) {
+			return fmt.Errorf("CE daily period %s to %s is not one day inside the requested window", day, next)
+		}
+		if _, duplicate := byDate[day.Format(ceDateLayout)]; duplicate {
+			return fmt.Errorf("CE returned duplicate daily period %s", day)
+		}
+		if err := accumulateDailyResults(byDate, &costexplorer.GetCostAndUsageOutput{ResultsByTime: []types.ResultByTime{row}}); err != nil {
+			return err
+		}
 	}
-	return series, nil
+	return nil
 }
 
 // validateOnDemandSeriesArgs rejects out-of-range GetOnDemandSeries arguments
@@ -226,10 +268,7 @@ func onDemandSeriesFilter(region string) *types.Expression {
 //   - A row missing its TimePeriod/Start cannot be dated; silently skipping
 //     it would leave an incomplete series that can still pass downstream
 //     minimum-length checks and produce an incorrect baseline.
-//   - A row missing the requested metric key (or carrying a nil Amount)
-//     signals a request-vocabulary bug: CE echoes every requested metric on
-//     every returned row, with genuine $0 days arriving as Amount:"0";
-//     writing a fabricated 0 would silently corrupt the baseline.
+//   - Missing metrics or amounts are insufficient observations, not zero.
 //   - Unparseable amount strings fail loud (feedback_strict_int_parse).
 //
 // Dividing by 24 converts daily USD to USD/hr; 24 is derived from the DAILY
@@ -242,7 +281,7 @@ func accumulateDailyResults(byDate map[string]float64, out *costexplorer.GetCost
 		dateStr := aws.ToString(r.TimePeriod.Start)
 		mv, ok := r.Total[onDemandMetric]
 		if !ok || mv.Amount == nil {
-			return fmt.Errorf("CE result row for day %s is missing the %q metric; CE echoes every requested metric on every row, so this indicates a request-vocabulary bug (genuine $0 days arrive as Amount:\"0\")",
+			return fmt.Errorf("CE result row for day %s is missing the %q metric or amount; no observation is available",
 				dateStr, onDemandMetric)
 		}
 		usd, err := strconv.ParseFloat(aws.ToString(mv.Amount), 64)

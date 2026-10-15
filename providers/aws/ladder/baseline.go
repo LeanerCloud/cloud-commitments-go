@@ -141,15 +141,8 @@ func utcDay(t time.Time) time.Time {
 	return t.UTC().Truncate(24 * time.Hour)
 }
 
-// validateInWindowCoverage rejects a series that does not have enough points
-// falling INSIDE the lookback window [today-lookbackDays, today]. Counting the
-// total number of points is insufficient: N points smeared across more than N
-// days (e.g. 27 points spread over 53 days) would pass a naive count check
-// while leaving the recent window sparsely covered, so the percentile would be
-// computed over data that does not represent the requested window. Every date
-// is normalized to its UTC calendar day (utcDay) before comparison.
-//
-// today must already be normalized via utcDay by the caller.
+// Only trailing reporting lag is allowed; missing interior days are not zero.
+// today must be midnight UTC, matching the collector's exclusive end.
 func validateInWindowCoverage(points []DailyPoint, lookbackDays int, today time.Time) error {
 	windowStart := today.AddDate(0, 0, -lookbackDays)
 	inWindow := 0
@@ -164,6 +157,18 @@ func validateInWindowCoverage(points []DailyPoint, lookbackDays int, today time.
 			"on-demand series has %d points inside the %d-day lookback window (minimum %d = %d - maxMissingDays %d); the series source may have gaps or a truncated/misaligned date range",
 			inWindow, lookbackDays, minRequired, lookbackDays, maxMissingDays,
 		)
+	}
+	if err := validateSeriesChronology(points); err != nil {
+		return err
+	}
+	for i, p := range points {
+		d := utcDay(p.Date)
+		if d.Before(windowStart) || !d.Before(today) {
+			return fmt.Errorf("on-demand series day %s is outside the requested window", d)
+		}
+		if !d.Equal(windowStart.AddDate(0, 0, i)) {
+			return fmt.Errorf("on-demand series has a missing day before %s", d)
+		}
 	}
 	return nil
 }

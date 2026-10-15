@@ -213,14 +213,15 @@ func parseSPDate(field string, value *string, planID string) (time.Time, error) 
 // increasing unique UTC days) is guaranteed by the recommendations contract
 // and preserved verbatim by the index-for-index copy.
 type onDemandSeriesAdapter struct {
-	client *recommendations.Client
+	client    *recommendations.Client
+	accountID string
 }
 
 // GetOnDemandSeries fetches the daily on-demand cost series from CE and maps
 // each dated entry to a DailyPoint. Errors propagate unchanged (no silent
 // fallback); an empty series is already rejected inside the client.
 func (a *onDemandSeriesAdapter) GetOnDemandSeries(ctx context.Context, region string, lookbackDays int) ([]DailyPoint, error) {
-	costs, err := a.client.GetOnDemandSeries(ctx, region, lookbackDays)
+	costs, err := a.client.GetOnDemandSeriesForAccount(ctx, a.accountID, region, lookbackDays)
 	if err != nil {
 		return nil, err
 	}
