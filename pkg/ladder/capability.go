@@ -6,6 +6,12 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
+// CommitmentRateCapability optionally supplies new-purchase commitment dollars
+// per covered on-demand dollar. Missing layers in the partial map are intentional.
+type CommitmentRateCapability interface {
+	GetCommitmentRates(context.Context, Scope, Term, PaymentOption) (map[LayerType]float64, error)
+}
+
 // LadderCapability is implemented by each cloud provider to give the ladder
 // engine a uniform interface for querying commitment state and executing
 // purchases. Implementations live in providers/ and are injected into the

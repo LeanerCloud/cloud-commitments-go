@@ -60,6 +60,13 @@ func NewFromAWSConfig(ctx context.Context, region, accountID string) (pkgladder.
 	if err != nil {
 		return nil, fmt.Errorf("awsladder.NewFromAWSConfig: load AWS config: %w", err)
 	}
+	return NewFromConfig(awsCfg, Config{Region: region, AccountID: accountID})
+}
+
+// NewFromConfig accepts resolved credentials and transport configuration for
+// callers that already own the account's AWS configuration.
+func NewFromConfig(awsCfg aws.Config, cfg Config) (*AWSLadder, error) {
+	awsCfg.Region = cfg.Region
 
 	// recommendations.Client satisfies riCoverageSource and utilizationSource
 	// directly, and is the underlying client for the on-demand series and SP
@@ -74,14 +81,10 @@ func NewFromAWSConfig(ctx context.Context, region, accountID string) (pkgladder.
 	// need the offering and purchase methods the full API exposes).
 	spSDKClient := sdksp.NewFromConfig(awsCfg)
 
-	cfg := Config{
-		Region:    region,
-		AccountID: accountID,
-	}
 	l, err := New(
 		cfg,
 		ec2Client, // riLister
-		&spListerAdapter{api: spSDKClient, region: region}, // spLister (region-scoped)
+		&spListerAdapter{api: spSDKClient, region: cfg.Region}, // spLister (region-scoped)
 		recoClient, // riCoverageSource
 		&onDemandSeriesAdapter{client: recoClient}, // onDemandSeriesSource
 		recoClient,                                // utilizationSource
@@ -89,8 +92,9 @@ func NewFromAWSConfig(ctx context.Context, region, accountID string) (pkgladder.
 		&spUtilizationAdapter{client: recoClient}, // spUtilizationSource
 	)
 	if err != nil {
-		return nil, fmt.Errorf("awsladder.NewFromAWSConfig: %w", err)
+		return nil, fmt.Errorf("awsladder.NewFromConfig: %w", err)
 	}
+	l.spRates = recoClient
 	return l, nil
 }
 
