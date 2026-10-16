@@ -171,7 +171,10 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		Tags:                         c.createPurchaseTags(rec, opts.Source),
 	}
 
-	response, err := c.client.PurchaseReservedCacheNodesOffering(ctx, input)
+	// With no token the API cannot dedupe, so an SDK retry after a lost response
+	// could re-send the purchase: send once and report a lost response as
+	// unknown (precedent: ec2/client.go).
+	response, err := c.client.PurchaseReservedCacheNodesOffering(ctx, input, purchasecfg.SingleAttemptIf(opts.IdempotencyToken, func(o *elasticache.Options) { o.RetryMaxAttempts = 1 })...)
 	if err != nil {
 		if existingID, recovered := c.recoverAlreadyExists(ctx, opts.IdempotencyToken, reservationID, err); recovered {
 			result.Success = true
@@ -179,6 +182,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 			result.CommitmentID = existingID
 			return result, nil
 		}
+		err = purchasecfg.ClassifyUnlessToken(opts.IdempotencyToken, err)
 		result.Error = fmt.Errorf("failed to purchase Reserved Cache Node: %w", err)
 		return result, result.Error
 	}
@@ -192,7 +196,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 			result.Cost = &total
 		}
 	} else {
-		result.Error = fmt.Errorf("purchase response was empty")
+		result.Error = purchasecfg.UnknownUnlessToken(opts.IdempotencyToken, fmt.Errorf("purchase response was empty"))
 		return result, result.Error
 	}
 
