@@ -65,28 +65,21 @@ func (c *Client) GetRIUtilization(ctx context.Context, lookbackDays int, region 
 
 	agg := make(map[string]*riAccumulator)
 
-	var nextPageToken *string
-	for {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("utilization: pagination canceled: %w", err)
-		}
-		input.NextPageToken = nextPageToken
-
+	err := paginateCE(ctx, maxUtilizationPages, "utilization", func(token *string) (*string, error) {
+		input.NextPageToken = token
 		result, err := c.fetchUtilizationPage(ctx, input)
 		if err != nil {
 			return nil, err
 		}
-
 		for _, group := range result.UtilizationsByTime {
 			for _, detail := range group.Groups {
 				aggregateUtilizationDetail(agg, detail)
 			}
 		}
-
-		if result.NextPageToken == nil || *result.NextPageToken == "" {
-			break
-		}
-		nextPageToken = result.NextPageToken
+		return result.NextPageToken, nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	return buildUtilizations(agg), nil

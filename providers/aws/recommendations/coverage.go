@@ -317,25 +317,21 @@ func (c *Client) fetchCoveragePaged(
 	windowHours float64,
 ) error {
 	acc := make(riCoverageAccumulator)
-	var token *string
-	for {
-		if err := ctx.Err(); err != nil {
-			return fmt.Errorf("coverage: pagination canceled: %w", err)
-		}
+	err := paginateCE(ctx, maxCoveragePages, "coverage", func(token *string) (*string, error) {
 		input.NextPageToken = token
 		result, err := c.fetchCoveragePage(ctx, input)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		for _, period := range result.CoveragesByTime {
 			for _, group := range period.Groups {
 				acc.addGroup(group, windowHours)
 			}
 		}
-		if result.NextPageToken == nil || *result.NextPageToken == "" {
-			break
-		}
-		token = result.NextPageToken
+		return result.NextPageToken, nil
+	})
+	if err != nil {
+		return err
 	}
 	acc.record(record)
 	return nil

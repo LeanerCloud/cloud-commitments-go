@@ -87,20 +87,19 @@ func (c *Client) fetchDailyCoverage(ctx context.Context, serviceFilter, resource
 	}
 
 	anyData := false
-	var token *string
-	for {
+	err := paginateCE(ctx, maxRecommendationPages, "GetReservationCoverage", func(token *string) (*string, error) {
 		input.NextPageToken = token
 		result, err := c.fetchCoveragePage(ctx, input)
 		if err != nil {
-			return false, fmt.Errorf("failed to get daily coverage for %s/%s/%s: %w", serviceFilter, resourceType, region, err)
+			return nil, err
 		}
 		if applyPeriodsToDayMap(result.CoveragesByTime, dayPct) {
 			anyData = true
 		}
-		if result.NextPageToken == nil || *result.NextPageToken == "" {
-			break
-		}
-		token = result.NextPageToken
+		return result.NextPageToken, nil
+	})
+	if err != nil {
+		return false, fmt.Errorf("failed to get daily coverage for %s/%s/%s: %w", serviceFilter, resourceType, region, err)
 	}
 	return anyData, nil
 }
