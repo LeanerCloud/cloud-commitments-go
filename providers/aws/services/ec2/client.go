@@ -113,6 +113,11 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 			State:          common.CommitmentState(ri.State),
 			StartDate:      aws.ToTime(ri.Start),
 			EndDate:        aws.ToTime(ri.End),
+			// Raw SDK values; pkg/common normalizes them when matching.
+			Platform:         string(ri.ProductDescription),
+			Tenancy:          string(ri.InstanceTenancy),
+			Scope:            string(ri.Scope),
+			AvailabilityZone: aws.ToString(ri.AvailabilityZone),
 		}
 
 		commitments = append(commitments, commitment)
