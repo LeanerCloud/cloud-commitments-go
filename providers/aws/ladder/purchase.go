@@ -96,8 +96,8 @@ func (a *AWSLadder) purchaseSP(ctx context.Context, layer ladder.LayerType, plan
 // option strings the offering query converts.
 //
 // Platform, Tenancy, and Scope are REQUIRED non-empty (no-silent-fallback
-// rule): the ec2 client rejects an empty Tenancy or Scope, and this check
-// surfaces the same error before any AWS call, naming the ladder field.
+// rule): the ec2 client rejects the same empty values, and this check
+// surfaces its own error before any AWS call, naming the ladder field.
 func validateRIPurchaseRec(rec *common.Recommendation) error {
 	details, ok := rec.Details.(*common.ComputeDetails)
 	if !ok || details == nil {

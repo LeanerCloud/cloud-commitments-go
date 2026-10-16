@@ -852,22 +852,14 @@ func parseExchangeLookup(tenancy, scope, az string) (types.Tenancy, types.Scope,
 }
 
 // FindConvertibleOffering finds a convertible RI offering ID for the given parameters.
+// Offerings AWS returns that do not match the request are skipped, not trusted.
 func (c *Client) FindConvertibleOffering(ctx context.Context, params FindConvertibleOfferingParams) (string, error) {
-	tenancy, scope, az, err := parseExchangeLookup(params.Tenancy, params.Scope, params.AvailabilityZone)
+	want, err := resolveFindWant(params)
 	if err != nil {
 		return "", err
 	}
-	productDesc, duration, _, err := normalizeTargetOfferingsParams(ListTargetOfferingsParams{
-		ProductDescription: params.ProductDescription,
-		Duration:           params.Duration,
-	})
-	if err != nil {
-		return "", err
-	}
-	if strings.TrimSpace(params.InstanceType) == "" {
-		return "", errors.New("convertible offering lookup needs an instance type")
-	}
-	input := convertibleOfferingInput(params.InstanceType, productDesc, scope, tenancy, az, duration)
+	input := convertibleOfferingInput(want.instanceType, want.productDesc, want.scope, want.tenancy, want.az, want.duration)
+	skips := offeringSkips{}
 	for page := 1; page <= maxTargetOfferingPages; page++ {
 		if err := ctx.Err(); err != nil {
 			return "", err
@@ -877,17 +869,57 @@ func (c *Client) FindConvertibleOffering(ctx context.Context, params FindConvert
 		if err != nil {
 			return "", fmt.Errorf("failed to describe convertible offerings: %w", err)
 		}
-		if id := firstOfferingInZone(result.ReservedInstancesOfferings, az); id != "" {
+		if id := firstMatchingOffering(result.ReservedInstancesOfferings, want, skips); id != "" {
 			return id, nil
 		}
 		if isLastEC2Page(result.NextToken) {
-			return "", fmt.Errorf("no convertible offering found for %s (%s, %s, %s, AZ %q)",
-				params.InstanceType, productDesc, tenancy, scope, az)
+			return "", fmt.Errorf("no convertible offering found for %s (%s, %s, %s, AZ %q)%s",
+				want.instanceType, want.productDesc, want.tenancy, want.scope, want.az, skips.note())
 		}
 		input.NextToken = result.NextToken
 	}
-	return "", fmt.Errorf("no convertible offering found for %s (%s, %s, %s, AZ %q) within %d pages: pagination cap reached",
-		params.InstanceType, productDesc, tenancy, scope, az, maxTargetOfferingPages)
+	return "", fmt.Errorf("no convertible offering found for %s (%s, %s, %s, AZ %q) within %d pages: pagination cap reached%s",
+		want.instanceType, want.productDesc, want.tenancy, want.scope, want.az, maxTargetOfferingPages, skips.note())
+}
+
+// resolveFindWant validates params and builds the expectation the returned
+// offerings are checked against. Nothing is defaulted: a missing field errors.
+func resolveFindWant(params FindConvertibleOfferingParams) (offeringWant, error) {
+	tenancy, scope, az, err := parseExchangeLookup(params.Tenancy, params.Scope, params.AvailabilityZone)
+	if err != nil {
+		return offeringWant{}, err
+	}
+	productDesc, duration, _, err := normalizeTargetOfferingsParams(ListTargetOfferingsParams{
+		ProductDescription: params.ProductDescription,
+		Duration:           params.Duration,
+	})
+	if err != nil {
+		return offeringWant{}, err
+	}
+	instanceType := strings.TrimSpace(params.InstanceType)
+	if instanceType == "" {
+		return offeringWant{}, errors.New("convertible offering lookup needs an instance type")
+	}
+	return offeringWant{
+		instanceType: instanceType, productDesc: productDesc, tenancy: tenancy, scope: scope,
+		duration: duration, class: types.OfferingClassTypeConvertible, az: az,
+	}, nil
+}
+
+// firstMatchingOffering returns the id of the first offering matching want,
+// counting and logging each skipped one.
+func firstMatchingOffering(offerings []types.ReservedInstancesOffering, want offeringWant, skips offeringSkips) string {
+	for i := range offerings {
+		o := offerings[i]
+		reason := offeringMismatch(o, want)
+		if reason == "" {
+			return aws.ToString(o.ReservedInstancesOfferingId)
+		}
+		skips[reason]++
+		log.Printf("FindConvertibleOffering skipping offering %s: %s mismatch",
+			aws.ToString(o.ReservedInstancesOfferingId), reason)
+	}
+	return ""
 }
 
 // convertibleOfferingInput builds the first-page request for FindConvertibleOffering.
@@ -908,20 +940,6 @@ func convertibleOfferingInput(instanceType, productDesc string, scope types.Scop
 		input.AvailabilityZone = aws.String(az)
 	}
 	return input
-}
-
-// firstOfferingInZone returns the ID of the first offering in az, or "" when
-// none matches.
-func firstOfferingInZone(offerings []types.ReservedInstancesOffering, az string) string {
-	for i := range offerings {
-		o := offerings[i]
-		if offeringInZone(o, az) {
-			return aws.ToString(o.ReservedInstancesOfferingId)
-		}
-		log.Printf("FindConvertibleOffering skipping offering %s in AZ %q (want %q)",
-			aws.ToString(o.ReservedInstancesOfferingId), aws.ToString(o.AvailabilityZone), az)
-	}
-	return ""
 }
 
 // TargetOffering is one valid target offering for a convertible RI exchange.
