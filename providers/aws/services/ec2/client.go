@@ -855,24 +855,42 @@ func (c *Client) FindConvertibleOffering(ctx context.Context, params FindConvert
 	if err != nil {
 		return "", err
 	}
-	duration := params.Duration
-	if duration == 0 {
-		duration = OneYearSeconds
+	productDesc, duration, _ := normalizeTargetOfferingsParams(ListTargetOfferingsParams{
+		ProductDescription: params.ProductDescription,
+		Duration:           params.Duration,
+	})
+	input := convertibleOfferingInput(params.InstanceType, productDesc, scope, tenancy, az, duration)
+	for page := 1; page <= maxTargetOfferingPages; page++ {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		pageInput := *input
+		result, err := c.client.DescribeReservedInstancesOfferings(ctx, &pageInput)
+		if err != nil {
+			return "", fmt.Errorf("failed to describe convertible offerings: %w", err)
+		}
+		if id := firstOfferingInZone(result.ReservedInstancesOfferings, az); id != "" {
+			return id, nil
+		}
+		if isLastEC2Page(result.NextToken) {
+			return "", fmt.Errorf("no convertible offering found for %s (%s, %s, %s, AZ %q)",
+				params.InstanceType, productDesc, tenancy, scope, az)
+		}
+		input.NextToken = result.NextToken
 	}
-	productDesc := params.ProductDescription
-	if productDesc == "" {
-		productDesc = defaultEC2Platform
-	}
+	return "", fmt.Errorf("no convertible offering found for %s (%s, %s, %s, AZ %q) within %d pages: pagination cap reached",
+		params.InstanceType, productDesc, tenancy, scope, az, maxTargetOfferingPages)
+}
 
-	filters := []types.Filter{
-		{Name: aws.String("instance-type"), Values: []string{params.InstanceType}},
-		{Name: aws.String("product-description"), Values: []string{productDesc}},
-		{Name: aws.String("scope"), Values: []string{string(scope)}},
-		{Name: aws.String("duration"), Values: []string{fmt.Sprintf("%d", duration)}},
-	}
-
+// convertibleOfferingInput builds the first-page request for FindConvertibleOffering.
+func convertibleOfferingInput(instanceType, productDesc string, scope types.Scope, tenancy types.Tenancy, az string, duration int64) *ec2.DescribeReservedInstancesOfferingsInput {
 	input := &ec2.DescribeReservedInstancesOfferingsInput{
-		Filters:            filters,
+		Filters: []types.Filter{
+			{Name: aws.String("instance-type"), Values: []string{instanceType}},
+			{Name: aws.String("product-description"), Values: []string{productDesc}},
+			{Name: aws.String("scope"), Values: []string{string(scope)}},
+			{Name: aws.String("duration"), Values: []string{fmt.Sprintf("%d", duration)}},
+		},
 		InstanceTenancy:    tenancy,
 		OfferingClass:      types.OfferingClassTypeConvertible,
 		IncludeMarketplace: aws.Bool(false),
@@ -881,22 +899,21 @@ func (c *Client) FindConvertibleOffering(ctx context.Context, params FindConvert
 	if az != "" {
 		input.AvailabilityZone = aws.String(az)
 	}
+	return input
+}
 
-	result, err := c.client.DescribeReservedInstancesOfferings(ctx, input)
-	if err != nil {
-		return "", fmt.Errorf("failed to describe convertible offerings: %w", err)
-	}
-
-	for i := range result.ReservedInstancesOfferings {
-		o := result.ReservedInstancesOfferings[i]
+// firstOfferingInZone returns the ID of the first offering in az, or "" when
+// none matches.
+func firstOfferingInZone(offerings []types.ReservedInstancesOffering, az string) string {
+	for i := range offerings {
+		o := offerings[i]
 		if offeringInZone(o, az) {
-			return aws.ToString(o.ReservedInstancesOfferingId), nil
+			return aws.ToString(o.ReservedInstancesOfferingId)
 		}
 		log.Printf("FindConvertibleOffering skipping offering %s in AZ %q (want %q)",
 			aws.ToString(o.ReservedInstancesOfferingId), aws.ToString(o.AvailabilityZone), az)
 	}
-	return "", fmt.Errorf("no convertible offering found for %s (%s, %s, %s, AZ %q)",
-		params.InstanceType, productDesc, tenancy, scope, az)
+	return ""
 }
 
 // TargetOffering is one valid target offering for a convertible RI exchange.

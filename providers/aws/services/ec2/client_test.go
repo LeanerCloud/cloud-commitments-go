@@ -1967,6 +1967,62 @@ func TestFindConvertibleOffering_Zonal_NoMatchingAZ_Errors(t *testing.T) {
 	assert.Contains(t, err.Error(), "us-east-1b")
 }
 
+func TestFindConvertibleOffering_Zonal_MatchOnSecondPage_FollowsNextToken(t *testing.T) {
+	t.Parallel()
+	var got []*ec2.DescribeReservedInstancesOfferingsInput
+	m := pagedOfferingsMock(&got,
+		[]types.ReservedInstancesOffering{zonedOffering("off-1a", "us-east-1a")},
+		[]types.ReservedInstancesOffering{zonedOffering("off-1b", "us-east-1b")},
+	)
+	client := &Client{client: m, region: "us-east-1"}
+
+	id, err := client.FindConvertibleOffering(context.Background(), zonalFindParams("us-east-1b"))
+
+	require.NoError(t, err)
+	assert.Equal(t, "off-1b", id)
+	require.Len(t, got, 2)
+	assert.Nil(t, got[0].NextToken)
+	assert.Equal(t, "next", aws.ToString(got[1].NextToken))
+	assert.Equal(t, "us-east-1b", aws.ToString(got[1].AvailabilityZone))
+}
+
+func TestFindConvertibleOffering_Zonal_NoMatchAcrossPages_Errors(t *testing.T) {
+	t.Parallel()
+	var got []*ec2.DescribeReservedInstancesOfferingsInput
+	m := pagedOfferingsMock(&got,
+		[]types.ReservedInstancesOffering{zonedOffering("off-1a", "us-east-1a")},
+		[]types.ReservedInstancesOffering{zonedOffering("off-1c", "us-east-1c")},
+	)
+	client := &Client{client: m, region: "us-east-1"}
+
+	id, err := client.FindConvertibleOffering(context.Background(), zonalFindParams("us-east-1b"))
+
+	require.Error(t, err)
+	assert.Empty(t, id)
+	assert.Contains(t, err.Error(), "no convertible offering found")
+	assert.NotContains(t, err.Error(), "pagination cap")
+	assert.Len(t, got, 2)
+}
+
+func TestFindConvertibleOffering_Zonal_PageCapReached_Errors(t *testing.T) {
+	t.Parallel()
+	var got []*ec2.DescribeReservedInstancesOfferingsInput
+	pages := make([][]types.ReservedInstancesOffering, maxTargetOfferingPages+1)
+	for i := range pages {
+		pages[i] = []types.ReservedInstancesOffering{zonedOffering("off-1a", "us-east-1a")}
+	}
+	m := pagedOfferingsMock(&got, pages...)
+	client := &Client{client: m, region: "us-east-1"}
+
+	id, err := client.FindConvertibleOffering(context.Background(), zonalFindParams("us-east-1b"))
+
+	require.Error(t, err)
+	assert.Empty(t, id)
+	assert.Contains(t, err.Error(), "pagination cap reached")
+	assert.Contains(t, err.Error(), fmt.Sprintf("%d pages", maxTargetOfferingPages))
+	assert.Len(t, got, maxTargetOfferingPages)
+}
+
 func TestFindConvertibleOffering_ZoneMisuse_ErrorsBeforeAPICall(t *testing.T) {
 	t.Parallel()
 	zonalNoAZ := zonalFindParams("")
