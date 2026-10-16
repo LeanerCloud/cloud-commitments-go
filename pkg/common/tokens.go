@@ -112,11 +112,37 @@ func IdempotencyGUID(token string) string {
 // prior non-idempotent ID, e.g. a random GUID or a timestamp). Centralizing the
 // choice keeps each executor's PurchaseCommitment a single statement and avoids
 // repeating the same empty-token guard across every Azure service.
+//
+// Prefer OrderIDFromToken, which rejects a malformed non-empty token; this function is removed once providers/azure switches (#104).
 func ReservationOrderID(token, fallback string) string {
 	if guid := IdempotencyGUID(token); guid != "" {
 		return guid
 	}
 	return fallback
+}
+
+// ErrInvalidIdempotencyToken is returned by OrderIDFromToken when a non-empty
+// token cannot be turned into a reservation order GUID.
+var ErrInvalidIdempotencyToken = errors.New("common: invalid idempotency token")
+
+// OrderIDFromToken returns the Azure reservationOrderID to PUT for a purchase:
+// the deterministic GUID derived from token when one is valid (issue #641), or
+// fallback when token is empty.
+//
+// A non-empty token that IdempotencyGUID cannot format (shorter than 32 chars,
+// or non-hex in its first 32) returns an error wrapping
+// ErrInvalidIdempotencyToken instead of the fallback: silently falling back
+// would make a re-drive create a second reservation. The error masks the token
+// with MaskToken.
+func OrderIDFromToken(token, fallback string) (string, error) {
+	if token == "" {
+		return fallback, nil
+	}
+	guid := IdempotencyGUID(token)
+	if guid == "" {
+		return "", fmt.Errorf("%w: %s", ErrInvalidIdempotencyToken, MaskToken(token))
+	}
+	return guid, nil
 }
 
 // MuteNotifScope is the set of valid notification scopes for per-recipient

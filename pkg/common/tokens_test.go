@@ -2,6 +2,7 @@ package common //nolint:revive // pkg/common is the module's core domain package
 
 import (
 	"encoding/hex"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -124,6 +125,48 @@ func TestReservationOrderID(t *testing.T) {
 	// No usable token: caller's fallback is returned verbatim.
 	assert.Equal(t, "fallback-id", ReservationOrderID("", "fallback-id"))
 	assert.Equal(t, "fallback-id", ReservationOrderID("abc", "fallback-id"))
+}
+
+func TestOrderIDFromToken(t *testing.T) {
+	hex32 := "0123456789abcdef0123456789abcdef"
+	derived := DeriveIdempotencyToken("exec-1", 0)
+
+	accepted := []struct {
+		name, token, want string
+	}{
+		{"empty returns fallback", "", "fallback-id"},
+		{"exactly 32 lowercase hex", hex32, "01234567-89ab-cdef-0123-456789abcdef"},
+		{"32 uppercase hex is lowercased", strings.ToUpper(hex32), "01234567-89ab-cdef-0123-456789abcdef"},
+		{"64 hex uses first 32", hex32 + hex32, "01234567-89ab-cdef-0123-456789abcdef"},
+		{"derived token", derived, IdempotencyGUID(derived)},
+	}
+	for _, tc := range accepted {
+		t.Run("accepted/"+tc.name, func(t *testing.T) {
+			got, err := OrderIDFromToken(tc.token, "fallback-id")
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
+
+	rejected := []struct {
+		name, token string
+	}{
+		{"short", "abc"},
+		{"31 hex", hex32[:31]},
+		{"32 non-hex", strings.Repeat("g", 32)},
+		{"non-hex inside first 32 of 64", hex32[:10] + "z" + hex32[11:] + hex32},
+		{"dashed uuid", "01234567-89ab-cdef-0123-456789abcdef"},
+	}
+	for _, tc := range rejected {
+		t.Run("rejected/"+tc.name, func(t *testing.T) {
+			got, err := OrderIDFromToken(tc.token, "fallback-id")
+			require.Error(t, err)
+			assert.ErrorIs(t, err, ErrInvalidIdempotencyToken)
+			assert.Empty(t, got)
+			assert.NotContains(t, err.Error(), tc.token, "error must not echo the raw token")
+			assert.Contains(t, err.Error(), MaskToken(tc.token), "error must carry exactly the masked token")
+		})
+	}
 }
 
 func TestDeriveMuteToken_EmptyKeyReturnsEmpty(t *testing.T) {
