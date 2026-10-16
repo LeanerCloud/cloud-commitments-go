@@ -607,3 +607,19 @@ func TestExpandPaymentVariants_RecurringMonthlyCostPointersAreIndependent(t *tes
 	assert.True(t, variants[0].RecurringMonthlyCost != variants[1].RecurringMonthlyCost,
 		"each variant must own an independent pointer to its RecurringMonthlyCost")
 }
+
+func TestExpandPaymentVariants_ZeroOnDemandKeepsProviderSavings(t *testing.T) {
+	// Issue #224: Azure may return netSavings (Microsoft sample: 4.63) with
+	// costWithNoReservedInstances 0. The savings must survive expansion; the
+	// percentage cannot be computed without a baseline and stays 0.
+	zeroOnDemand := func(_ *armconsumption.LegacyReservationRecommendation, props *armconsumption.LegacyReservationRecommendationProperties) {
+		onDemand, savings := 0.0, 4.63
+		props.CostWithNoReservedInstances = &onDemand
+		props.NetSavings = &savings
+	}
+	upfront, monthly := expandLegacy(t, mocks.WithNormalizedSize("Standard_D2s_v3"), zeroOnDemand)
+	for _, v := range []common.Recommendation{upfront, monthly} {
+		assert.InDelta(t, 4.63, v.EstimatedSavings, 1e-9, v.PaymentOption)
+		assert.InDelta(t, 0.0, v.SavingsPercentage, 1e-9, v.PaymentOption)
+	}
+}

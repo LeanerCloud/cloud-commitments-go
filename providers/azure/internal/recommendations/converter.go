@@ -396,16 +396,16 @@ func strDeref(s *string) string {
 // Savings are OnDemandCost - CommitmentCost when both are known. A zero
 // CommitmentCost means TotalCostWithReservedInstances was absent, so the
 // provider-reported EstimatedSavings is kept instead of claiming the whole
-// on-demand cost as savings. A zero OnDemandCost forces both savings fields
-// to zero to avoid a divide-by-zero.
+// on-demand cost as savings. A zero OnDemandCost means the baseline is
+// unknown: the provider-reported EstimatedSavings is kept (never derived from
+// CommitmentCost) and SavingsPercentage is 0 because it cannot be computed.
 func ExpandPaymentVariants(base common.Recommendation) []common.Recommendation {
 	totalReservation := base.CommitmentCost
 	totalOnDemand := base.OnDemandCost
 
 	var savingsPct float64
-	var savings float64
+	savings := base.EstimatedSavings
 	if totalOnDemand != 0 {
-		savings = base.EstimatedSavings
 		if totalReservation != 0 {
 			savings = totalOnDemand - totalReservation
 		}
