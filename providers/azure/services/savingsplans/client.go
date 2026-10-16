@@ -131,6 +131,10 @@ func (c *Client) GetRecommendations(ctx context.Context, params *common.Recommen
 	return c.getBenefitRecommendations(ctx, params)
 }
 
+// maxSavingsPlanPages caps the savings-plan inventory walk so a pager that
+// never terminates fails loud instead of looping forever.
+const maxSavingsPlanPages = 100
+
 // GetExistingCommitments retrieves the Azure Savings Plans billed to this client's subscription.
 func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	var pager SavingsPlanListAllPager
@@ -147,6 +151,12 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 
 	commitments := make([]common.Commitment, 0)
 	for pageIndex := 1; pager.More(); pageIndex++ {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("failed to list savings plans: context canceled during pagination: %w", err)
+		}
+		if pageIndex > maxSavingsPlanPages {
+			return nil, fmt.Errorf("failed to list savings plans: pagination cap (%d pages) reached", maxSavingsPlanPages)
+		}
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list savings plans: %w", err)
