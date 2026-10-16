@@ -284,5 +284,6 @@ repos:
         stages: [pre-push]
 
 # Global configuration
+default_install_hook_types: [pre-commit, pre-push]
 default_stages: [pre-commit, pre-push]
 fail_fast: false
