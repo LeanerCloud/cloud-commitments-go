@@ -544,6 +544,9 @@ func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommend
 	return rec
 }
 
+// memorystoreRedisServiceID is the Cloud Billing service for Cloud Memorystore for Redis.
+const memorystoreRedisServiceID = "services/5AF5-2C11-D467"
+
 // listSKUs returns the service's SKU catalog, listing it once per client so
 // that pricing N recommendations costs one catalog read instead of N.
 func (c *Client) listSKUs(svc BillingService) (*cloudbilling.ListSkusResponse, error) {
@@ -552,7 +555,7 @@ func (c *Client) listSKUs(svc BillingService) (*cloudbilling.ListSkusResponse, e
 	if c.skuCache != nil {
 		return c.skuCache, nil
 	}
-	skus, err := svc.ListSKUs("services/D559-82DA-3A56")
+	skus, err := svc.ListSKUs(memorystoreRedisServiceID)
 	if err != nil {
 		return nil, err
 	}
