@@ -25,61 +25,122 @@ func AdjustExistingCoverageForExpiringCommitments(
 			demand[lookupPoolKey(recs[i])] += avg
 		}
 	}
-	adjusted, _ := adjustExpiringCoverage(recs, commitments, windowDays, demand)
+	adjusted, _ := adjustExpiringCoverage(recs, commitments, PoolExpiryOptions{WindowDays: windowDays}, demand)
 	return adjusted
 }
 
 // AdjustExistingCoverageForExpiringCommitmentsWithCoverage uses authoritative pool demand, never row sums.
 // Eligible rows lacking positive finite demand remain unchanged and are counted in missingDemand.
+// It ignores replacements already bought; see
+// AdjustExistingCoverageForExpiringCommitmentsWithCoverageOptions.
 func AdjustExistingCoverageForExpiringCommitmentsWithCoverage(
 	recs []common.Recommendation,
 	commitments []common.Commitment,
 	windowDays int,
 	coverage PoolCoverageMap,
 ) (adjusted, missingDemand int) {
+	return AdjustExistingCoverageForExpiringCommitmentsWithCoverageOptions(
+		recs, commitments, coverage, PoolExpiryOptions{WindowDays: windowDays})
+}
+
+// PoolExpiryOptions configures the per-pool (EC2 and other non-family) expiry
+// deduction. It mirrors FamilyExpiryOptions, which does the same for RDS.
+//
+// CoverageLookbackDays must be the lookbackDays given to the coverage fetch
+// (GetRICoverageMap/GetEC2RICoverageMap). Coverage is a lookback average, so an
+// RI bought inside that window is only partly in it. Active, non-expiring RIs
+// in the same region and instance type that started inside the window are
+// credited against the expiring count of that pool. A value <= 0 credits none
+// (the coverage fetch itself defaults a non-positive lookback to 30, so pass
+// 30 here in that case).
+//
+// The rule is conservative: it can under-buy, never over-buy. The credit is
+// taken in full although lagged coverage already holds part of the new RI. A
+// growth purchase in the same pool is indistinguishable from a replacement. A
+// replacement of a different size in the same family is not credited.
+type PoolExpiryOptions struct {
+	WindowDays           int
+	CoverageLookbackDays int
+}
+
+// AdjustExistingCoverageForExpiringCommitmentsWithCoverageOptions deducts RIs
+// expiring inside opts.WindowDays from the existing coverage of each
+// recommendation's pool, net of replacements bought inside
+// opts.CoverageLookbackDays: per pool the deduction is max(0, expiring -
+// replacements). A pool whose expiring RIs are fully replaced is left
+// untouched and is not counted as missingDemand.
+//
+// The rule is conservative: it can under-buy, never over-buy. A growth
+// purchase in the same pool is indistinguishable from a replacement, and a
+// replacement of a different size in the same family is not credited. See
+// PoolExpiryOptions for the lookback contract.
+func AdjustExistingCoverageForExpiringCommitmentsWithCoverageOptions(
+	recs []common.Recommendation,
+	commitments []common.Commitment,
+	coverage PoolCoverageMap,
+	opts PoolExpiryOptions,
+) (adjusted, missingDemand int) {
 	demand := make(map[string]float64, len(coverage))
 	for key, cov := range coverage {
 		demand[key] = cov.AvgInstancesPerHour
 	}
-	return adjustExpiringCoverage(recs, commitments, windowDays, demand)
+	return adjustExpiringCoverage(recs, commitments, opts, demand)
 }
 
 func adjustExpiringCoverage(
 	recs []common.Recommendation,
 	commitments []common.Commitment,
-	windowDays int,
+	opts PoolExpiryOptions,
 	demand map[string]float64,
 ) (adjusted, missingDemand int) {
-	if windowDays <= 0 || len(commitments) == 0 {
+	if opts.WindowDays <= 0 || len(commitments) == 0 {
 		return 0, 0
 	}
-	cutoff := time.Now().Add(time.Duration(windowDays) * 24 * time.Hour)
-	expiringByPool := expiringCountsByPool(commitments, cutoff)
+	now := time.Now()
+	cutoff := now.Add(time.Duration(opts.WindowDays) * 24 * time.Hour)
+	lagStart := now.Add(-time.Duration(opts.CoverageLookbackDays) * 24 * time.Hour)
+	expiringByPool, replacedByPool := tallyPoolCommitments(commitments, cutoff, lagStart, opts.CoverageLookbackDays > 0)
 	if len(expiringByPool) == 0 {
 		return 0, 0
 	}
-	return applyExpiringAdjustments(recs, expiringByPool, demand)
+	return applyExpiringAdjustments(recs, netExpiringByPool(expiringByPool, replacedByPool), demand)
 }
 
-// expiringCountsByPool aggregates active commitments expiring at-or-before
-// cutoff into a pool-keyed count map. The State filter mirrors
-// DuplicateChecker.filterRecentCommitments — only RIs currently providing
-// coverage are counted (queued / retired RIs aren't covering demand now).
-func expiringCountsByPool(commitments []common.Commitment, cutoff time.Time) map[string]int {
-	out := make(map[string]int)
+// tallyPoolCommitments sums active commitments per pool: those expiring
+// at-or-before cutoff, and (when credit is set) the non-expiring ones that
+// started after lagStart, which lagged coverage does not fully reflect yet.
+// The State filter mirrors DuplicateChecker.filterRecentCommitments, so
+// queued / retired RIs, which are not covering demand now, are ignored.
+// The credit test mirrors tallyFamilyCommitments in family_nu.go:511-512.
+func tallyPoolCommitments(
+	commitments []common.Commitment, cutoff, lagStart time.Time, credit bool,
+) (expiring, replaced map[string]int) {
+	expiring = make(map[string]int)
+	replaced = make(map[string]int)
 	for i := range commitments {
 		c := &commitments[i]
 		if !commitmentIsActive(*c) {
-			continue
-		}
-		if c.EndDate.IsZero() || c.EndDate.After(cutoff) {
 			continue
 		}
 		key := commitmentPoolKey(*c)
 		if key == "" {
 			continue
 		}
-		out[key] += c.Count
+		if !c.EndDate.IsZero() && !c.EndDate.After(cutoff) {
+			expiring[key] += c.Count
+		} else if credit && c.StartDate.After(lagStart) {
+			replaced[key] += c.Count
+		}
+	}
+	return expiring, replaced
+}
+
+// netExpiringByPool returns max(0, expiring - replaced) for every pool with
+// expiring commitments; replacements never push coverage past the lagged value.
+func netExpiringByPool(expiring, replaced map[string]int) map[string]int {
+	out := make(map[string]int, len(expiring))
+	for key, e := range expiring {
+		out[key] = max(0, e-replaced[key])
 	}
 	return out
 }
@@ -90,8 +151,8 @@ func applyExpiringAdjustments(recs []common.Recommendation, expiringByPool map[s
 			continue
 		}
 		key := lookupPoolKey(recs[i])
-		expCount, ok := expiringByPool[key]
-		if !ok || expCount == 0 {
+		expCount := expiringByPool[key]
+		if expCount == 0 {
 			continue
 		}
 		avg := demand[key]

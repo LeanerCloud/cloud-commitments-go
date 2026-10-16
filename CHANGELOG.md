@@ -32,6 +32,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **`recommendations.AdjustExistingCoverageForExpiringCommitmentsWithCoverageOptions`:**
+  the per-pool (EC2 and other non-family) expiry deduction, plus credit for
+  replacements already bought. Coverage is a lookback average, so RIs bought
+  inside `CoverageLookbackDays` are not in it yet; with R the count of active,
+  non-expiring RIs in the same pool that started inside the lookback, the
+  deduction is `max(0, expiring - R)`. It can only buy less, never more. A
+  growth purchase in the pool counts as a replacement, and a replacement of
+  a different size in the same family is not credited.
+  `CoverageLookbackDays <= 0` credits none. Additive; the existing functions
+  are unchanged (#346).
+
 - **`recommendations.Client.GetSPCommitmentRate`:** commitment dollars per
   on-demand dollar (r) of the used part of a new Savings Plan, derived from CE
   purchase recommendations as `(utilization/100) * EstimatedSPCost /
