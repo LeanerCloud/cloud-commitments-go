@@ -600,6 +600,7 @@ func TestCloudSQLClient_GetOfferingDetails_APIError(t *testing.T) {
 func TestCloudSQLClient_GetRecommendations_WithMock(t *testing.T) {
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client.SetBillingService(&MockBillingService{err: errors.New("catalog not under test")})
 
 	mockIterator := &MockRecommenderIterator{
 		recommendations: []*recommenderpb.Recommendation{
@@ -704,6 +705,7 @@ func TestCloudSQLClient_SetterMethods(t *testing.T) {
 func TestCloudSQLClient_ConvertGCPRecommendation(t *testing.T) {
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client.SetBillingService(&MockBillingService{err: errors.New("catalog not under test")})
 
 	gcpRec := &recommenderpb.Recommendation{
 		Name: "test-rec",

@@ -602,6 +602,7 @@ func TestMemorystoreClient_GetRecommendations_WithMockClient(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
 			client, _ := NewClient(ctx, "test-project", "us-central1")
+			client.SetBillingService(&MockBillingService{err: errors.New("catalog not under test")})
 
 			mockClient := &MockRecommenderClient{
 				recommendations: tt.recommendations,
@@ -633,6 +634,7 @@ func TestMemorystoreClient_GetRecommendations_WithMockClient(t *testing.T) {
 func TestMemorystoreClient_ConvertGCPRecommendation(t *testing.T) {
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client.SetBillingService(&MockBillingService{err: errors.New("catalog not under test")})
 
 	tests := []struct {
 		name         string
