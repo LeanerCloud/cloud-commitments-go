@@ -312,6 +312,11 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		result.Error = err
 		return result, result.Error
 	}
+	term, termEnumErr := reservations.ReservationTermForYears(termYears)
+	if termEnumErr != nil {
+		result.Error = termEnumErr
+		return result, result.Error
+	}
 	billingPlan, err := reservations.BillingPlanForPaymentOption(rec.PaymentOption)
 	if err != nil {
 		result.Error = err
@@ -327,10 +332,10 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 			"reservedResourceType": string(armreservations.ReservedResourceTypeSQLDataWarehouse),
 			"billingScopeId":       fmt.Sprintf("/subscriptions/%s", c.subscriptionID),
 			"billingPlan":          string(billingPlan),
-			"term":                 fmt.Sprintf("P%dY", termYears),
+			"term":                 string(term),
 			"quantity":             rec.Count,
 			"displayName":          fmt.Sprintf("Synapse SQL Pool Reservation - %s", rec.ResourceType),
-			"appliedScopeType":     "Shared",
+			"appliedScopeType":     string(armreservations.AppliedScopeTypeShared),
 			"renew":                false,
 		},
 	}

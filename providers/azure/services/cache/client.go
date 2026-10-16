@@ -321,6 +321,11 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		result.Error = termErr
 		return result, result.Error
 	}
+	term, termEnumErr := reservations.ReservationTermForYears(termYears)
+	if termEnumErr != nil {
+		result.Error = termEnumErr
+		return result, result.Error
+	}
 	billingPlan, billingPlanErr := reservations.BillingPlanForPaymentOption(rec.PaymentOption)
 	if billingPlanErr != nil {
 		result.Error = billingPlanErr
@@ -336,7 +341,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 			"reservedResourceType": string(armreservations.ReservedResourceTypeRedisCache),
 			"billingScopeId":       fmt.Sprintf("/subscriptions/%s", c.subscriptionID),
 			"billingPlan":          string(billingPlan),
-			"term":                 fmt.Sprintf("P%dY", termYears),
+			"term":                 string(term),
 			"quantity":             rec.Count,
 			"displayName": reservations.BuildDisplayName(reservations.DisplayNameFields{
 				Service:      "redis",
@@ -347,7 +352,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 				Payment:      rec.PaymentOption,
 				Now:          time.Now(),
 			}),
-			"appliedScopeType": "Shared",
+			"appliedScopeType": string(armreservations.AppliedScopeTypeShared),
 			"renew":            false,
 		},
 	}

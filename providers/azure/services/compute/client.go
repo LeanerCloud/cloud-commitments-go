@@ -413,6 +413,10 @@ func (c *Client) buildReservationBody(rec common.Recommendation, billingPlan arm
 	if err != nil {
 		return nil, err
 	}
+	term, termEnumErr := reservations.ReservationTermForYears(termYears)
+	if termEnumErr != nil {
+		return nil, termEnumErr
+	}
 	requestBody := map[string]interface{}{
 		"sku":      map[string]string{"name": rec.ResourceType},
 		"location": c.region,
@@ -420,7 +424,7 @@ func (c *Client) buildReservationBody(rec common.Recommendation, billingPlan arm
 			"reservedResourceType": string(armreservations.ReservedResourceTypeVirtualMachines),
 			"billingScopeId":       fmt.Sprintf("/subscriptions/%s", c.subscriptionID),
 			"billingPlan":          string(billingPlan),
-			"term":                 fmt.Sprintf("P%dY", termYears),
+			"term":                 string(term),
 			"quantity":             rec.Count,
 			"displayName": reservations.BuildDisplayName(reservations.DisplayNameFields{
 				Service:      "vm",
@@ -431,7 +435,7 @@ func (c *Client) buildReservationBody(rec common.Recommendation, billingPlan arm
 				Payment:      rec.PaymentOption,
 				Now:          time.Now(),
 			}),
-			"appliedScopeType": "Shared",
+			"appliedScopeType": string(armreservations.AppliedScopeTypeShared),
 			"renew":            false,
 		},
 	}
