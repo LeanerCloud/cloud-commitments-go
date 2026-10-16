@@ -17,7 +17,7 @@ set -euo pipefail
 
 RUN_GOSEC="$(dirname "$0")/run-gosec.sh"
 
-# Module roots in longest-prefix order, owned by run-gosec.sh.
+# Module roots, owned by run-gosec.sh.
 MODULE_DIRS="$("$RUN_GOSEC" --list-modules | tr '\n' ' ')"
 
 # ---- helpers ----------------------------------------------------------------
@@ -42,6 +42,9 @@ module_for() {
 live_files=()
 for f in "$@"; do
     [[ -f "$f" ]] || continue
+    case "$f" in
+        *[[:space:]]*) echo "gosec-hook: path contains whitespace, cannot scan: $f" >&2; exit 2 ;;
+    esac
     case "$f" in
         */testdata/*) continue ;;
         testdata/*)   continue ;;

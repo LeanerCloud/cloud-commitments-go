@@ -19,7 +19,7 @@
 #
 # Exit codes: 0 clean, 1 findings or a scan error, 2 setup/usage failure.
 #
-# The gosec binary is cached per (gosec version, Go toolchain), because gosec
+# The gosec binary is cached per (gosec version, effective Go version), because gosec
 # cannot read export data produced by a newer toolchain than the one it was
 # built with. The toolchain defaults to the go directive of pkg/go.mod, which
 # is what CI's setup-go uses.
@@ -49,6 +49,9 @@ while [[ $# -gt 0 ]]; do
             scan_mods+=("$2"); shift 2
             cur=""
             while [[ $# -gt 0 && "$1" != --* ]]; do
+                case "$1" in
+                    *[[:space:]]*) echo "run-gosec: package path contains whitespace: $1" >&2; exit 2 ;;
+                esac
                 cur+="${cur:+ }$1"
                 shift
             done
@@ -68,16 +71,27 @@ if [[ -z "${GOTOOLCHAIN:-}" ]]; then
     export GOTOOLCHAIN="go${go_directive}"
 fi
 
-gosec_dir="${XDG_CACHE_HOME:-${HOME}/.cache}/gosec/${GOSEC_VERSION}-${GOTOOLCHAIN}"
+# Key the cache on the Go version that actually builds gosec, not the requested
+# string (GOTOOLCHAIN=local would otherwise hide a Go upgrade).
+go_version=$(go env GOVERSION) || { echo "run-gosec: go env GOVERSION failed (is Go on PATH?)" >&2; exit 2; }
+cache_root="${XDG_CACHE_HOME:-${HOME}/.cache}/gosec"
+gosec_dir="${cache_root}/${GOSEC_VERSION}-${go_version}"
 gosec_bin="${gosec_dir}/gosec"
 
 if [[ ! -x "$gosec_bin" ]]; then
-    echo "run-gosec: installing gosec@${GOSEC_VERSION} (${GOTOOLCHAIN}) -> ${gosec_dir}" >&2
-    mkdir -p "$gosec_dir"
-    GOBIN="$gosec_dir" go install "github.com/securego/gosec/v2/cmd/gosec@${GOSEC_VERSION}" || {
+    echo "run-gosec: installing gosec@${GOSEC_VERSION} (${go_version}) -> ${gosec_dir}" >&2
+    mkdir -p "$cache_root"
+    # Install into a private dir and rename, so an interrupted or parallel
+    # install never leaves a truncated binary at the trusted path.
+    tmp_dir=$(mktemp -d "${cache_root}/.install.XXXXXX")
+    if ! GOBIN="$tmp_dir" go install "github.com/securego/gosec/v2/cmd/gosec@${GOSEC_VERSION}"; then
+        rm -rf "$tmp_dir"
         echo "run-gosec: install failed (is Go on PATH?)" >&2
         exit 2
-    }
+    fi
+    mkdir -p "$gosec_dir"
+    mv -f "$tmp_dir/gosec" "$gosec_bin"
+    rmdir "$tmp_dir"
 fi
 
 [[ -z "$sarif_dir" ]] || mkdir -p "$sarif_dir"
