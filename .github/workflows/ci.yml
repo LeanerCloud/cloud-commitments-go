@@ -66,10 +66,39 @@ jobs:
           cache-dependency-path: '**/go.sum'
           cache: true
 
+      # The action's own `config verify` fetches the schema over HTTPS with a
+      # 2s timeout and flakes (#420), so it is off on every leg and the config
+      # is verified once, offline, against the vendored schema. job-index 0 is
+      # used instead of a module name so a matrix rename cannot skip this.
+      - name: Install golangci-lint for config verify
+        if: strategy.job-index == 0
+        working-directory: ${{ github.workspace }}
+        env:
+          GOWORK: "off"
+        run: GOBIN="$RUNNER_TEMP/bin" go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.10.1
+
+      - name: Verify golangci-lint config against vendored schema
+        if: strategy.job-index == 0
+        working-directory: ${{ github.workspace }}
+        run: scripts/verify-golangci-config.sh "$RUNNER_TEMP/bin/golangci-lint"
+
+      - name: Verify golangci-lint config check rejects an invalid config
+        if: strategy.job-index == 0
+        working-directory: ${{ github.workspace }}
+        run: |
+          set -euo pipefail
+          printf 'version: "2"\nlinters:\n  bogus: 1\n' > "$RUNNER_TEMP/invalid.yml"
+          out=$(scripts/verify-golangci-config.sh "$RUNNER_TEMP/bin/golangci-lint" "$RUNNER_TEMP/invalid.yml" 2>&1) && rc=0 || rc=$?
+          echo "$out"
+          test "$rc" -ne 0
+          grep -q 'does not validate' <<<"$out"
+          grep -q 'invalid elements' <<<"$out"
+
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@82606bf257cbaff209d206a39f5134f0cfbfd2ee # v9.2.1
         with:
           version: v2.10.1
+          verify: false
           working-directory: ${{ matrix.module }}
           args: --timeout=10m --config=${{ github.workspace }}/.golangci.yml
 

@@ -47,13 +47,16 @@ repos:
     hooks:
       - id: trailing-whitespace
         name: Trim trailing whitespace
+        exclude: '^\.github/golangci/'
       - id: end-of-file-fixer
         name: Fix end of files
+        exclude: '^\.github/golangci/'
       - id: check-yaml
         name: Check YAML syntax
         exclude: '^(docker-compose.*\.yml|\.github/workflows/.*|cloudformation/.*|iac/.*/cloudformation/.*)$'
       - id: check-json
         name: Check JSON syntax
+        exclude: '^\.github/golangci/'
       - id: check-added-large-files
         name: Check for large files
         args: ['--maxkb=1024']
