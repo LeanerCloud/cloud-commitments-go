@@ -2367,6 +2367,7 @@ func TestConvertGCPRecommendationVCPUOnlyKeepsNilDetails(t *testing.T) {
 func TestGetRecommendationsStringMemoryAmountEndToEnd(t *testing.T) {
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client.SetBillingService(&MockBillingService{err: errors.New("catalog not under test")})
 	input := commitmentOnlyCUDRecommendation()
 	input.StateInfo = &recommenderpb.RecommendationStateInfo{State: recommenderpb.RecommendationStateInfo_ACTIVE}
 	memoryOpOf(input).PathValue = &recommenderpb.Operation_Value{Value: structpb.NewStringValue("6144")}
