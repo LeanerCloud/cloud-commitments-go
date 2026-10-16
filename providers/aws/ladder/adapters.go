@@ -25,8 +25,15 @@ type activeSPListAPI interface {
 	DescribeSavingsPlans(ctx context.Context, params *sdksp.DescribeSavingsPlansInput, optFns ...func(*sdksp.Options)) (*sdksp.DescribeSavingsPlansOutput, error)
 }
 
-// spListerStates is the set of Savings Plan states counted as existing
-// commitment.
+// spListerStates is the single source of the Savings Plan states counted as
+// existing commitment; read it only through ExistingSPStates.
+var spListerStates = []sptypes.SavingsPlanState{
+	sptypes.SavingsPlanStateActive,
+	sptypes.SavingsPlanStatePaymentPending,
+}
+
+// ExistingSPStates returns the Savings Plan states counted as existing
+// commitment. The slice is a fresh copy, so callers cannot mutate the set.
 //   - active: currently billing.
 //   - payment-pending: purchase accepted, first payment in flight. A
 //     just-purchased SP sits in this state briefly; it MUST count as existing
@@ -36,14 +43,23 @@ type activeSPListAPI interface {
 //     started, so counting them would suppress purchases the queued SP will
 //     not cover until its start date. Revisit with L14 (expiry alignment),
 //     which can reason about future-dated coverage explicitly.
-var spListerStates = []sptypes.SavingsPlanState{
-	sptypes.SavingsPlanStateActive,
-	sptypes.SavingsPlanStatePaymentPending,
+func ExistingSPStates() []sptypes.SavingsPlanState {
+	return append([]sptypes.SavingsPlanState(nil), spListerStates...)
+}
+
+// CountsAsExistingSP applies the region rule to a Savings Plan already in an
+// ExistingSPStates state: EC2Instance SPs bound to another region cover that
+// region's usage, not the ladder's, and counting them would inflate
+// ExistingUSDPerHour and under-purchase. Compute SPs are global and always
+// count. Any other plan type is not filtered here (the ladder's own type
+// check handles it). The comparison is exact, case-sensitive.
+func CountsAsExistingSP(planType sptypes.SavingsPlanType, spRegion, ladderRegion string) bool {
+	return string(planType) != spPlanTypeEC2Instance || spRegion == ladderRegion
 }
 
 // spListerAdapter implements the spLister interface using the AWS Savings
-// Plans SDK directly. It filters to spListerStates (active + payment-pending;
-// see that var for rationale) and scopes EC2Instance SPs to the ladder's
+// Plans SDK directly. It filters to ExistingSPStates (active + payment-pending;
+// see that func for rationale) and scopes EC2Instance SPs to the ladder's
 // region. Commitment strings are parsed with strconv.ParseFloat; parse errors
 // fail loud per feedback_strict_int_parse and feedback_no_silent_fallbacks.
 type spListerAdapter struct {
@@ -55,7 +71,7 @@ type spListerAdapter struct {
 	region string
 }
 
-// ListActiveSPs lists the account's Savings Plans in spListerStates and maps
+// ListActiveSPs lists the account's Savings Plans in ExistingSPStates and maps
 // them to the AWSLadder view, region-scoped:
 //
 //   - EC2Instance SPs are region-bound; entries whose Region differs from the
@@ -87,7 +103,7 @@ func (a *spListerAdapter) ListActiveSPs(ctx context.Context) ([]ActiveSP, error)
 		page++
 
 		input := &sdksp.DescribeSavingsPlansInput{
-			States:     spListerStates,
+			States:     ExistingSPStates(),
 			NextToken:  nextToken,
 			MaxResults: aws.Int32(100),
 		}
@@ -115,10 +131,7 @@ func (a *spListerAdapter) ListActiveSPs(ctx context.Context) ([]ActiveSP, error)
 }
 
 // appendRegionScopedSPs maps one DescribeSavingsPlans page onto the
-// accumulated slice, applying the region-scoping rule: EC2Instance SPs bound
-// to another region cover that region's usage, not ours; including them
-// would inflate ExistingUSDPerHour and under-purchase. Compute SPs are
-// global and always kept (see ListActiveSPs doc). Extracted to keep
+// accumulated slice, applying CountsAsExistingSP. Extracted to keep
 // ListActiveSPs under the cyclomatic complexity limit.
 func appendRegionScopedSPs(sps []ActiveSP, page []sptypes.SavingsPlan, region string) ([]ActiveSP, error) {
 	for i := range page {
@@ -126,7 +139,7 @@ func appendRegionScopedSPs(sps []ActiveSP, page []sptypes.SavingsPlan, region st
 		if err != nil {
 			return nil, err
 		}
-		if entry.PlanType == spPlanTypeEC2Instance && entry.Region != region {
+		if !CountsAsExistingSP(sptypes.SavingsPlanType(entry.PlanType), entry.Region, region) {
 			continue
 		}
 		sps = append(sps, entry)

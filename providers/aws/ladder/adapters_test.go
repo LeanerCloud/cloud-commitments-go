@@ -622,3 +622,39 @@ func TestGetLayerStates_RealSPLister_NonZeroExisting(t *testing.T) {
 	assert.InDelta(t, 2.0, *computeSP.ExistingUSDPerHour, 1e-9,
 		"ExistingUSDPerHour must equal the SP $2/hr commitment (was 0.0 pre-fix)")
 }
+
+func TestExistingSPStates(t *testing.T) {
+	got := ExistingSPStates()
+	assert.Equal(t, []sptypes.SavingsPlanState{
+		sptypes.SavingsPlanStateActive,
+		sptypes.SavingsPlanStatePaymentPending,
+	}, got)
+
+	got[0] = sptypes.SavingsPlanStateRetired
+	assert.Equal(t, sptypes.SavingsPlanStateActive, ExistingSPStates()[0], "mutating a returned copy must not affect the package set")
+}
+
+func TestCountsAsExistingSP(t *testing.T) {
+	tests := []struct {
+		name     string
+		planType sptypes.SavingsPlanType
+		spRegion string
+		want     bool
+	}{
+		{"EC2Instance same region", sptypes.SavingsPlanTypeEc2Instance, "us-east-1", true},
+		{"EC2Instance other region", sptypes.SavingsPlanTypeEc2Instance, "eu-west-1", false},
+		{"EC2Instance empty region", sptypes.SavingsPlanTypeEc2Instance, "", false},
+		{"EC2Instance region case differs", sptypes.SavingsPlanTypeEc2Instance, "US-EAST-1", false},
+		{"Compute same region", sptypes.SavingsPlanTypeCompute, "us-east-1", true},
+		{"Compute other region", sptypes.SavingsPlanTypeCompute, "eu-west-1", true},
+		{"Compute empty region", sptypes.SavingsPlanTypeCompute, "", true},
+		{"SageMaker other region", sptypes.SavingsPlanTypeSagemaker, "eu-west-1", true},
+		{"unknown type other region", sptypes.SavingsPlanType("Other"), "eu-west-1", true},
+		{"plan type case differs", sptypes.SavingsPlanType("ec2instance"), "eu-west-1", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, CountsAsExistingSP(tt.planType, tt.spRegion, "us-east-1"))
+		})
+	}
+}
