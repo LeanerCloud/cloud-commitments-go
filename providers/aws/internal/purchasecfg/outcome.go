@@ -22,6 +22,8 @@ import (
 // Unknown (wrapped): everything else - transport errors, timeouts, context
 // cancellation, 5xx, a 200 whose body could not be deserialized, and pre-send
 // failures (credentials, DNS, endpoint), which are treated conservatively.
+//
+// Mirrored in pkg/exchange/outcome.go classifyAcceptError; keep the two in step.
 func ClassifyPurchaseError(err error) error {
 	if err == nil || errors.Is(err, common.ErrOutcomeUnknown) {
 		return err

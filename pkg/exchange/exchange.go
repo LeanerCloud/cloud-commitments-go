@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"strings"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	sdkaws "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/ec2"
@@ -446,9 +447,13 @@ func executeWithAPI(ctx context.Context, client EC2ExchangeAPI, identity stsIden
 	out, err := client.AcceptReservedInstancesExchangeQuote(ctx, &ec2.AcceptReservedInstancesExchangeQuoteInput{
 		ReservedInstanceIds:  req.ReservedIDs,
 		TargetConfigurations: req.targetConfigs(),
-	})
+		// No client token: a retried accept after a lost response cannot be deduped.
+	}, func(o *ec2.Options) { o.RetryMaxAttempts = 1 })
 	if err != nil {
-		return "", freshQ, err
+		return "", freshQ, classifyAcceptError(err)
+	}
+	if sdkaws.ToString(out.ExchangeId) == "" {
+		return "", freshQ, fmt.Errorf("%w: accept returned no exchange ID", common.ErrOutcomeUnknown)
 	}
 
 	return sdkaws.ToString(out.ExchangeId), freshQ, nil

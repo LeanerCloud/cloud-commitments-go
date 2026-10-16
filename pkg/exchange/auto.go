@@ -2,6 +2,7 @@ package exchange
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"time"
@@ -551,6 +552,11 @@ func processAutoExchange(ctx context.Context, params RunAutoExchangeParams, rec 
 	if execErr != nil {
 		logging.Errorf("exchange execution failed for %s: %v", rec.SourceRIID, execErr)
 		outcome.Error = execErr.Error()
+		if errors.Is(execErr, common.ErrOutcomeUnknown) {
+			// The exchange may have happened: keep the record processing (still
+			// counted against the cap) and stop, instead of marking it failed.
+			return outcome, true
+		}
 		return outcome, failLedgerRecord(ctx, params.Store, record.ID, outcome.Error)
 	}
 
