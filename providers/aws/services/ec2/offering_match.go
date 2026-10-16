@@ -23,6 +23,20 @@ type offeringWant struct {
 	az           string
 }
 
+// want maps the lookup query onto the fields offeringMismatch re-checks.
+func (q ec2OfferingQuery) want() offeringWant {
+	return offeringWant{
+		instanceType: string(q.instanceType),
+		productDesc:  string(q.productDesc),
+		tenancy:      q.tenancy,
+		scope:        q.scope,
+		duration:     q.duration,
+		class:        q.offeringClass,
+		offeringType: q.wantOfferingType,
+		az:           q.availabilityZone,
+	}
+}
+
 const vpcProductSuffix = " (Amazon VPC)"
 
 // offeringChecks are tried in order; the first failing one names the reason.

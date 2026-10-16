@@ -32,6 +32,7 @@ func priceOffering(mut func(*types.ReservedInstancesOffering)) types.ReservedIns
 		InstanceType:                types.InstanceTypeT3Micro,
 		ProductDescription:          types.RIProductDescriptionLinuxUnix,
 		InstanceTenancy:             types.TenancyDefault,
+		OfferingClass:               types.OfferingClassTypeConvertible,
 		OfferingType:                types.OfferingTypeValuesPartialUpfront,
 		Duration:                    aws.Int64(94608000),
 		FixedPrice:                  aws.Float32(500),
@@ -47,11 +48,17 @@ func priceOffering(mut func(*types.ReservedInstancesOffering)) types.ReservedIns
 	return o
 }
 
-func detailsFor(t *testing.T, rec common.Recommendation, o types.ReservedInstancesOffering) (*common.OfferingDetails, error) {
+func detailsFor(t *testing.T, rec common.Recommendation, o types.ReservedInstancesOffering, byID ...types.ReservedInstancesOffering) (*common.OfferingDetails, error) {
 	t.Helper()
 	m := &MockEC2Client{}
+	byIDOffering := o
+	if len(byID) > 0 {
+		byIDOffering = byID[0]
+	}
 	m.On("DescribeReservedInstancesOfferings", mock.Anything, mock.Anything).
-		Return(&ec2.DescribeReservedInstancesOfferingsOutput{ReservedInstancesOfferings: []types.ReservedInstancesOffering{o}}, nil)
+		Return(&ec2.DescribeReservedInstancesOfferingsOutput{ReservedInstancesOfferings: []types.ReservedInstancesOffering{o}}, nil).Once()
+	m.On("DescribeReservedInstancesOfferings", mock.Anything, mock.Anything).
+		Return(&ec2.DescribeReservedInstancesOfferingsOutput{ReservedInstancesOfferings: []types.ReservedInstancesOffering{byIDOffering}}, nil)
 	return (&Client{client: m, region: "us-east-1"}).GetOfferingDetails(context.Background(), rec)
 }
 
@@ -74,23 +81,30 @@ func TestGetOfferingDetails_ShapesAndUsagePriceRules(t *testing.T) {
 		total  float64
 		hourly float64
 		err    string
+		idOnly bool // mut applies only to the by-id re-describe: the lookup must still find the offering
 	}{
-		{"all upfront", func(o *types.ReservedInstancesOffering) { o.RecurringCharges = nil }, 500, 0, ""},
-		{"usage 0 plus hourly charge", nil, 500 + 0.03*26280, 0.03, ""},
+		{"all upfront", func(o *types.ReservedInstancesOffering) { o.RecurringCharges = nil }, 500, 0, "", false},
+		{"usage 0 plus hourly charge", nil, 500 + 0.03*26280, 0.03, "", false},
 		{"usage only, no charges", func(o *types.ReservedInstancesOffering) {
 			o.RecurringCharges, o.UsagePrice = nil, aws.Float32(0.05)
-		}, 500 + 0.05*26280, 0.05, ""},
-		{"both nonzero", func(o *types.ReservedInstancesOffering) { o.UsagePrice = aws.Float32(0.05) }, 0, 0, "refusing to guess"},
+		}, 500 + 0.05*26280, 0.05, "", false},
+		{"both nonzero", func(o *types.ReservedInstancesOffering) { o.UsagePrice = aws.Float32(0.05) }, 0, 0, "refusing to guess", false},
 		{"non-hourly charge", func(o *types.ReservedInstancesOffering) {
 			o.RecurringCharges = []types.RecurringCharge{{Amount: aws.Float64(1), Frequency: "Monthly"}}
-		}, 0, 0, "only \"Hourly\""},
-		{"empty currency", func(o *types.ReservedInstancesOffering) { o.CurrencyCode = "" }, 0, 0, "no currency"},
-		{"nil fixed price", func(o *types.ReservedInstancesOffering) { o.FixedPrice = nil }, 0, 0, "no FixedPrice"},
-		{"duration disagrees with term", func(o *types.ReservedInstancesOffering) { o.Duration = aws.Int64(31536000) }, 0, 0, "does not match"},
+		}, 0, 0, "only \"Hourly\"", false},
+		{"empty currency", func(o *types.ReservedInstancesOffering) { o.CurrencyCode = "" }, 0, 0, "no currency", false},
+		{"nil fixed price", func(o *types.ReservedInstancesOffering) { o.FixedPrice = nil }, 0, 0, "no FixedPrice", false},
+		{"duration disagrees with term", func(o *types.ReservedInstancesOffering) { o.Duration = aws.Int64(31536000) }, 0, 0, "does not match", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			d, err := detailsFor(t, priceRec("3yr"), priceOffering(tc.mut))
+			var d *common.OfferingDetails
+			var err error
+			if tc.idOnly {
+				d, err = detailsFor(t, priceRec("3yr"), priceOffering(nil), priceOffering(tc.mut))
+			} else {
+				d, err = detailsFor(t, priceRec("3yr"), priceOffering(tc.mut))
+			}
 			if tc.err != "" {
 				require.ErrorContains(t, err, tc.err)
 				assert.Nil(t, d)

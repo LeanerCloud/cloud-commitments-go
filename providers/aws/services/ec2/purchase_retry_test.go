@@ -59,7 +59,7 @@ func TestPurchaseCommitment_LostResponseIsNotRetriedBySDK(t *testing.T) {
 		Return(&ec2.DescribeReservedInstancesOfferingsOutput{ReservedInstancesOfferings: []types.ReservedInstancesOffering{{
 			ReservedInstancesOfferingId: aws.String("offering-123"), InstanceType: types.InstanceTypeT3Micro,
 			Duration: aws.Int64(94608000), OfferingType: types.OfferingTypeValuesPartialUpfront,
-			ProductDescription: types.RIProductDescriptionLinuxUnix, InstanceTenancy: types.TenancyDefault,
+			ProductDescription: types.RIProductDescriptionLinuxUnix, InstanceTenancy: types.TenancyDefault, OfferingClass: types.OfferingClassTypeConvertible,
 			FixedPrice: aws.Float32(100),
 		}}}, nil)
 
@@ -83,7 +83,7 @@ func TestPurchaseCommitment_EmptyResponseIsOutcomeUnknown(t *testing.T) {
 		Return(&ec2.DescribeReservedInstancesOfferingsOutput{ReservedInstancesOfferings: []types.ReservedInstancesOffering{{
 			ReservedInstancesOfferingId: aws.String("offering-123"), InstanceType: types.InstanceTypeT3Micro,
 			Duration: aws.Int64(94608000), OfferingType: types.OfferingTypeValuesPartialUpfront,
-			ProductDescription: types.RIProductDescriptionLinuxUnix, InstanceTenancy: types.TenancyDefault,
+			ProductDescription: types.RIProductDescriptionLinuxUnix, InstanceTenancy: types.TenancyDefault, OfferingClass: types.OfferingClassTypeConvertible,
 		}}}, nil)
 	m.On("PurchaseReservedInstancesOffering", mock.Anything, mock.Anything).Return(&ec2.PurchaseReservedInstancesOfferingOutput{}, nil)
 

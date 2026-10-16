@@ -543,14 +543,15 @@ func (c *Client) findOffering(ctx context.Context, rec common.Recommendation, ex
 
 	var nextToken *string
 	page := 0
+	skips := offeringSkips{}
 	for {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		page++
 		if page > maxOfferingPages {
-			return nil, fmt.Errorf("pagination cap reached after %d pages for EC2 %s %s %s (issue #688)",
-				maxOfferingPages, rec.ResourceType, q.productDesc, rec.PaymentOption)
+			return nil, fmt.Errorf("pagination cap reached after %d pages for EC2 %s %s %s (issue #688)%s",
+				maxOfferingPages, rec.ResourceType, q.productDesc, rec.PaymentOption, skips.note())
 		}
 		pageStart := time.Now()
 		result, err := c.client.DescribeReservedInstancesOfferings(ctx, describeInputFromQuery(q, nextToken))
@@ -561,7 +562,7 @@ func (c *Client) findOffering(ctx context.Context, rec common.Recommendation, ex
 		}
 		log.Printf("purchase[%s]: EC2 findOffering page %d: %d offerings in %s",
 			tag, page, len(result.ReservedInstancesOfferings), time.Since(pageStart))
-		if o := scanEC2OfferingPage(result.ReservedInstancesOfferings, q); o != nil {
+		if o := scanEC2OfferingPage(result.ReservedInstancesOfferings, q, skips); o != nil {
 			log.Printf("purchase[%s]: EC2 findOffering found match on page %d after %s total",
 				tag, page, time.Since(t0))
 			return o, nil
@@ -573,8 +574,8 @@ func (c *Client) findOffering(ctx context.Context, rec common.Recommendation, ex
 	}
 	log.Printf("purchase[%s]: EC2 findOffering exhausted %d page(s) in %s -- no match",
 		tag, page, time.Since(t0))
-	return nil, fmt.Errorf("no offerings found for EC2 %s %s %s after %d page(s) (issue #688)",
-		rec.ResourceType, q.productDesc, rec.PaymentOption, page)
+	return nil, fmt.Errorf("no offerings found for EC2 %s %s %s after %d page(s) (issue #688)%s",
+		rec.ResourceType, q.productDesc, rec.PaymentOption, page, skips.note())
 }
 
 // isLastEC2Page reports whether a NextToken indicates the terminal page.
@@ -585,25 +586,21 @@ func isLastEC2Page(nextToken *string) bool {
 	return nextToken == nil || aws.ToString(nextToken) == ""
 }
 
-// scanEC2OfferingPage returns the first offering whose OfferingType matches
-// q.wantOfferingType (and whose AvailabilityZone matches q.availabilityZone for
-// zonal scope; a nil offering AZ is a mismatch), or nil. With the typed OfferingType field set on the request this should
-// always be the first offering, but the check is kept as defense in depth.
-// Mismatched offerings are skipped (logged), not treated as errors -- a
-// mismatch indicates an API-side anomaly worth observing, not a reason to fail
-// the rec while a valid offering may still be on a later page.
-func scanEC2OfferingPage(offerings []types.ReservedInstancesOffering, q ec2OfferingQuery) *types.ReservedInstancesOffering {
-	wantType := q.wantOfferingType
+// scanEC2OfferingPage returns the first offering that offeringMismatch accepts
+// against q.want(), or nil. The request already filters on these fields, so
+// this is defense in depth against AWS returning something else.
+// Mismatched offerings are skipped (logged and counted in skips, which must be
+// non-nil), not treated as errors -- a mismatch indicates an API-side anomaly
+// worth observing, not a reason to fail the rec while a valid offering may
+// still be on a later page.
+func scanEC2OfferingPage(offerings []types.ReservedInstancesOffering, q ec2OfferingQuery, skips offeringSkips) *types.ReservedInstancesOffering {
+	want := q.want()
 	for i := range offerings {
 		o := &offerings[i]
-		if !offeringInZone(*o, q.availabilityZone) {
-			log.Printf("EC2 findOffering skipping offering %s in AZ %q (want %q)",
-				aws.ToString(o.ReservedInstancesOfferingId), aws.ToString(o.AvailabilityZone), q.availabilityZone)
-			continue
-		}
-		if o.OfferingType != wantType {
-			log.Printf("EC2 findOffering skipping mismatched variant %s (got %q want %q)",
-				aws.ToString(o.ReservedInstancesOfferingId), o.OfferingType, wantType)
+		if reason := offeringMismatch(*o, want); reason != "" {
+			skips[reason]++
+			log.Printf("EC2 findOffering skipping offering %s: %s mismatch",
+				aws.ToString(o.ReservedInstancesOfferingId), reason)
 			continue
 		}
 		return o
