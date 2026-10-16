@@ -351,30 +351,21 @@ func (c *Client) GetSPCoverageSummary(ctx context.Context, region string, lookba
 	}
 
 	var acc spCoverageAccumulator
-	var token *string
-	for pageIdx := 0; ; pageIdx++ {
-		if err := ctx.Err(); err != nil {
-			return SPCoverageSummary{}, fmt.Errorf("sp coverage: pagination canceled: %w", err)
-		}
-		if pageIdx >= maxSPCoveragePages {
-			return SPCoverageSummary{}, fmt.Errorf(
-				"sp coverage: pagination cap reached after %d pages (mirrors the issue #692 guard)",
-				maxSPCoveragePages)
-		}
+	err := paginateCE(ctx, maxSPCoveragePages, "sp coverage", func(token *string) (*string, error) {
 		input.NextToken = token
 		result, err := c.fetchSPCoveragePage(ctx, input)
 		if err != nil {
-			return SPCoverageSummary{}, err
+			return nil, err
 		}
 		for _, cov := range result.SavingsPlansCoverages {
 			if addErr := acc.add(cov); addErr != nil {
-				return SPCoverageSummary{}, fmt.Errorf("sp coverage: %w", addErr)
+				return nil, fmt.Errorf("sp coverage: %w", addErr)
 			}
 		}
-		if result.NextToken == nil || *result.NextToken == "" {
-			break
-		}
-		token = result.NextToken
+		return result.NextToken, nil
+	})
+	if err != nil {
+		return SPCoverageSummary{}, err
 	}
 
 	windowHours := float64(lookbackDays * 24)

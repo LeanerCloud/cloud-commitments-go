@@ -90,14 +90,7 @@ func (c *Client) GetSPCoveredSeries(ctx context.Context, region string, lookback
 // USD/hr keyed by "YYYY-MM-DD".
 func (c *Client) fetchSPCoveredByDate(ctx context.Context, input *costexplorer.GetSavingsPlansCoverageInput) (map[string]float64, error) {
 	byDate := make(map[string]float64)
-	var token *string
-	for pageIdx := 0; ; pageIdx++ {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("sp covered series: pagination canceled: %w", err)
-		}
-		if pageIdx >= maxSPCoveragePages {
-			return nil, fmt.Errorf("sp covered series: pagination cap reached after %d pages", maxSPCoveragePages)
-		}
+	err := paginateCE(ctx, maxSPCoveragePages, "sp covered series", func(token *string) (*string, error) {
 		input.NextToken = token
 		result, err := c.fetchSPCoveragePage(ctx, input)
 		if err != nil {
@@ -106,11 +99,12 @@ func (c *Client) fetchSPCoveredByDate(ctx context.Context, input *costexplorer.G
 		if err := accumulateSPCoveredDays(byDate, result.SavingsPlansCoverages); err != nil {
 			return nil, fmt.Errorf("sp covered series: %w", err)
 		}
-		if result.NextToken == nil || *result.NextToken == "" {
-			return byDate, nil
-		}
-		token = result.NextToken
+		return result.NextToken, nil
+	})
+	if err != nil {
+		return nil, err
 	}
+	return byDate, nil
 }
 
 // sortedDailyCosts orders a date-keyed map oldest-to-newest (lexicographic

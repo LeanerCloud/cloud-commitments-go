@@ -9,6 +9,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
+	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -101,8 +102,9 @@ const endlessCeiling = 500
 // utilization call.
 type endlessCE struct {
 	mockCostExplorerAPI
-	covCalls  atomic.Int32
-	utilCalls atomic.Int32
+	covCalls                          atomic.Int32
+	utilCalls                         atomic.Int32
+	spCovCalls, costCalls, spRecCalls atomic.Int32
 }
 
 func (m *endlessCE) GetReservationCoverage(_ context.Context, _ *costexplorer.GetReservationCoverageInput, _ ...func(*costexplorer.Options)) (*costexplorer.GetReservationCoverageOutput, error) {
@@ -162,4 +164,116 @@ func TestGetDailyUsagePcts_PreCanceledContext(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled)
 	assert.Zero(t, mock.covCalls.Load())
+}
+
+func (m *endlessCE) GetSavingsPlansCoverage(_ context.Context, _ *costexplorer.GetSavingsPlansCoverageInput, _ ...func(*costexplorer.Options)) (*costexplorer.GetSavingsPlansCoverageOutput, error) {
+	n := m.spCovCalls.Add(1)
+	if n > endlessCeiling {
+		return nil, errors.New("mock: runaway pagination")
+	}
+	return &costexplorer.GetSavingsPlansCoverageOutput{NextToken: aws.String(fmt.Sprintf("t%d", n))}, nil
+}
+
+func (m *endlessCE) GetCostAndUsage(_ context.Context, _ *costexplorer.GetCostAndUsageInput, _ ...func(*costexplorer.Options)) (*costexplorer.GetCostAndUsageOutput, error) {
+	n := m.costCalls.Add(1)
+	if n > endlessCeiling {
+		return nil, errors.New("mock: runaway pagination")
+	}
+	return &costexplorer.GetCostAndUsageOutput{NextPageToken: aws.String(fmt.Sprintf("t%d", n))}, nil
+}
+
+func (m *endlessCE) GetSavingsPlansPurchaseRecommendation(_ context.Context, _ *costexplorer.GetSavingsPlansPurchaseRecommendationInput, _ ...func(*costexplorer.Options)) (*costexplorer.GetSavingsPlansPurchaseRecommendationOutput, error) {
+	n := m.spRecCalls.Add(1)
+	if n > endlessCeiling {
+		return nil, errors.New("mock: runaway pagination")
+	}
+	return &costexplorer.GetSavingsPlansPurchaseRecommendationOutput{
+		SavingsPlansPurchaseRecommendation: &types.SavingsPlansPurchaseRecommendation{},
+		NextPageToken:                      aws.String(fmt.Sprintf("t%d", n)),
+	}, nil
+}
+
+func TestGetSPCoveredSeries_CapsEndlessTokens(t *testing.T) {
+	assert.Equal(t, 20, maxSPCoveragePages)
+	mock := &endlessCE{}
+	_, err := NewClientWithAPI(mock, "us-east-1").GetSPCoveredSeries(context.Background(), "us-east-1", 7)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "sp covered series: pagination cap reached after 20 pages")
+	assert.Equal(t, int32(20), mock.spCovCalls.Load())
+}
+
+func TestGetOnDemandSeries_CapsEndlessTokens(t *testing.T) {
+	assert.Equal(t, 20, maxOnDemandSeriesPages)
+	mock := &endlessCE{}
+	_, err := NewClientWithAPI(mock, "us-east-1").GetOnDemandSeries(context.Background(), "us-east-1", 7)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "GetOnDemandSeries: pagination cap reached after 20 pages")
+	assert.Equal(t, int32(20), mock.costCalls.Load())
+}
+
+func TestGetSPCommitmentRate_CapsEndlessTokens(t *testing.T) {
+	assert.Equal(t, 20, maxRecommendationPages)
+	mock := &endlessCE{}
+	_, err := NewClientWithAPI(mock, "us-east-1").GetSPCommitmentRate(context.Background(), rateParams(types.SupportedSavingsPlansTypeComputeSp))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "sp commitment rate: pagination cap reached after 20 pages")
+	assert.Equal(t, int32(20), mock.spRecCalls.Load())
+}
+
+func TestGetSPCommitmentRate_PreCanceledContext(t *testing.T) {
+	mock := &endlessCE{}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, err := NewClientWithAPI(mock, "us-east-1").GetSPCommitmentRate(ctx, rateParams(types.SupportedSavingsPlansTypeComputeSp))
+	assert.Equal(t, context.Canceled, err)
+	assert.Zero(t, mock.spRecCalls.Load())
+}
+
+// scriptedCE serves SP recommendation pages from a script and fails
+// GetCostAndUsage with costErr.
+type scriptedCE struct {
+	mockCostExplorerAPI
+	spPages []*costexplorer.GetSavingsPlansPurchaseRecommendationOutput
+	spErr   error
+	costErr error
+	spCalls int
+}
+
+func (m *scriptedCE) GetSavingsPlansPurchaseRecommendation(_ context.Context, _ *costexplorer.GetSavingsPlansPurchaseRecommendationInput, _ ...func(*costexplorer.Options)) (*costexplorer.GetSavingsPlansPurchaseRecommendationOutput, error) {
+	if m.spErr != nil {
+		return nil, m.spErr
+	}
+	out := m.spPages[m.spCalls]
+	m.spCalls++
+	return out, nil
+}
+
+func (m *scriptedCE) GetCostAndUsage(_ context.Context, _ *costexplorer.GetCostAndUsageInput, _ ...func(*costexplorer.Options)) (*costexplorer.GetCostAndUsageOutput, error) {
+	return nil, m.costErr
+}
+
+func TestGetSPCommitmentRate_AbsentRecommendationReportsPageIndex(t *testing.T) {
+	mock := &scriptedCE{spPages: []*costexplorer.GetSavingsPlansPurchaseRecommendationOutput{
+		{SavingsPlansPurchaseRecommendation: &types.SavingsPlansPurchaseRecommendation{}, NextPageToken: aws.String("t1")},
+		{},
+	}}
+	_, err := NewClientWithAPI(mock, "us-east-1").GetSPCommitmentRate(context.Background(), rateParams(types.SupportedSavingsPlansTypeComputeSp))
+	require.ErrorIs(t, err, ErrNoSPCommitmentRate)
+	assert.Contains(t, err.Error(), "page 1")
+}
+
+func TestGetSPCommitmentRate_FetchErrorKeepsPrefix(t *testing.T) {
+	boom := errors.New("boom")
+	mock := &scriptedCE{spErr: boom}
+	_, err := NewClientWithAPI(mock, "us-east-1").GetSPCommitmentRate(context.Background(), rateParams(types.SupportedSavingsPlansTypeComputeSp))
+	require.ErrorIs(t, err, boom)
+	assert.Contains(t, err.Error(), "sp commitment rate: ")
+}
+
+func TestGetOnDemandSeries_FetchErrorKeepsPrefix(t *testing.T) {
+	boom := errors.New("boom")
+	mock := &scriptedCE{costErr: boom}
+	_, err := NewClientWithAPI(mock, "us-east-1").GetOnDemandSeries(context.Background(), "us-east-1", 7)
+	require.ErrorIs(t, err, boom)
+	assert.Contains(t, err.Error(), "GetOnDemandSeries: ")
 }

@@ -187,33 +187,18 @@ func (c *Client) fetchRIAllPages(
 	service common.ServiceType,
 ) ([]types.ReservationPurchaseRecommendation, error) {
 	var allRecs []types.ReservationPurchaseRecommendation
-	var nextPageToken *string
-
-	for pageIdx := 0; ; pageIdx++ {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if pageIdx >= maxRecommendationPages {
-			return nil, fmt.Errorf(
-				"pagination cap reached after %d pages for RI %s (issue #692)",
-				maxRecommendationPages, service,
-			)
-		}
-		input.NextPageToken = nextPageToken
-
+	err := paginateCE(ctx, maxRecommendationPages, "RI "+string(service), func(token *string) (*string, error) {
+		input.NextPageToken = token
 		result, err := c.fetchRIPageWithRetry(ctx, input)
 		if err != nil {
 			return nil, err
 		}
-
 		allRecs = append(allRecs, result.Recommendations...)
-
-		if result.NextPageToken == nil || aws.ToString(result.NextPageToken) == "" {
-			break
-		}
-		nextPageToken = result.NextPageToken
+		return result.NextPageToken, nil
+	})
+	if err != nil {
+		return nil, err
 	}
-
 	return allRecs, nil
 }
 

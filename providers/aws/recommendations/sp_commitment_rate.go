@@ -81,35 +81,35 @@ func (c *Client) GetSPCommitmentRate(ctx context.Context, p SPCommitmentRatePara
 // sumSPRateDetails pages through the recommendation and sums the used SP spend
 // and covered on-demand spend of every matching detail.
 func (c *Client) sumSPRateDetails(ctx context.Context, input *costexplorer.GetSavingsPlansPurchaseRecommendationInput, p *SPCommitmentRateParams) (spCost, covered float64, matched int, err error) {
-	for page := 0; ; page++ {
-		if page >= maxRecommendationPages {
-			return 0, 0, 0, fmt.Errorf("sp commitment rate: pagination cap reached after %d pages", maxRecommendationPages)
-		}
+	page := 0
+	err = paginateCE(ctx, maxRecommendationPages, "sp commitment rate", func(token *string) (*string, error) {
+		input.NextPageToken = token
 		out, fetchErr := c.fetchSPPageWithRetry(ctx, input)
 		if fetchErr != nil {
-			return 0, 0, 0, fmt.Errorf("sp commitment rate: %w", fetchErr)
+			return nil, fmt.Errorf("sp commitment rate: %w", fetchErr)
 		}
 		if out == nil || out.SavingsPlansPurchaseRecommendation == nil {
-			return 0, 0, 0, fmt.Errorf("%w: recommendation absent on page %d", ErrNoSPCommitmentRate, page)
+			return nil, fmt.Errorf("%w: recommendation absent on page %d", ErrNoSPCommitmentRate, page)
 		}
+		page++
 		rec := out.SavingsPlansPurchaseRecommendation
 		for i := range rec.SavingsPlansPurchaseRecommendationDetails {
 			d := &rec.SavingsPlansPurchaseRecommendationDetails[i]
 			if !spRateDetailMatches(d, p) {
 				continue
 			}
-			used, cov, err := spRateTerms(d)
-			if err != nil {
-				return 0, 0, 0, err
+			used, cov, termErr := spRateTerms(d)
+			if termErr != nil {
+				return nil, termErr
 			}
 			spCost += used
 			covered += cov
 			matched++
 		}
-		input.NextPageToken = out.NextPageToken
-		if aws.ToString(input.NextPageToken) == "" {
-			break
-		}
+		return out.NextPageToken, nil
+	})
+	if err != nil {
+		return 0, 0, 0, err
 	}
 	return spCost, covered, matched, nil
 }
