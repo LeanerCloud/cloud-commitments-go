@@ -317,7 +317,7 @@ func defaultParams(store RIExchangeStore, client ExchangeClientInterface) RunAut
 	return RunAutoExchangeParams{
 		Store:          store,
 		ExchangeClient: client,
-		LookupOffering: func(_ context.Context, _, _, _, _ string, _ int64) (string, error) {
+		LookupOffering: func(_ context.Context, _ LookupOfferingParams) (string, error) {
 			return "offering-123", nil
 		},
 		RIs: []RIInfo{
@@ -413,7 +413,7 @@ func TestRunAutoExchange_OfferingLookupFails(t *testing.T) {
 	store := &mockExchangeStore{dailySpend: "0"}
 	client := &mockExchangeClient{quoteResult: defaultQuote()}
 	params := defaultParams(store, client)
-	params.LookupOffering = func(_ context.Context, _, _, _, _ string, _ int64) (string, error) {
+	params.LookupOffering = func(_ context.Context, _ LookupOfferingParams) (string, error) {
 		return "", fmt.Errorf("no offering found")
 	}
 
@@ -1083,4 +1083,30 @@ func TestRunAutoExchange_SettlementFailure_StopsAfterFirstExchange(t *testing.T)
 	assert.Empty(t, result.Completed, "no completed outcomes when settlement fails")
 	assert.Equal(t, 1, client.executeCalls,
 		"Execute must be called exactly once; second exchange must be halted")
+}
+
+func TestResolveOffering_ForwardsAvailabilityZone(t *testing.T) {
+	t.Parallel()
+	var got LookupOfferingParams
+	params := defaultParams(&mockExchangeStore{dailySpend: "0"}, &mockExchangeClient{})
+	params.LookupOffering = func(_ context.Context, p LookupOfferingParams) (string, error) {
+		got = p
+		return "offering-az", nil
+	}
+	params.RIMetadata = map[string]RIMetadataInfo{
+		"ri-001": {
+			ProductDescription: "Linux/UNIX", InstanceTenancy: "default",
+			Scope: "Availability Zone", AvailabilityZone: "us-east-1b", Duration: 31536000,
+		},
+	}
+	rec := ReshapeRecommendation{SourceRIID: "ri-001", TargetInstanceType: "m5.2xlarge"}
+
+	id, skipped := resolveOffering(context.Background(), params, rec)
+
+	require.Nil(t, skipped)
+	assert.Equal(t, "offering-az", id)
+	assert.Equal(t, LookupOfferingParams{
+		InstanceType: "m5.2xlarge", ProductDescription: "Linux/UNIX", Tenancy: "default",
+		Scope: "Availability Zone", AvailabilityZone: "us-east-1b", Duration: 31536000,
+	}, got)
 }
