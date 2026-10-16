@@ -67,7 +67,7 @@ func TestGetExistingCommitments_PageCap(t *testing.T) {
 		assert.Equal(t, 2, pager.calls)
 	})
 
-	t.Run("already-cancelled ctx fails before any page", func(t *testing.T) {
+	t.Run("already-canceled ctx fails before any page", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 		pager := &pagedListAllPager{limit: 1}
