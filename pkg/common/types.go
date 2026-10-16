@@ -492,6 +492,11 @@ type Commitment struct {
 	EndDate        time.Time       `json:"end_date"`
 	State          CommitmentState `json:"state"`
 	Cost           float64         `json:"cost"`
+
+	// StartDateIsDay marks StartDate as a UTC calendar date. The zero value
+	// means StartDate is a precise timestamp; true means the real instant
+	// lies in [StartDate, StartDate+24h).
+	StartDateIsDay bool `json:"start_date_is_day,omitempty"`
 }
 
 // OfferingDetails represents cloud provider offering details.

@@ -588,3 +588,13 @@ func TestErrOutcomeUnknown(t *testing.T) {
 	// Platform stores errors as strings: the text is a contract (platform #778).
 	assert.Equal(t, "purchase outcome unknown", ErrOutcomeUnknown.Error())
 }
+
+func TestCommitment_StartDateIsDayJSON(t *testing.T) {
+	b, err := json.Marshal(Commitment{})
+	require.NoError(t, err)
+	assert.NotContains(t, string(b), "start_date_is_day")
+
+	b, err = json.Marshal(Commitment{StartDateIsDay: true})
+	require.NoError(t, err)
+	assert.Contains(t, string(b), `"start_date_is_day":true`)
+}
