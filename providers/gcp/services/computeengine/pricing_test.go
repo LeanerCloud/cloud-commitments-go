@@ -174,3 +174,48 @@ func TestEnrichRecWithPricing_InvalidCurrency(t *testing.T) {
 		})
 	}
 }
+
+func TestClassify_LegacyCommitmentNames(t *testing.T) {
+	cases := []struct {
+		desc, machine, usage string
+		term                 int
+		matched, isRAM       bool
+	}{
+		{"Commitment: Compute optimized Core running in Americas for 1 Year", "c2-standard-8", "Commit1Yr", 1, true, false},
+		{"Commitment: Compute optimized Ram running in Americas for 1 Year", "c2-standard-8", "Commit1Yr", 1, true, true},
+		{"Commitment: Compute optimized Core running in Americas for 3 Year", "c2-standard-8", "Commit3Yr", 3, true, false},
+		{"Commitment: Compute optimized Ram running in Americas for 3 Year", "c2-standard-8", "Commit3Yr", 3, true, true},
+		// Wrong term for the requested one: skipped, not an error.
+		{"Commitment: Compute optimized Core running in Americas for 3 Year", "c2-standard-8", "Commit3Yr", 1, false, false},
+		// Families off the legacy allowlist never match the legacy form.
+		{"Commitment: N2 Core running in Americas for 1 Year", "n2-standard-8", "Commit1Yr", 1, false, false},
+		{"Commitment: Compute optimized Core running in Americas for 1 Year", "n2-standard-8", "Commit1Yr", 1, false, false},
+		{"Commitment: Memory-optimized Core running in Americas for 1 Year", "m1-megamem-96", "Commit1Yr", 1, false, false},
+		// Existing v1 form still resolves for c2.
+		{"Commitment v1: Compute optimized Cpu in Americas for 1 Year", "c2-standard-8", "Commit1Yr", 1, true, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.desc+"/"+tc.machine, func(t *testing.T) {
+			labels, err := familyLabels(tc.machine)
+			require.NoError(t, err)
+			sku := catalogSKU("x", tc.desc, "CPU", tc.usage, "h", 1, americas)
+			_, isRAM, matched, err := newRateMatcher(labels, "us-central1", tc.term).classify(sku)
+			require.NoError(t, err)
+			assert.Equal(t, tc.matched, matched)
+			assert.Equal(t, tc.isRAM, isRAM)
+		})
+	}
+}
+
+func TestFindFamilyRates_C2LegacyCommitmentCatalog(t *testing.T) {
+	skus := []*cloudbilling.Sku{
+		catalogSKU("c2-od-core", "Compute optimized Core running in Americas", "CPU", "OnDemand", "h", 33174000, americas),
+		catalogSKU("c2-od-ram", "Compute optimized Ram running in Americas", "RAM", "OnDemand", "GiBy.h", 4446000, americas),
+		catalogSKU("c2-l1-core", "Commitment: Compute optimized Core running in Americas for 1 Year", "CPU", "Commit1Yr", "h", 20900000, americas),
+		catalogSKU("c2-l1-ram", "Commitment: Compute optimized Ram running in Americas for 1 Year", "RAM", "Commit1Yr", "GiBy.h", 2800000, americas),
+	}
+	rates, err := findFamilyRates(skus, "c2-standard-8", "us-central1", 1)
+	require.NoError(t, err)
+	assert.InDelta(t, 0.0209, rates.commitment.cpu, 1e-9)
+	assert.InDelta(t, 0.0028, rates.commitment.ram, 1e-9)
+}
