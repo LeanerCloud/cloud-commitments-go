@@ -104,11 +104,7 @@ complexity-report:
 security-scan: security-scan-go
 
 security-scan-go:
-	@command -v gosec >/dev/null || { echo "gosec not installed. Install: make install-dev-tools" >&2; exit 1; }
-	@for mod in $(MODULES); do \
-		echo "Scanning $$mod..."; \
-		(cd "$$mod" && gosec -fmt=json -out=gosec-report.json -exclude=G101,G104,G115,G204,G301,G304,G402,G505 ./...) || exit 1; \
-	done
+	@scripts/run-gosec.sh
 
 security-scan-snyk:
 	@command -v snyk >/dev/null || { echo "snyk not installed. Install: npm install -g snyk" >&2; exit 1; }

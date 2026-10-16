@@ -488,37 +488,23 @@ jobs:
         # Still requires checkout and Go setup to have succeeded.
         if: always() && steps.checkout.outcome == 'success' && steps.setup_go.outcome == 'success'
         run: |
-          # Install pinned gosec using the job's existing setup-go.
-          # The securego/gosec Docker action bundles its own Go toolchain which
-          # cannot satisfy the module's go directive, causing a toolchain mismatch.
-          go install github.com/securego/gosec/v2/cmd/gosec@v2.28.0
-          # Scan each owned module independently.
-          set -e
+          # scripts/run-gosec.sh owns the pinned gosec version, toolchain and
+          # rule set, shared with the pre-commit hook and `make security-scan-go`.
           status=0
-          for mod in pkg providers/aws providers/azure providers/gcp ci_cd_sanity_tests; do
-            tag=$(echo "$mod" | tr './' '--' | sed 's/^-/root/')
-            out="$RUNNER_TEMP/gosec-${tag}.sarif"
-            echo "==> gosec in $mod"
-            if ! (cd "$mod" && gosec -fmt sarif -out "$out" ./...); then
-              echo "::warning::gosec exited non-zero in $mod (findings or a scan error)"
-              status=1
-            fi
-            if [ ! -f "$out" ]; then
-              echo "::error::gosec produced no SARIF output for $mod"
-              status=1
-              continue
-            fi
+          scripts/run-gosec.sh --sarif-dir "$RUNNER_TEMP" || status=1
+          shopt -s nullglob
+          for out in "$RUNNER_TEMP"/gosec-*.sarif; do
+            tag=$(basename "$out" .sarif)
             # Code scanning rejects a SARIF file whose runs share a category
             # (github.blog changelog 2025-07-21), so give each module's run a
             # unique automationDetails.id before merging.
-            jq --arg id "gosec-${tag}/" '.runs |= map(.automationDetails = {id: $id})' \
+            jq --arg id "${tag}/" '.runs |= map(.automationDetails = {id: $id})' \
               "$out" > "$out.tmp" && mv "$out.tmp" "$out"
           done
           # Merge per-module SARIF runs into one file for the upload step.
           # Only modules that actually produced a file are included; if
           # gosec crashed before writing any of them, fail loud here rather
           # than uploading an empty result silently.
-          shopt -s nullglob
           sarif_files=("$RUNNER_TEMP"/gosec-*.sarif)
           if [ "${#sarif_files[@]}" -eq 0 ]; then
             echo "::error::no gosec SARIF output was produced by any module" >&2
