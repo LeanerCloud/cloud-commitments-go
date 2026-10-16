@@ -61,27 +61,7 @@ func TestGetExistingCommitments_SDKPaginationCompleteness(t *testing.T) {
 				}))
 				t.Cleanup(server.Close)
 				endpoint = server.URL
-				httpClient := server.Client()
-				transport := httpClient.Transport.(*http.Transport)
-				transport.Proxy = nil
-				transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
-					if address != server.Listener.Addr().String() {
-						return nil, fmt.Errorf("blocked non-fixture address %s", address)
-					}
-					return (&net.Dialer{Timeout: time.Second}).DialContext(ctx, network, address)
-				}
-				_, blocked := transport.DialContext(context.Background(), "tcp", "management.azure.com:443")
-				require.ErrorContains(t, blocked, "blocked non-fixture")
-				sdk, err := armbillingbenefits.NewSavingsPlanClient(nil, inventoryCredential{}, &arm.ClientOptions{
-					ClientOptions: policy.ClientOptions{
-						Transport: httpClient,
-						Retry:     policy.RetryOptions{MaxRetries: -1},
-						Cloud: cloud.Configuration{Services: map[cloud.ServiceName]cloud.ServiceConfiguration{
-							cloud.ResourceManager: {Endpoint: endpoint, Audience: cloud.AzurePublic.Services[cloud.ResourceManager].Audience},
-						}},
-					},
-				})
-				require.NoError(t, err)
+				sdk := newFixtureSavingsPlanClient(t, server)
 				client := NewClient(nil, "sub-a", "eastus")
 				client.SetListAllPager(sdk.NewListAllPager(nil))
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -113,4 +93,32 @@ func TestGetExistingCommitments_SDKPaginationCompleteness(t *testing.T) {
 			})
 		}
 	}
+}
+
+// newFixtureSavingsPlanClient returns an SDK client that can only reach the
+// fixture server.
+func newFixtureSavingsPlanClient(t *testing.T, server *httptest.Server) *armbillingbenefits.SavingsPlanClient {
+	t.Helper()
+	httpClient := server.Client()
+	transport := httpClient.Transport.(*http.Transport)
+	transport.Proxy = nil
+	transport.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		if address != server.Listener.Addr().String() {
+			return nil, fmt.Errorf("blocked non-fixture address %s", address)
+		}
+		return (&net.Dialer{Timeout: time.Second}).DialContext(ctx, network, address)
+	}
+	_, blocked := transport.DialContext(context.Background(), "tcp", "management.azure.com:443")
+	require.ErrorContains(t, blocked, "blocked non-fixture")
+	sdk, err := armbillingbenefits.NewSavingsPlanClient(nil, inventoryCredential{}, &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Transport: httpClient,
+			Retry:     policy.RetryOptions{MaxRetries: -1},
+			Cloud: cloud.Configuration{Services: map[cloud.ServiceName]cloud.ServiceConfiguration{
+				cloud.ResourceManager: {Endpoint: server.URL, Audience: cloud.AzurePublic.Services[cloud.ResourceManager].Audience},
+			}},
+		},
+	})
+	require.NoError(t, err)
+	return sdk
 }
