@@ -181,6 +181,7 @@ func TestGetExistingCommitments_Happy(t *testing.T) {
 	assert.Equal(t, spName, got.ResourceType)
 	assert.Equal(t, common.CommitmentStateActive, got.State)
 	assert.Equal(t, amount, got.Cost)
+	assert.False(t, got.StartDateIsDay, "EffectiveDateTime is a timestamp, not a calendar date")
 }
 
 func TestGetExistingCommitments_SubscriptionOwnership(t *testing.T) {

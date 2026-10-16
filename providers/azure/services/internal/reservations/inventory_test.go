@@ -175,6 +175,7 @@ func TestCommitmentFromReservation_StartDateUsesPurchaseDate(t *testing.T) {
 	c := CommitmentFromReservation(r, "sub", common.ServiceCompute, armreservations.ReservedResourceTypeVirtualMachines, now)
 	require.NotNil(t, c)
 	assert.Equal(t, purchase, c.StartDate, "StartDate must be the purchase time, not the revision EffectiveDateTime")
+	assert.True(t, c.StartDateIsDay, "purchaseDate is a calendar date")
 	assert.Equal(t, expiry, c.EndDate)
 	assert.Equal(t, 1, c.Count)
 	assert.Equal(t, "sub", c.Account)

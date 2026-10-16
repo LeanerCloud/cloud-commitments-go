@@ -265,6 +265,8 @@ func populateCommitmentFields(commitment *common.Commitment, r *armreservations.
 	}
 	if props.PurchaseDate != nil {
 		commitment.StartDate = *props.PurchaseDate
+		// The reservations API returns a calendar date, not an instant.
+		commitment.StartDateIsDay = true
 	}
 	if props.ExpiryDate != nil {
 		commitment.EndDate = *props.ExpiryDate
