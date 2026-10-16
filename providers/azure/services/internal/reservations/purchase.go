@@ -533,14 +533,20 @@ func dispositionOf(state armreservations.ProvisioningState) orderDisposition {
 	return disposition
 }
 
+// maxOrderPages caps the reservation-order listing walk. Listings are one
+// entry per purchase on the tenant (tens to low hundreds), so 50 pages is far
+// above any real tenant; reaching it means a server bug, reported as an error.
+const maxOrderPages = 50
+
 // FindReservationOrderByIdempotencyToken lists reservation orders visible to
 // the bearer token and returns the reservation order ID (GUID) of the FIRST
 // order tagged with the supplied idempotency token. Returns ("", false, nil)
 // when no matching order is found and ("", false, err) on a transport / 4xx /
 // decode failure.
 //
-// Pagination follows nextLink; the entire listing is walked because Azure has
-// no server-side tag filter on this endpoint. Reservation order listings are
+// Pagination follows nextLink, guarded by a seen-URL set and the maxOrderPages
+// cap (an error, never a truncated "not found"). The entire listing is walked
+// because Azure has no server-side tag filter on this endpoint. Reservation order listings are
 // small (one entry per purchase ever made on the tenant, typically tens to low
 // hundreds), so the full walk is cheap and runs only on purchase paths where
 // an idempotency token is supplied (i.e. never on the CLI legacy path).
@@ -555,7 +561,15 @@ func FindReservationOrderByIdempotencyToken(ctx context.Context, httpClient HTTP
 	}
 
 	nextURL := ReservationOrdersListURL()
-	for nextURL != "" {
+	seen := map[string]struct{}{}
+	for pageIdx := 0; nextURL != ""; pageIdx++ {
+		if pageIdx >= maxOrderPages {
+			return "", false, fmt.Errorf("reservation orders listing exceeds the %d-page cap (nextLink still set)", maxOrderPages)
+		}
+		if _, ok := seen[nextURL]; ok {
+			return "", false, fmt.Errorf("reservation orders listing returned a self-referential nextLink (page %d)", pageIdx)
+		}
+		seen[nextURL] = struct{}{}
 		page, err := fetchReservationOrdersPage(ctx, httpClient, nextURL, bearerToken)
 		if err != nil {
 			return "", false, err

@@ -82,6 +82,12 @@ func (r *RecommendationsClientAdapter) GetRIUtilization(ctx context.Context, loo
 	return r.getRIUtilizationViaAPI(ctx, api, startDate, endDate)
 }
 
+// maxRIUtilizationPages caps the ReservationsSummaries walk. Monthly-grain
+// summaries return one row per reservation per month in the requested range,
+// a few pages at most; 50 matches the other catalog walks (maxAdvisorPages,
+// pricing.DefaultMaxPages). Reaching it is an error, never partial data.
+const maxRIUtilizationPages = 50
+
 // getRIUtilizationViaAPI performs the actual pager loop. It is separate from
 // GetRIUtilization so tests can inject a fake reservationsSummariesAPI
 // without needing a real Azure credential.
@@ -101,7 +107,13 @@ func (r *RecommendationsClientAdapter) getRIUtilizationViaAPI(
 
 	agg := make(map[string]*riAccumulator)
 
-	for pager.More() {
+	for pageIdx := 0; pager.More(); pageIdx++ {
+		if err := ctx.Err(); err != nil {
+			return nil, fmt.Errorf("azure ri utilization: context canceled during pagination: %w", err)
+		}
+		if pageIdx >= maxRIUtilizationPages {
+			return nil, fmt.Errorf("azure ri utilization: pagination cap (%d pages) reached with more pages pending", maxRIUtilizationPages)
+		}
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("azure ri utilization: failed to fetch summaries page: %w", err)
