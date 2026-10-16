@@ -203,3 +203,47 @@ func TestClientLineItemsSecondPageFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestClientLineItemsPaginationGuards(t *testing.T) {
+	t.Parallel()
+	hdr := func(total, totalPages, page, first, last int, next string) string {
+		extra := ""
+		if next != "" {
+			extra = `,"next_page":` + next
+		}
+		return fmt.Sprintf(`{"total":%d,"total_pages":%d,"page":%d,"first_page":%d,"last_page":%d%s}`, total, totalPages, page, first, last, extra)
+	}
+	cases := map[string]struct{ header, body, want string }{
+		"empty with huge total_pages":  {hdr(0, 1000000, 1, 1, 1000000, ""), "[]", "invalid empty pagination"},
+		"total pages disagree":         {hdr(250, 2, 1, 1, 2, "2"), lineItemsPage(1, 100), "inconsistent page totals"},
+		"last page disagrees":          {hdr(101, 2, 1, 1, 3, "2"), lineItemsPage(1, 100), "inconsistent page totals"},
+		"response page not requested":  {hdr(201, 3, 2, 1, 3, "3"), lineItemsPage(1, 100), "invalid total or page counters"},
+		"first page not one":           {hdr(1, 1, 1, 0, 1, ""), lineItemsPage(1, 1), "invalid total or page counters"},
+		"negative total":               {hdr(-1, 1, 1, 1, 1, ""), "[]", "invalid total or page counters"},
+		"null next page on first page": {hdr(101, 2, 1, 1, 2, "null"), lineItemsPage(1, 100), "next_page"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			requests := 0
+			c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				requests++
+				w.Header().Set("X-Pagination", tc.header)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			rows, err := c.LineItems(context.Background(), testPlan)
+			require.ErrorContains(t, err, tc.want)
+			assert.Nil(t, rows)
+			assert.Equal(t, 1, requests)
+		})
+	}
+}
+
+func TestClientLineItemsRejectsNonUUIDPlanBeforeRequest(t *testing.T) {
+	t.Parallel()
+	requests := 0
+	c := testClient(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests++ }))
+	rows, err := c.LineItems(context.Background(), "../other/plan")
+	require.ErrorContains(t, err, "UUID")
+	assert.Nil(t, rows)
+	assert.Zero(t, requests)
+}
