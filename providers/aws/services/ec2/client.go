@@ -352,13 +352,6 @@ func parseEC2Scope(s string) (types.Scope, error) {
 // of timing out the Lambda budget (issue #688).
 const maxOfferingPages = 5
 
-// defaultEC2Platform is the EC2 RI product-description value for Linux/UNIX instances.
-// Used as a fallback in exchange-package helpers (FindConvertibleOffering,
-// ListTargetOfferings) where callers may legitimately omit the platform; never
-// used as a silent fallback on the purchase path (see M2/M3 in
-// 19-hardcoded-fallbacks-aws.md).
-const defaultEC2Platform = "Linux/UNIX"
-
 // convertEC2PaymentOption maps a rec payment-option slug to the AWS
 // DescribeReservedInstancesOfferings OfferingType enum value.
 func convertEC2PaymentOption(option string) (types.OfferingTypeValues, error) {
@@ -839,26 +832,41 @@ type FindConvertibleOfferingParams struct {
 	Duration         int64
 }
 
+// parseExchangeLookup parses the tenancy and scope of an exchange lookup and
+// resolves its availability zone. Keeping the target in the source RI's AZ is
+// policy from #310/#289 (no silent AZ drift), not an AWS requirement.
+func parseExchangeLookup(tenancy, scope, az string) (types.Tenancy, types.Scope, string, error) {
+	t, err := parseEC2Tenancy(tenancy)
+	if err != nil {
+		return "", "", "", err
+	}
+	sc, err := parseEC2Scope(scope)
+	if err != nil {
+		return "", "", "", err
+	}
+	zone, err := resolveExchangeZone(sc, az)
+	if err != nil {
+		return "", "", "", err
+	}
+	return t, sc, zone, nil
+}
+
 // FindConvertibleOffering finds a convertible RI offering ID for the given parameters.
 func (c *Client) FindConvertibleOffering(ctx context.Context, params FindConvertibleOfferingParams) (string, error) {
-	tenancy, err := parseEC2Tenancy(params.Tenancy)
+	tenancy, scope, az, err := parseExchangeLookup(params.Tenancy, params.Scope, params.AvailabilityZone)
 	if err != nil {
 		return "", err
 	}
-	scope, err := parseEC2Scope(params.Scope)
-	if err != nil {
-		return "", err
-	}
-	// Keeping the target in the source RI's AZ is policy from #310/#289 (no
-	// silent AZ drift), not an AWS requirement of exchanges.
-	az, err := resolveExchangeZone(scope, params.AvailabilityZone)
-	if err != nil {
-		return "", err
-	}
-	productDesc, duration, _ := normalizeTargetOfferingsParams(ListTargetOfferingsParams{
+	productDesc, duration, _, err := normalizeTargetOfferingsParams(ListTargetOfferingsParams{
 		ProductDescription: params.ProductDescription,
 		Duration:           params.Duration,
 	})
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(params.InstanceType) == "" {
+		return "", errors.New("convertible offering lookup needs an instance type")
+	}
 	input := convertibleOfferingInput(params.InstanceType, productDesc, scope, tenancy, az, duration)
 	for page := 1; page <= maxTargetOfferingPages; page++ {
 		if err := ctx.Err(); err != nil {
@@ -946,28 +954,25 @@ type ListTargetOfferingsParams struct {
 // enough given the small number of convertible instance types AWS offers.
 const maxTargetOfferingPages = 10
 
-// normalizeTargetOfferingsParams fills defaults for a zero Duration or
-// ProductDescription and converts the OfferingType string to the AWS SDK enum.
+// normalizeTargetOfferingsParams validates the request and converts the
+// OfferingType string to the AWS SDK enum. ProductDescription and Duration have
+// no default: guessing a platform or term would search the wrong offerings.
+// An empty OfferingType means "all payment options" and stays unset.
 // Extracted from ListTargetOfferings to keep the main function's cyclomatic
 // complexity under the project threshold of 10.
-func normalizeTargetOfferingsParams(p ListTargetOfferingsParams) (productDesc string, duration int64, offeringType types.OfferingTypeValues) {
-	duration = p.Duration
-	if duration == 0 {
-		duration = OneYearSeconds
+func normalizeTargetOfferingsParams(p ListTargetOfferingsParams) (productDesc string, duration int64, offeringType types.OfferingTypeValues, err error) {
+	if strings.TrimSpace(p.ProductDescription) == "" {
+		return "", 0, "", errors.New("product description is required for an offering lookup")
 	}
-	productDesc = p.ProductDescription
-	if productDesc == "" {
-		productDesc = defaultEC2Platform
+	if p.Duration <= 0 {
+		return "", 0, "", fmt.Errorf("duration must be a positive number of seconds, got %d", p.Duration)
 	}
-	// OfferingType: typed field when non-empty; empty string means "all
-	// payment options" (the caller didn't specify). Leave unset so AWS
-	// returns all payment variants, giving the user maximum choice.
 	if p.OfferingType != "" {
-		if ot, err := convertEC2PaymentOption(p.OfferingType); err == nil {
-			offeringType = ot
+		if offeringType, err = convertEC2PaymentOption(p.OfferingType); err != nil {
+			return "", 0, "", err
 		}
 	}
-	return
+	return p.ProductDescription, p.Duration, offeringType, nil
 }
 
 // appendTargetOfferings maps the SDK result page into TargetOffering values
@@ -1016,19 +1021,14 @@ func appendTargetOfferings(out []TargetOffering, offerings []types.ReservedInsta
 // matching the other constraints -- that is exactly the "valid targets" set for
 // a convertible RI exchange.
 func (c *Client) ListTargetOfferings(ctx context.Context, params ListTargetOfferingsParams) ([]TargetOffering, error) {
-	tenancy, err := parseEC2Tenancy(params.Tenancy)
+	tenancy, scope, az, err := parseExchangeLookup(params.Tenancy, params.Scope, params.AvailabilityZone)
 	if err != nil {
 		return nil, err
 	}
-	scope, err := parseEC2Scope(params.Scope)
+	productDesc, duration, offeringType, err := normalizeTargetOfferingsParams(params)
 	if err != nil {
 		return nil, err
 	}
-	az, err := resolveExchangeZone(scope, params.AvailabilityZone)
-	if err != nil {
-		return nil, err
-	}
-	productDesc, duration, offeringType := normalizeTargetOfferingsParams(params)
 
 	var out []TargetOffering
 	var nextToken *string

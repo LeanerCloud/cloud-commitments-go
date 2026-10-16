@@ -2123,3 +2123,71 @@ func TestListTargetOfferings_Regional_DoesNotSendAZ(t *testing.T) {
 	require.Len(t, got, 1)
 	assert.Nil(t, got[0].AvailabilityZone)
 }
+
+func regionalFindParams() FindConvertibleOfferingParams {
+	p := zonalFindParams("")
+	p.Scope = "Region"
+	return p
+}
+
+func regionalListParams() ListTargetOfferingsParams {
+	p := zonalListParams("")
+	p.Scope = "Region"
+	return p
+}
+
+func TestListTargetOfferings_InvalidOfferingType_ErrorsBeforeAPICall(t *testing.T) {
+	t.Parallel()
+	m := matchingOfferingMock()
+	client := &Client{client: m, region: "us-east-1"}
+	p := regionalListParams()
+	p.OfferingType = "monthly"
+
+	_, err := client.ListTargetOfferings(context.Background(), p)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported EC2 payment option")
+	m.AssertNotCalled(t, "DescribeReservedInstancesOfferings", mock.Anything, mock.Anything)
+}
+
+// Missing term or platform must error, not be searched under a guessed default.
+func TestOfferingLookups_MissingFields_ErrorBeforeAPICall(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct {
+		mutate  func(product *string, duration *int64, instanceType *string)
+		forFind bool
+		wantErr string
+	}{
+		"zero duration":      {func(_ *string, d *int64, _ *string) { *d = 0 }, false, "duration"},
+		"negative duration":  {func(_ *string, d *int64, _ *string) { *d = -1 }, false, "duration"},
+		"empty product":      {func(p *string, _ *int64, _ *string) { *p = "" }, false, "product description"},
+		"whitespace product": {func(p *string, _ *int64, _ *string) { *p = "  " }, false, "product description"},
+		"empty instance":     {func(_ *string, _ *int64, i *string) { *i = " " }, true, "instance type"},
+	} {
+		for _, find := range []bool{true, false} {
+			if tc.forFind && !find {
+				continue
+			}
+			t.Run(fmt.Sprintf("%s find=%v", name, find), func(t *testing.T) {
+				t.Parallel()
+				product, duration, instance := "Linux/UNIX", int64(OneYearSeconds), "m5.large"
+				tc.mutate(&product, &duration, &instance)
+				m := matchingOfferingMock()
+				client := &Client{client: m, region: "us-east-1"}
+				var err error
+				if find {
+					p := regionalFindParams()
+					p.ProductDescription, p.Duration, p.InstanceType = product, duration, instance
+					_, err = client.FindConvertibleOffering(context.Background(), p)
+				} else {
+					p := regionalListParams()
+					p.ProductDescription, p.Duration = product, duration
+					_, err = client.ListTargetOfferings(context.Background(), p)
+				}
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tc.wantErr)
+				m.AssertNotCalled(t, "DescribeReservedInstancesOfferings", mock.Anything, mock.Anything)
+			})
+		}
+	}
+}
