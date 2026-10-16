@@ -36,14 +36,23 @@ type LineItemContractSpec struct {
 
 // LineItemOffer keeps provider and catalog offering identifiers distinct.
 type LineItemOffer struct {
-	ID, ProviderOfferingID, Type                         string
-	Provider                                             common.ProviderType
-	OfferingID, Region, AZ, InstanceType, InstanceFamily *string
-	ProductDescription, Tenancy, PlanType                *string
-	IsMultiAZ, IsFlexible                                *bool
-	DurationSeconds                                      *big.Rat
-	OfferingClass                                        *string
-	PaymentOption                                        *PaymentOption
+	ID                 string
+	ProviderOfferingID string
+	Type               string
+	Provider           common.ProviderType
+	OfferingID         *string
+	Region             *string
+	AZ                 *string
+	InstanceType       *string
+	InstanceFamily     *string
+	ProductDescription *string
+	Tenancy            *string
+	PlanType           *string
+	IsMultiAZ          *bool
+	IsFlexible         *bool
+	DurationSeconds    *big.Rat
+	OfferingClass      *string
+	PaymentOption      *PaymentOption
 }
 
 type jsonField struct {
