@@ -52,9 +52,12 @@ func ExistingSPStates() []sptypes.SavingsPlanState {
 // region's usage, not the ladder's, and counting them would inflate
 // ExistingUSDPerHour and under-purchase. Compute SPs are global and always
 // count. Any other plan type is not filtered here (the ladder's own type
-// check handles it). The comparison is exact, case-sensitive.
+// check handles it). The comparison is exact, case-sensitive. An EC2Instance
+// plan with an empty spRegion returns false (not counted), so callers must
+// validate the region first; the adapter rejects an empty region in
+// mapActiveSP.
 func CountsAsExistingSP(planType sptypes.SavingsPlanType, spRegion, ladderRegion string) bool {
-	return string(planType) != spPlanTypeEC2Instance || spRegion == ladderRegion
+	return planType != sptypes.SavingsPlanTypeEc2Instance || spRegion == ladderRegion
 }
 
 // spListerAdapter implements the spLister interface using the AWS Savings
