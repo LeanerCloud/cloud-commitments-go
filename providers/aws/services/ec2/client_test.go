@@ -2235,6 +2235,67 @@ func TestFindConvertibleOffering_LenientAndLegacyMatches(t *testing.T) {
 	}
 }
 
+func TestListTargetOfferings_DropsMismatchingOfferings(t *testing.T) {
+	t.Parallel()
+	for _, tc := range offeringMismatchRows {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var got []*ec2.DescribeReservedInstancesOfferingsInput
+			m := pagedOfferingsMock(&got, []types.ReservedInstancesOffering{
+				fullOffering("bad", "", tc.mut), fullOffering("good", ""),
+			})
+			client := &Client{client: m, region: "us-east-1"}
+
+			offerings, err := client.ListTargetOfferings(context.Background(), regionalListParams())
+
+			require.NoError(t, err)
+			require.Len(t, offerings, 1)
+			assert.Equal(t, "good", offerings[0].OfferingID)
+		})
+	}
+}
+
+func TestListTargetOfferings_AllSkipped_ReturnsEmptyNoError(t *testing.T) {
+	t.Parallel()
+	var got []*ec2.DescribeReservedInstancesOfferingsInput
+	m := pagedOfferingsMock(&got, []types.ReservedInstancesOffering{
+		fullOffering("bad", "", offeringMismatchRows[0].mut),
+	})
+	client := &Client{client: m, region: "us-east-1"}
+
+	offerings, err := client.ListTargetOfferings(context.Background(), regionalListParams())
+
+	require.NoError(t, err)
+	assert.Empty(t, offerings)
+}
+
+func TestListTargetOfferings_OfferingTypeComparedOnlyWhenRequested(t *testing.T) {
+	t.Parallel()
+	allUpfront := func(o *types.ReservedInstancesOffering) { o.OfferingType = types.OfferingTypeValuesAllUpfront }
+	for name, tc := range map[string]struct {
+		optionType string
+		wantLen    int
+	}{
+		"empty request keeps all": {"", 1},
+		"matching request keeps":  {"all-upfront", 1},
+		"other request drops":     {"no-upfront", 0},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			var got []*ec2.DescribeReservedInstancesOfferingsInput
+			m := pagedOfferingsMock(&got, []types.ReservedInstancesOffering{fullOffering("o", "", allUpfront)})
+			client := &Client{client: m, region: "us-east-1"}
+			p := regionalListParams()
+			p.OfferingType = tc.optionType
+
+			offerings, err := client.ListTargetOfferings(context.Background(), p)
+
+			require.NoError(t, err)
+			assert.Len(t, offerings, tc.wantLen)
+		})
+	}
+}
+
 func TestListTargetOfferings_InvalidOfferingType_ErrorsBeforeAPICall(t *testing.T) {
 	t.Parallel()
 	m := matchingOfferingMock()
