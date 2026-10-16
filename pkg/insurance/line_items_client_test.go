@@ -216,6 +216,7 @@ func TestClientLineItemsPaginationGuards(t *testing.T) {
 	cases := map[string]struct{ header, body, want string }{
 		"empty with huge total_pages":  {hdr(0, 1000000, 1, 1, 1000000, ""), "[]", "invalid empty pagination"},
 		"total pages disagree":         {hdr(250, 2, 1, 1, 2, "2"), lineItemsPage(1, 100), "inconsistent page totals"},
+		"total pages alone disagrees":  {hdr(250, 2, 1, 1, 3, "2"), lineItemsPage(1, 100), "inconsistent page totals"},
 		"last page disagrees":          {hdr(101, 2, 1, 1, 3, "2"), lineItemsPage(1, 100), "inconsistent page totals"},
 		"response page not requested":  {hdr(201, 3, 2, 1, 3, "3"), lineItemsPage(1, 100), "invalid total or page counters"},
 		"first page not one":           {hdr(1, 1, 1, 0, 1, ""), lineItemsPage(1, 1), "invalid total or page counters"},
