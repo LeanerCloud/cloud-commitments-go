@@ -13,6 +13,8 @@ import (
 )
 
 // LineItem retains purchase identity without inferring missing account or offer attributes.
+// ID, PlanID and OfferID keep the vendor's case; compare UUIDs case-insensitively
+// (strings.EqualFold) when joining to comparison line_item_id values.
 type LineItem struct {
 	ID, PlanID, OfferID string
 	AccountID           *string
@@ -190,6 +192,9 @@ func decodeLineItemOffer(m map[string]json.RawMessage, offerID string) (LineItem
 	if o.Type == "" {
 		return o, fmt.Errorf("offer.type: %w", errMissing)
 	}
+	if o.ProviderOfferingID == "" {
+		return o, fmt.Errorf("offer.provider_offering_id: %w", errMissing)
+	}
 	if !isUUID(o.ID) || !strings.EqualFold(o.ID, offerID) {
 		return o, errors.New("offer.id: invalid UUID or offer_id mismatch")
 	}
@@ -198,6 +203,9 @@ func decodeLineItemOffer(m map[string]json.RawMessage, offerID string) (LineItem
 	}
 	if o.DurationSeconds, err = requiredRat(duration); err != nil {
 		return o, fmt.Errorf("offer.duration_seconds: %w", err)
+	}
+	if o.DurationSeconds.Sign() <= 0 {
+		return o, errors.New("offer.duration_seconds: must be positive")
 	}
 	err = decodeOfferEnums(m, &o)
 	return o, err

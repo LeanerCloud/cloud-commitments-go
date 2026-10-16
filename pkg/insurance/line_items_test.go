@@ -43,6 +43,21 @@ func TestDecodeLineItemsIdentity(t *testing.T) {
 	assert.False(t, *r.Offer.IsMultiAZ)
 	assert.Nil(t, r.Offer.IsFlexible)
 	assert.Nil(t, r.Offer.AZ)
+	assert.Equal(t, "m5.large", *r.Offer.InstanceType)
+	assert.Equal(t, "m5", *r.Offer.InstanceFamily)
+	assert.Equal(t, "default", *r.Offer.Tenancy)
+	assert.Equal(t, "Linux/UNIX", *r.Offer.ProductDescription)
+	assert.Equal(t, "us-east-1", *r.Offer.Region)
+	assert.Nil(t, r.Offer.PlanType)
+	assert.True(t, r.IsSelected)
+}
+
+func TestDecodeLineItemsPlanTypeIdentity(t *testing.T) {
+	t.Parallel()
+	body := editLineItem(t, func(m map[string]any) { obj(m["offer"])["plan_type"] = "compute" })
+	rows, err := DecodeLineItems(strings.NewReader("["+body+"]"), testPlan)
+	require.NoError(t, err)
+	assert.Equal(t, "compute", *rows[0].Offer.PlanType)
 }
 
 func TestDecodeLineItemsRequiredFields(t *testing.T) {
@@ -80,6 +95,11 @@ func TestDecodeLineItemsContractBreaks(t *testing.T) {
 		"fractional quantity":      func(m map[string]any) { m["selected_quantity"] = 0.5 },
 		"negative commitment":      func(m map[string]any) { m["selected_commitment"] = -0.1 },
 		"null commitment":          func(m map[string]any) { m["selected_commitment"] = nil },
+		"empty provider offering":  func(m map[string]any) { obj(m["offer"])["provider_offering_id"] = "" },
+		"zero duration":            func(m map[string]any) { obj(m["offer"])["duration_seconds"] = 0 },
+		"negative duration":        func(m map[string]any) { obj(m["offer"])["duration_seconds"] = -1 },
+		"null duration":            func(m map[string]any) { obj(m["offer"])["duration_seconds"] = nil },
+		"null is_selected":         func(m map[string]any) { m["is_selected"] = nil },
 		"quoted duration":          func(m map[string]any) { obj(m["offer"])["duration_seconds"] = "123" },
 		"null contract":            func(m map[string]any) { m["contract_spec"] = nil },
 		"empty commitment type":    func(m map[string]any) { obj(m["contract_spec"])["commitment_type"] = "" },
