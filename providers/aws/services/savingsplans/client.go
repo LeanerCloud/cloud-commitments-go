@@ -662,18 +662,25 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 		return nil, fmt.Errorf("invalid service details for Savings Plans")
 	}
 
-	if err := c.validateOffering(ctx, offeringID); err != nil {
-		return nil, err
+	if vErr := c.validateOffering(ctx, offeringID); vErr != nil {
+		return nil, vErr
 	}
 
-	hoursInTerm := calculateHoursInTerm(rec.Term)
+	hoursInTerm, err := calculateHoursInTerm(rec.Term)
+	if err != nil {
+		return nil, err
+	}
+	termString, err := normalizeTermString(rec.Term)
+	if err != nil {
+		return nil, err
+	}
 	totalCost := spDetails.HourlyCommitment * hoursInTerm
 	upfrontCost, recurringCost := calculatePaymentBreakdown(rec.PaymentOption, totalCost, hoursInTerm)
 
 	return &common.OfferingDetails{
 		OfferingID:          offeringID,
 		ResourceType:        spDetails.PlanType,
-		Term:                normalizeTermString(rec.Term),
+		Term:                termString,
 		PaymentOption:       rec.PaymentOption,
 		UpfrontCost:         upfrontCost,
 		RecurringCost:       recurringCost,
@@ -699,11 +706,13 @@ func (c *Client) validateOffering(ctx context.Context, offeringID string) error 
 
 // calculateHoursInTerm calculates the number of hours in a commitment term.
 // Uses 365 days/year to match AWS billing conventions for RIs and Savings Plans.
-func calculateHoursInTerm(term string) float64 {
-	if term == "3yr" || term == "3" {
-		return 3 * 365 * 24 // 3 years (26280 hours)
+// Returns an error on an unrecognized term rather than defaulting to one year.
+func calculateHoursInTerm(term string) (float64, error) {
+	months, err := purchasecfg.ParseTermMonths(term, "Savings Plans")
+	if err != nil {
+		return 0, err
 	}
-	return 365 * 24 // 1 year (8760 hours)
+	return float64(months/12) * 365 * 24, nil
 }
 
 // calculatePaymentBreakdown calculates upfront and recurring costs based on payment option.
@@ -720,12 +729,10 @@ func calculatePaymentBreakdown(paymentOption string, totalCost, hoursInTerm floa
 	}
 }
 
-// normalizeTermString normalizes a term string to standard format.
-func normalizeTermString(term string) string {
-	if term == "3yr" || term == "3" {
-		return "3yr"
-	}
-	return "1yr"
+// normalizeTermString normalizes a term string to "1yr" or "3yr". Returns an
+// error on an unrecognized term rather than defaulting to one year.
+func normalizeTermString(term string) (string, error) {
+	return purchasecfg.DurationYearString(term, "Savings Plans")
 }
 
 // GetValidResourceTypes returns valid Savings Plan types.

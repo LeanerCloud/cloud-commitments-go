@@ -1669,3 +1669,86 @@ func TestClient_GetExistingCommitments_RequestsPaymentPending(t *testing.T) {
 	require.Len(t, result, 1)
 	assert.Equal(t, common.CommitmentStatePaymentPending, result[0].State)
 }
+
+func TestCalculateHoursInTerm(t *testing.T) {
+	tests := []struct {
+		term    string
+		want    float64
+		wantErr bool
+	}{
+		{"1yr", 8760, false},
+		{"1", 8760, false},
+		{"3yr", 26280, false},
+		{"3", 26280, false},
+		{"", 0, true},
+		{"2yr", 0, true},
+		{"5yr", 0, true},
+		{"garbage", 0, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.term, func(t *testing.T) {
+			got, err := calculateHoursInTerm(tt.term)
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestNormalizeTermString(t *testing.T) {
+	tests := []struct {
+		term    string
+		want    string
+		wantErr bool
+	}{
+		{"1yr", "1yr", false},
+		{"1", "1yr", false},
+		{"3yr", "3yr", false},
+		{"3", "3yr", false},
+		{"", "", true},
+		{"2yr", "", true},
+		{"garbage", "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.term, func(t *testing.T) {
+			got, err := normalizeTermString(tt.term)
+			if tt.wantErr {
+				assert.Error(t, err)
+				return
+			}
+			assert.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestClient_GetOfferingDetails_UnknownTermErrors(t *testing.T) {
+	for _, term := range []string{"2yr", ""} {
+		t.Run("term_"+term, func(t *testing.T) {
+			mockSP := &MockSavingsPlansClient{}
+			client := &Client{client: mockSP, region: "us-east-1"}
+			mockSP.On("DescribeSavingsPlansOfferingRates", mock.Anything, mock.Anything).
+				Return(&savingsplans.DescribeSavingsPlansOfferingRatesOutput{}, nil)
+			// A CE-provided OfferingID skips convertTermToSeconds in findOfferingID,
+			// so the term helpers are the only guard on this path.
+			rec := common.Recommendation{
+				Service:       common.ServiceSavingsPlansAll,
+				PaymentOption: "all-upfront",
+				Term:          term,
+				Details: &common.SavingsPlanDetails{
+					OfferingID:       "off-1",
+					PlanType:         "Compute",
+					HourlyCommitment: 10.0,
+				},
+			}
+
+			details, err := client.GetOfferingDetails(context.Background(), rec)
+
+			assert.Error(t, err)
+			assert.Nil(t, details)
+		})
+	}
+}
