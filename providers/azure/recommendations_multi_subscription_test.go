@@ -479,3 +479,41 @@ func TestMultiSubscriptionRecommendationsClient_PartialResultKeepsRecommendation
 	assert.True(t, partial.Partial())
 	assert.Nil(t, AsPartialSubscriptionFailure(err), "a partial result is not a failed subscription")
 }
+
+// The same subscription ID passed twice to the constructor must yield one
+// client: queried once, results not doubled, Attempted not inflated.
+func TestNewMultiSubscriptionRecommendationsClient_DeduplicatesAccounts(t *testing.T) {
+	accounts := append(twoTestAccounts(), common.Account{Provider: common.ProviderAzure, ID: "sub-1", Name: "Duplicate of 1"})
+
+	t.Run("results are not duplicated", func(t *testing.T) {
+		fake1 := &fakeRecommendationsClient{recs: []common.Recommendation{{Account: "sub-1", Service: common.ServiceCompute}}}
+		fake2 := &fakeRecommendationsClient{recs: []common.Recommendation{{Account: "sub-2"}}}
+		withFakeSubscriptionClients(t, map[string]*fakeRecommendationsClient{"sub-1": fake1, "sub-2": fake2})
+
+		client, err := NewMultiSubscriptionRecommendationsClient(&mockAzureTokenCredential{}, accounts)
+		require.NoError(t, err)
+		require.Len(t, client.subscriptions, 2)
+		assert.Equal(t, "sub-1", client.subscriptions[0].subscriptionID)
+		assert.Equal(t, "sub-2", client.subscriptions[1].subscriptionID)
+
+		recs, err := client.GetAllRecommendations(context.Background())
+		require.NoError(t, err)
+		assert.ElementsMatch(t, []common.Recommendation{{Account: "sub-1", Service: common.ServiceCompute}, {Account: "sub-2"}}, recs)
+		assert.Equal(t, int64(1), fake1.calls.Load(), "a duplicated account must be queried once")
+	})
+
+	t.Run("Attempted counts the subscription once", func(t *testing.T) {
+		withFakeSubscriptionClients(t, map[string]*fakeRecommendationsClient{
+			"sub-1": {err: errors.New("sub-1 unreachable")},
+			"sub-2": {},
+		})
+		client, err := NewMultiSubscriptionRecommendationsClient(&mockAzureTokenCredential{}, accounts)
+		require.NoError(t, err)
+
+		_, err = client.GetAllRecommendations(context.Background())
+		var partial *PartialSubscriptionFailureError
+		require.ErrorAs(t, err, &partial)
+		assert.Equal(t, 2, partial.Attempted)
+		assert.Len(t, partial.Failed, 1)
+	})
+}

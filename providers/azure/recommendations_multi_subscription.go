@@ -184,8 +184,16 @@ func NewMultiSubscriptionRecommendationsClient(cred azcore.TokenCredential, acco
 		return nil, fmt.Errorf("azure multi-subscription recommendations: at least one subscription is required")
 	}
 
+	// Duplicate account IDs are collapsed (first occurrence wins, exact-string
+	// match like selectSubscriptions) so one subscription is neither queried
+	// twice nor double-counted in results and PartialSubscriptionFailureError.Attempted.
+	seen := make(map[string]struct{}, len(accounts))
 	subscriptions := make([]subscriptionClient, 0, len(accounts))
 	for _, account := range accounts {
+		if _, dup := seen[account.ID]; dup {
+			continue
+		}
+		seen[account.ID] = struct{}{}
 		client, err := newSubscriptionRecommendationsClientFn(cred, account.ID)
 		if err != nil {
 			return nil, fmt.Errorf("azure multi-subscription recommendations: failed to build client for subscription %s: %w", account.ID, err)
