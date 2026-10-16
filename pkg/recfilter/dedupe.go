@@ -68,7 +68,7 @@ func (d *DuplicateChecker) AdjustRecommendationsForExisting(ctx context.Context,
 	existingMap := buildExistingCommitmentsMap(recentExisting, d.Logf)
 	d.Logf.printf("    [DuplicateChecker] Existing map has %d unique keys", len(existingMap))
 
-	passed, filtered, err = adjustRecommendationsAgainstExisting(recs, existingMap, d.Logf)
+	passed, filtered, err = adjustRecommendationsAgainstExisting(recs, existingMap, newEC2Dedupe(recentExisting, d.Logf), d.Logf)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -226,13 +226,19 @@ func buildExistingCommitmentsMap(commitments []common.Commitment, logf Logf) map
 
 // adjustRecommendationsAgainstExisting adjusts recommendations based on existing commitments.
 // Returns (passed, filtered) where filtered contains recs whose count was reduced to zero.
-func adjustRecommendationsAgainstExisting(recs []common.Recommendation, existingMap map[string]int, logf Logf) (passed, filtered []common.Recommendation, err error) {
+func adjustRecommendationsAgainstExisting(recs []common.Recommendation, existingMap map[string]int, ec2 *ec2Dedupe, logf Logf) (passed, filtered []common.Recommendation, err error) {
 	passed = make([]common.Recommendation, 0, len(recs))
 	filtered = make([]common.Recommendation, 0)
 
 	for _rvc := range recs {
 		rec := recs[_rvc]
-		adjusted, err := adjustSingleRecommendation(rec, existingMap, logf)
+		var adjusted common.Recommendation
+		var err error
+		if ec2.handles(rec) {
+			adjusted, err = ec2.adjust(rec)
+		} else {
+			adjusted, err = adjustSingleRecommendation(rec, existingMap, logf)
+		}
 		if err != nil {
 			return nil, nil, err
 		}
