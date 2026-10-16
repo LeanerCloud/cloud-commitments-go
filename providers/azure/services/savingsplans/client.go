@@ -4,6 +4,7 @@ package savingsplans
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -135,7 +136,10 @@ func (c *Client) GetRecommendations(ctx context.Context, params *common.Recommen
 // never terminates fails loud instead of looping forever.
 const maxSavingsPlanPages = 100
 
-// GetExistingCommitments retrieves the Azure Savings Plans billed to this client's subscription.
+// GetExistingCommitments retrieves the Azure Savings Plans billed to this
+// client's subscription, plus Single-scope plans billed to a billing account
+// that name this subscription (see planOwnedBy). Shared and management-group
+// plans billed to a billing account fail the call closed.
 func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
 	var pager SavingsPlanListAllPager
 
@@ -150,6 +154,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 	}
 
 	commitments := make([]common.Commitment, 0)
+	skippedSingle := 0
 	for pageIndex := 1; pager.More(); pageIndex++ {
 		if err := ctx.Err(); err != nil {
 			return nil, fmt.Errorf("failed to list savings plans: context canceled during pagination: %w", err)
@@ -161,28 +166,36 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 		if err != nil {
 			return nil, fmt.Errorf("failed to list savings plans: %w", err)
 		}
-		commitments, err = c.appendOwnedPlans(commitments, page.Value)
+		var skipped int
+		commitments, skipped, err = c.appendOwnedPlans(commitments, page.Value)
+		skippedSingle += skipped
 		if err != nil {
 			return nil, fmt.Errorf("incomplete savings plan inventory for subscription %s, page %d: %w", c.subscriptionID, pageIndex, err)
 		}
+	}
+	if skippedSingle > 0 {
+		log.Printf("WARNING: skipped %d single-scope savings plans applied to other subscriptions", skippedSingle)
 	}
 	return commitments, nil
 }
 
 const subscriptionScopePrefix = "/subscriptions/"
 
-func (c *Client) appendOwnedPlans(dst []common.Commitment, plans []*armbillingbenefits.SavingsPlanModel) ([]common.Commitment, error) {
-	ownScope := c.billingScopeID()
+func (c *Client) appendOwnedPlans(dst []common.Commitment, plans []*armbillingbenefits.SavingsPlanModel) ([]common.Commitment, int, error) {
+	skipped := 0
 	for i, sp := range plans {
-		owned, err := planOwnedBy(sp, ownScope)
+		disposition, err := planOwnedBy(sp, c.subscriptionID)
 		if err != nil {
-			return nil, fmt.Errorf("row %d: %w", i+1, err)
+			return nil, 0, fmt.Errorf("row %d: %w", i+1, err)
 		}
-		if owned {
+		switch disposition {
+		case planOwned:
 			dst = append(dst, *convertSavingsPlan(sp, c.subscriptionID))
+		case planSkippedSingle:
+			skipped++
 		}
 	}
-	return dst, nil
+	return dst, skipped, nil
 }
 
 func hasPrefixFold(s, prefix string) bool {
