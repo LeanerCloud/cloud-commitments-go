@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 )
@@ -38,11 +39,17 @@ func Run(m *testing.M) int {
 	for k, v := range map[string]string{
 		"GOOGLE_APPLICATION_CREDENTIALS": "/nonexistent/billingguard-no-adc.json",
 		"GCE_METADATA_HOST":              "127.0.0.1:1",
-		"CLOUDSDK_CONFIG":                os.TempDir() + "/billingguard-no-gcloud",
+		"CLOUDSDK_CONFIG":                filepath.Join(os.TempDir(), "billingguard-no-gcloud"),
 	} {
-		os.Setenv(k, v)
+		if err := os.Setenv(k, v); err != nil {
+			fmt.Fprintf(os.Stderr, "billingguard: cannot isolate %s: %v\n", k, err)
+			return 1
+		}
 	}
-	os.Unsetenv("GOOGLE_API_KEY")
+	if err := os.Unsetenv("GOOGLE_API_KEY"); err != nil {
+		fmt.Fprintf(os.Stderr, "billingguard: cannot unset GOOGLE_API_KEY: %v\n", err)
+		return 1
+	}
 
 	w := &watcher{next: os.Stderr}
 	log.SetOutput(w)
