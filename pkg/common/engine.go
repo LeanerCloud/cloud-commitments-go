@@ -84,6 +84,44 @@ func NormalizePlatformName(platform string) string {
 	return p
 }
 
+// Canonical tokens returned by NormalizeScopeName.
+const (
+	ScopeRegional = "regional"
+	ScopeZonal    = "zonal"
+)
+
+// NormalizeTenancyName normalizes an EC2 tenancy for comparison. "shared" is
+// the operator spelling of the API value "default"; "dedicated" and "host" stay
+// distinct. Unrecognized input returns "" (unknown, a wildcard). Mirrors the
+// accepted inputs of parseEC2Tenancy in providers/aws/services/ec2/client.go,
+// which pkg cannot import.
+func NormalizeTenancyName(tenancy string) string {
+	switch t := strings.ToLower(strings.TrimSpace(tenancy)); t {
+	case "default", "shared":
+		return "default"
+	case "dedicated", "host":
+		return t
+	default:
+		return ""
+	}
+}
+
+// NormalizeScopeName normalizes an EC2 reservation scope to ScopeRegional or
+// ScopeZonal. Unrecognized input returns "" (unknown, a wildcard). Mirrors
+// parseEC2Scope in providers/aws/services/ec2/client.go ("Region",
+// "Availability Zone", and the hyphenated legacy spelling), which pkg cannot
+// import.
+func NormalizeScopeName(scope string) string {
+	switch strings.ToLower(strings.TrimSpace(scope)) {
+	case "region", "regional":
+		return ScopeRegional
+	case "availability zone", "availability-zone", "zonal":
+		return ScopeZonal
+	default:
+		return ""
+	}
+}
+
 // EngineFilterKey returns the value the --include-engines/--exclude-engines
 // filters compare against, and the normalizer to apply to each filter entry.
 // Databases and caches use their engine; compute (EC2) uses its platform,

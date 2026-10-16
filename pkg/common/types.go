@@ -497,6 +497,14 @@ type Commitment struct {
 	// means StartDate is a precise timestamp; true means the real instant
 	// lies in [StartDate, StartDate+24h).
 	StartDateIsDay bool `json:"start_date_is_day,omitempty"`
+
+	// EC2 reserved-instance dimensions. Empty means unknown or a wildcard.
+	// Filled by the EC2 commitment listing from the reserved instance's
+	// product description, tenancy, scope and availability zone.
+	Platform         string `json:"platform,omitempty"`
+	Tenancy          string `json:"tenancy,omitempty"`
+	Scope            string `json:"scope,omitempty"`
+	AvailabilityZone string `json:"availability_zone,omitempty"`
 }
 
 // OfferingDetails represents cloud provider offering details.

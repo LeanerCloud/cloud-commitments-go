@@ -598,3 +598,25 @@ func TestCommitment_StartDateIsDayJSON(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(b), `"start_date_is_day":true`)
 }
+
+func TestCommitment_EC2DimensionsJSON(t *testing.T) {
+	empty, err := json.Marshal(Commitment{})
+	require.NoError(t, err)
+	for _, key := range []string{`"platform"`, `"tenancy"`, `"scope"`, `"availability_zone"`} {
+		assert.NotContains(t, string(empty), key)
+	}
+
+	in := Commitment{Platform: "Linux/UNIX", Tenancy: "default", Scope: "Availability Zone", AvailabilityZone: "us-east-1a"}
+	raw, err := json.Marshal(in)
+	require.NoError(t, err)
+	assert.Contains(t, string(raw), `"availability_zone":"us-east-1a"`)
+	var out Commitment
+	require.NoError(t, json.Unmarshal(raw, &out))
+	assert.Equal(t, in, out)
+
+	var old Commitment
+	require.NoError(t, json.Unmarshal([]byte(`{"provider":"aws","commitment_id":"ri-1","count":2}`), &old))
+	assert.Equal(t, "ri-1", old.CommitmentID)
+	assert.Empty(t, old.Platform)
+	assert.Empty(t, old.AvailabilityZone)
+}

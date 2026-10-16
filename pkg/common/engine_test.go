@@ -69,3 +69,38 @@ func TestEngineFromDetails(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeTenancyName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct{ in, want string }{
+		{"default", "default"},
+		{"Shared", "default"},
+		{"  SHARED ", "default"},
+		{"Dedicated", "dedicated"},
+		{"host", "host"},
+		{"Bogus", ""},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.want, NormalizeTenancyName(tt.in), "input %q", tt.in)
+	}
+}
+
+func TestNormalizeScopeName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct{ in, want string }{
+		{"Region", ScopeRegional},
+		{"regional", ScopeRegional},
+		{" REGIONAL ", ScopeRegional},
+		{"Availability Zone", ScopeZonal},
+		{"availability-zone", ScopeZonal},
+		{"Zonal", ScopeZonal},
+		{"", ""},
+		{"Bogus", ""},
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.want, NormalizeScopeName(tt.in), "input %q", tt.in)
+	}
+}
