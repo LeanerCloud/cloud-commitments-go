@@ -59,3 +59,35 @@ func TestNew_AllowsRegularEndpoints(t *testing.T) {
 		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 	}
 }
+
+// The single-address metadata entries (/128 and /32) must not widen: the
+// neighbors of each stay allowed. IPv4 link-local is deliberately a whole /16,
+// so 169.254.169.253 is blocked, not allowed (#227).
+func TestBlockMetadata_NeighborsOfSingleAddressEntries(t *testing.T) {
+	blocked := []string{
+		"169.254.169.253:80", // inside the link-local /16
+		"169.254.169.255:80",
+	}
+	for _, addr := range blocked {
+		t.Run("blocked "+addr, func(t *testing.T) {
+			if err := blockMetadata("tcp", addr, nil); err == nil {
+				t.Fatalf("%s must be blocked", addr)
+			}
+		})
+	}
+
+	allowed := []string{
+		"[fd00:ec2::253]:80", "[fd00:ec2::255]:80", // AWS IPv6 IMDS /128
+		"[fd00:ec2::22]:80", "[fd00:ec2::24]:80", // AWS Pod Identity /128
+		"[fd20:ce::253]:80", "[fd20:ce::255]:80", "[fd20:ce:0:1::254]:80", // GCP IPv6 /128
+		"168.63.129.15:80", "168.63.129.17:80", // Azure WireServer /32
+		"100.100.100.199:80", "100.100.100.201:80", // Alibaba IMDS /32
+	}
+	for _, addr := range allowed {
+		t.Run("allowed "+addr, func(t *testing.T) {
+			if err := blockMetadata("tcp", addr, nil); err != nil {
+				t.Fatalf("%s must stay allowed: %v", addr, err)
+			}
+		})
+	}
+}
