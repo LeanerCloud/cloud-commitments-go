@@ -3,6 +3,7 @@ package exchange
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"net"
 	"net/http"
@@ -110,4 +111,33 @@ func TestRunAutoExchange_UnknownAcceptLeavesRecordProcessingAndHalts(t *testing.
 	assert.Contains(t, result.Failed[0].Error, "outcome unknown")
 	require.NotEmpty(t, store.savedRecords)
 	assert.NotEqual(t, "failed", store.savedRecords[0].Status)
+}
+
+func TestRunAutoExchange_OutcomeUnknownFlag(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name        string
+		execErr     error
+		wantUnknown bool
+		wantFailed  int
+	}{
+		{"wrapped unknown sets the flag", fmt.Errorf("x: %w", common.ErrOutcomeUnknown), true, 0},
+		{"plain error leaves it false", errors.New("boom"), false, 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			store := &mockExchangeStore{dailySpend: "0"}
+			client := &mockExchangeClient{quoteResult: defaultQuote(), executeErr: tc.execErr}
+			params := defaultParams(store, client)
+			params.Config.Mode = "auto"
+
+			result, err := RunAutoExchange(context.Background(), params)
+			require.NoError(t, err)
+			assert.Equal(t, 1, client.executeCalls)
+			assert.Equal(t, tc.wantFailed, store.failCalls)
+			require.Len(t, result.Failed, 1)
+			assert.Equal(t, tc.wantUnknown, result.Failed[0].OutcomeUnknown)
+		})
+	}
 }

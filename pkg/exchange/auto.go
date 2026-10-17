@@ -163,6 +163,11 @@ type ExchangeOutcome struct {
 	ExchangeID         string
 	UtilizationPct     float64
 	Error              string
+	// OutcomeUnknown is true when the accept response was lost, so the exchange
+	// may have executed. It must be reconciled before any retry. The outcome
+	// stays in AutoExchangeResult.Failed (readers of Failed still see it) and
+	// halts the run (no further exchanges are attempted).
+	OutcomeUnknown bool
 	// Simulated is true when RunAutoExchangeParams.DryRun was set. The outcome
 	// was analyzed and quoted but no record was saved and no exchange was executed.
 	Simulated bool
@@ -573,6 +578,7 @@ func processAutoExchange(ctx context.Context, params RunAutoExchangeParams, rec 
 		logging.Errorf("exchange execution failed for %s: %v", rec.SourceRIID, execErr)
 		outcome.Error = execErr.Error()
 		if errors.Is(execErr, common.ErrOutcomeUnknown) {
+			outcome.OutcomeUnknown = true
 			// The exchange may have happened: keep the record processing (still
 			// counted against the cap) and stop, instead of marking it failed.
 			return outcome, true
