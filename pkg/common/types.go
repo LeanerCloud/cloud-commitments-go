@@ -423,6 +423,12 @@ type PurchaseOptions struct {
 	// defaults to "convertible" to preserve pre-694 behavior.
 	// Only meaningful for EC2 RI purchases; ignored by other providers.
 	OfferingClass string
+	// RequestedAt is the first-dispatch time of this purchase lineage, stable
+	// across re-drives of the same IdempotencyToken. Providers use it to bound
+	// idempotency lookups for services that have no client token (Redshift
+	// reserved nodes). A zero value means unknown; a provider that requires it
+	// must refuse the purchase rather than guess.
+	RequestedAt time.Time
 }
 
 // NormalizeSource lowercases s and returns it when it matches an allowed
