@@ -80,6 +80,10 @@ func TestElastiCacheEngineBudgets(t *testing.T) {
 		{"one redis covers one of two valkey", []string{"redis"}, []int{1}, []string{"valkey"}, []int{2}, []int{1}, []string{"valkey"}},
 		{"fractional redis leftover is not credited", []string{"redis"}, []int{2}, []string{"valkey"}, []int{3}, []int{1}, []string{"valkey"}},
 		{"redis spent rounds up across recs", []string{"redis"}, []int{4}, []string{"valkey", "valkey"}, []int{2, 3}, []int{1}, []string{"valkey"}},
+		// 8 Redis nodes are 10 Valkey nodes: each 5-node rec spends exactly 4, so spending the covered count (5) would leave 3 and buy 2.
+		{"redis budget covers two exact valkey recs", []string{"redis"}, []int{8}, []string{"valkey", "valkey"}, []int{5, 5}, nil, nil},
+		// Each single Valkey node spends ceil(0.8)=1 Redis node; rounding down would spend nothing and cover all five.
+		{"redis spent rounds up per single valkey rec", []string{"redis"}, []int{4}, []string{"valkey", "valkey", "valkey", "valkey", "valkey"}, []int{1, 1, 1, 1, 1}, []int{1}, []string{"valkey"}},
 		{"redis for redis stays one to one", []string{"redis"}, []int{4}, []string{"redis"}, []int{5}, []int{1}, []string{"redis"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
