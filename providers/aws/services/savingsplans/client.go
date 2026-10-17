@@ -463,14 +463,8 @@ func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation, 
 		tag = "no-exec"
 	}
 
-	// If CE supplied an exact offering ID, use it directly — this is the
-	// safest path because it bypasses DescribeSavingsPlansOfferings filtering
-	// entirely and always resolves to exactly the workload CE recommended.
-	if spDetails.OfferingID != "" {
-		log.Printf("purchase[%s]: SavingsPlans findOfferingID: using CE-provided OfferingID %s (skipping DescribeSavingsPlansOfferings)", tag, spDetails.OfferingID)
-		return spDetails.OfferingID, nil
-	}
-
+	// Validate before trusting a CE-supplied offering ID so an invalid plan
+	// type, term or payment option fails loud instead of reaching the purchase.
 	planType, err := c.resolveSPPlanType(spDetails.PlanType)
 	if err != nil {
 		return "", err
@@ -482,6 +476,14 @@ func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation, 
 	paymentOption, err := convertPaymentOption(rec.PaymentOption)
 	if err != nil {
 		return "", err
+	}
+
+	// If CE supplied an exact offering ID, use it directly — this is the
+	// safest path because it bypasses DescribeSavingsPlansOfferings filtering
+	// entirely and always resolves to exactly the workload CE recommended.
+	if spDetails.OfferingID != "" {
+		log.Printf("purchase[%s]: SavingsPlans findOfferingID: using CE-provided OfferingID %s (skipping DescribeSavingsPlansOfferings)", tag, spDetails.OfferingID)
+		return spDetails.OfferingID, nil
 	}
 
 	t0 := time.Now()

@@ -1752,3 +1752,52 @@ func TestClient_GetOfferingDetails_UnknownTermErrors(t *testing.T) {
 		})
 	}
 }
+
+// TestFindOfferingID_CEOfferingIDStillValidatesInputs pins that a CE-supplied
+// offering ID does not bypass plan type, term or payment validation (issue #53).
+func TestFindOfferingID_CEOfferingIDStillValidatesInputs(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(*common.Recommendation)
+	}{
+		{"invalid term", func(r *common.Recommendation) { r.Term = "2yr" }},
+		{"invalid payment option", func(r *common.Recommendation) { r.PaymentOption = "bogus-upfront" }},
+		{"unsupported plan type", func(r *common.Recommendation) {
+			r.Details.(*common.SavingsPlanDetails).PlanType = "Bogus"
+		}},
+		{"plan type outside client scope", func(r *common.Recommendation) {
+			r.Details.(*common.SavingsPlanDetails).PlanType = "SageMaker"
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mockSP := &MockSavingsPlansClient{}
+			client := &Client{client: mockSP, region: "us-east-1", planType: types.SavingsPlanTypeCompute}
+			rec := spRec()
+			rec.Details.(*common.SavingsPlanDetails).OfferingID = "ce-offering-1"
+			tc.mutate(&rec)
+
+			id, err := client.findOfferingID(context.Background(), rec, "")
+			require.Error(t, err)
+			assert.Empty(t, id)
+			_, err = client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
+			require.Error(t, err)
+			mockSP.AssertNotCalled(t, "CreateSavingsPlan", mock.Anything, mock.Anything)
+			mockSP.AssertNotCalled(t, "DescribeSavingsPlansOfferings", mock.Anything, mock.Anything)
+		})
+	}
+}
+
+// TestFindOfferingID_CEOfferingIDFastPath pins that valid inputs with a CE
+// offering ID still skip DescribeSavingsPlansOfferings.
+func TestFindOfferingID_CEOfferingIDFastPath(t *testing.T) {
+	mockSP := &MockSavingsPlansClient{}
+	client := &Client{client: mockSP, region: "us-east-1", planType: types.SavingsPlanTypeCompute}
+	rec := spRec()
+	rec.Details.(*common.SavingsPlanDetails).OfferingID = "ce-offering-1"
+
+	id, err := client.findOfferingID(context.Background(), rec, "")
+	require.NoError(t, err)
+	assert.Equal(t, "ce-offering-1", id)
+	mockSP.AssertNotCalled(t, "DescribeSavingsPlansOfferings", mock.Anything, mock.Anything)
+}
