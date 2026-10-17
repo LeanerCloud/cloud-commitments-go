@@ -3,6 +3,7 @@ package savingsplans
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/billingbenefits/armbillingbenefits"
 	"github.com/stretchr/testify/assert"
@@ -34,7 +35,7 @@ func ownedPlan(id string) *armbillingbenefits.SavingsPlanModel {
 	return &armbillingbenefits.SavingsPlanModel{
 		ID:         &id,
 		SKU:        &armbillingbenefits.SKU{Name: toPtr("Compute_Savings_Plan")},
-		Properties: &armbillingbenefits.SavingsPlanModelProperties{BillingScopeID: toPtr("/subscriptions/sub-abc")},
+		Properties: &armbillingbenefits.SavingsPlanModelProperties{BillingScopeID: toPtr("/subscriptions/sub-abc"), EffectiveDateTime: toPtr(time.Now())},
 	}
 }
 

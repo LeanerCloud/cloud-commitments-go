@@ -25,7 +25,7 @@ const (
 )
 
 func accountPlan(scope string, typ *armbillingbenefits.AppliedScopeType, props *armbillingbenefits.AppliedScopeProperties) *armbillingbenefits.SavingsPlanModel {
-	return &armbillingbenefits.SavingsPlanModel{ID: toPtr("plan-id"), SKU: &armbillingbenefits.SKU{Name: toPtr("Compute_Savings_Plan")}, Properties: &armbillingbenefits.SavingsPlanModelProperties{BillingScopeID: toPtr(scope), AppliedScopeType: typ, AppliedScopeProperties: props}}
+	return &armbillingbenefits.SavingsPlanModel{ID: toPtr("plan-id"), SKU: &armbillingbenefits.SKU{Name: toPtr("Compute_Savings_Plan")}, Properties: &armbillingbenefits.SavingsPlanModelProperties{BillingScopeID: toPtr(scope), EffectiveDateTime: toPtr(time.Now()), AppliedScopeType: typ, AppliedScopeProperties: props}}
 }
 
 // scoped builds applied-scope properties; "" leaves the field nil.

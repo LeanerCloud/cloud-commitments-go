@@ -192,6 +192,7 @@ func TestGetExistingCommitments_SubscriptionOwnership(t *testing.T) {
 			SKU: &armbillingbenefits.SKU{Name: toPtr("Compute_Savings_Plan")},
 			Properties: &armbillingbenefits.SavingsPlanModelProperties{
 				BillingScopeID:         toPtr(scope),
+				EffectiveDateTime:      toPtr(time.Now()),
 				AppliedScopeType:       toPtr(applied),
 				AppliedScopeProperties: &armbillingbenefits.AppliedScopeProperties{SubscriptionID: toPtr(subscription)},
 			},

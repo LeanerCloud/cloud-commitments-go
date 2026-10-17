@@ -122,3 +122,57 @@ func newFixtureSavingsPlanClient(t *testing.T, server *httptest.Server) *armbill
 	require.NoError(t, err)
 	return sdk
 }
+
+func TestGetExistingCommitments_EffectiveDateTimeCompleteness(t *testing.T) {
+	const planID = "/providers/Microsoft.BillingBenefits/savingsPlanOrders/o1/savingsPlans/p1"
+	cases := []struct {
+		name    string
+		props   string
+		wantErr bool
+	}{
+		{"live state without start", `"provisioningState":"Succeeded"`, true},
+		{"pending state without start", `"provisioningState":"PendingBilling"`, true},
+		{"no state without start", ``, true},
+		{"canceled-state without start", `"provisioningState":"Cancelled"`, false}, //nolint:misspell // Azure wire value
+		{"expired without start", `"provisioningState":"Expired"`, false},
+		{"failed without start", `"provisioningState":"Failed"`, false},
+		{"live state with start", `"provisioningState":"Succeeded","effectiveDateTime":"2026-01-02T03:04:05Z"`, false},
+	}
+	for _, tc := range cases {
+		for _, dedupe := range []bool{false, true} {
+			if dedupe && !tc.wantErr {
+				continue
+			}
+			t.Run(fmt.Sprintf("%s/dedupe=%t", tc.name, dedupe), func(t *testing.T) {
+				props := `"billingScopeId":"/subscriptions/sub-a"`
+				if tc.props != "" {
+					props += "," + tc.props
+				}
+				server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					_, err := fmt.Fprintf(w, `{"value":[{"id":%q,"sku":{"name":"Compute_Savings_Plan"},"properties":{%s}}]}`, planID, props)
+					assert.NoError(t, err)
+				}))
+				t.Cleanup(server.Close)
+				client := NewClient(nil, "sub-a", "eastus")
+				client.SetListAllPager(newFixtureSavingsPlanClient(t, server).NewListAllPager(nil))
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				if dedupe {
+					recs := []common.Recommendation{{Provider: common.ProviderAzure, Service: common.ServiceSavingsPlansAll, ResourceType: "Compute", Count: 1}}
+					_, _, err := recfilter.NewDuplicateChecker(24).AdjustRecommendationsForExisting(ctx, recs, client)
+					require.ErrorContains(t, err, planID)
+					return
+				}
+				got, err := client.GetExistingCommitments(ctx)
+				if tc.wantErr {
+					require.ErrorContains(t, err, "incomplete savings plan inventory")
+					require.ErrorContains(t, err, planID)
+					return
+				}
+				require.NoError(t, err)
+				require.Len(t, got, 1)
+			})
+		}
+	}
+}

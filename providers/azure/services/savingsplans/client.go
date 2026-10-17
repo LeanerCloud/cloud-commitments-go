@@ -290,7 +290,26 @@ func convertSavingsPlan(sp *armbillingbenefits.SavingsPlanModel, subscriptionID 
 		}
 	}
 
-	return &commitment, nil
+	return requireStartDate(&commitment)
+}
+
+// requireStartDate returns c, or fails closed on a non-terminal plan with no start date.
+func requireStartDate(c *common.Commitment) (*common.Commitment, error) {
+	if c.StartDate.IsZero() && !isTerminalSavingsPlanState(c.State) {
+		return nil, fmt.Errorf("owned savings plan %s is in state %q but reports no effectiveDateTime; the duplicate guard cannot date it", c.CommitmentID, c.State)
+	}
+	return c, nil
+}
+
+// isTerminalSavingsPlanState reports the states recfilter rejects before it
+// reads StartDate, so a zero start is harmless. Anything else, including an
+// unknown or defaulted state, is treated as live.
+func isTerminalSavingsPlanState(s common.CommitmentState) bool {
+	switch s {
+	case common.CommitmentStateFailed, common.CommitmentStateCanceled, common.CommitmentStateExpired:
+		return true
+	}
+	return false
 }
 
 var currencyCodePattern = regexp.MustCompile(`^[A-Za-z]{3}$`)
