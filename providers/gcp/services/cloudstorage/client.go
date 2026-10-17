@@ -280,6 +280,7 @@ func (c *Client) getOrCreateBillingService(ctx context.Context) (BillingService,
 
 // extractStoragePricingFromSKUs extracts on-demand and commitment pricing from SKU list.
 func extractStoragePricingFromSKUs(skus []*cloudbilling.Sku, storageClass, region string) (onDemand, commitment float64, currency string, err error) {
+	var prices skumatch.SlotPrices
 	currency = "USD"
 
 	for _, sku := range skus {
@@ -303,15 +304,12 @@ func extractStoragePricingFromSKUs(skus []*cloudbilling.Sku, storageClass, regio
 		if slotErr != nil {
 			return 0, 0, "", slotErr
 		}
-		switch slot {
-		case skumatch.SlotCommitment:
-			commitment = price
-		case skumatch.SlotOnDemand:
-			onDemand = price
+		if err := prices.Add(slot, sku, price); err != nil {
+			return 0, 0, "", err
 		}
 	}
 
-	return onDemand, commitment, currency, nil
+	return prices.OnDemand, prices.Commitment, currency, nil
 }
 
 // extractStoragePriceFromSKU returns a per-GiB-hour rate regardless of the catalog unit.
@@ -347,20 +345,14 @@ func calculateStorageSavingsPercentage(onDemandPrice, hoursInTerm, commitmentPri
 	return ((onDemandTotal - commitmentPrice) / onDemandTotal) * 100
 }
 
+// skuMatchesStorageClass checks that the SKU is the capacity SKU of storageClass
+// (description anchored on "<class> storage ", early-delete SKUs excluded) and
+// that it applies in region under the shared skumatch.InRegion rule.
 func skuMatchesStorageClass(sku *cloudbilling.Sku, storageClass, region string) bool {
 	description := strings.ToLower(sku.Description)
 	if !strings.HasPrefix(description, strings.ToLower(storageClass)+" storage ") || strings.Contains(description, "(early delete)") {
 		return false
 	}
 
-	if sku.ServiceRegions != nil {
-		for _, serviceRegion := range sku.ServiceRegions {
-			if strings.EqualFold(serviceRegion, region) {
-				return true
-			}
-		}
-		return false
-	}
-
-	return true
+	return skumatch.InRegion(sku, region)
 }

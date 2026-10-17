@@ -81,8 +81,9 @@ const (
 // included) is an error rather than a guess, because a wrong slot silently
 // mislabels the commitment price.
 //
-// Known gap: Commit1Yr and Commit3Yr share SlotCommitment, so callers that see
-// both terms keep whichever SKU comes last.
+// Known gap: Commit1Yr and Commit3Yr share SlotCommitment (#254). Callers
+// collect through SlotPrices, so a 1Yr and a 3Yr SKU at different prices make
+// the lookup fail as ambiguous instead of keeping whichever comes last.
 func Slot(sku *cloudbilling.Sku) (PriceSlot, error) {
 	if sku.Category == nil {
 		return 0, fmt.Errorf("sku %s has no category, cannot tell commitment from on-demand", sku.SkuId)

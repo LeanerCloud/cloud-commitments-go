@@ -190,6 +190,7 @@ func TestSkuMatchesStorageClass(t *testing.T) {
 		storageClass string
 		region       string
 		regions      []string
+		geoType      string
 		expected     bool
 	}{
 		{
@@ -217,12 +218,71 @@ func TestSkuMatchesStorageClass(t *testing.T) {
 			expected:     false,
 		},
 		{
-			name:         "No regions specified - matches description only",
+			name:         "nil regions without taxonomy match no region",
 			description:  "Standard Storage multi-region",
 			storageClass: "Standard",
 			region:       "us-central1",
 			regions:      nil,
+			expected:     false,
+		},
+		{
+			name:         "empty regions without taxonomy match no region",
+			description:  "Standard Storage multi-region",
+			storageClass: "Standard",
+			region:       "us-central1",
+			regions:      []string{},
+			expected:     false,
+		},
+		{
+			name:         "nil regions with GLOBAL taxonomy match every region",
+			description:  "Standard Storage global",
+			storageClass: "Standard",
+			region:       "us-central1",
+			regions:      nil,
+			geoType:      "GLOBAL",
 			expected:     true,
+		},
+		{
+			name:         "empty regions with GLOBAL taxonomy match every region",
+			description:  "Standard Storage global",
+			storageClass: "Standard",
+			region:       "us-central1",
+			regions:      []string{},
+			geoType:      "GLOBAL",
+			expected:     true,
+		},
+		{
+			name:         "nil regions with REGIONAL taxonomy match no region",
+			description:  "Standard Storage multi-region",
+			storageClass: "Standard",
+			region:       "us-central1",
+			regions:      nil,
+			geoType:      "REGIONAL",
+			expected:     false,
+		},
+		{
+			name:         "region match is case-insensitive",
+			description:  "Standard Storage Iowa",
+			storageClass: "STANDARD",
+			region:       "US-CENTRAL1",
+			regions:      []string{"us-central1"},
+			expected:     true,
+		},
+		{
+			name:         "class must be a whole leading word, not a prefix of a longer class",
+			description:  "Standard-HA Storage Iowa",
+			storageClass: "Standard",
+			region:       "us-central1",
+			regions:      []string{"us-central1"},
+			expected:     false,
+		},
+		{
+			name:         "class inside a longer class name does not match",
+			description:  "Multi-Regional Storage US",
+			storageClass: "Regional",
+			region:       "us",
+			regions:      []string{"us"},
+			expected:     false,
 		},
 	}
 
@@ -232,6 +292,9 @@ func TestSkuMatchesStorageClass(t *testing.T) {
 				Description:    tt.description,
 				Category:       &cloudbilling.Category{UsageType: "OnDemand"},
 				ServiceRegions: tt.regions,
+			}
+			if tt.geoType != "" {
+				sku.GeoTaxonomy = &cloudbilling.GeoTaxonomy{Type: tt.geoType}
 			}
 			result := skuMatchesStorageClass(sku, tt.storageClass, tt.region)
 			assert.Equal(t, tt.expected, result)
