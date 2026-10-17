@@ -657,4 +657,7 @@ func TestCountsAsExistingSP(t *testing.T) {
 			assert.Equal(t, tt.want, CountsAsExistingSP(tt.planType, tt.spRegion, "us-east-1"))
 		})
 	}
+	t.Run("EC2Instance both regions empty", func(t *testing.T) {
+		assert.True(t, CountsAsExistingSP(sptypes.SavingsPlanTypeEc2Instance, "", ""))
+	})
 }
