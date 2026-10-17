@@ -870,7 +870,11 @@ func (c *Client) buildInsertRequest(rec common.Recommendation, opts common.Purch
 		Region:             c.region,
 		CommitmentResource: commitment,
 	}
-	if requestID := common.IdempotencyGUID(opts.IdempotencyToken); requestID != "" {
+	requestID, err := common.OrderIDFromToken(opts.IdempotencyToken, "")
+	if err != nil {
+		return nil, "", fmt.Errorf("derive GCP request ID: %w", err)
+	}
+	if requestID != "" {
 		insertReq.RequestId = stringPtr(requestID)
 		log.Printf("GCP CUD purchase using idempotent request ID for token %s (commitment %s); a re-drive will not double-purchase (issue #654)",
 			common.MaskToken(opts.IdempotencyToken), commitmentName)
@@ -1438,15 +1442,13 @@ func idempotentCommitmentName(token string) (string, error) {
 		return fmt.Sprintf("cud-%d", time.Now().Unix()), nil
 	}
 	if !idempotencyTokenPattern.MatchString(token) {
-		return "", fmt.Errorf("%w: must be a lowercase hex digest to derive a GCP commitment name (got %d chars)", errInvalidIdempotencyToken, len(token))
+		return "", fmt.Errorf("%w: must be a lowercase hex digest to derive a GCP commitment name (got %d chars)", common.ErrInvalidIdempotencyToken, len(token))
 	}
 	if len(token) > idempotentNameTokenLen {
 		token = token[:idempotentNameTokenLen]
 	}
 	return "cud-" + token, nil
 }
-
-var errInvalidIdempotencyToken = errors.New("invalid idempotency token")
 
 var idempotencyTokenPattern = regexp.MustCompile(`^[0-9a-f]+$`)
 

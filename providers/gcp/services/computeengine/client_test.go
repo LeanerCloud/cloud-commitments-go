@@ -2442,10 +2442,35 @@ func TestPurchaseCommitment_RejectsNonHexIdempotencyToken(t *testing.T) {
 
 			result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{IdempotencyToken: token})
 			require.Error(t, err)
-			assert.ErrorIs(t, err, errInvalidIdempotencyToken)
+			assert.ErrorIs(t, err, common.ErrInvalidIdempotencyToken)
 			assert.Contains(t, err.Error(), "lowercase hex digest")
 			assert.False(t, result.Success)
 			assert.Empty(t, mockSvc.insertReqs, "Insert must not be called for an invalid token")
+		})
+	}
+}
+
+// A short or partly non-hex token passes the name check but cannot form a
+// RequestId; it must fail before Insert instead of dropping idempotency.
+func TestPurchaseCommitment_UnformableRequestIDTokenFailsLoud(t *testing.T) {
+	ctx := context.Background()
+	rec := common.Recommendation{
+		ResourceType: "n1-standard-1",
+		Term:         "1yr",
+		Count:        5,
+		Details:      common.ComputeDetails{MemoryGB: 20.0},
+	}
+	for _, token := range []string{"abc", strings.Repeat("a", 31)} {
+		t.Run(token, func(t *testing.T) {
+			client, _ := NewClient(ctx, "test-project", "us-central1")
+			mockSvc := &MockCommitmentsService{operation: &MockOperation{}}
+			client.SetCommitmentsService(mockSvc)
+
+			result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{IdempotencyToken: token})
+			require.Error(t, err)
+			assert.ErrorIs(t, err, common.ErrInvalidIdempotencyToken)
+			assert.False(t, result.Success)
+			assert.Empty(t, mockSvc.insertReqs, "Insert must not be called")
 		})
 	}
 }
@@ -2459,7 +2484,7 @@ func TestBuildInsertRequest_RejectedTokenWrapsSentinel(t *testing.T) {
 		Details:      common.ComputeDetails{MemoryGB: 20.0},
 	}
 	_, _, err := client.buildInsertRequest(rec, common.PurchaseOptions{IdempotencyToken: "NOT-HEX"})
-	require.ErrorIs(t, err, errInvalidIdempotencyToken)
+	require.ErrorIs(t, err, common.ErrInvalidIdempotencyToken)
 }
 
 // A full 64-char SHA-256 digest must be truncated so the name stays within
