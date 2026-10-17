@@ -32,8 +32,8 @@ var errRequestedAtRequired = errors.New("RequestedAt is required with an idempot
 
 // findMatchingNodes lists the IDs of owned reserved nodes with the given
 // offering ID and node count whose StartTime is not before requestedAt minus
-// redshiftClockSkew. A node without a StartTime counts as a match (fail
-// closed). The offering ID fixes node type, term and offering type.
+// redshiftClockSkew. A node missing StartTime, offering ID or
+// node count counts as a match on that field (fail closed). The offering ID fixes node type, term and offering type.
 func (c *Client) findMatchingNodes(ctx context.Context, offeringID string, count int, requestedAt time.Time) ([]string, error) {
 	since := requestedAt.Add(-redshiftClockSkew)
 	var ids []string
@@ -66,7 +66,10 @@ func nodeMatches(node *redshifttypes.ReservedNode, offeringID string, count int,
 	if _, owned := ownedNodeState(node.State); !owned {
 		return false
 	}
-	if aws.ToString(node.ReservedNodeOfferingId) != offeringID || int(aws.ToInt32(node.NodeCount)) != count {
+	if node.ReservedNodeOfferingId != nil && *node.ReservedNodeOfferingId != offeringID {
+		return false
+	}
+	if node.NodeCount != nil && int(*node.NodeCount) != count {
 		return false
 	}
 	return node.StartTime == nil || !node.StartTime.Before(since)

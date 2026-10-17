@@ -127,7 +127,7 @@ func TestClient_ReservationStatesPreventDuplicatePurchases(t *testing.T) {
 				t.Cleanup(func() { m.AssertExpectations(t) })
 				expectRSOffering(m)
 				response.ReservedNodes[0].StartTime = aws.Time(time.Now())
-				response.ReservedNodes = append([]types.ReservedNode{{ReservedNodeId: aws.String("unrelated"), State: tc.state}}, response.ReservedNodes...)
+				response.ReservedNodes = append([]types.ReservedNode{{ReservedNodeId: aws.String("unrelated"), ReservedNodeOfferingId: aws.String("other-offering"), NodeCount: aws.Int32(1), State: tc.state}}, response.ReservedNodes...)
 				m.On("DescribeReservedNodes", mock.Anything, mock.Anything).Return(response, nil)
 				sentinel := fmt.Errorf("purchase boundary reached")
 				m.On("PurchaseReservedNodeOffering", mock.Anything, mock.Anything).Return((*redshift.PurchaseReservedNodeOfferingOutput)(nil), sentinel).Maybe()
