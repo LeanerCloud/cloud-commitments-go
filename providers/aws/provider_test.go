@@ -594,6 +594,65 @@ func TestAWSProvider_GetAccounts_WithMock(t *testing.T) {
 		assert.Contains(t, err.Error(), "network blew up")
 	})
 
+	newOrgProvider := func(pg *mockOrganizationsPaginator) *Provider {
+		p := &Provider{cfg: aws.Config{Region: "us-east-1"}}
+		p.SetSTSClient(&mockSTSClient{
+			getCallerIdentityFunc: func(ctx context.Context, params *sts.GetCallerIdentityInput, optFns ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error) {
+				return &sts.GetCallerIdentityOutput{Account: aws.String("111111111111")}, nil
+			},
+		})
+		p.SetOrganizationsPaginator(pg)
+		return p
+	}
+	orgPage := func(ids ...string) *organizations.ListAccountsOutput {
+		out := &organizations.ListAccountsOutput{}
+		for _, id := range ids {
+			out.Accounts = append(out.Accounts, orgtypes.Account{Id: aws.String(id), Name: aws.String("acct-" + id)})
+		}
+		return out
+	}
+
+	t.Run("accumulates accounts across two successful pages", func(t *testing.T) {
+		p := newOrgProvider(&mockOrganizationsPaginator{
+			pages:     []*organizations.ListAccountsOutput{orgPage("222222222222"), orgPage("333333333333")},
+			errOnPage: -1,
+		})
+
+		accounts, err := p.GetAccounts(context.Background())
+		require.NoError(t, err)
+		require.Len(t, accounts, 3)
+		assert.Equal(t, "333333333333", accounts[2].ID)
+	})
+
+	t.Run("accumulates accounts across three or more pages and skips the caller account", func(t *testing.T) {
+		p := newOrgProvider(&mockOrganizationsPaginator{
+			pages: []*organizations.ListAccountsOutput{
+				orgPage("222222222222"), orgPage("111111111111", "333333333333"), orgPage("444444444444"), orgPage("555555555555"),
+			},
+			errOnPage: -1,
+		})
+
+		accounts, err := p.GetAccounts(context.Background())
+		require.NoError(t, err)
+		ids := make([]string, 0, len(accounts))
+		for _, a := range accounts {
+			ids = append(ids, a.ID)
+		}
+		assert.Equal(t, []string{"111111111111", "222222222222", "333333333333", "444444444444", "555555555555"}, ids)
+	})
+
+	t.Run("propagates NotInUse on page two instead of falling back", func(t *testing.T) {
+		p := newOrgProvider(&mockOrganizationsPaginator{
+			pages:     []*organizations.ListAccountsOutput{orgPage("222222222222"), {}},
+			nextErr:   &smithy.GenericAPIError{Code: "AWSOrganizationsNotInUseException", Message: "not in org"},
+			errOnPage: 1,
+		})
+
+		_, err := p.GetAccounts(context.Background())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "AWSOrganizationsNotInUseException")
+	})
+
 	t.Run("returns error when STS fails", func(t *testing.T) {
 		p := &Provider{
 			cfg: aws.Config{Region: "us-east-1"},

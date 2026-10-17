@@ -298,6 +298,7 @@ func (p *Provider) appendOrgAccounts(ctx context.Context, accounts []common.Acco
 		output, err := paginator.NextPage(ctx)
 		if err != nil {
 			if page == 0 && isOrgListAccountsSilentError(err) {
+				logging.Infof("AWS Organizations ListAccounts unavailable, using the caller account only: %v", err)
 				return accounts, nil
 			}
 			logging.Warnf("AWS Organizations ListAccounts pagination failed mid-run: %v", err)
