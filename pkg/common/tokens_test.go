@@ -113,20 +113,6 @@ func TestIdempotencyGUID_ShortTokenReturnsEmpty(t *testing.T) {
 	assert.Equal(t, "", IdempotencyGUID("abc"), "sub-32-char token must yield empty")
 }
 
-func TestReservationOrderID(t *testing.T) {
-	token := DeriveIdempotencyToken("exec-1", 0)
-
-	// With a token: deterministic GUID, never the fallback.
-	got := ReservationOrderID(token, "fallback-id")
-	assert.Equal(t, IdempotencyGUID(token), got, "a supplied token must derive the GUID")
-	assert.Equal(t, got, ReservationOrderID(token, "other-fallback"),
-		"same token must yield the same order ID regardless of fallback")
-
-	// No usable token: caller's fallback is returned verbatim.
-	assert.Equal(t, "fallback-id", ReservationOrderID("", "fallback-id"))
-	assert.Equal(t, "fallback-id", ReservationOrderID("abc", "fallback-id"))
-}
-
 func TestOrderIDFromToken(t *testing.T) {
 	hex32 := "0123456789abcdef0123456789abcdef"
 	derived := DeriveIdempotencyToken("exec-1", 0)

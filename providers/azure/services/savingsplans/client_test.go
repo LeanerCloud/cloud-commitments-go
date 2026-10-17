@@ -356,14 +356,15 @@ func TestPurchaseCommitment_DeterministicAliasNameFromToken(t *testing.T) {
 	}
 
 	token := common.DeriveIdempotencyToken("exec-1", 0)
-	wantName := common.ReservationOrderID(token, "")
+	wantName, err := common.OrderIDFromToken(token, "")
+	require.NoError(t, err)
 	require.NotEmpty(t, wantName, "token must yield a deterministic GUID")
 
 	// First drive.
 	mock1 := &mockOrderAliasClient{createPoller: &mockPoller{resp: resp}}
 	c1 := NewClient(nil, "sub", "eastus")
 	c1.SetOrderAliasClient(mock1)
-	_, err := c1.PurchaseCommitment(context.Background(), makeRec("1yr"), common.PurchaseOptions{IdempotencyToken: token})
+	_, err = c1.PurchaseCommitment(context.Background(), makeRec("1yr"), common.PurchaseOptions{IdempotencyToken: token})
 	require.NoError(t, err)
 	assert.Equal(t, wantName, mock1.capturedName)
 
@@ -375,6 +376,32 @@ func TestPurchaseCommitment_DeterministicAliasNameFromToken(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, mock1.capturedName, mock2.capturedName,
 		"re-drive with the same idempotency token must reuse the alias name (PUT is idempotent)")
+}
+
+// TestPurchaseCommitment_MalformedTokenFailsBeforePUT verifies a non-empty token
+// that yields no GUID is refused before any PUT, with or without an injected
+// alias client (the second case proves the token is checked before the alias
+// client is constructed). Pre-fix the malformed token silently fell back to a
+// timestamp alias name and the purchase went ahead.
+func TestPurchaseCommitment_MalformedTokenFailsBeforePUT(t *testing.T) {
+	for _, token := range []string{"abc", "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"} {
+		mock := &mockOrderAliasClient{}
+		c := NewClient(nil, "sub", "eastus")
+		c.SetOrderAliasClient(mock)
+		result, err := c.PurchaseCommitment(context.Background(), makeRec("1yr"), common.PurchaseOptions{IdempotencyToken: token})
+		require.Error(t, err)
+		assert.ErrorIs(t, err, common.ErrInvalidIdempotencyToken)
+		assert.False(t, result.Success)
+		assert.Zero(t, mock.calls, "no BeginCreate for a malformed token")
+		assert.NotContains(t, err.Error(), token)
+	}
+
+	// No injected alias client and a nil credential: the token error must win
+	// over "failed to create order alias client".
+	c := NewClient(nil, "sub", "eastus")
+	_, err := c.PurchaseCommitment(context.Background(), makeRec("1yr"), common.PurchaseOptions{IdempotencyToken: "abc"})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, common.ErrInvalidIdempotencyToken)
 }
 
 // TestPurchaseCommitment_EmptyTokenUsesTimestampName verifies the CLI path (no

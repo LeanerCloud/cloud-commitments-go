@@ -348,6 +348,16 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		return result, result.Error
 	}
 	displayName := fmt.Sprintf("cudly-%s-%s", spDetails.PlanType, rec.Term)
+	// Derive a deterministic alias name from the idempotency token when present
+	// so a re-drive PUTs the same alias (idempotent), falling back to the prior
+	// timestamp-based name on the CLI path (empty token). A malformed non-empty
+	// token fails here, before the body or alias client exists, so it can never
+	// downgrade to a non-idempotent purchase.
+	aliasName, err := common.OrderIDFromToken(opts.IdempotencyToken, fmt.Sprintf("cudly-%d", time.Now().UnixNano()))
+	if err != nil {
+		result.Error = err
+		return result, result.Error
+	}
 
 	body := armbillingbenefits.SavingsPlanOrderAliasModel{
 		SKU: &armbillingbenefits.SKU{Name: toPtr(spDetails.PlanType)},
@@ -376,10 +386,6 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		aliasClient = &realOrderAliasClient{client: client}
 	}
 
-	// Derive a deterministic alias name from the idempotency token when present
-	// so a re-drive PUTs the same alias (idempotent), falling back to the prior
-	// timestamp-based name on the CLI path (empty token).
-	aliasName := common.ReservationOrderID(opts.IdempotencyToken, fmt.Sprintf("cudly-%d", time.Now().UnixNano()))
 	poller, err := aliasClient.BeginCreate(ctx, aliasName, body, nil)
 	if err != nil {
 		result.Error = fmt.Errorf("failed to begin savings plan purchase: %w", err)
