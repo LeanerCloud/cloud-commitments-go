@@ -455,6 +455,11 @@ type UsageBaseline struct {
 	// StableUSDPerHour is the estimated stable portion after applying the
 	// buffer fraction to LowWaterUSDPerHour.
 	StableUSDPerHour *float64
+	// Basis says what the series measures: total demand (the default, empty)
+	// or residual uncovered usage already net of existing commitments. See
+	// BaselineBasis; Allocate never subtracts existing commitment from a
+	// residual baseline a second time (go#282).
+	Basis BaselineBasis
 	// Series holds the raw hourly values used for computation. It is optional
 	// and may be nil when only the summary statistics are needed (e.g., when
 	// populating the approval email body).
