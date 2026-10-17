@@ -373,7 +373,7 @@ func targetCoverageInputsValid(rec common.Recommendation, targetPct float64) boo
 }
 
 func dropInvalidTargetCoverageInput(rec common.Recommendation, targetPct float64, logf Logf) string {
-	logf.printf("WARNING: --target-coverage=%v has invalid or out-of-range inputs for %s/%s/%s (avg=%v, existing=%v%%); dropped recommendation\n",
+	logf.printf("WARNING: --target-coverage=%.1f%% has invalid or out-of-range inputs for %s/%s/%s (avg=%v, existing=%v%%); dropped recommendation\n",
 		targetPct, rec.Service, rec.Region, rec.ResourceType, rec.AverageInstancesUsedPerHour, rec.ExistingCoveragePct)
 	return common.DropTargetInputInvalid
 }

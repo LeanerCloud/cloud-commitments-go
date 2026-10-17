@@ -2,6 +2,7 @@ package recfilter
 
 import (
 	"fmt"
+	"math"
 	"math/big"
 	"strings"
 	"testing"
@@ -450,4 +451,16 @@ func TestApplyTargetCoverage_UnknownCoverageNoAvg_AzureGCPPassThrough(t *testing
 	require.Len(t, out, 1)
 	assert.Equal(t, rec, out[0])
 	assert.True(t, d.IsEmpty())
+}
+
+// The invalid-input drop message formats the target like the sibling drop
+// messages (%.1f%%), not with %v (#227).
+func TestApplyTargetCoverage_InvalidInputLogFormatsTarget(t *testing.T) {
+	t.Parallel()
+	rec := mkRI(10, math.NaN(), 0)
+	var logs []string
+	out := ApplyTargetCoverage([]common.Recommendation{rec}, 75, captureLogf(&logs), nil)
+	assert.Empty(t, out)
+	require.Len(t, logs, 1)
+	assert.Contains(t, logs[0], "--target-coverage=75.0% has invalid or out-of-range inputs")
 }
