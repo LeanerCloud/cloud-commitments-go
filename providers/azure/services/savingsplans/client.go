@@ -190,7 +190,11 @@ func (c *Client) appendOwnedPlans(dst []common.Commitment, plans []*armbillingbe
 		}
 		switch disposition {
 		case planOwned:
-			dst = append(dst, *convertSavingsPlan(sp, c.subscriptionID))
+			commitment, err := convertSavingsPlan(sp, c.subscriptionID)
+			if err != nil {
+				return nil, 0, fmt.Errorf("row %d: %w", i+1, err)
+			}
+			dst = append(dst, *commitment)
 		case planSkippedSingle:
 			skipped++
 		}
@@ -228,10 +232,34 @@ func azureSavingsPlanState(ps armbillingbenefits.ProvisioningState) common.Commi
 	}
 }
 
+// computeResourceType is the ResourceType of a Compute savings plan on both the
+// recommendation and the inventory side; recfilter.DuplicateChecker matches on it.
+const computeResourceType = "Compute"
+
+// computeSavingsPlanSKU is the SKU name the billing benefits API reports for a
+// Compute savings plan (from the SDK examples, not a live response).
+const computeSavingsPlanSKU = "Compute_Savings_Plan"
+
+// savingsPlanResourceType maps the plan SKU to the shared resource type. A
+// missing or unknown SKU is an error so the duplicate guard fails closed.
+func savingsPlanResourceType(sp *armbillingbenefits.SavingsPlanModel) (string, error) {
+	if sp.SKU == nil || sp.SKU.Name == nil || *sp.SKU.Name == "" {
+		return "", fmt.Errorf("owned savings plan has no SKU name")
+	}
+	if *sp.SKU.Name != computeSavingsPlanSKU {
+		return "", fmt.Errorf("owned savings plan has unsupported SKU %q", *sp.SKU.Name)
+	}
+	return computeResourceType, nil
+}
+
 // convertSavingsPlan maps an armbillingbenefits.SavingsPlanModel to a common.Commitment.
-func convertSavingsPlan(sp *armbillingbenefits.SavingsPlanModel, subscriptionID string) *common.Commitment {
+func convertSavingsPlan(sp *armbillingbenefits.SavingsPlanModel, subscriptionID string) (*common.Commitment, error) {
 	if sp == nil || sp.ID == nil {
-		return nil
+		return nil, fmt.Errorf("savings plan has no ID")
+	}
+	resourceType, err := savingsPlanResourceType(sp)
+	if err != nil {
+		return nil, err
 	}
 
 	commitment := common.Commitment{
@@ -240,12 +268,9 @@ func convertSavingsPlan(sp *armbillingbenefits.SavingsPlanModel, subscriptionID 
 		CommitmentID:   *sp.ID,
 		CommitmentType: common.CommitmentSavingsPlan,
 		Service:        common.ServiceSavingsPlansAll,
+		ResourceType:   resourceType,
 		Count:          1,
 		State:          common.CommitmentStateActive,
-	}
-
-	if sp.Name != nil {
-		commitment.ResourceType = *sp.Name
 	}
 
 	if sp.Properties != nil {
@@ -268,7 +293,7 @@ func convertSavingsPlan(sp *armbillingbenefits.SavingsPlanModel, subscriptionID 
 		}
 	}
 
-	return &commitment
+	return &commitment, nil
 }
 
 var currencyCodePattern = regexp.MustCompile(`^[A-Za-z]{3}$`)

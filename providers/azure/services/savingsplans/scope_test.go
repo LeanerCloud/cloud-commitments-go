@@ -25,7 +25,7 @@ const (
 )
 
 func accountPlan(scope string, typ *armbillingbenefits.AppliedScopeType, props *armbillingbenefits.AppliedScopeProperties) *armbillingbenefits.SavingsPlanModel {
-	return &armbillingbenefits.SavingsPlanModel{ID: toPtr("plan-id"), Properties: &armbillingbenefits.SavingsPlanModelProperties{BillingScopeID: toPtr(scope), AppliedScopeType: typ, AppliedScopeProperties: props}}
+	return &armbillingbenefits.SavingsPlanModel{ID: toPtr("plan-id"), SKU: &armbillingbenefits.SKU{Name: toPtr("Compute_Savings_Plan")}, Properties: &armbillingbenefits.SavingsPlanModelProperties{BillingScopeID: toPtr(scope), AppliedScopeType: typ, AppliedScopeProperties: props}}
 }
 
 // scoped builds applied-scope properties; "" leaves the field nil.
@@ -141,7 +141,7 @@ func TestGetExistingCommitments_AggregateSkipLog(t *testing.T) {
 
 func TestGetExistingCommitments_SDKBillingAccountSingleScope(t *testing.T) {
 	row := func(id, scope, applied, props string) string {
-		return fmt.Sprintf(`{"id":%q,"name":"Compute","properties":{"billingScopeId":%q,"appliedScopeType":%q,"appliedScopeProperties":%s,"provisioningState":"Succeeded","effectiveDateTime":%q}}`,
+		return fmt.Sprintf(`{"id":%q,"name":"Compute","sku":{"name":"Compute_Savings_Plan"},"properties":{"billingScopeId":%q,"appliedScopeType":%q,"appliedScopeProperties":%s,"provisioningState":"Succeeded","effectiveDateTime":%q}}`,
 			id, scope, applied, props, time.Now().UTC().Format(time.RFC3339))
 	}
 	cases := []struct {

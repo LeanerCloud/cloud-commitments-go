@@ -44,7 +44,7 @@ func TestGetExistingCommitments_SDKPaginationCompleteness(t *testing.T) {
 					requests.Add(1)
 					switch r.URL.Query().Get("page") {
 					case "":
-						_, err := fmt.Fprintf(w, `{"value":[{"id":"owned","name":"Compute","properties":{"billingScopeId":"/subscriptions/sub-a","provisioningState":"Succeeded","effectiveDateTime":%q}}],"nextLink":%q}`,
+						_, err := fmt.Fprintf(w, `{"value":[{"id":"owned","name":"Compute","sku":{"name":"Compute_Savings_Plan"},"properties":{"billingScopeId":"/subscriptions/sub-a","provisioningState":"Succeeded","effectiveDateTime":%q}}],"nextLink":%q}`,
 							time.Now().UTC().Format(time.RFC3339), endpoint+"/providers/Microsoft.BillingBenefits/savingsPlans?api-version=2022-11-01&page=2")
 						assert.NoError(t, err)
 					case "2":

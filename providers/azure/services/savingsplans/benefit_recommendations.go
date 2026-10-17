@@ -236,7 +236,7 @@ func convertBenefitRecommendation(r *benefitRecommendation, subscriptionID strin
 		Provider:             common.ProviderAzure,
 		Account:              subscriptionID,
 		Service:              common.ServiceSavingsPlansAll,
-		ResourceType:         "Compute",
+		ResourceType:         computeResourceType,
 		Count:                1,
 		CommitmentType:       common.CommitmentSavingsPlan,
 		Term:                 term,

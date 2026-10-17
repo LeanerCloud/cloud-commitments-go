@@ -33,6 +33,7 @@ func (p *pagedListAllPager) NextPage(_ context.Context) (armbillingbenefits.Savi
 func ownedPlan(id string) *armbillingbenefits.SavingsPlanModel {
 	return &armbillingbenefits.SavingsPlanModel{
 		ID:         &id,
+		SKU:        &armbillingbenefits.SKU{Name: toPtr("Compute_Savings_Plan")},
 		Properties: &armbillingbenefits.SavingsPlanModelProperties{BillingScopeID: toPtr("/subscriptions/sub-abc")},
 	}
 }

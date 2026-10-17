@@ -153,6 +153,7 @@ func TestGetExistingCommitments_Happy(t *testing.T) {
 	sp := &armbillingbenefits.SavingsPlanModel{
 		ID:   &spID,
 		Name: &spName,
+		SKU:  &armbillingbenefits.SKU{Name: toPtr("Compute_Savings_Plan")},
 		Properties: &armbillingbenefits.SavingsPlanModelProperties{
 			BillingScopeID:    toPtr("/subscriptions/sub-abc"),
 			ProvisioningState: &prov,
@@ -178,7 +179,7 @@ func TestGetExistingCommitments_Happy(t *testing.T) {
 	assert.Equal(t, common.CommitmentSavingsPlan, got.CommitmentType)
 	assert.Equal(t, common.ServiceSavingsPlansAll, got.Service)
 	assert.Equal(t, spID, got.CommitmentID)
-	assert.Equal(t, spName, got.ResourceType)
+	assert.Equal(t, "Compute", got.ResourceType)
 	assert.Equal(t, common.CommitmentStateActive, got.State)
 	assert.Equal(t, amount, got.Cost)
 	assert.False(t, got.StartDateIsDay, "EffectiveDateTime is a timestamp, not a calendar date")
@@ -187,7 +188,8 @@ func TestGetExistingCommitments_Happy(t *testing.T) {
 func TestGetExistingCommitments_SubscriptionOwnership(t *testing.T) {
 	plan := func(id, scope string, applied armbillingbenefits.AppliedScopeType, subscription string) *armbillingbenefits.SavingsPlanModel {
 		return &armbillingbenefits.SavingsPlanModel{
-			ID: toPtr(id),
+			ID:  toPtr(id),
+			SKU: &armbillingbenefits.SKU{Name: toPtr("Compute_Savings_Plan")},
 			Properties: &armbillingbenefits.SavingsPlanModelProperties{
 				BillingScopeID:         toPtr(scope),
 				AppliedScopeType:       toPtr(applied),
