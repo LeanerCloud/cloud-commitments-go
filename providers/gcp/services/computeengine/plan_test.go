@@ -94,6 +94,26 @@ func TestRecommendationPlanConflictKeepsGoodRecommendation(t *testing.T) {
 	assert.Empty(t, service.insertReqs, "listing must not insert")
 }
 
+// A root Commitment whose Value is not an object is a malformed plan and must be
+// skipped like any other bad plan, not abort the batch before later valid
+// recommendations are processed (issue #291).
+func TestRecommendationMalformedRootValueKeepsGoodRecommendation(t *testing.T) {
+	bad := rootCUDRecommendationWithPlan("MEMORY_OPTIMIZED_M4_6TB", "TWELVE_MONTH")
+	bad.Name = "bad-root-value"
+	bad.Content.OperationGroups[0].Operations[0].PathValue = &recommenderpb.Operation_Value{
+		Value: structpb.NewStringValue("not-an-object"),
+	}
+	good := rootCUDRecommendationWithPlan("MEMORY_OPTIMIZED_M4_6TB", "THIRTY_SIX_MONTH")
+	good.Name = "good"
+
+	client, service := planClient(t, bad, good)
+	recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{ExperimentalGCPPlanTerm: true})
+	require.NoError(t, err, "a malformed root value must be skipped, not abort the batch")
+	require.Len(t, recs, 1)
+	assert.Equal(t, "3yr", recs[0].Term)
+	assert.Empty(t, service.insertReqs, "listing must not insert")
+}
+
 // Mutation probe: the plan-to-term mapping must not be swappable.
 func TestRootCommitmentTermMapping(t *testing.T) {
 	for plan, want := range map[string]string{"TWELVE_MONTH": "1yr", "THIRTY_SIX_MONTH": "3yr"} {

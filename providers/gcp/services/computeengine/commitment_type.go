@@ -181,7 +181,7 @@ func rootPlanTerm(root *recommenderpb.Operation) (term string, found bool, err e
 	}
 	object := root.GetValue().GetStructValue()
 	if object == nil {
-		return "", false, fmt.Errorf("root Commitment value must be an object")
+		return "", false, fmt.Errorf("%w: root Commitment value must be an object", errBadPlan)
 	}
 	value, present := object.Fields["plan"]
 	if !present {
