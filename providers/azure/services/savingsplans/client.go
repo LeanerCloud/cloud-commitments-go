@@ -141,6 +141,13 @@ const maxSavingsPlanPages = 100
 // that name this subscription (see planOwnedBy). Shared and management-group
 // plans billed to a billing account fail the call closed.
 func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
+	return c.listCommitments(ctx, false)
+}
+
+// listCommitments walks the savings plan inventory. covering also keeps plans
+// billed to another subscription that may apply to this one (see
+// GetCoveringCommitments).
+func (c *Client) listCommitments(ctx context.Context, covering bool) ([]common.Commitment, error) {
 	var pager SavingsPlanListAllPager
 
 	if c.listAllPager != nil {
@@ -167,7 +174,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 			return nil, fmt.Errorf("failed to list savings plans: %w", err)
 		}
 		var skipped int
-		commitments, skipped, err = c.appendOwnedPlans(commitments, page.Value)
+		commitments, skipped, err = c.appendOwnedPlans(commitments, page.Value, covering)
 		skippedSingle += skipped
 		if err != nil {
 			return nil, fmt.Errorf("incomplete savings plan inventory for subscription %s, page %d: %w", c.subscriptionID, pageIndex, err)
@@ -181,7 +188,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 
 const subscriptionScopePrefix = "/subscriptions/"
 
-func (c *Client) appendOwnedPlans(dst []common.Commitment, plans []*armbillingbenefits.SavingsPlanModel) ([]common.Commitment, int, error) {
+func (c *Client) appendOwnedPlans(dst []common.Commitment, plans []*armbillingbenefits.SavingsPlanModel, covering bool) ([]common.Commitment, int, error) {
 	skipped := 0
 	for i, sp := range plans {
 		disposition, err := planOwnedBy(sp, c.subscriptionID)
@@ -190,13 +197,19 @@ func (c *Client) appendOwnedPlans(dst []common.Commitment, plans []*armbillingbe
 		}
 		switch disposition {
 		case planOwned:
-			commitment, err := convertSavingsPlan(sp, c.subscriptionID)
-			if err != nil {
-				return nil, 0, fmt.Errorf("row %d: %w", i+1, err)
+			commitment, convErr := convertSavingsPlan(sp, c.subscriptionID)
+			if convErr != nil {
+				return nil, 0, fmt.Errorf("row %d: %w", i+1, convErr)
 			}
 			dst = append(dst, *commitment)
 		case planSkippedSingle:
 			skipped++
+		case planOtherSubscription:
+			if covering {
+				if dst, err = appendCoveringForeignPlan(dst, sp, c.subscriptionID); err != nil {
+					return nil, 0, fmt.Errorf("row %d: %w", i+1, err)
+				}
+			}
 		}
 	}
 	return dst, skipped, nil

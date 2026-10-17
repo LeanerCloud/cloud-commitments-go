@@ -633,3 +633,34 @@ func TestAdjustRecommendationsForExisting_PartialCoverageScalesMoney(t *testing.
 	assert.InDelta(t, 40.0, *passed[0].RecurringMonthlyCost, 1e-9)
 	assert.Equal(t, 100.0, monthly, "caller's pointer is not mutated")
 }
+
+type coveringClient struct {
+	fakeServiceClient
+	covering []common.Commitment
+	err      error
+}
+
+func (c *coveringClient) GetCoveringCommitments(context.Context) ([]common.Commitment, error) {
+	return c.covering, c.err
+}
+
+// A commitment billed elsewhere is absent from the inventory but still covers
+// the client; the check must suppress against the covering list (#466).
+func TestAdjustRecommendationsForExisting_UsesCoveringCommitments(t *testing.T) {
+	t.Parallel()
+	recent := common.Commitment{ResourceType: "Compute", Count: 1, State: common.CommitmentStateActive, StartDate: time.Now().Add(-time.Hour)}
+	recs := []common.Recommendation{{ResourceType: "Compute", Count: 1}}
+
+	client := &coveringClient{covering: []common.Commitment{recent}}
+	passed, filtered, err := NewDuplicateChecker(24).AdjustRecommendationsForExisting(context.Background(), recs, client)
+	require.NoError(t, err)
+	assert.Empty(t, passed)
+	assert.Equal(t, recs, filtered)
+
+	wantErr := errors.New("covering list unavailable")
+	client = &coveringClient{fakeServiceClient: fakeServiceClient{commitments: []common.Commitment{recent}}, err: wantErr}
+	passed, filtered, err = NewDuplicateChecker(24).AdjustRecommendationsForExisting(context.Background(), recs, client)
+	require.ErrorIs(t, err, wantErr)
+	assert.Equal(t, recs, passed)
+	assert.Nil(t, filtered)
+}
