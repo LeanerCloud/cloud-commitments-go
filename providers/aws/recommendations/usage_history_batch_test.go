@@ -391,3 +391,67 @@ func TestAttachDailyUsageHistory_EndlessGroupedTokensLeaveBucketNil(t *testing.T
 	_, grouped := f.counts("us-east-1")
 	assert.Equal(t, maxCoveragePages, grouped, "fetch stops at the cap on the first day")
 }
+
+// TestGetDailyUsagePctsByType_MalformedGroupPercentageFailsLoud: a malformed
+// grouped CoverageHoursPercentage used to become a fake 0% day.
+func TestGetDailyUsagePctsByType_MalformedGroupPercentageFailsLoud(t *testing.T) {
+	t.Parallel()
+	for _, bad := range []string{"oops", "", "NaN", "-1"} {
+		t.Run("bad_"+bad, func(t *testing.T) {
+			t.Parallel()
+			data, names := manyTypeFixture(9)
+			data[names[0]][usageWindowDays()[2]] = aws.String(bad)
+			f := &coverageFixture{t: t, data: map[string]map[string]map[string]*string{"us-east-1": data}}
+			got, err := newFixtureClient(t, f).getDailyUsagePctsByType(context.Background(), ec2CoverageService, "us-east-1", names)
+			require.Error(t, err)
+			assert.Nil(t, got)
+			for _, want := range []string{"CoverageHoursPercentage", names[0], "page 1"} {
+				assert.Contains(t, err.Error(), want)
+			}
+		})
+	}
+}
+
+func TestGroupedDayAccumulator_NilPercentageIsSkipped(t *testing.T) {
+	t.Parallel()
+	acc := &groupedDayAccumulator{
+		dayPct:   map[string]map[string]float64{"m1.large": {}},
+		byLower:  map[string][]string{"m1.large": {"m1.large"}},
+		withData: map[string]bool{},
+	}
+	periods := []types.CoverageByTime{{
+		TimePeriod: &types.DateInterval{Start: aws.String("2026-01-01")},
+		Groups: []types.ReservationCoverageGroup{
+			{Attributes: map[string]string{"instanceType": "m1.large"}},
+		},
+	}}
+	require.NoError(t, acc.addPeriods(periods))
+	assert.Empty(t, acc.dayPct["m1.large"])
+	assert.False(t, acc.withData["m1.large"])
+}
+
+func TestGroupedDayAccumulator_MalformedUnrequestedTypeIgnored(t *testing.T) {
+	t.Parallel()
+	newAcc := func() *groupedDayAccumulator {
+		return &groupedDayAccumulator{
+			dayPct:   map[string]map[string]float64{"m1.large": {}},
+			byLower:  map[string][]string{"m1.large": {"m1.large"}},
+			withData: map[string]bool{},
+		}
+	}
+	group := func(typ, pct string) types.ReservationCoverageGroup {
+		return types.ReservationCoverageGroup{
+			Attributes: map[string]string{"instanceType": typ},
+			Coverage:   &types.Coverage{CoverageHours: &types.CoverageHours{CoverageHoursPercentage: aws.String(pct)}},
+		}
+	}
+	period := func(groups ...types.ReservationCoverageGroup) []types.CoverageByTime {
+		return []types.CoverageByTime{{TimePeriod: &types.DateInterval{Start: aws.String("2026-01-01")}, Groups: groups}}
+	}
+
+	acc := newAcc()
+	require.NoError(t, acc.addPeriods(period(group("z9.unrequested", "oops"), group("m1.large", "42"))))
+	assert.InDelta(t, 42.0, acc.dayPct["m1.large"]["2026-01-01"], 0.001)
+
+	require.Error(t, newAcc().addPeriods(period(group("m1.large", "oops"))))
+}
