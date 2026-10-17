@@ -81,6 +81,8 @@ func TestDedupe_Found(t *testing.T) {
 		{"start long after request, no upper bound", dnode("rn-1", "active", dedupeReqAt.Add(72*time.Hour))},
 		{"pending-payment", dnode("rn-1", "pending-payment", inWindow)},
 		{"exchanging", dnode("rn-1", "exchanging", inWindow)},
+		{"nil offering ID", dnode("rn-1", "active", inWindow, func(n *types.ReservedNode) { n.ReservedNodeOfferingId = nil })},
+		{"nil node count", dnode("rn-1", "active", inWindow, func(n *types.ReservedNode) { n.NodeCount = nil })},
 		{"nil StartTime", dnode("rn-1", "active", inWindow, func(n *types.ReservedNode) { n.StartTime = nil })},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
