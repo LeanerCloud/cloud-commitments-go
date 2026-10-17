@@ -8,7 +8,7 @@ require (
 	cloud.google.com/go/redis v1.18.3
 	cloud.google.com/go/resourcemanager v1.10.7
 	cloud.google.com/go/storage v1.59.2
-	github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261015085730-498b74f31f01
+	github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261017012250-2bf23fbd8c2a
 	github.com/googleapis/gax-go/v2 v2.21.0
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/oauth2 v0.36.0
