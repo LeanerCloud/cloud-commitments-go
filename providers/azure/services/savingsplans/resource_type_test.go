@@ -34,7 +34,15 @@ func resourceTypeFixture(t *testing.T, sku string) *Client {
 
 func TestOwnedPlanSuppressesComputeRecommendation(t *testing.T) {
 	client := resourceTypeFixture(t, `,"sku":{"name":"Compute_Savings_Plan"}`)
-	recs := []common.Recommendation{{Provider: common.ProviderAzure, Service: common.ServiceSavingsPlansAll, ResourceType: computeResourceType, Count: 1}}
+	hours, cost, saved, commit := int32(168), 100.0, 20.0, 1.5
+	row := &benefitRecommendation{ID: "rec-1", Kind: kindSavingsPlan, Properties: &benefitRecommendationProps{
+		ArmSkuName: armSkuComputeSavingsPlan, Term: "P1Y", Scope: scopeShared, CommitmentGranularity: grainHourly,
+		CurrencyCode: "USD", TotalHours: &hours, CostWithoutBenefit: &cost,
+		RecommendationDetails: &benefitRecommendDetls{CommitmentAmount: &commit, SavingsAmount: &saved},
+	}}
+	rec, err := convertBenefitRecommendation(row, "sub-a")
+	require.NoError(t, err)
+	recs := []common.Recommendation{*rec}
 	passed, filtered, err := recfilter.NewDuplicateChecker(24).AdjustRecommendationsForExisting(context.Background(), recs, client)
 	require.NoError(t, err)
 	assert.Empty(t, passed)
@@ -43,17 +51,24 @@ func TestOwnedPlanSuppressesComputeRecommendation(t *testing.T) {
 
 func TestGetExistingCommitments_FailsClosedOnBadSKU(t *testing.T) {
 	for name, sku := range map[string]string{
-		"missing":   ``,
-		"empty":     `,"sku":{"name":""}`,
-		"no-name":   `,"sku":{}`,
-		"unknown":   `,"sku":{"name":"Mystery_Plan"}`,
-		"lowercase": `,"sku":{"name":"compute_savings_plan"}`,
+		"missing": ``,
+		"empty":   `,"sku":{"name":""}`,
+		"no-name": `,"sku":{}`,
+		"unknown": `,"sku":{"name":"Mystery_Plan"}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			got, err := resourceTypeFixture(t, sku).GetExistingCommitments(context.Background())
 			require.ErrorContains(t, err, "incomplete savings plan inventory")
-			require.ErrorContains(t, err, "SKU")
+			require.ErrorContains(t, err, "6f1f3c1a-1b2c-4d5e-8f90-123456789abc")
+			require.ErrorContains(t, err, "extend the SKU mapping in convertSavingsPlan")
 			assert.Nil(t, got)
 		})
 	}
+}
+
+func TestGetExistingCommitments_SKUMatchIsCaseInsensitive(t *testing.T) {
+	got, err := resourceTypeFixture(t, `,"sku":{"name":"compute_savings_plan"}`).GetExistingCommitments(context.Background())
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, "Compute", got[0].ResourceType)
 }

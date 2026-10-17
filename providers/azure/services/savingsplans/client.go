@@ -236,18 +236,15 @@ func azureSavingsPlanState(ps armbillingbenefits.ProvisioningState) common.Commi
 // recommendation and the inventory side; recfilter.DuplicateChecker matches on it.
 const computeResourceType = "Compute"
 
-// computeSavingsPlanSKU is the SKU name the billing benefits API reports for a
-// Compute savings plan (from the SDK examples, not a live response).
-const computeSavingsPlanSKU = "Compute_Savings_Plan"
-
-// savingsPlanResourceType maps the plan SKU to the shared resource type. A
-// missing or unknown SKU is an error so the duplicate guard fails closed.
+// savingsPlanResourceType maps the plan SKU (armSkuComputeSavingsPlan, matched
+// case-insensitively) to the shared resource type. A missing or unknown SKU is
+// an error so the duplicate guard fails closed.
 func savingsPlanResourceType(sp *armbillingbenefits.SavingsPlanModel) (string, error) {
 	if sp.SKU == nil || sp.SKU.Name == nil || *sp.SKU.Name == "" {
-		return "", fmt.Errorf("owned savings plan has no SKU name")
+		return "", fmt.Errorf("owned savings plan %s has an unrecognized SKU (none reported); extend the SKU mapping in convertSavingsPlan", *sp.ID)
 	}
-	if *sp.SKU.Name != computeSavingsPlanSKU {
-		return "", fmt.Errorf("owned savings plan has unsupported SKU %q", *sp.SKU.Name)
+	if !strings.EqualFold(*sp.SKU.Name, armSkuComputeSavingsPlan) {
+		return "", fmt.Errorf("owned savings plan %s has an unrecognized SKU %q; extend the SKU mapping in convertSavingsPlan", *sp.ID, *sp.SKU.Name)
 	}
 	return computeResourceType, nil
 }
