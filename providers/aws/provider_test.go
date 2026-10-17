@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
 )
 
@@ -495,10 +497,15 @@ func TestAWSProvider_GetAccounts_WithMock(t *testing.T) {
 			errOnPage: 0,
 		})
 
+		var logs bytes.Buffer
+		prev := logging.SetOutput(&logs)
+		t.Cleanup(func() { logging.SetOutput(prev) })
+
 		accounts, err := p.GetAccounts(context.Background())
 		require.NoError(t, err)
 		require.Len(t, accounts, 1)
 		assert.Equal(t, "123456789012", accounts[0].ID)
+		assert.Contains(t, logs.String(), "AWS Organizations ListAccounts unavailable")
 	})
 
 	t.Run("returns current account when Organizations access is denied", func(t *testing.T) {
@@ -516,10 +523,15 @@ func TestAWSProvider_GetAccounts_WithMock(t *testing.T) {
 			errOnPage: 0,
 		})
 
+		var logs bytes.Buffer
+		prev := logging.SetOutput(&logs)
+		t.Cleanup(func() { logging.SetOutput(prev) })
+
 		accounts, err := p.GetAccounts(context.Background())
 		require.NoError(t, err)
 		require.Len(t, accounts, 1)
 		assert.Equal(t, "123456789012", accounts[0].ID)
+		assert.Contains(t, logs.String(), "AWS Organizations ListAccounts unavailable")
 	})
 
 	t.Run("propagates AccessDenied after a page succeeded instead of returning a partial org list", func(t *testing.T) {
