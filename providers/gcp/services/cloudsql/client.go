@@ -3,17 +3,13 @@ package cloudsql
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
 
-	recommender "cloud.google.com/go/recommender/apiv1"
 	"cloud.google.com/go/recommender/apiv1/recommenderpb"
 	"google.golang.org/api/cloudbilling/v1"
-	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 	"google.golang.org/api/sqladmin/v1"
 
@@ -22,23 +18,6 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skulist"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skumatch"
 )
-
-// recsPageSize is the page size requested from the Recommender API. The
-// iterator hands out items, so the cap is maxRecsPages pages of recsPageSize
-// items, i.e. maxRecsItems (2000) items in total.
-const (
-	recsPageSize = 100
-	maxRecsPages = 20
-	maxRecsItems = recsPageSize * maxRecsPages
-)
-
-// checkRecsCap fails loud when a successful Next() would exceed maxRecsItems.
-func checkRecsCap(itemIdx int, nextErr error) error {
-	if nextErr == nil && itemIdx >= maxRecsItems {
-		return fmt.Errorf("cloudsql: GetRecommendations cap reached: more than %d recommendations (%d pages of %d)", maxRecsItems, maxRecsPages, recsPageSize)
-	}
-	return nil
-}
 
 // SQLAdminService interface for SQL admin operations (enables mocking).
 type SQLAdminService interface {
@@ -52,12 +31,16 @@ type BillingService interface {
 	ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error)
 }
 
-// RecommenderIterator interface for recommender iteration (enables mocking).
+// RecommenderIterator preserves the legacy iteration API for source compatibility.
+//
+// Deprecated: Cloud SQL has no project-scoped commitment recommender (issue #294).
 type RecommenderIterator interface {
 	Next() (*recommenderpb.Recommendation, error)
 }
 
-// RecommenderClient interface for recommender operations (enables mocking).
+// RecommenderClient preserves the legacy injection API for source compatibility.
+//
+// Deprecated: Cloud SQL has no project-scoped commitment recommender (issue #294).
 type RecommenderClient interface {
 	ListRecommendations(ctx context.Context, req *recommenderpb.ListRecommendationsRequest) RecommenderIterator
 	Close() error
@@ -65,15 +48,14 @@ type RecommenderClient interface {
 
 // Client handles GCP Cloud SQL commitments.
 type Client struct {
-	skuMu             sync.Mutex
-	skuCache          *cloudbilling.ListSkusResponse
-	ctx               context.Context
-	projectID         string
-	region            string
-	clientOpts        []option.ClientOption
-	sqlAdminService   SQLAdminService
-	billingService    BillingService
-	recommenderClient RecommenderClient
+	skuMu           sync.Mutex
+	skuCache        *cloudbilling.ListSkusResponse
+	ctx             context.Context
+	projectID       string
+	region          string
+	clientOpts      []option.ClientOption
+	sqlAdminService SQLAdminService
+	billingService  BillingService
 }
 
 // NewClient creates a new GCP Cloud SQL client.
@@ -96,10 +78,10 @@ func (c *Client) SetBillingService(svc BillingService) {
 	c.billingService = svc
 }
 
-// SetRecommenderClient sets the recommender client (for testing).
-func (c *Client) SetRecommenderClient(client RecommenderClient) {
-	c.recommenderClient = client
-}
+// SetRecommenderClient ignores the supplied client and does not close it.
+//
+// Deprecated: Cloud SQL has no project-scoped commitment recommender (issue #294).
+func (c *Client) SetRecommenderClient(_ RecommenderClient) {}
 
 // realSQLAdminService wraps the real sqladmin.Service.
 type realSQLAdminService struct {
@@ -131,28 +113,6 @@ func (r *realBillingService) ListSKUs(serviceID string) (*cloudbilling.ListSkusR
 	return &cloudbilling.ListSkusResponse{Skus: skus}, nil
 }
 
-// realRecommenderIterator wraps the real recommender iterator.
-type realRecommenderIterator struct {
-	it *recommender.RecommendationIterator
-}
-
-func (r *realRecommenderIterator) Next() (*recommenderpb.Recommendation, error) {
-	return r.it.Next()
-}
-
-// realRecommenderClient wraps the real recommender client.
-type realRecommenderClient struct {
-	client *recommender.Client
-}
-
-func (r *realRecommenderClient) ListRecommendations(ctx context.Context, req *recommenderpb.ListRecommendationsRequest) RecommenderIterator {
-	return &realRecommenderIterator{it: r.client.ListRecommendations(ctx, req)}
-}
-
-func (r *realRecommenderClient) Close() error {
-	return r.client.Close()
-}
-
 // GetServiceType returns the service type.
 func (c *Client) GetServiceType() common.ServiceType {
 	return common.ServiceRelationalDB
@@ -163,74 +123,16 @@ func (c *Client) GetRegion() string {
 	return c.region
 }
 
-// resolveRecommenderClient returns the injected client (for testing) or creates
-// a new one from the stored options.
-func (c *Client) resolveRecommenderClient(ctx context.Context) (RecommenderClient, error) {
-	if c.recommenderClient != nil {
-		return c.recommenderClient, nil
-	}
-	client, err := recommender.NewClient(ctx, c.clientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create recommender client: %w", err)
-	}
-	return &realRecommenderClient{client: client}, nil
-}
-
-// GetRecommendations gets Cloud SQL recommendations from GCP Recommender API.
-func (c *Client) GetRecommendations(ctx context.Context, p *common.RecommendationParams) ([]common.Recommendation, error) {
-	if p == nil {
-		return nil, fmt.Errorf("params cannot be nil")
-	}
-	params := *p
-	recommendations := make([]common.Recommendation, 0)
-
-	recClient, err := c.resolveRecommenderClient(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer recClient.Close()
-
-	// Cloud SQL commitment recommender
-	parent := fmt.Sprintf("projects/%s/locations/%s/recommenders/google.cloudsql.instance.PerformanceRecommender",
-		c.projectID, c.region)
-
-	req := &recommenderpb.ListRecommendationsRequest{
-		Parent:   parent,
-		PageSize: recsPageSize,
-	}
-
-	it := recClient.ListRecommendations(ctx, req)
-	for itemIdx := 0; ; itemIdx++ {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context canceled during pagination: %w", err)
-		}
-		rec, err := it.Next()
-		if errors.Is(err, iterator.Done) {
-			break
-		}
-		if capErr := checkRecsCap(itemIdx, err); capErr != nil {
-			return nil, capErr
-		}
-		if err != nil {
-			// Iterator errors must propagate so callers don't silently act
-			// on a partial recommendation list -- see the computeengine
-			// client for the full rationale.
-			return nil, fmt.Errorf("cloudsql: iterate recommendations: %w", err)
-		}
-
-		// Skip non-ACTIVE recommendations (CLAIMED/SUCCEEDED/FAILED/DISMISSED).
-		// See computeengine.GetRecommendations for the full rationale.
-		if rec.GetStateInfo().GetState() != recommenderpb.RecommendationStateInfo_ACTIVE {
-			continue
-		}
-
-		converted := c.convertGCPRecommendation(ctx, rec, params)
-		if converted != nil {
-			recommendations = append(recommendations, *converted)
-		}
-	}
-
-	return recommendations, nil
+// GetRecommendations always returns an error (issue #294). Cloud SQL CUDs are
+// spend-based, and Google recommends them only at Cloud Billing account scope
+// (google.cloudbilling.commitment.SpendBasedCommitmentRecommender); the
+// project-scoped google.cloudsql.instance.PerformanceRecommender
+// gives per-instance tuning advice, not commitments, so its output must not be
+// relabeled as a CUD. The billing-scoped path is designed in
+// docs/design/gcp-spend-commitments.md. The error is explicit so callers do
+// not read an empty result as "nothing to buy".
+func (c *Client) GetRecommendations(_ context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
+	return nil, fmt.Errorf("%w: Cloud SQL spend-based CUD recommendations are only available at billing-account scope", common.ErrCommitmentPurchaseNotSupported)
 }
 
 // GetExistingCommitments returns an empty slice for Cloud SQL. Cloud SQL
@@ -481,99 +383,6 @@ func calculateSQLSavingsPercentage(onDemandPrice, hoursInTerm, commitmentPrice f
 // skuMatchesTier checks if a SKU matches the tier and region.
 func skuMatchesTier(sku *cloudbilling.Sku, tier, region string) bool {
 	return skumatch.HasToken(sku.Description, tier) && skumatch.InRegion(sku, region)
-}
-
-// extractGCPResourceType returns the last path segment of the first non-empty
-// resource field found across all operation groups, or "" if none is present.
-func extractGCPResourceType(rec *recommenderpb.Recommendation) string {
-	if rec.Content == nil || rec.Content.OperationGroups == nil {
-		return ""
-	}
-	for _, opGroup := range rec.Content.OperationGroups {
-		for _, op := range opGroup.Operations {
-			if op.Resource == "" {
-				continue
-			}
-			parts := strings.Split(op.Resource, "/")
-			if len(parts) > 0 {
-				return parts[len(parts)-1]
-			}
-		}
-	}
-	return ""
-}
-
-// extractGCPSavings returns the estimated monthly savings (positive value)
-// from the primary cost impact of a GCP recommendation, or 0 if absent.
-func extractGCPSavings(rec *recommenderpb.Recommendation) float64 {
-	if rec.PrimaryImpact == nil {
-		return 0
-	}
-	costProj := rec.PrimaryImpact.GetCostProjection()
-	if costProj == nil || costProj.Cost == nil {
-		return 0
-	}
-	cost := costProj.Cost
-	return -(float64(cost.Units) + float64(cost.Nanos)/1e9)
-}
-
-// Pricing failures preserve the recommendation with an unknown monthly charge.
-func (c *Client) fillSQLPricing(ctx context.Context, rec *common.Recommendation, termYears int) {
-	pricing, err := c.getSQLPricing(ctx, rec.ResourceType, c.region, termYears)
-	if err != nil {
-		log.Printf("cloudsql: pricing unavailable for %s in %s (issue #1020): %v", rec.ResourceType, c.region, err)
-		return
-	}
-	if pricing.CommitmentPrice > 0 {
-		monthly := pricing.CommitmentPrice / float64(termYears*12)
-		rec.RecurringMonthlyCost = &monthly
-		rec.CommitmentCurrency = pricing.Currency
-	}
-	rec.OnDemandCost = pricing.OnDemandPrice
-	rec.SavingsPercentage = pricing.SavingsPercentage
-}
-
-// termYearsFromLabel converts a term string such as "1yr" or "3yr" to an
-// integer number of years (defaults to 1 for any unrecognized value).
-func termYearsFromLabel(term string) int {
-	if term == "3yr" || term == "3" {
-		return 3
-	}
-	return 1
-}
-
-// convertGCPRecommendation converts a GCP Recommender recommendation to common format.
-func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommenderpb.Recommendation, params common.RecommendationParams) *common.Recommendation {
-	paymentOption := params.PaymentOption
-	if paymentOption == "" {
-		paymentOption = "monthly"
-	}
-
-	term := params.Term
-	if term == "" {
-		term = "1yr"
-	}
-
-	rec := &common.Recommendation{
-		Provider:       common.ProviderGCP,
-		Service:        common.ServiceRelationalDB,
-		Account:        c.projectID,
-		Region:         c.region,
-		CommitmentType: common.CommitmentCUD,
-		Timestamp:      time.Now(),
-		Term:           term,
-		PaymentOption:  paymentOption,
-	}
-
-	rec.ResourceType = extractGCPResourceType(gcpRec)
-	rec.EstimatedSavings = extractGCPSavings(gcpRec)
-
-	if rec.ResourceType != "" {
-		termYears := termYearsFromLabel(rec.Term)
-		c.fillSQLPricing(ctx, rec, termYears)
-	}
-
-	return rec
 }
 
 // contains checks if a slice contains a string.

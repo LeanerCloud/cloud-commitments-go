@@ -288,8 +288,12 @@ func TestGCPProvider_GetSupportedServices(t *testing.T) {
 
 	require.NotEmpty(t, services)
 	assert.Contains(t, services, common.ServiceCompute)
-	assert.Contains(t, services, common.ServiceRelationalDB)
-	assert.Contains(t, services, common.ServiceCache)
+	// Cloud SQL and Memorystore CUDs are spend-based and recommended only at
+	// billing-account scope; their project PerformanceRecommenders give
+	// per-instance tuning advice, not commitments (#294).
+	assert.NotContains(t, services, common.ServiceRelationalDB)
+	assert.NotContains(t, services, common.ServiceCache)
+	assert.Equal(t, []common.ServiceType{common.ServiceCompute}, services)
 	// Cloud Storage has no commitment product; listing it lets callers that
 	// validate against this list accept a search that always fails (#199).
 	assert.NotContains(t, services, common.ServiceStorage)

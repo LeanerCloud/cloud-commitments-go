@@ -176,21 +176,9 @@ func TestRecommendationsClientAdapter_GetRecommendations_PropagatesContextCancel
 		"GetRecommendations must propagate the parent ctx error")
 }
 
-// TestRegionResult_HasCacheField pins that regionResult carries the cache slice
-// next to compute and sql (H-2); Cloud Storage has no slice because it is not
-// part of the region fan-out (issue #78).
-func TestRegionResult_HasCacheField(t *testing.T) {
-	recs := []common.Recommendation{{Provider: common.ProviderGCP}}
-	result := regionResult{compute: recs, sql: recs, cache: recs}
-
-	assert.Len(t, result.compute, 1)
-	assert.Len(t, result.sql, 1)
-	assert.Len(t, result.cache, 1)
-}
-
 // TestShouldIncludeService_Cache_Storage verifies that shouldIncludeService
-// correctly routes ServiceCache and ServiceStorage requests, which is a
-// prerequisite for H-2 (wiring them into collectRegion).
+// matches ServiceCache and ServiceStorage like any other service. Neither is
+// part of the region fan-out (issues #78 and #294); this pins the helper only.
 func TestShouldIncludeService_Cache_Storage(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -379,19 +367,23 @@ func TestGetAllRecommendations_TotalFailureKeepsRealCause(t *testing.T) {
 	assert.Nil(t, recs)
 	assert.True(t, IsPermissionError(err), "aggregate error must keep the PermissionDenied cause: %v", err)
 	assert.NotErrorIs(t, err, common.ErrCommitmentPurchaseNotSupported)
-	assert.Contains(t, err.Error(), "all 6 GCP recommendation service calls failed across 2 regions")
+	assert.Contains(t, err.Error(), "all 2 GCP recommendation service calls failed across 2 regions")
 	assert.Greater(t, calls.httpRequests.Load(), int64(0))
 	assert.Greater(t, calls.grpcDials.Load(), int64(0))
 	assert.Greater(t, calls.listRPCs.Load(), int64(0))
 }
 
-func TestCollectRegion_DefaultFanOutSkipsCloudStorage(t *testing.T) {
-	adapter, _ := deniedSDKAdapter(t)
+// The default fan-out calls only the Compute commitment recommender: Cloud
+// Storage (issue #78), Cloud SQL and Memorystore (issue #294) have no
+// project-scoped commitment recommender.
+func TestCollectRegion_DefaultFanOutIsComputeOnly(t *testing.T) {
+	adapter, calls := deniedSDKAdapter(t)
 
 	res := adapter.collectRegion(context.Background(), common.RecommendationParams{}, "us-central1")
 
-	assert.Equal(t, 3, res.attempted)
-	assert.Equal(t, 3, res.failed)
+	assert.Equal(t, 1, res.attempted)
+	assert.Equal(t, 1, res.failed)
+	assert.Equal(t, int64(1), calls.listRPCs.Load())
 	assert.NotErrorIs(t, res.lastErr, common.ErrCommitmentPurchaseNotSupported)
 	assert.True(t, IsPermissionError(res.lastErr))
 }

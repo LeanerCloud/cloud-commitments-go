@@ -3,7 +3,6 @@ package cloudsql
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 
 	"cloud.google.com/go/recommender/apiv1/recommenderpb"
@@ -15,8 +14,6 @@ import (
 	"google.golang.org/genproto/googleapis/type/money"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
-	"github.com/LeanerCloud/cloud-commitments-go/pkg/reporter"
-	"github.com/LeanerCloud/cloud-commitments-go/pkg/scorer"
 )
 
 // MockSQLAdminService mocks the SQLAdminService interface.
@@ -80,21 +77,6 @@ func (m *MockRecommenderIterator) Next() (*recommenderpb.Recommendation, error) 
 	rec := m.recommendations[m.index]
 	m.index++
 	return rec, nil
-}
-
-// MockRecommenderClient mocks the RecommenderClient interface.
-type MockRecommenderClient struct {
-	iterator RecommenderIterator
-	closed   bool
-}
-
-func (m *MockRecommenderClient) ListRecommendations(ctx context.Context, req *recommenderpb.ListRecommendationsRequest) RecommenderIterator {
-	return m.iterator
-}
-
-func (m *MockRecommenderClient) Close() error {
-	m.closed = true
-	return nil
 }
 
 func TestNewClient(t *testing.T) {
@@ -597,91 +579,6 @@ func TestCloudSQLClient_GetOfferingDetails_APIError(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to list SKUs")
 }
 
-func TestCloudSQLClient_GetRecommendations_WithMock(t *testing.T) {
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-	client.SetBillingService(&MockBillingService{err: errors.New("catalog not under test")})
-
-	mockIterator := &MockRecommenderIterator{
-		recommendations: []*recommenderpb.Recommendation{
-			{
-				Name:      "recommendation-1",
-				StateInfo: &recommenderpb.RecommendationStateInfo{State: recommenderpb.RecommendationStateInfo_ACTIVE},
-				PrimaryImpact: &recommenderpb.Impact{
-					Category: recommenderpb.Impact_COST,
-					Projection: &recommenderpb.Impact_CostProjection{
-						CostProjection: &recommenderpb.CostProjection{
-							Cost: &money.Money{
-								Units:        -100,
-								Nanos:        0,
-								CurrencyCode: "USD",
-							},
-						},
-					},
-				},
-				Content: &recommenderpb.RecommendationContent{
-					OperationGroups: []*recommenderpb.OperationGroup{
-						{
-							Operations: []*recommenderpb.Operation{
-								{
-									Resource: "projects/test/instances/my-instance",
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	mockClient := &MockRecommenderClient{
-		iterator: mockIterator,
-	}
-	client.SetRecommenderClient(mockClient)
-
-	recommendations, err := client.GetRecommendations(ctx, &common.RecommendationParams{})
-	require.NoError(t, err)
-	assert.Len(t, recommendations, 1)
-	assert.Equal(t, common.ProviderGCP, recommendations[0].Provider)
-	assert.Equal(t, common.ServiceRelationalDB, recommendations[0].Service)
-	assert.True(t, mockClient.closed)
-}
-
-func TestCloudSQLClient_GetRecommendations_IteratorError(t *testing.T) {
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	mockIterator := &MockRecommenderIterator{
-		err: errors.New("injected iterator failure"),
-	}
-	mockClient := &MockRecommenderClient{iterator: mockIterator}
-	client.SetRecommenderClient(mockClient)
-
-	recs, err := client.GetRecommendations(ctx, &common.RecommendationParams{})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cloudsql: iterate recommendations")
-	assert.Nil(t, recs, "partial data must not leak on iterator failure")
-	assert.True(t, mockClient.closed, "client must still be closed on the error path")
-}
-
-func TestCloudSQLClient_GetRecommendations_Empty(t *testing.T) {
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	mockIterator := &MockRecommenderIterator{
-		recommendations: []*recommenderpb.Recommendation{},
-	}
-
-	mockClient := &MockRecommenderClient{
-		iterator: mockIterator,
-	}
-	client.SetRecommenderClient(mockClient)
-
-	recommendations, err := client.GetRecommendations(ctx, &common.RecommendationParams{})
-	require.NoError(t, err)
-	assert.Empty(t, recommendations)
-}
-
 func TestCloudSQLClient_SetterMethods(t *testing.T) {
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
@@ -695,96 +592,6 @@ func TestCloudSQLClient_SetterMethods(t *testing.T) {
 	mockBilling := &MockBillingService{}
 	client.SetBillingService(mockBilling)
 	assert.Equal(t, mockBilling, client.billingService)
-
-	// Test SetRecommenderClient
-	mockRec := &MockRecommenderClient{}
-	client.SetRecommenderClient(mockRec)
-	assert.Equal(t, mockRec, client.recommenderClient)
-}
-
-func TestCloudSQLClient_ConvertGCPRecommendation(t *testing.T) {
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-	client.SetBillingService(&MockBillingService{err: errors.New("catalog not under test")})
-
-	gcpRec := &recommenderpb.Recommendation{
-		Name: "test-rec",
-		PrimaryImpact: &recommenderpb.Impact{
-			Category: recommenderpb.Impact_COST,
-			Projection: &recommenderpb.Impact_CostProjection{
-				CostProjection: &recommenderpb.CostProjection{
-					Cost: &money.Money{
-						Units:        -50,
-						Nanos:        -500000000, // -0.5
-						CurrencyCode: "USD",
-					},
-				},
-			},
-		},
-		Content: &recommenderpb.RecommendationContent{
-			OperationGroups: []*recommenderpb.OperationGroup{
-				{
-					Operations: []*recommenderpb.Operation{
-						{
-							Resource: "projects/test/instances/sql-instance",
-						},
-					},
-				},
-			},
-		},
-	}
-
-	rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
-	require.NotNil(t, rec)
-	assert.Equal(t, common.ProviderGCP, rec.Provider)
-	assert.Equal(t, common.ServiceRelationalDB, rec.Service)
-	assert.Equal(t, "test-project", rec.Account)
-	assert.Equal(t, "us-central1", rec.Region)
-	assert.Equal(t, "sql-instance", rec.ResourceType)
-	assert.Equal(t, 50.5, rec.EstimatedSavings)
-}
-
-func TestCloudSQLClient_ConvertGCPRecommendation_NilContent(t *testing.T) {
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	gcpRec := &recommenderpb.Recommendation{
-		Name:    "test-rec",
-		Content: nil,
-	}
-
-	rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
-	require.NotNil(t, rec)
-	assert.Equal(t, common.ProviderGCP, rec.Provider)
-}
-
-// TestCloudSQLConvertGCPRecommendation_PropagatesTermFromParams is a regression
-// test for the finding that convertGCPRecommendation hardcoded rec.Term = "1yr",
-// ignoring params.Term. A caller requesting "3yr" must get "3yr" in the output.
-//
-// This test FAILS on the pre-fix code that always set Term = "1yr".
-func TestCloudSQLConvertGCPRecommendation_PropagatesTermFromParams(t *testing.T) {
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	gcpRec := &recommenderpb.Recommendation{Name: "test-rec"}
-
-	tests := []struct {
-		inputTerm string
-		wantTerm  string
-	}{
-		{"3yr", "3yr"},
-		{"1yr", "1yr"},
-		{"", "1yr"}, // empty defaults to "1yr"
-	}
-
-	for _, tt := range tests {
-		params := common.RecommendationParams{Term: tt.inputTerm}
-		rec := client.convertGCPRecommendation(ctx, gcpRec, params)
-		require.NotNil(t, rec)
-		assert.Equal(t, tt.wantTerm, rec.Term,
-			"params.Term %q must produce rec.Term %q", tt.inputTerm, tt.wantTerm)
-	}
 }
 
 // TestGetSQLPricing_CommitmentPriceIsTermTotal is a regression test for the
@@ -867,159 +674,33 @@ func TestGetSQLPricing_CommitmentPriceIsTermTotal(t *testing.T) {
 		"SavingsPercentage must be realistic (not ~100%)")
 }
 
-func TestCloudSQLClient_ConvertGCPRecommendation_RecurringMonthlyCost(t *testing.T) {
+// TestCloudSQLClient_GetOfferingDetails_RecurringMonthlyCost pins the monthly CUD
+// quote derived from the catalog, in the catalog currency, for every term and
+// payment option.
+func TestCloudSQLClient_GetOfferingDetails_RecurringMonthlyCost(t *testing.T) {
+	const region = "europe-west1"
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient(ctx, "test-project", region)
 
-	// Inject a billing mock with a known on-demand price and a separate
-	// commitment SKU. getSQLPricing derives CommitmentPrice from the
-	// "commitment" SKU (CommitmentPrice = commitmentHourly * 8760), so
-	// RecurringMonthlyCost must equal CommitmentPrice / 12 (one year = 12 months).
 	const onDemandHourly = 0.20
 	const commitmentHourly = 0.136986301 // Catalog precision gives a 1yr total within 0.00001 of 1200.
-	mockBilling := &MockBillingService{
-		skus: &cloudbilling.ListSkusResponse{
-			Skus: []*cloudbilling.Sku{
-				{
-					Description:    "db-n1-standard-1 Cloud SQL",
-					Category:       &cloudbilling.Category{UsageType: "OnDemand"},
-					ServiceRegions: []string{"us-central1"},
-					PricingInfo: []*cloudbilling.PricingInfo{
-						{
-							PricingExpression: &cloudbilling.PricingExpression{
-								TieredRates: []*cloudbilling.TierRate{
-									{
-										UnitPrice: &cloudbilling.Money{
-											Units:        0,
-											Nanos:        int64(onDemandHourly * 1e9),
-											CurrencyCode: "EUR",
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-				{
-					// Commitment SKU required by getSQLPricing: without a
-					// "commitment" SKU it errors and RecurringMonthlyCost stays nil.
-					Description:    "db-n1-standard-1 Cloud SQL commitment 1yr",
-					Category:       &cloudbilling.Category{UsageType: "Commit1Yr"},
-					ServiceRegions: []string{"us-central1"},
-					PricingInfo: []*cloudbilling.PricingInfo{
-						{
-							PricingExpression: &cloudbilling.PricingExpression{
-								TieredRates: []*cloudbilling.TierRate{
-									{
-										UnitPrice: &cloudbilling.Money{
-											Units:        0,
-											Nanos:        int64(commitmentHourly * 1e9),
-											CurrencyCode: "EUR",
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	client.SetBillingService(mockBilling)
+	client.SetBillingService(&MockBillingService{skus: &cloudbilling.ListSkusResponse{Skus: []*cloudbilling.Sku{
+		currencySKU("od", "db-n1-standard-1 Cloud SQL", "OnDemand", region, "EUR", int64(onDemandHourly*1e9)),
+		currencySKU("cud", "db-n1-standard-1 Cloud SQL commitment 1yr", "Commit1Yr", region, "EUR", int64(commitmentHourly*1e9)),
+	}}})
 
-	gcpRec := &recommenderpb.Recommendation{
-		Name: "test-rec",
-		PrimaryImpact: &recommenderpb.Impact{
-			Category: recommenderpb.Impact_COST,
-			Projection: &recommenderpb.Impact_CostProjection{
-				CostProjection: &recommenderpb.CostProjection{
-					Cost: &money.Money{Units: -100, CurrencyCode: "JPY"},
-				},
-			},
-		},
-		Content: &recommenderpb.RecommendationContent{
-			OperationGroups: []*recommenderpb.OperationGroup{
-				{
-					Operations: []*recommenderpb.Operation{
-						{Resource: "projects/test/instances/db-n1-standard-1"},
-					},
-				},
-			},
-		},
-	}
-
-	for _, term := range []string{"1yr", "3yr"} {
-		for _, payment := range []string{"", "monthly", "no-upfront"} {
+	for term, months := range map[string]float64{"1yr": 12, "3yr": 36} {
+		for _, payment := range []string{"monthly", "no-upfront"} {
 			t.Run(term+"/"+payment, func(t *testing.T) {
-				rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{Term: term, PaymentOption: payment})
-				rec.Count = 3
-				rec.AccountName = "fixture"
-				assert.Equal(t, "EUR", rec.CommitmentCurrency)
-				assert.Equal(t, float64(100), rec.EstimatedSavings)
-				require.NotNil(t, rec.RecurringMonthlyCost)
-				assert.Zero(t, rec.CommitmentCost)
-				assert.InDelta(t, 100, *rec.RecurringMonthlyCost, 0.00001)
-				months := float64(termYearsFromLabel(term) * 12)
-				assert.InDelta(t, 1200*months/12, rec.CommitmentCost+*rec.RecurringMonthlyCost*months, 0.0001)
-				monthsToRecover, known := common.BreakEven(*rec)
-				assert.True(t, known)
-				assert.Zero(t, monthsToRecover)
-				result := scorer.Score([]common.Recommendation{*rec}, scorer.Config{MaxBreakEvenMonths: 1})
-				require.Len(t, result.Passed, 1)
-				assert.Contains(t, reporter.RenderSummary(result), "upfront commitment $0.00")
-				row := strings.Fields(strings.Split(reporter.RenderTable(result), "\n")[2])
-				assert.Equal(t, "$0.00", row[7])
-				scaled, err := common.ResizeCount(*rec, 2)
+				rec := common.Recommendation{ResourceType: "db-n1-standard-1", Region: region, Term: term, PaymentOption: payment}
+				quote, err := client.GetOfferingDetails(ctx, rec)
 				require.NoError(t, err)
-				assert.Equal(t, 2, scaled.Count)
-				assert.Equal(t, "EUR", scaled.CommitmentCurrency)
-				assert.InDelta(t, 800*months/12, scaled.CommitmentCost+*scaled.RecurringMonthlyCost*months, 0.0001)
-				assert.InDelta(t, 100, *rec.RecurringMonthlyCost, 0.00001)
-				quote, err := client.GetOfferingDetails(ctx, *rec)
-				require.NoError(t, err)
+				assert.Equal(t, "EUR", quote.Currency)
 				assert.InDelta(t, 1200*months/12, quote.TotalCost, 0.0001)
 				assert.Zero(t, quote.UpfrontCost)
 				assert.InDelta(t, 100, quote.RecurringCost, 0.00001)
 			})
 		}
-	}
-	t.Run("negative catalog price", func(t *testing.T) {
-		mockBilling.skus.Skus[1].PricingInfo[0].PricingExpression.TieredRates[0].UnitPrice.Nanos = -1
-		rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
-		assert.Zero(t, rec.CommitmentCost)
-		assert.Zero(t, rec.BreakEvenMonths)
-		assert.Nil(t, rec.RecurringMonthlyCost)
-		assert.Empty(t, rec.CommitmentCurrency)
-	})
-}
-
-func TestCloudSQLClient_ConvertGCPRecommendation_RecurringMonthlyCost_BillingFailure(t *testing.T) {
-	ctx := context.Background()
-
-	gcpRec := &recommenderpb.Recommendation{
-		Name: "test-rec",
-		Content: &recommenderpb.RecommendationContent{
-			OperationGroups: []*recommenderpb.OperationGroup{
-				{Operations: []*recommenderpb.Operation{{Resource: "projects/test/instances/db-n1-standard-1"}}},
-			},
-		},
-	}
-
-	for name, billing := range map[string]*MockBillingService{
-		"API error":       {err: errors.New("billing unavailable")},
-		"empty catalog":   {skus: &cloudbilling.ListSkusResponse{}},
-		"missing CUD SKU": {skus: &cloudbilling.ListSkusResponse{Skus: sqlMockSkus("db-n1-standard-1", "us-central1")[:1]}},
-	} {
-		t.Run(name, func(t *testing.T) {
-			client, err := NewClient(ctx, "test-project", "us-central1")
-			require.NoError(t, err)
-			client.SetBillingService(billing)
-			rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
-			assert.Zero(t, rec.CommitmentCost)
-			assert.Zero(t, rec.BreakEvenMonths)
-			assert.Nil(t, rec.RecurringMonthlyCost)
-			assert.Empty(t, rec.CommitmentCurrency)
-		})
 	}
 }
 
@@ -1047,4 +728,48 @@ func TestExtractSQLPricingFromSKUs_IgnoresLargerTierAndRegionlessSKUs(t *testing
 	onDemand, _, _, err := extractSQLPricingFromSKUs(skus, "db-n1-standard-1", "europe-west4")
 	require.NoError(t, err)
 	assert.Equal(t, 1.0, onDemand)
+}
+
+// performanceRecommender records ListRecommendations calls and answers with an
+// ACTIVE cost-saving recommendation, the PerformanceRecommender shape that was
+// relabeled as a 1yr CUD before issue #294.
+type performanceRecommender struct{ lists int }
+
+func (r *performanceRecommender) ListRecommendations(_ context.Context, _ *recommenderpb.ListRecommendationsRequest) RecommenderIterator {
+	r.lists++
+	return &MockRecommenderIterator{recommendations: []*recommenderpb.Recommendation{{
+		Name:      "projects/test-project/locations/us-central1/recommenders/google.cloudsql.instance.PerformanceRecommender/recommendations/r1",
+		StateInfo: &recommenderpb.RecommendationStateInfo{State: recommenderpb.RecommendationStateInfo_ACTIVE},
+		PrimaryImpact: &recommenderpb.Impact{
+			Category: recommenderpb.Impact_COST,
+			Projection: &recommenderpb.Impact_CostProjection{CostProjection: &recommenderpb.CostProjection{
+				Cost: &money.Money{CurrencyCode: "USD", Units: -100},
+			}},
+		},
+		Content: &recommenderpb.RecommendationContent{OperationGroups: []*recommenderpb.OperationGroup{{
+			Operations: []*recommenderpb.Operation{{Resource: "projects/test-project/instances/db-n1-standard-1"}},
+		}}},
+	}}}
+}
+
+func (r *performanceRecommender) Close() error { return nil }
+
+// TestCloudSQLClient_GetRecommendations_NotSupported is the issue #294 regression
+// test: Cloud SQL CUDs are spend-based and recommended only at billing-account
+// scope, so the client must not query the project PerformanceRecommender or
+// relabel its per-instance advice as a CUD. It fails loud instead of returning
+// an empty list that would read as "nothing to buy".
+func TestCloudSQLClient_GetRecommendations_NotSupported(t *testing.T) {
+	ctx := context.Background()
+	client, err := NewClient(ctx, "test-project", "us-central1")
+	require.NoError(t, err)
+	recommender := &performanceRecommender{}
+	client.SetRecommenderClient(recommender)
+
+	recs, err := client.GetRecommendations(ctx, &common.RecommendationParams{})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, common.ErrCommitmentPurchaseNotSupported)
+	assert.Nil(t, recs)
+	assert.Zero(t, recommender.lists, "the PerformanceRecommender must not be queried")
 }

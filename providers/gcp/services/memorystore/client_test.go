@@ -3,7 +3,6 @@ package memorystore
 import (
 	"context"
 	"errors"
-	"strings"
 	"testing"
 
 	"cloud.google.com/go/recommender/apiv1/recommenderpb"
@@ -16,8 +15,6 @@ import (
 	"google.golang.org/genproto/googleapis/type/money"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
-	"github.com/LeanerCloud/cloud-commitments-go/pkg/reporter"
-	"github.com/LeanerCloud/cloud-commitments-go/pkg/scorer"
 )
 
 // Mock implementations
@@ -89,22 +86,6 @@ func (m *MockBillingService) ListSKUs(serviceID string) (*cloudbilling.ListSkusR
 		return nil, m.err
 	}
 	return m.skus, nil
-}
-
-// MockRecommenderClient implements RecommenderClient for testing.
-type MockRecommenderClient struct {
-	recommendations []*recommenderpb.Recommendation
-	err             error
-	closeCalled     bool
-}
-
-func (m *MockRecommenderClient) ListRecommendations(ctx context.Context, req *recommenderpb.ListRecommendationsRequest) RecommenderIterator {
-	return &MockRecommenderIterator{recommendations: m.recommendations, err: m.err}
-}
-
-func (m *MockRecommenderClient) Close() error {
-	m.closeCalled = true
-	return nil
 }
 
 // MockRecommenderIterator implements RecommenderIterator for testing.
@@ -554,165 +535,6 @@ func TestMemorystoreClient_GetOfferingDetails_WithMockService(t *testing.T) {
 	}
 }
 
-func TestMemorystoreClient_GetRecommendations_WithMockClient(t *testing.T) {
-	tests := []struct {
-		name            string
-		recommendations []*recommenderpb.Recommendation
-		err             error
-		wantLen         int
-		wantErr         bool
-	}{
-		{
-			name: "returns recommendations successfully",
-			recommendations: []*recommenderpb.Recommendation{
-				{
-					Name:      "projects/test/locations/us-central1/recommenders/google.memorystore.redis.PerformanceRecommender/recommendations/rec-1",
-					StateInfo: &recommenderpb.RecommendationStateInfo{State: recommenderpb.RecommendationStateInfo_ACTIVE},
-					Content: &recommenderpb.RecommendationContent{
-						OperationGroups: []*recommenderpb.OperationGroup{
-							{
-								Operations: []*recommenderpb.Operation{
-									{
-										Resource: "projects/test/locations/us-central1/instances/redis-1",
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-			wantLen: 1,
-			wantErr: false,
-		},
-		{
-			name:            "returns empty when no recommendations",
-			recommendations: []*recommenderpb.Recommendation{},
-			wantLen:         0,
-			wantErr:         false,
-		},
-		{
-			name:    "propagates iterator errors (no silent swallow)",
-			err:     errors.New("iterator error"),
-			wantLen: 0,
-			wantErr: true, // Partial-list risk — errors must surface.
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx := context.Background()
-			client, _ := NewClient(ctx, "test-project", "us-central1")
-			client.SetBillingService(&MockBillingService{err: errors.New("catalog not under test")})
-
-			mockClient := &MockRecommenderClient{
-				recommendations: tt.recommendations,
-				err:             tt.err,
-			}
-			client.SetRecommenderClient(mockClient)
-
-			recs, err := client.GetRecommendations(ctx, &common.RecommendationParams{})
-
-			if tt.wantErr {
-				require.Error(t, err)
-			} else {
-				require.NoError(t, err)
-				assert.Len(t, recs, tt.wantLen)
-
-				for _, r := range recs {
-					assert.Equal(t, common.ProviderGCP, r.Provider)
-					assert.Equal(t, common.ServiceCache, r.Service)
-					assert.Equal(t, "test-project", r.Account)
-					assert.Equal(t, "us-central1", r.Region)
-				}
-			}
-
-			assert.True(t, mockClient.closeCalled)
-		})
-	}
-}
-
-func TestMemorystoreClient_ConvertGCPRecommendation(t *testing.T) {
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-	client.SetBillingService(&MockBillingService{err: errors.New("catalog not under test")})
-
-	tests := []struct {
-		name         string
-		rec          *recommenderpb.Recommendation
-		wantResource string
-		wantSavings  float64
-	}{
-		{
-			name: "basic recommendation conversion",
-			rec: &recommenderpb.Recommendation{
-				Name: "rec-1",
-				Content: &recommenderpb.RecommendationContent{
-					OperationGroups: []*recommenderpb.OperationGroup{
-						{
-							Operations: []*recommenderpb.Operation{
-								{
-									Resource: "projects/test/instances/redis-1",
-								},
-							},
-						},
-					},
-				},
-			},
-			wantResource: "redis-1",
-		},
-		{
-			name: "recommendation with nil content",
-			rec: &recommenderpb.Recommendation{
-				Name: "rec-2",
-			},
-			wantResource: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := client.convertGCPRecommendation(ctx, tt.rec, common.RecommendationParams{})
-
-			require.NotNil(t, result)
-			assert.Equal(t, common.ProviderGCP, result.Provider)
-			assert.Equal(t, common.ServiceCache, result.Service)
-			assert.Equal(t, "test-project", result.Account)
-			assert.Equal(t, "us-central1", result.Region)
-			assert.Equal(t, common.CommitmentCUD, result.CommitmentType)
-			assert.Equal(t, tt.wantResource, result.ResourceType)
-		})
-	}
-}
-
-// TestConvertGCPRecommendation_PropagatesTermFromParams is a regression test for
-// the finding that convertGCPRecommendation hardcoded rec.Term = "1yr",
-// ignoring params.Term. A caller requesting "3yr" must get "3yr" in the output.
-//
-// This test FAILS on the pre-fix code that always set Term = "1yr".
-func TestConvertGCPRecommendation_PropagatesTermFromParams(t *testing.T) {
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	gcpRec := &recommenderpb.Recommendation{Name: "test-rec"}
-
-	tests := []struct {
-		inputTerm string
-		wantTerm  string
-	}{
-		{"3yr", "3yr"},
-		{"1yr", "1yr"},
-		{"", "1yr"}, // empty defaults to "1yr"
-	}
-
-	for _, tt := range tests {
-		params := common.RecommendationParams{Term: tt.inputTerm}
-		rec := client.convertGCPRecommendation(ctx, gcpRec, params)
-		require.NotNil(t, rec)
-		assert.Equal(t, tt.wantTerm, rec.Term,
-			"params.Term %q must produce rec.Term %q", tt.inputTerm, tt.wantTerm)
-	}
-}
-
 // TestGetRedisPricing_CommitmentPriceIsTermTotal is a regression test for the
 // unit-mismatch bug where commitmentPrice (per-hour from SKU) was passed
 // directly to calculateSavingsPercentage which expects a term total, producing
@@ -808,161 +630,78 @@ func TestMemorystoreClient_SetterMethods(t *testing.T) {
 	mockBilling := &MockBillingService{}
 	client.SetBillingService(mockBilling)
 	assert.Equal(t, mockBilling, client.billingService)
-
-	// Test SetRecommenderClient
-	mockRecommender := &MockRecommenderClient{}
-	client.SetRecommenderClient(mockRecommender)
-	assert.Equal(t, mockRecommender, client.recommenderClient)
 }
 
-func TestMemorystoreClient_ConvertGCPRecommendation_RecurringMonthlyCost(t *testing.T) {
+// TestMemorystoreClient_GetOfferingDetails_RecurringMonthlyCost pins the monthly CUD
+// quote derived from the catalog, in the catalog currency, for every term and
+// payment option.
+func TestMemorystoreClient_GetOfferingDetails_RecurringMonthlyCost(t *testing.T) {
+	const region = "europe-west1"
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient(ctx, "test-project", region)
 
-	// Inject a billing mock with a known on-demand hourly price and a separate
-	// commitment SKU. getRedisPricing derives CommitmentPrice from the
-	// "commitment" SKU (CommitmentPrice = commitmentHourly * 8760), so
-	// RecurringMonthlyCost must equal CommitmentPrice / 12 (one year = 12 months).
 	const onDemandHourly = 0.20
 	const commitmentHourly = 0.136986301 // Catalog precision gives a 1yr total within 0.00001 of 1200.
-	mockBilling := &MockBillingService{
-		skus: &cloudbilling.ListSkusResponse{
-			Skus: []*cloudbilling.Sku{
-				{
-					Description:    "redis-basic Cloud Memorystore Redis",
-					Category:       &cloudbilling.Category{UsageType: "OnDemand"},
-					ServiceRegions: []string{"us-central1"},
-					PricingInfo: []*cloudbilling.PricingInfo{
-						{
-							PricingExpression: &cloudbilling.PricingExpression{
-								TieredRates: []*cloudbilling.TierRate{
-									{
-										UnitPrice: &cloudbilling.Money{
-											Units:        0,
-											Nanos:        int64(onDemandHourly * 1e9),
-											CurrencyCode: "EUR",
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-				{
-					// Commitment SKU required by getRedisPricing: without a
-					// "commitment" SKU it errors and RecurringMonthlyCost stays nil.
-					Description:    "redis-basic Cloud Memorystore Redis commitment 1yr",
-					Category:       &cloudbilling.Category{UsageType: "Commit1Yr"},
-					ServiceRegions: []string{"us-central1"},
-					PricingInfo: []*cloudbilling.PricingInfo{
-						{
-							PricingExpression: &cloudbilling.PricingExpression{
-								TieredRates: []*cloudbilling.TierRate{
-									{
-										UnitPrice: &cloudbilling.Money{
-											Units:        0,
-											Nanos:        int64(commitmentHourly * 1e9),
-											CurrencyCode: "EUR",
-										},
-									},
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	client.SetBillingService(mockBilling)
+	client.SetBillingService(&MockBillingService{skus: &cloudbilling.ListSkusResponse{Skus: []*cloudbilling.Sku{
+		currencySKU("od", "redis-basic Cloud Memorystore Redis", "OnDemand", region, "EUR", int64(onDemandHourly*1e9)),
+		currencySKU("cud", "redis-basic Cloud Memorystore Redis commitment 1yr", "Commit1Yr", region, "EUR", int64(commitmentHourly*1e9)),
+	}}})
 
-	gcpRec := &recommenderpb.Recommendation{
-		Name: "test-rec",
-		PrimaryImpact: &recommenderpb.Impact{
-			Projection: &recommenderpb.Impact_CostProjection{
-				CostProjection: &recommenderpb.CostProjection{Cost: &money.Money{Units: -100, CurrencyCode: "JPY"}},
-			},
-		},
-		Content: &recommenderpb.RecommendationContent{
-			OperationGroups: []*recommenderpb.OperationGroup{
-				{
-					Operations: []*recommenderpb.Operation{
-						{Resource: "projects/test/instances/redis-basic"},
-					},
-				},
-			},
-		},
-	}
-
-	for _, term := range []string{"1yr", "3yr"} {
-		for _, payment := range []string{"", "monthly", "no-upfront"} {
+	for term, months := range map[string]float64{"1yr": 12, "3yr": 36} {
+		for _, payment := range []string{"monthly", "no-upfront"} {
 			t.Run(term+"/"+payment, func(t *testing.T) {
-				rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{Term: term, PaymentOption: payment})
-				rec.Count = 3
-				rec.AccountName = "fixture"
-				assert.Equal(t, "EUR", rec.CommitmentCurrency)
-				assert.Equal(t, float64(100), rec.EstimatedSavings)
-				require.NotNil(t, rec.RecurringMonthlyCost)
-				assert.Zero(t, rec.CommitmentCost)
-				assert.InDelta(t, 100, *rec.RecurringMonthlyCost, 0.00001)
-				months := float64(termYearsFromLabel(term) * 12)
-				assert.InDelta(t, 1200*months/12, rec.CommitmentCost+*rec.RecurringMonthlyCost*months, 0.0001)
-				monthsToRecover, known := common.BreakEven(*rec)
-				assert.True(t, known)
-				assert.Zero(t, monthsToRecover)
-				result := scorer.Score([]common.Recommendation{*rec}, scorer.Config{MaxBreakEvenMonths: 1})
-				require.Len(t, result.Passed, 1)
-				assert.Contains(t, reporter.RenderSummary(result), "upfront commitment $0.00")
-				row := strings.Fields(strings.Split(reporter.RenderTable(result), "\n")[2])
-				assert.Equal(t, "$0.00", row[7])
-				scaled, err := common.ResizeCount(*rec, 2)
+				rec := common.Recommendation{ResourceType: "redis-basic", Region: region, Term: term, PaymentOption: payment}
+				quote, err := client.GetOfferingDetails(ctx, rec)
 				require.NoError(t, err)
-				assert.Equal(t, 2, scaled.Count)
-				assert.Equal(t, "EUR", scaled.CommitmentCurrency)
-				assert.InDelta(t, 800*months/12, scaled.CommitmentCost+*scaled.RecurringMonthlyCost*months, 0.0001)
-				assert.InDelta(t, 100, *rec.RecurringMonthlyCost, 0.00001)
-				quote, err := client.GetOfferingDetails(ctx, *rec)
-				require.NoError(t, err)
+				assert.Equal(t, "EUR", quote.Currency)
 				assert.InDelta(t, 1200*months/12, quote.TotalCost, 0.0001)
 				assert.Zero(t, quote.UpfrontCost)
 				assert.InDelta(t, 100, quote.RecurringCost, 0.00001)
 			})
 		}
 	}
-	t.Run("negative catalog price", func(t *testing.T) {
-		mockBilling.skus.Skus[1].PricingInfo[0].PricingExpression.TieredRates[0].UnitPrice.Nanos = -1
-		rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
-		assert.Zero(t, rec.CommitmentCost)
-		assert.Zero(t, rec.BreakEvenMonths)
-		assert.Nil(t, rec.RecurringMonthlyCost)
-		assert.Empty(t, rec.CommitmentCurrency)
-	})
 }
 
-func TestMemorystoreClient_ConvertGCPRecommendation_RecurringMonthlyCost_BillingFailure(t *testing.T) {
-	ctx := context.Background()
+// performanceRecommender records ListRecommendations calls and answers with an
+// ACTIVE cost-saving recommendation, the PerformanceRecommender shape that was
+// relabeled as a 1yr CUD before issue #294.
+type performanceRecommender struct{ lists int }
 
-	gcpRec := &recommenderpb.Recommendation{
-		Name: "test-rec",
-		Content: &recommenderpb.RecommendationContent{
-			OperationGroups: []*recommenderpb.OperationGroup{
-				{Operations: []*recommenderpb.Operation{{Resource: "projects/test/instances/redis-basic"}}},
-			},
+func (r *performanceRecommender) ListRecommendations(_ context.Context, _ *recommenderpb.ListRecommendationsRequest) RecommenderIterator {
+	r.lists++
+	return &MockRecommenderIterator{recommendations: []*recommenderpb.Recommendation{{
+		Name:      "projects/test-project/locations/us-central1/recommenders/google.memorystore.redis.PerformanceRecommender/recommendations/r1",
+		StateInfo: &recommenderpb.RecommendationStateInfo{State: recommenderpb.RecommendationStateInfo_ACTIVE},
+		PrimaryImpact: &recommenderpb.Impact{
+			Category: recommenderpb.Impact_COST,
+			Projection: &recommenderpb.Impact_CostProjection{CostProjection: &recommenderpb.CostProjection{
+				Cost: &money.Money{CurrencyCode: "USD", Units: -100},
+			}},
 		},
-	}
+		Content: &recommenderpb.RecommendationContent{OperationGroups: []*recommenderpb.OperationGroup{{
+			Operations: []*recommenderpb.Operation{{Resource: "projects/test-project/locations/us-central1/instances/BASIC"}},
+		}}},
+	}}}
+}
 
-	for name, billing := range map[string]*MockBillingService{
-		"API error":     {err: errors.New("billing unavailable")},
-		"empty catalog": {skus: &cloudbilling.ListSkusResponse{}},
-	} {
-		t.Run(name, func(t *testing.T) {
-			client, err := NewClient(ctx, "test-project", "us-central1")
-			require.NoError(t, err)
-			client.SetBillingService(billing)
-			rec := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
-			assert.Zero(t, rec.CommitmentCost)
-			assert.Zero(t, rec.BreakEvenMonths)
-			assert.Nil(t, rec.RecurringMonthlyCost)
-			assert.Empty(t, rec.CommitmentCurrency)
-		})
-	}
+func (r *performanceRecommender) Close() error { return nil }
+
+// TestMemorystoreClient_GetRecommendations_NotSupported is the issue #294 regression
+// test: Memorystore CUDs are spend-based and recommended only at billing-account
+// scope, so the client must not query the project PerformanceRecommender or
+// relabel its per-instance advice as a CUD. It fails loud instead of returning
+// an empty list that would read as "nothing to buy".
+func TestMemorystoreClient_GetRecommendations_NotSupported(t *testing.T) {
+	ctx := context.Background()
+	client, err := NewClient(ctx, "test-project", "us-central1")
+	require.NoError(t, err)
+	recommender := &performanceRecommender{}
+	client.SetRecommenderClient(recommender)
+
+	recs, err := client.GetRecommendations(ctx, &common.RecommendationParams{})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, common.ErrCommitmentPurchaseNotSupported)
+	assert.Nil(t, recs)
+	assert.Zero(t, recommender.lists, "the PerformanceRecommender must not be queried")
 }

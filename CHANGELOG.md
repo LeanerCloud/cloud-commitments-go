@@ -117,6 +117,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **BREAKING `gcp`: Cloud SQL and Memorystore no longer return CUD
+  recommendations (#294).** They came from the project-scoped
+  `PerformanceRecommender`s, which give per-instance tuning advice, and were
+  relabeled as 1yr CUDs with made-up or zero savings. Cloud SQL and
+  Memorystore CUDs are spend-based, and Google recommends them only at Cloud
+  Billing account scope (see `docs/design/gcp-spend-commitments.md`).
+  `GetSupportedServices` now returns only `ServiceCompute`, the default
+  recommendation fan-out queries only the Compute Engine commitment
+  recommender, and an explicit Cloud SQL or Memorystore request returns an
+  error wrapping `common.ErrCommitmentPurchaseNotSupported` without calling
+  the Recommender API. `SetRecommenderClient` on both clients is now a
+  deprecated no-op. Pricing (`GetOfferingDetails`, `ValidateOffering`) is
+  unchanged.
+
 - **BREAKING `ladder.Allocate` converts the on-demand-equivalent gap to
   commitment dollars (go#349).** Tranches were bought 1:1 against an
   on-demand-priced gap, over-buying by 1/rate (a 30% discount bought 43% too

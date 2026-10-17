@@ -460,11 +460,13 @@ func convertGCPRegion(region *computepb.Region) *common.Region {
 
 // GetSupportedServices returns the GCP services that have commitment
 // recommendations. Cloud Storage is excluded: it has no commitment product.
+// Cloud SQL and Memorystore are excluded too: their CUDs are spend-based and
+// recommended only at Cloud Billing account scope, which this project-scoped
+// provider does not collect yet (issue #294). GetServiceClient still builds
+// their clients for pricing and validation.
 func (p *Provider) GetSupportedServices() []common.ServiceType {
 	return []common.ServiceType{
 		common.ServiceCompute,
-		common.ServiceRelationalDB,
-		common.ServiceCache,
 	}
 }
 

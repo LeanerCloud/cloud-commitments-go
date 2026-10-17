@@ -7,8 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/cloudbilling/v1"
-
-	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 func currencySKU(id, description, usageType, region, currency string, nanos int64) *cloudbilling.Sku {
@@ -53,19 +51,13 @@ func TestGetRedisPricing_Currency(t *testing.T) {
 			}}})
 
 			got, err := client.getRedisPricing(ctx, tier, region, 1)
-			rec := common.Recommendation{ResourceType: tier, Term: "1yr"}
-			client.fillRedisPricing(ctx, &rec, 1)
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)
-				assert.Empty(t, rec.CommitmentCurrency)
-				assert.Nil(t, rec.RecurringMonthlyCost)
 				return
 			}
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantCurrency, got.Currency)
-			assert.Equal(t, tt.wantCurrency, rec.CommitmentCurrency)
-			require.NotNil(t, rec.RecurringMonthlyCost)
 		})
 	}
 }
