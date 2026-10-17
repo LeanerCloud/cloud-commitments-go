@@ -12,6 +12,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
 	azrecs "github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/recommendations"
@@ -213,10 +214,13 @@ func NewMultiSubscriptionRecommendationsClient(cred azcore.TokenCredential, acco
 // each per-subscription goroutine captures its own error and returns nil to
 // the group, so one subscription failing (e.g. the principal lost Reader
 // access mid-run, or a subscription-specific throttle) never cancels
-// sibling subscriptions. The semaphore that bounds aggregate concurrent ARM
-// calls is acquired inside each per-subscription client's own
-// GetRecommendations (around the outbound API calls, not around this
-// fan-out), so no additional semaphore is needed at this layer.
+// sibling subscriptions. The number of subscriptions in flight is capped with
+// g.SetLimit(concurrency.MaxParallelismFromEnv()) so a tenant with many
+// subscriptions cannot fan out unbounded. This is an errgroup limit, not a
+// second semaphore: the shared semaphore that bounds aggregate concurrent ARM
+// calls is acquired only inside each per-subscription client's leaf calls
+// (never held while waiting on this fan-out), so the two bounds cannot
+// deadlock against each other.
 //
 // After g.Wait(), ctx.Err() is checked explicitly: g.Wait() only reports
 // errors returned to the group, and every goroutine here returns nil, so a
@@ -253,6 +257,7 @@ func (m *MultiSubscriptionRecommendationsClient) GetRecommendations(ctx context.
 	errs := make([]error, len(targets))
 
 	g, gctx := errgroup.WithContext(ctx)
+	g.SetLimit(concurrency.MaxParallelismFromEnv())
 	for i, sub := range targets {
 		i, sub := i, sub
 		g.Go(func() error {
