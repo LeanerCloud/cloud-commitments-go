@@ -260,6 +260,7 @@ func TestReshapeBuffer_PartialFailure_SummaryPlusError(t *testing.T) {
 	assert.Contains(t, err.Error(), "1 of 2 exchange attempt(s) failed",
 		"denominator must be completed+failed attempts, not Analyzed")
 	assert.Contains(t, err.Error(), "ri-bad")
+	assert.NotContains(t, err.Error(), "unknown outcome", "suffix only when K > 0")
 
 	// The summary is still populated for audit alongside the error.
 	assert.Equal(t, 3, summary.Analyzed)
@@ -309,4 +310,26 @@ func TestReshapeBuffer_WrongScope_ReturnsError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "does not match configured account")
 	assert.Equal(t, 0, ex.calls)
+}
+
+func TestReshapeBuffer_UnknownOutcome_RenderedAsUnknownNotFailed(t *testing.T) {
+	ex := &fakeExchangeRunner{result: &exchange.AutoExchangeResult{
+		Mode: string(exchange.ExchangeModeAuto),
+		Failed: []exchange.ExchangeOutcome{
+			{SourceRIID: "ri-unk", SourceInstanceType: "c5.large", TargetInstanceType: "c5.xlarge", Error: "accept timed out", OutcomeUnknown: true},
+			{SourceRIID: "ri-bad", SourceInstanceType: "m5.large", TargetInstanceType: "m5.xlarge", Error: "rejected"},
+		},
+	}}
+	a := newWiredLadder(t, &fakePurchaser{}, &fakePurchaser{}, ex)
+
+	summary, err := a.ReshapeBuffer(context.Background(), testScope(), validReshapeCfg())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "2 of 2 exchange attempt(s) failed (first: ri-unk: accept timed out)")
+	assert.Contains(t, err.Error(), "; 1 with unknown outcome")
+
+	require.Len(t, summary.Details, 2)
+	assert.Contains(t, summary.Details[0], "outcome unknown, reconcile before retrying: ri-unk")
+	assert.NotContains(t, summary.Details[0], "failed:")
+	assert.Contains(t, summary.Details[1], "failed: ri-bad")
+	assert.NotContains(t, summary.Details[1], "outcome unknown")
 }

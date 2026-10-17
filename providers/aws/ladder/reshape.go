@@ -165,6 +165,7 @@ func summarizeExchangeResult(result *exchange.AutoExchangeResult) (ladder.Reshap
 			len(result.Completed)+len(result.Pending)+len(result.Failed)+len(result.Skipped)),
 	}
 
+	unknown := 0
 	for i := range result.Completed {
 		o := &result.Completed[i]
 		summary.Details = append(summary.Details, fmt.Sprintf(
@@ -179,9 +180,14 @@ func summarizeExchangeResult(result *exchange.AutoExchangeResult) (ladder.Reshap
 	}
 	for i := range result.Failed {
 		o := &result.Failed[i]
+		label := "failed"
+		if o.OutcomeUnknown {
+			unknown++
+			label = "outcome unknown, reconcile before retrying"
+		}
 		summary.Details = append(summary.Details, fmt.Sprintf(
-			"failed: %s (%s) -> %s: %s",
-			o.SourceRIID, o.SourceInstanceType, o.TargetInstanceType, o.Error))
+			"%s: %s (%s) -> %s: %s",
+			label, o.SourceRIID, o.SourceInstanceType, o.TargetInstanceType, o.Error))
 	}
 	for i := range result.Skipped {
 		s := &result.Skipped[i]
@@ -194,9 +200,13 @@ func summarizeExchangeResult(result *exchange.AutoExchangeResult) (ladder.Reshap
 		// summary.Analyzed: pending and skipped items were never attempted,
 		// and an inflated denominator would misread during an incident.
 		attempts := len(result.Completed) + len(result.Failed)
+		suffix := ""
+		if unknown > 0 {
+			suffix = fmt.Sprintf("; %d with unknown outcome", unknown)
+		}
 		return summary, fmt.Errorf(
-			"ReshapeBuffer: %d of %d exchange attempt(s) failed (first: %s: %s); see summary details for the full list",
-			len(result.Failed), attempts, result.Failed[0].SourceRIID, result.Failed[0].Error)
+			"ReshapeBuffer: %d of %d exchange attempt(s) failed (first: %s: %s)%s; see summary details for the full list",
+			len(result.Failed), attempts, result.Failed[0].SourceRIID, result.Failed[0].Error, suffix)
 	}
 	return summary, nil
 }
