@@ -80,9 +80,12 @@ func TestRootCUDUnsupportedShapesAndAmounts(t *testing.T) {
 			op := input.Content.OperationGroups[0].Operations[0]
 			fields := op.GetValue().GetStructValue().Fields
 			list := fields["resources"].GetListValue()
-			badAmount := false
+			skipRow := false
 			switch name {
 			case "root":
+				// A non-object root Value is a malformed plan: skipped like a
+				// bad amount, so the batch keeps its later valid rows.
+				skipRow = true
 				op.PathValue = &recommenderpb.Operation_Value{Value: structpb.NewNullValue()}
 			case "resources":
 				fields["resources"] = structpb.NewStringValue("bad")
@@ -97,7 +100,7 @@ func TestRootCUDUnsupportedShapesAndAmounts(t *testing.T) {
 			case "UNKNOWN", "ACCELERATOR", "LOCAL_SSD":
 				list.Values[0].GetStructValue().Fields["type"] = structpb.NewStringValue(name)
 			default:
-				badAmount = true
+				skipRow = true
 				list.Values[0].GetStructValue().Fields["amount"] = map[string]*structpb.Value{"bad amount": structpb.NewStringValue("6Gi"), "fractional": structpb.NewNumberValue(1.5), "zero": structpb.NewNumberValue(0), "overflow": structpb.NewStringValue("9223372036854775808"), "null amount": structpb.NewNullValue()}[name]
 			}
 			ctx := context.Background()
@@ -107,7 +110,7 @@ func TestRootCUDUnsupportedShapesAndAmounts(t *testing.T) {
 			client.SetCommitmentsService(service)
 			client.SetRecommenderClient(&MockRecommenderClient{iterator: &MockRecommenderIterator{recommendations: []*recommenderpb.Recommendation{input}}})
 			recs, err := client.GetRecommendations(ctx, &common.RecommendationParams{})
-			if badAmount {
+			if skipRow {
 				require.NoError(t, err)
 			} else {
 				require.Error(t, err)
