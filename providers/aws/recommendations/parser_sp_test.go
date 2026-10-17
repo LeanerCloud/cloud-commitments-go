@@ -394,13 +394,17 @@ func TestParseSavingsPlanDetail_MoneyFieldUnparseable(t *testing.T) {
 // nil error, so parseOptionalFloat must reject them explicitly. It also rejects
 // negative values (invalid for the non-negative financial metrics it parses).
 func TestParseOptionalFloat_RejectsNonFinite(t *testing.T) {
-	for _, s := range []string{"NaN", "Inf", "+Inf", "-Inf", "Infinity", "-Infinity", "-5", "-0.01"} {
-		t.Run(s, func(t *testing.T) {
+	for _, s := range []string{"NaN", "Inf", "+Inf", "-Inf", "Infinity", "-Infinity", "-5", "-0.01", "", "abc", "1,5"} {
+		t.Run("bad_"+s, func(t *testing.T) {
 			v, err := parseOptionalFloat("TestField", aws.String(s))
 			require.Error(t, err, "invalid value %q must be rejected", s)
 			assert.Zero(t, v)
 		})
 	}
+	// A field CE omits (nil) is the only absent case that yields 0 without error.
+	nilV, nilErr := parseOptionalFloat("TestField", nil)
+	require.NoError(t, nilErr)
+	assert.Zero(t, nilV)
 	// Sanity: a normal finite value still parses; zero is valid.
 	v, err := parseOptionalFloat("TestField", aws.String("12.5"))
 	require.NoError(t, err)
@@ -408,16 +412,6 @@ func TestParseOptionalFloat_RejectsNonFinite(t *testing.T) {
 	z, err := parseOptionalFloat("TestField", aws.String("0"))
 	require.NoError(t, err)
 	assert.Zero(t, z)
-}
-
-// TestUtilizationParseFloat_DegradesNonFinite guards the warn-and-zero
-// utilization parser: NaN/Inf must degrade to 0 so a single non-finite hours
-// value can't poison the utilization aggregates (NaN propagates through sums).
-func TestUtilizationParseFloat_DegradesNonFinite(t *testing.T) {
-	for _, s := range []string{"NaN", "Inf", "+Inf", "-Inf", "not-a-number"} {
-		assert.Zero(t, parseFloat(s), "non-finite/unparseable %q must degrade to 0", s)
-	}
-	assert.InDelta(t, 42.5, parseFloat("42.5"), 0.0001)
 }
 
 // TestRICostParsers_RejectNonFiniteAndNegative verifies the RI money parsers

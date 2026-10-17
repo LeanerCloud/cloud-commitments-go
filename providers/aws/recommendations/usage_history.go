@@ -88,13 +88,19 @@ func (c *Client) fetchDailyCoverage(ctx context.Context, serviceFilter, resource
 	}
 
 	anyData := false
+	page := 0
 	err := paginateCE(ctx, maxRecommendationPages, "GetReservationCoverage", func(token *string) (*string, error) {
 		input.NextPageToken = token
 		result, err := c.fetchCoveragePage(ctx, input)
 		if err != nil {
 			return nil, err
 		}
-		if applyPeriodsToDayMap(result.CoveragesByTime, dayPct) {
+		page++
+		wrote, err := applyPeriodsToDayMap(result.CoveragesByTime, dayPct)
+		if err != nil {
+			return nil, fmt.Errorf("coverage page %d: %w", page, err)
+		}
+		if wrote {
 			anyData = true
 		}
 		return result.NextPageToken, nil
@@ -105,7 +111,10 @@ func (c *Client) fetchDailyCoverage(ctx context.Context, serviceFilter, resource
 	return anyData, nil
 }
 
-func applyPeriodsToDayMap(periods []types.CoverageByTime, dayPct map[string]float64) bool {
+// applyPeriodsToDayMap writes each period's coverage percentage into dayPct.
+// A period with no percentage (nil) is skipped as "no data"; a present but
+// malformed one is an error rather than a fabricated 0% day.
+func applyPeriodsToDayMap(periods []types.CoverageByTime, dayPct map[string]float64) (bool, error) {
 	anyData := false
 	for _, period := range periods {
 		if period.TimePeriod == nil || period.TimePeriod.Start == nil {
@@ -116,10 +125,14 @@ func applyPeriodsToDayMap(periods []types.CoverageByTime, dayPct map[string]floa
 			period.Total.CoverageHours.CoverageHoursPercentage == nil {
 			continue
 		}
-		dayPct[day] = parseFloat(aws.ToString(period.Total.CoverageHours.CoverageHoursPercentage))
+		pct, err := parseOptionalFloat("CoverageHoursPercentage", period.Total.CoverageHours.CoverageHoursPercentage)
+		if err != nil {
+			return false, fmt.Errorf("day %s: %w", day, err)
+		}
+		dayPct[day] = pct
 		anyData = true
 	}
-	return anyData
+	return anyData, nil
 }
 
 // regionKey identifies one (CE service filter, region) pair. Every

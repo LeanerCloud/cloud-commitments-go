@@ -129,3 +129,48 @@ func TestGetRIUtilization_ContextCanceled(t *testing.T) {
 	assert.Nil(t, got)
 	assert.Zero(t, mock.calls)
 }
+
+// TestGetRIUtilization_MalformedHoursFailsLoud is the regression for #120:
+// a present but unparseable, non-finite, negative or empty CE hours value used
+// to be logged and summed as 0, silently skewing the utilization percent.
+// It must now fail the whole call, naming the field.
+func TestGetRIUtilization_MalformedHoursFailsLoud(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		agg   types.ReservationAggregates
+		field string
+	}{
+		{"unparseable purchased", types.ReservationAggregates{PurchasedHours: aws.String("abc")}, "PurchasedHours"},
+		{"empty actual", types.ReservationAggregates{PurchasedHours: aws.String("100"), TotalActualHours: aws.String("")}, "TotalActualHours"},
+		{"NaN unused", types.ReservationAggregates{UnusedHours: aws.String("NaN")}, "UnusedHours"},
+		{"negative purchased", types.ReservationAggregates{PurchasedHours: aws.String("-5")}, "PurchasedHours"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			agg := tc.agg
+			mock := &mockUtilizationCE{utilizationOutput: &costexplorer.GetReservationUtilizationOutput{
+				UtilizationsByTime: []types.UtilizationByTime{{
+					Groups: []types.ReservationUtilizationGroup{{Key: aws.String("ri-1"), Utilization: &agg}},
+				}},
+			}}
+			got, err := NewClientWithAPI(mock, "us-east-1").GetRIUtilization(context.Background(), 30, "us-east-1")
+			require.Error(t, err)
+			assert.Nil(t, got)
+			assert.Contains(t, err.Error(), tc.field)
+			assert.Contains(t, err.Error(), "ri-1")
+			assert.Contains(t, err.Error(), "page 1")
+		})
+	}
+}
+
+// TestAggregateUtilizationDetail_AbsentFieldsAddNothing documents that a hours
+// field CE omits (nil) contributes nothing, while valid values accumulate.
+func TestAggregateUtilizationDetail_AbsentFieldsAddNothing(t *testing.T) {
+	agg := map[string]*riAccumulator{}
+	d := types.ReservationUtilizationGroup{Key: aws.String("ri-1"), Utilization: &types.ReservationAggregates{
+		PurchasedHours: aws.String("100"),
+	}}
+	require.NoError(t, aggregateUtilizationDetail(agg, d))
+	require.NoError(t, aggregateUtilizationDetail(agg, d))
+	assert.InDelta(t, 200.0, agg["ri-1"].purchasedHours, 0.001)
+	assert.Zero(t, agg["ri-1"].totalActualHours)
+}
