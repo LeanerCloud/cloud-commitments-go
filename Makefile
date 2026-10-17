@@ -4,7 +4,6 @@
 
 MODULES := pkg providers/aws providers/azure providers/gcp ci_cd_sanity_tests
 GOLANGCI_LINT_VERSION?=v2.10.1
-GOSEC_VERSION?=v2.28.0
 GOCYCLO_VERSION?=v0.6.0
 STATICCHECK_VERSION?=v0.7.0
 
@@ -126,8 +125,6 @@ setup-git-secrets:
 install-dev-tools:
 	@echo "Installing golangci-lint $(GOLANGCI_LINT_VERSION)..."
 	@go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
-	@echo "Installing gosec $(GOSEC_VERSION)..."
-	@go install github.com/securego/gosec/v2/cmd/gosec@$(GOSEC_VERSION)
 	@echo "Installing staticcheck $(STATICCHECK_VERSION)..."
 	@go install honnef.co/go/tools/cmd/staticcheck@$(STATICCHECK_VERSION)
 	@echo "Installing gocyclo $(GOCYCLO_VERSION)..."
