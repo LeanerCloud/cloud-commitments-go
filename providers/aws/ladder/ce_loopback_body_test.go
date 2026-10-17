@@ -194,7 +194,7 @@ func ceAwait(done, abort <-chan struct{}) error {
 type ceSchedule struct {
 	abort, entered, sdkClosed, wrote, connClosed chan struct{}
 	enterOnce, sdkOnce, writeOnce, connOnce      sync.Once
-	returned                                     atomic.Bool
+	returned, dialed, handlerStarted             atomic.Bool
 	copyErr, writeErr                            error
 	status                                       int
 }
@@ -294,6 +294,7 @@ func TestCELoopbackPublicBaselineAfterBodyClose(t *testing.T) {
 	var baseline ladder.UsageBaseline
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		defer close(handlerDone)
+		s.handlerStarted.Store(true)
 		var input costexplorer.GetCostAndUsageInput
 		handlerErr = json.NewDecoder(req.Body).Decode(&input)
 		if handlerErr != nil {
@@ -318,12 +319,22 @@ func TestCELoopbackPublicBaselineAfterBodyClose(t *testing.T) {
 		if err != nil {
 			return conn, err
 		}
+		s.dialed.Store(true)
 		return &ceScheduledConn{TCPConn: conn.(*net.TCPConn), s: s}, nil
 	}
 	cleanup := sync.OnceFunc(func() {
 		cancel()
 		close(s.abort)
-		opJoin, handlerJoin, writeJoin := ceAwait(done, nil), ceAwait(handlerDone, nil), ceAwait(s.wrote, nil)
+		opJoin := ceAwait(done, nil)
+		var handlerJoin, writeJoin error
+		if s.handlerStarted.Load() {
+			handlerJoin = ceAwait(handlerDone, nil)
+		}
+		if s.dialed.Load() {
+			writeJoin = ceAwait(s.wrote, nil)
+		} else {
+			t.Log("request aborted before any connection was dialed; skipping write and handler joins")
+		}
 		if handlerJoin == nil {
 			srv.Close()
 		} else {
