@@ -314,10 +314,11 @@ func commitmentCurrency(d *common.SavingsPlanDetails) (string, error) {
 // PUT with a previously-used name returns the existing order alias rather than
 // creating a second savings plan. When opts.IdempotencyToken is set (the
 // purchase-execution path), the alias name is derived deterministically from it
-// via common.ReservationOrderID so a re-drive of a stranded execution (issue
+// via common.OrderIDFromToken so a re-drive of a stranded execution (issue
 // #636) re-PUTs the same alias instead of double-buying. When the token is empty
 // (the CLI path, which has no owning execution), the prior timestamp-based name
-// is retained.
+// is retained. A non-empty malformed token returns an error wrapping
+// common.ErrInvalidIdempotencyToken before any PUT.
 func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
 	result := common.PurchaseResult{
 		Recommendation: rec,

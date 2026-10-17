@@ -379,13 +379,16 @@ func TestPurchaseCommitment_DeterministicAliasNameFromToken(t *testing.T) {
 }
 
 // TestPurchaseCommitment_MalformedTokenFailsBeforePUT verifies a non-empty token
-// that yields no GUID is refused before any PUT, with or without an injected
-// alias client (the second case proves the token is checked before the alias
-// client is constructed). Pre-fix the malformed token silently fell back to a
-// timestamp alias name and the purchase went ahead.
+// that yields no GUID is refused before BeginCreate. The case without an
+// injected alias client checks the error is the token error, not "failed to
+// create order alias client". Pre-fix the malformed token silently fell back to
+// a timestamp alias name and the purchase went ahead.
 func TestPurchaseCommitment_MalformedTokenFailsBeforePUT(t *testing.T) {
 	for _, token := range []string{"abc", "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"} {
-		mock := &mockOrderAliasClient{}
+		id := "/subscriptions/sub/providers/Microsoft.BillingBenefits/savingsPlanOrders/o"
+		mock := &mockOrderAliasClient{createPoller: &mockPoller{resp: armbillingbenefits.SavingsPlanOrderAliasClientCreateResponse{
+			SavingsPlanOrderAliasModel: armbillingbenefits.SavingsPlanOrderAliasModel{ID: &id},
+		}}}
 		c := NewClient(nil, "sub", "eastus")
 		c.SetOrderAliasClient(mock)
 		result, err := c.PurchaseCommitment(context.Background(), makeRec("1yr"), common.PurchaseOptions{IdempotencyToken: token})
