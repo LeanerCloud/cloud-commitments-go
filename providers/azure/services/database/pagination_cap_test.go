@@ -114,3 +114,57 @@ func TestFetchServerInfo_CancelAfterManagedWalkLeavesSignalsEmpty(t *testing.T) 
 	assert.Empty(t, azConfig)
 	assert.Empty(t, deployment)
 }
+
+// finalPartialMIPager serves exactly pages pages: full pages of two
+// instances, then a last page of one with no next link.
+type finalPartialMIPager struct {
+	calls, pages int
+}
+
+func (p *finalPartialMIPager) More() bool { return p.calls < p.pages }
+func (p *finalPartialMIPager) NextPage(_ context.Context) (armsql.ManagedInstancesClientListResponse, error) {
+	p.calls++
+	if p.calls == p.pages {
+		return buildMIPage(true), nil
+	}
+	return buildMIPage(true, false), nil
+}
+
+// finalPartialServersPager serves exactly pages pages and only the last,
+// partial one lists a server.
+type finalPartialServersPager struct {
+	calls, pages int
+}
+
+func (p *finalPartialServersPager) More() bool { return p.calls < p.pages }
+func (p *finalPartialServersPager) NextPage(_ context.Context) (armsql.ServersClientListResponse, error) {
+	p.calls++
+	if p.calls == p.pages {
+		return buildServerPage(1), nil
+	}
+	return armsql.ServersClientListResponse{}, nil
+}
+
+func TestWalkManagedInstances_ExactlyCapPagesWithPartialLastPageSucceeds(t *testing.T) {
+	pager := &finalPartialMIPager{pages: maxSQLListPages}
+	client := NewClient(nil, "test-subscription", "eastus")
+	client.SetManagedInstancesPager(pager)
+
+	zr, nzr, total, complete := client.walkManagedInstances(context.Background())
+	assert.True(t, complete)
+	assert.Equal(t, maxSQLListPages, zr)
+	assert.Equal(t, maxSQLListPages-1, nzr)
+	assert.Equal(t, 2*(maxSQLListPages-1)+1, total)
+	assert.Equal(t, maxSQLListPages, pager.calls)
+}
+
+func TestHasRegularServers_ExactlyCapPagesWithPartialLastPageSucceeds(t *testing.T) {
+	pager := &finalPartialServersPager{pages: maxSQLListPages}
+	client := NewClient(nil, "test-subscription", "eastus")
+	client.SetServersPager(pager)
+
+	found, complete := client.hasRegularServers(context.Background())
+	assert.True(t, found)
+	assert.True(t, complete)
+	assert.Equal(t, maxSQLListPages, pager.calls)
+}

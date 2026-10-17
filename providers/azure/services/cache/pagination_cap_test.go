@@ -39,3 +39,36 @@ func TestFetchSKUCatalogue_CancelledContextStopsWalk(t *testing.T) {
 	assert.Nil(t, client.fetchSKUCatalogue(ctx))
 	assert.Zero(t, pager.calls)
 }
+
+// finalPartialRedisPager serves exactly pages pages: each full page holds
+// perPage distinct SKUs, the last holds a single one with no next link.
+type finalPartialRedisPager struct {
+	calls, pages, perPage int
+}
+
+func (p *finalPartialRedisPager) More() bool { return p.calls < p.pages }
+func (p *finalPartialRedisPager) NextPage(_ context.Context) (armredis.ClientListBySubscriptionResponse, error) {
+	n := p.perPage
+	if p.calls == p.pages-1 {
+		n = 1
+	}
+	var caches []*armredis.ResourceInfo
+	for i := 0; i < n; i++ {
+		name, family, capacity := armredis.SKUNamePremium, armredis.SKUFamilyP, int32(p.calls*p.perPage+i)
+		caches = append(caches, &armredis.ResourceInfo{Properties: &armredis.Properties{
+			SKU: &armredis.SKU{Name: &name, Family: &family, Capacity: &capacity},
+		}})
+	}
+	p.calls++
+	return armredis.ClientListBySubscriptionResponse{ListResult: armredis.ListResult{Value: caches}}, nil
+}
+
+func TestFetchSKUCatalogue_ExactlyCapPagesWithPartialLastPageSucceeds(t *testing.T) {
+	pager := &finalPartialRedisPager{pages: maxCachesPages, perPage: 2}
+	client := NewClient(nil, "test-subscription", "eastus")
+	client.SetRedisCachesPager(pager)
+
+	got := client.fetchSKUCatalogue(context.Background())
+	assert.Len(t, got, 2*(maxCachesPages-1)+1)
+	assert.Equal(t, maxCachesPages, pager.calls)
+}

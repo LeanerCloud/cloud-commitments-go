@@ -2,9 +2,12 @@ package synapse
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/consumption/armconsumption"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -75,4 +78,79 @@ func TestGetExistingCommitments_CancelledContextReturnsContextError(t *testing.T
 	_, err := client.GetExistingCommitments(ctx)
 	require.ErrorIs(t, err, context.Canceled)
 	assert.Zero(t, pager.calls)
+}
+
+// finalPartialRecommendationsPager serves exactly pages pages: full pages of
+// two recommendations, then a last page of one with no next link.
+type finalPartialRecommendationsPager struct {
+	calls, pages int
+}
+
+func (p *finalPartialRecommendationsPager) More() bool { return p.calls < p.pages }
+func (p *finalPartialRecommendationsPager) NextPage(_ context.Context) (armconsumption.ReservationRecommendationsClientListResponse, error) {
+	p.calls++
+	n := 2
+	if p.calls == p.pages {
+		n = 1
+	}
+	var recs []armconsumption.ReservationRecommendationClassification
+	for i := 0; i < n; i++ {
+		recs = append(recs, mocks.BuildLegacyReservationRecommendation(
+			mocks.WithRegion("eastus"),
+			mocks.WithNormalizedSize("DW1000c"),
+			mocks.WithQuantity(1),
+			mocks.WithCosts(5000.0, 3500.0, 1500.0),
+		))
+	}
+	return armconsumption.ReservationRecommendationsClientListResponse{
+		ReservationRecommendationsListResult: armconsumption.ReservationRecommendationsListResult{Value: recs},
+	}, nil
+}
+
+// finalPartialReservationsPager serves exactly pages pages: full pages of two
+// reservations, then a last page of one with no next link.
+type finalPartialReservationsPager struct {
+	calls, pages int
+}
+
+func (p *finalPartialReservationsPager) More() bool { return p.calls < p.pages }
+func (p *finalPartialReservationsPager) NextPage(_ context.Context) (armconsumption.ReservationsDetailsClientListResponse, error) {
+	n := 2
+	if p.calls == p.pages-1 {
+		n = 1
+	}
+	var details []*armconsumption.ReservationDetail
+	for i := 0; i < n; i++ {
+		sku, id := "DW1000c", fmt.Sprintf("res-%d-%d", p.calls, i)
+		details = append(details, &armconsumption.ReservationDetail{
+			Properties: &armconsumption.ReservationDetailProperties{SKUName: &sku, ReservationID: &id},
+		})
+	}
+	p.calls++
+	return armconsumption.ReservationsDetailsClientListResponse{
+		ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{Value: details},
+	}, nil
+}
+
+func TestGetRecommendations_ExactlyCapPagesWithPartialLastPageSucceeds(t *testing.T) {
+	pager := &finalPartialRecommendationsPager{pages: maxRecsPages}
+	client := newPricedTestClient()
+	client.SetRecommendationsPager(pager)
+
+	recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{})
+	require.NoError(t, err)
+	// Each recommendation expands to an upfront and a monthly variant.
+	assert.Len(t, recs, 2*(2*(maxRecsPages-1)+1))
+	assert.Equal(t, maxRecsPages, pager.calls)
+}
+
+func TestGetExistingCommitments_ExactlyCapPagesWithPartialLastPageSucceeds(t *testing.T) {
+	pager := &finalPartialReservationsPager{pages: maxReservationsPages}
+	client := NewClient(nil, "test-subscription", "eastus")
+	client.SetReservationsPager(pager)
+
+	got, err := client.GetExistingCommitments(context.Background())
+	require.NoError(t, err)
+	assert.Len(t, got, 2*(maxReservationsPages-1)+1)
+	assert.Equal(t, maxReservationsPages, pager.calls)
 }
