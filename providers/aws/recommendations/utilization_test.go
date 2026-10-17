@@ -57,6 +57,7 @@ func TestGetRIUtilization_ScopesToEC2AndRegion(t *testing.T) {
 							Utilization: &types.ReservationAggregates{
 								PurchasedHours:   aws.String("100"),
 								TotalActualHours: aws.String("10"),
+								UnusedHours:      aws.String("90"),
 							},
 						},
 						{
@@ -65,6 +66,7 @@ func TestGetRIUtilization_ScopesToEC2AndRegion(t *testing.T) {
 							Utilization: &types.ReservationAggregates{
 								PurchasedHours:   aws.String("100"),
 								TotalActualHours: aws.String("95"),
+								UnusedHours:      aws.String("5"),
 							},
 						},
 					},
@@ -137,16 +139,17 @@ func TestGetRIUtilization_ContextCanceled(t *testing.T) {
 func TestGetRIUtilization_MalformedHoursFailsLoud(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
-		agg   types.ReservationAggregates
+		set   func(*types.ReservationAggregates)
 		field string
 	}{
-		{"unparseable purchased", types.ReservationAggregates{PurchasedHours: aws.String("abc")}, "PurchasedHours"},
-		{"empty actual", types.ReservationAggregates{PurchasedHours: aws.String("100"), TotalActualHours: aws.String("")}, "TotalActualHours"},
-		{"NaN unused", types.ReservationAggregates{UnusedHours: aws.String("NaN")}, "UnusedHours"},
-		{"negative purchased", types.ReservationAggregates{PurchasedHours: aws.String("-5")}, "PurchasedHours"},
+		{"unparseable purchased", func(u *types.ReservationAggregates) { u.PurchasedHours = aws.String("abc") }, "PurchasedHours"},
+		{"empty actual", func(u *types.ReservationAggregates) { u.TotalActualHours = aws.String("") }, "TotalActualHours"},
+		{"NaN unused", func(u *types.ReservationAggregates) { u.UnusedHours = aws.String("NaN") }, "UnusedHours"},
+		{"negative purchased", func(u *types.ReservationAggregates) { u.PurchasedHours = aws.String("-5") }, "PurchasedHours"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			agg := tc.agg
+			agg := types.ReservationAggregates{PurchasedHours: aws.String("100"), TotalActualHours: aws.String("10"), UnusedHours: aws.String("90")}
+			tc.set(&agg)
 			mock := &mockUtilizationCE{utilizationOutput: &costexplorer.GetReservationUtilizationOutput{
 				UtilizationsByTime: []types.UtilizationByTime{{
 					Groups: []types.ReservationUtilizationGroup{{Key: aws.String("ri-1"), Utilization: &agg}},
@@ -162,15 +165,80 @@ func TestGetRIUtilization_MalformedHoursFailsLoud(t *testing.T) {
 	}
 }
 
-// TestAggregateUtilizationDetail_AbsentFieldsAddNothing documents that a hours
-// field CE omits (nil) contributes nothing, while valid values accumulate.
-func TestAggregateUtilizationDetail_AbsentFieldsAddNothing(t *testing.T) {
-	agg := map[string]*riAccumulator{}
-	d := types.ReservationUtilizationGroup{Key: aws.String("ri-1"), Utilization: &types.ReservationAggregates{
-		PurchasedHours: aws.String("100"),
+// TestAggregateUtilizationDetail_PartialHours pins the absent-vs-zero rule:
+// all three hours omitted is skipped (no usage signal); any partial row is an
+// error because a missing field would read as 0 hours.
+func TestAggregateUtilizationDetail_PartialHours(t *testing.T) {
+	s := aws.String
+	for _, tc := range []struct {
+		name    string
+		u       types.ReservationAggregates
+		wantErr string
+	}{
+		{"purchased without actual", types.ReservationAggregates{PurchasedHours: s("100"), UnusedHours: s("5")}, "TotalActualHours is missing"},
+		{"purchased without unused", types.ReservationAggregates{PurchasedHours: s("100"), TotalActualHours: s("5")}, "UnusedHours is missing"},
+		{"actual without purchased", types.ReservationAggregates{TotalActualHours: s("5"), UnusedHours: s("1")}, "PurchasedHours is missing"},
+		{"only unused", types.ReservationAggregates{UnusedHours: s("1")}, "PurchasedHours is missing"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			agg := map[string]*riAccumulator{}
+			u := tc.u
+			err := aggregateUtilizationDetail(agg, types.ReservationUtilizationGroup{Key: s("ri-1"), Utilization: &u})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+			assert.Empty(t, agg)
+		})
+	}
+
+	t.Run("all absent is skipped", func(t *testing.T) {
+		agg := map[string]*riAccumulator{}
+		require.NoError(t, aggregateUtilizationDetail(agg, types.ReservationUtilizationGroup{Key: s("ri-1"), Utilization: &types.ReservationAggregates{}}))
+		assert.Empty(t, agg)
+	})
+
+	t.Run("complete rows accumulate", func(t *testing.T) {
+		agg := map[string]*riAccumulator{}
+		d := types.ReservationUtilizationGroup{Key: s("ri-1"), Utilization: &types.ReservationAggregates{
+			PurchasedHours: s("100"), TotalActualHours: s("60"), UnusedHours: s("40"),
+		}}
+		require.NoError(t, aggregateUtilizationDetail(agg, d))
+		require.NoError(t, aggregateUtilizationDetail(agg, d))
+		assert.InDelta(t, 200.0, agg["ri-1"].purchasedHours, 0.001)
+		assert.InDelta(t, 120.0, agg["ri-1"].totalActualHours, 0.001)
+		assert.InDelta(t, 80.0, agg["ri-1"].unusedHours, 0.001)
+	})
+}
+
+// pagedUtilizationCE serves one output per call so a test can put the
+// malformed row on a later page.
+type pagedUtilizationCE struct {
+	mockCostExplorerAPI
+	pages []*costexplorer.GetReservationUtilizationOutput
+	calls int
+}
+
+func (m *pagedUtilizationCE) GetReservationUtilization(context.Context, *costexplorer.GetReservationUtilizationInput, ...func(*costexplorer.Options)) (*costexplorer.GetReservationUtilizationOutput, error) {
+	p := m.pages[m.calls]
+	m.calls++
+	return p, nil
+}
+
+func TestGetRIUtilization_MalformedRowOnPageTwoReportsPage2(t *testing.T) {
+	row := func(purchased string) types.UtilizationByTime {
+		return types.UtilizationByTime{Groups: []types.ReservationUtilizationGroup{{
+			Key: aws.String("ri-1"),
+			Utilization: &types.ReservationAggregates{
+				PurchasedHours: aws.String(purchased), TotalActualHours: aws.String("1"), UnusedHours: aws.String("1"),
+			},
+		}}}
+	}
+	mock := &pagedUtilizationCE{pages: []*costexplorer.GetReservationUtilizationOutput{
+		{UtilizationsByTime: []types.UtilizationByTime{row("10")}, NextPageToken: aws.String("p2")},
+		{UtilizationsByTime: []types.UtilizationByTime{row("oops")}},
 	}}
-	require.NoError(t, aggregateUtilizationDetail(agg, d))
-	require.NoError(t, aggregateUtilizationDetail(agg, d))
-	assert.InDelta(t, 200.0, agg["ri-1"].purchasedHours, 0.001)
-	assert.Zero(t, agg["ri-1"].totalActualHours)
+	got, err := NewClientWithAPI(mock, "us-east-1").GetRIUtilization(context.Background(), 30, "us-east-1")
+	require.Error(t, err)
+	assert.Nil(t, got)
+	assert.Contains(t, err.Error(), "page 2")
+	assert.Equal(t, 2, mock.calls)
 }

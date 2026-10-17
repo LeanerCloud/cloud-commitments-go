@@ -61,7 +61,7 @@ func (c *Client) parseSavingsPlansRecommendations(
 //   - non-nil pointer that parses to a negative value: returns (0, error). Every
 //     field this parses (SP/RI cost, commitment, savings, savings %, utilization)
 //     is non-negative by construction; a negative is corrupt in the same way a
-//     non-finite value is. Mirrors the repo's stricter parseSPFloat helper.
+//     non-finite value is. Applies the same checks as parseSPFloat.
 func parseOptionalFloat(field string, s *string) (float64, error) {
 	if s == nil {
 		return 0, nil

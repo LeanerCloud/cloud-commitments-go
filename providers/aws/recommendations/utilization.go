@@ -147,24 +147,21 @@ func (c *Client) fetchUtilizationPage(ctx context.Context, input *costexplorer.G
 }
 
 // aggregateUtilizationDetail accumulates hours from a single utilization detail
-// into the per-RI aggregation map. A field CE omits (nil) adds nothing; a
-// present but unparseable, non-finite or negative value is an error so a
-// malformed number never becomes a silent zero in the utilization percent.
+// into the per-RI aggregation map. A detail with no Utilization, or with all
+// three hours fields omitted, carries no usage signal and is skipped without
+// creating an accumulator. Otherwise all three fields are required: a missing
+// one would read as 0 hours and fake a utilization percent. A present but
+// unparseable, non-finite or negative value is an error for the same reason.
 func aggregateUtilizationDetail(agg map[string]*riAccumulator, detail types.ReservationUtilizationGroup) error {
 	if detail.Key == nil || detail.Utilization == nil {
 		return nil
 	}
 	id := aws.ToString(detail.Key)
 	u := detail.Utilization
-	purchased, err := parseOptionalFloat("PurchasedHours", u.PurchasedHours)
-	if err != nil {
-		return fmt.Errorf("reservation %s: %w", id, err)
+	if u.PurchasedHours == nil && u.TotalActualHours == nil && u.UnusedHours == nil {
+		return nil
 	}
-	actual, err := parseOptionalFloat("TotalActualHours", u.TotalActualHours)
-	if err != nil {
-		return fmt.Errorf("reservation %s: %w", id, err)
-	}
-	unused, err := parseOptionalFloat("UnusedHours", u.UnusedHours)
+	purchased, actual, unused, err := parseUtilizationHours(u)
 	if err != nil {
 		return fmt.Errorf("reservation %s: %w", id, err)
 	}
@@ -178,4 +175,25 @@ func aggregateUtilizationDetail(agg map[string]*riAccumulator, detail types.Rese
 	a.totalActualHours += actual
 	a.unusedHours += unused
 	return nil
+}
+
+// parseUtilizationHours strictly parses the three required hours fields.
+func parseUtilizationHours(u *types.ReservationAggregates) (purchased, actual, unused float64, err error) {
+	for _, f := range []struct {
+		name string
+		src  *string
+		dst  *float64
+	}{
+		{"PurchasedHours", u.PurchasedHours, &purchased},
+		{"TotalActualHours", u.TotalActualHours, &actual},
+		{"UnusedHours", u.UnusedHours, &unused},
+	} {
+		if f.src == nil {
+			return 0, 0, 0, fmt.Errorf("%s is missing while other utilization hours are present", f.name)
+		}
+		if *f.dst, err = parseOptionalFloat(f.name, f.src); err != nil {
+			return 0, 0, 0, err
+		}
+	}
+	return purchased, actual, unused, nil
 }
