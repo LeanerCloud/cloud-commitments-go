@@ -328,6 +328,21 @@ func commitmentCurrency(d *common.SavingsPlanDetails) (string, error) {
 	return strings.ToUpper(d.Currency), nil
 }
 
+// savingsPlanSKUName maps a CUDly PlanType to the ARM SKU name that the
+// SavingsPlanOrderAlias and validatePurchase bodies carry in sku.name. Azure
+// names the compute savings plan SKU "Compute_Savings_Plan" (the armSkuName the
+// Benefit Recommendations API returns), while CUDly's PlanType is "Compute"
+// (issue #387). The ARM name itself is accepted as-is. Anything else fails
+// closed before any Azure call rather than sending a sku.name Azure rejects.
+func savingsPlanSKUName(planType string) (string, error) {
+	switch planType {
+	case "Compute", armSkuComputeSavingsPlan:
+		return armSkuComputeSavingsPlan, nil
+	default:
+		return "", fmt.Errorf("azure savings plan type %q has no known Azure savings plan SKU", planType)
+	}
+}
+
 // PurchaseCommitment creates an Azure Savings Plan via the OrderAlias API.
 //
 // Idempotency: the SavingsPlanOrderAlias is created with an HTTP PUT on the
@@ -369,6 +384,11 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		result.Error = err
 		return result, result.Error
 	}
+	skuName, err := savingsPlanSKUName(spDetails.PlanType)
+	if err != nil {
+		result.Error = err
+		return result, result.Error
+	}
 	displayName := fmt.Sprintf("cudly-%s-%s", spDetails.PlanType, rec.Term)
 	// Derive a deterministic alias name from the idempotency token when present
 	// so a re-drive PUTs the same alias (idempotent), falling back to the prior
@@ -382,7 +402,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	}
 
 	body := armbillingbenefits.SavingsPlanOrderAliasModel{
-		SKU: &armbillingbenefits.SKU{Name: toPtr(spDetails.PlanType)},
+		SKU: &armbillingbenefits.SKU{Name: toPtr(skuName)},
 		Properties: &armbillingbenefits.SavingsPlanOrderAliasProperties{
 			DisplayName:      &displayName,
 			BillingScopeID:   &billingScopeID,
@@ -471,12 +491,16 @@ func (c *Client) buildValidateBody(rec common.Recommendation) (armbillingbenefit
 	if err != nil {
 		return armbillingbenefits.SavingsPlanPurchaseValidateRequest{}, err
 	}
+	skuName, err := savingsPlanSKUName(spDetails.PlanType)
+	if err != nil {
+		return armbillingbenefits.SavingsPlanPurchaseValidateRequest{}, err
+	}
 	displayName := "cudly-validate"
 
 	return armbillingbenefits.SavingsPlanPurchaseValidateRequest{
 		Benefits: []*armbillingbenefits.SavingsPlanOrderAliasModel{
 			{
-				SKU: &armbillingbenefits.SKU{Name: toPtr(spDetails.PlanType)},
+				SKU: &armbillingbenefits.SKU{Name: toPtr(skuName)},
 				Properties: &armbillingbenefits.SavingsPlanOrderAliasProperties{
 					DisplayName:      &displayName,
 					BillingScopeID:   &billingScopeID,
