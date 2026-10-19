@@ -122,3 +122,22 @@ func TestRederiveFamilyCoverage_UnsizedFamilyUntouched(t *testing.T) {
 	got := RederiveFamilyCoverage(recs[:1], cov)
 	assert.Equal(t, 7.0, got[0].ProjectedCoverage, "rec never annotated by family sizing is left alone")
 }
+
+func TestFamilyProjectedCoverage_CapsAt100(t *testing.T) {
+	assert.Equal(t, 100.0, familyProjectedCoverage(60, 50, 100), "60% + 50% caps at exactly 100")
+	assert.Equal(t, 90.0, familyProjectedCoverage(60, 30, 100))
+
+	sized := []common.Recommendation{{Count: 10, AverageInstancesUsedPerHour: 3}}
+	annotateFamilyProjection(sized, 60, 50, 100)
+	assert.Equal(t, 100.0, sized[0].ProjectedCoverage, "sizing path caps at 100")
+}
+
+func TestRederiveFamilyCoverage_CapsAt100(t *testing.T) {
+	cov, recs := sizedFixture(t)
+	for i := range recs {
+		recs[i].Count *= 100 // count override well past the family demand
+	}
+	got := RederiveFamilyCoverage(recs, cov)
+	assert.Equal(t, 100.0, findRec(t, got, "db.r7g.large").ProjectedCoverage)
+	assert.Equal(t, 100.0, findRec(t, got, "db.t4g.medium").ProjectedCoverage)
+}

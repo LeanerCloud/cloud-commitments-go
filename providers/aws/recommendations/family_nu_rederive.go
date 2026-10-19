@@ -16,8 +16,14 @@ import "github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 // else (non-RDS, Savings Plans, SQL Server, unknown sizes, families with no
 // coverage signal) is returned unchanged.
 //
-// Call it only on recs that went through family-NU sizing; coverage must be
-// the same PoolCoverageMap that was passed to sizing.
+// Precondition: call it only on the output of ApplyFamilyNUSizingRDS or
+// ApplyFamilyNUSizingRDSWithExpiry[Options], i.e. only on --target-coverage
+// runs, and never after the legacy --coverage path. ApplyCoverageMapToRecommendations
+// also sets ExistingCoverageKnown, with a per-pool ExistingCoveragePct, and
+// nothing on a rec tells the two apart, so on such recs this would mix a
+// per-pool existing% with family NU and overwrite a correct ProjectedCoverage.
+// coverage must be the same PoolCoverageMap that was passed to sizing.
+// ProjectedUtilization is not touched; callers refresh it from the new Count.
 func RederiveFamilyCoverage(recs []common.Recommendation, coverage PoolCoverageMap) []common.Recommendation {
 	out := make([]common.Recommendation, len(recs))
 	copy(out, recs)
