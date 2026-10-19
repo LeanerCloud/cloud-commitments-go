@@ -305,16 +305,33 @@ func isARMFamily(family string) bool {
 	return suffix == "g" || suffix == "gd" || suffix == "gn"
 }
 
+// Confidence bucket cut-offs shared with the API layer's confidence badge.
+// Consumers must import these instead of inlining the literals so the badge
+// and the reshape ranking cannot drift apart.
+const (
+	// ConfidenceHighSavingsUSD is the minimum SavingsAbs, in USD per month,
+	// for the high bucket (which also needs ConfidenceHighMinCount).
+	ConfidenceHighSavingsUSD = 200.0
+	// ConfidenceHighMinCount is the minimum RecommendationCount, in
+	// instances, for the high bucket.
+	ConfidenceHighMinCount = 3
+	// ConfidenceMediumSavingsUSD is the minimum SavingsAbs, in USD per
+	// month, for the medium bucket.
+	ConfidenceMediumSavingsUSD = 50.0
+)
+
 // confidenceComponent maps SavingsAbs + RecommendationCount to a [0,1]
-// confidence score using the same thresholds as the API layer:
+// confidence score using the exported Confidence* thresholds:
 //
-//	high   ($200+ savings, 3+ instances) -> 1.0
-//	medium ($50+ savings)                -> 0.5
-//	low    (otherwise)                   -> 0.0
+//	high:   savings >= ConfidenceHighSavingsUSD and count >= ConfidenceHighMinCount -> 1.0
+//	medium: savings >= ConfidenceMediumSavingsUSD -> 0.5
+//	low:    otherwise -> 0.0
 //
 // When SavingsAbs is nil (not supplied) or RecommendationCount is zero
 // (missing) the component returns 0.5 (neutral) so that an absent field
-// doesn't tilt the ranking.
+// doesn't tilt the ranking. This intentionally differs from the API
+// layer's badge, which clamps a missing count to 1: a badge must always
+// show a bucket, while a ranking score should stay neutral on missing data.
 func confidenceComponent(off OfferingOption) float64 {
 	if off.SavingsAbs == nil {
 		return 0.5
@@ -325,9 +342,9 @@ func confidenceComponent(off OfferingOption) float64 {
 	savings := *off.SavingsAbs
 	count := off.RecommendationCount
 	switch {
-	case savings >= 200 && count >= 3:
+	case savings >= ConfidenceHighSavingsUSD && count >= ConfidenceHighMinCount:
 		return 1.0
-	case savings >= 50:
+	case savings >= ConfidenceMediumSavingsUSD:
 		return 0.5
 	default:
 		return 0.0

@@ -503,3 +503,34 @@ func TestLoad_NonPositiveIdempotencyWindow_Error(t *testing.T) {
 		assert.Contains(t, err.Error(), "idempotency_window")
 	})
 }
+
+func TestLoad_MinSavingsPctSet(t *testing.T) {
+	t.Run("absent leaves unset", func(t *testing.T) {
+		cfg, err := Load(writeYAML(t, "scorer:\n  min_count: 1\n"), newFlags())
+		require.NoError(t, err)
+		assert.False(t, cfg.Scorer.MinSavingsPctSet)
+	})
+	t.Run("yaml explicit zero", func(t *testing.T) {
+		cfg, err := Load(writeYAML(t, "scorer:\n  min_savings_pct: 0\n"), newFlags())
+		require.NoError(t, err)
+		assert.True(t, cfg.Scorer.MinSavingsPctSet)
+	})
+	t.Run("env explicit zero", func(t *testing.T) {
+		t.Setenv("CUDLY_MIN_SAVINGS_PCT", "0")
+		cfg, err := Load(writeYAML(t, ""), newFlags())
+		require.NoError(t, err)
+		assert.True(t, cfg.Scorer.MinSavingsPctSet)
+	})
+	t.Run("flag explicit zero", func(t *testing.T) {
+		fs := newFlags()
+		require.NoError(t, fs.Parse([]string{"--min-savings-pct", "0"}))
+		cfg, err := Load(writeYAML(t, ""), fs)
+		require.NoError(t, err)
+		assert.True(t, cfg.Scorer.MinSavingsPctSet)
+	})
+	t.Run("NaN env rejected", func(t *testing.T) {
+		t.Setenv("CUDLY_MIN_SAVINGS_PCT", "NaN")
+		_, err := Load(writeYAML(t, ""), newFlags())
+		require.Error(t, err)
+	})
+}

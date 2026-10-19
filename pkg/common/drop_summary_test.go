@@ -98,3 +98,40 @@ func TestDropSummary_FormatOneLine(t *testing.T) {
 		})
 	}
 }
+
+func TestDropSummary_Add_PerReasonTallies(t *testing.T) {
+	d := NewDropSummary()
+	d.Add(DropMinPoolSize, 3)
+	d.Add(DropMinPoolSize, 2)
+	d.Add(DropDuplicateDedup, 4)
+	d.Add(DropTargetAlreadyMet, 0)
+
+	assert.Equal(t, 9, d.Total())
+	assert.Equal(t, map[string]int{DropMinPoolSize: 5, DropDuplicateDedup: 4}, d.counts)
+}
+
+func TestDropSummary_Add_NegativePanics(t *testing.T) {
+	d := NewDropSummary()
+	assert.PanicsWithValue(t,
+		`common.DropSummary.Add: negative count -1 for reason "--min-pool-size"`,
+		func() { d.Add(DropMinPoolSize, -1) })
+	assert.True(t, d.IsEmpty(), "a rejected Add must not touch the tally")
+}
+
+// A negative that would cancel a positive in Total() is the case the guard
+// exists for: Total() alone would read 0 and look correct.
+func TestDropSummary_Add_NegativeCannotCancelInTotal(t *testing.T) {
+	d := NewDropSummary()
+	d.Add(DropMinPoolSize, 2)
+	d.Add(DropDuplicateDedup, 5)
+	assert.Panics(t, func() { d.Add(DropDuplicateDedup, -5) })
+	assert.Panics(t, func() { d.Add(DropMinPoolSize, -2) })
+
+	assert.Equal(t, 7, d.Total())
+	assert.Equal(t, map[string]int{DropMinPoolSize: 2, DropDuplicateDedup: 5}, d.counts)
+}
+
+func TestDropSummary_Add_NegativePanicsOnNilReceiver(t *testing.T) {
+	var d *DropSummary
+	assert.Panics(t, func() { d.Add(DropMinPoolSize, -1) })
+}

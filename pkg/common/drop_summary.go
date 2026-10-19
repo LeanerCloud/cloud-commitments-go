@@ -39,8 +39,13 @@ func NewDropSummary() *DropSummary {
 
 // Add increments the drop count for the given reason by n. Safe to call on a
 // zero-value DropSummary (e.g. var d DropSummary); the underlying map is
-// lazily initialized on first use.
+// lazily initialized on first use. A zero n is a no-op and does not create a
+// key for the reason. A negative n is a programming error and panics: it would
+// subtract from the tally and silently understate the run's totals.
 func (d *DropSummary) Add(reason string, n int) {
+	if n < 0 {
+		panic(fmt.Sprintf("common.DropSummary.Add: negative count %d for reason %q", n, reason))
+	}
 	if d == nil || n == 0 {
 		return
 	}

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -61,9 +62,10 @@ type HTTPClient interface {
 //   - vCPUs: Capabilities[Name=="vCPUs"].Value, parsed as int.
 //   - memoryGB: Capabilities[Name=="MemoryGB"].Value, parsed as float64.
 //
-// Either field stays at the zero value when the capability is missing
-// or unparseable; common.ComputeDetails treats 0 as "unknown" (the
-// JSON tags on VCPU/MemoryGB are omitempty).
+// A field stays at the zero value when its capability is missing;
+// common.ComputeDetails treats 0 as "unknown" (the JSON tags on
+// VCPU/MemoryGB are omitempty). A SKU with a present but unparseable
+// capability is omitted from the catalog entirely.
 
 // maxRecsPages caps Consumption API recommendation pagination to avoid
 // burning a Lambda deadline on a stalled or unexpectedly deep result set.
@@ -888,35 +890,59 @@ func (c *Client) populateVMSKUMapFromPage(out map[string]vmSKUEntry, skus []*arm
 		if _, exists := out[*sku.Name]; exists {
 			continue
 		}
-		vCPUs, memoryGB := extractVMSKUCapabilities(sku)
+		vCPUs, memoryGB, err := extractVMSKUCapabilities(sku)
+		if err != nil {
+			logging.Warnf("azure compute: SKU %s in region %s skipped from catalog: %v", *sku.Name, c.region, err)
+			continue
+		}
 		out[*sku.Name] = vmSKUEntry{vCPUs: vCPUs, memoryGB: memoryGB}
 	}
 }
 
 // extractVMSKUCapabilities pulls the vCPUs and MemoryGB capabilities
 // out of an armcompute.ResourceSKU's Capabilities name/value list.
-// Returns (0, 0) when the capability is missing or unparseable —
-// callers treat the zero value as "unknown" (omitempty JSON tag on
-// common.ComputeDetails).
+// A missing capability yields 0, which callers treat as "unknown"
+// (omitempty JSON tag on common.ComputeDetails). A present but
+// unparseable, non-finite or negative value returns an error rather
+// than being coerced to 0.
 //
 // Extracted out of fetchSKUCatalogue to keep that function under the
 // cyclomatic-complexity threshold enforced by the pre-commit hook
 // (matches the cache/database extraction pattern from PR #81).
-func extractVMSKUCapabilities(sku *armcompute.ResourceSKU) (vCPUs int, memoryGB float64) {
+func extractVMSKUCapabilities(sku *armcompute.ResourceSKU) (vCPUs int, memoryGB float64, err error) {
 	for _, cb := range sku.Capabilities {
 		if cb == nil || cb.Name == nil || cb.Value == nil {
 			continue
 		}
 		switch *cb.Name {
 		case "vCPUs":
-			if v, err := strconv.Atoi(*cb.Value); err == nil {
-				vCPUs = v
+			if vCPUs, err = parseSKUVCPUs(*cb.Value); err != nil {
+				return 0, 0, err
 			}
 		case "MemoryGB":
-			if v, err := strconv.ParseFloat(*cb.Value, 64); err == nil {
-				memoryGB = v
+			if memoryGB, err = parseSKUMemoryGB(*cb.Value); err != nil {
+				return 0, 0, err
 			}
 		}
 	}
-	return vCPUs, memoryGB
+	return vCPUs, memoryGB, nil
+}
+
+// parseSKUVCPUs parses a vCPUs capability value as a non-negative integer.
+func parseSKUVCPUs(raw string) (int, error) {
+	v, err := strconv.Atoi(raw)
+	if err != nil || v < 0 {
+		return 0, fmt.Errorf("capability vCPUs %q is not a non-negative integer", raw)
+	}
+	return v, nil
+}
+
+// parseSKUMemoryGB parses a MemoryGB capability value as a finite,
+// non-negative float.
+func parseSKUMemoryGB(raw string) (float64, error) {
+	v, err := strconv.ParseFloat(raw, 64)
+	if err != nil || math.IsNaN(v) || math.IsInf(v, 0) || v < 0 {
+		return 0, fmt.Errorf("capability MemoryGB %q is not a finite non-negative number", raw)
+	}
+	return v, nil
 }
