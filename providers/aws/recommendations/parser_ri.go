@@ -35,7 +35,7 @@ func (c *Client) parseRecommendations(ctx context.Context, awsRecs []types.Reser
 				incomplete.FailedDetails++
 				incomplete.Causes = append(incomplete.Causes, fmt.Errorf("service %s term %s payment %s block %d detail %d: %w",
 					params.Service, params.Term, params.PaymentOption, r, i, err))
-				log.Printf("Warning: Failed to parse recommendation detail %d: %v", i, err)
+				log.Printf("Warning: Failed to parse recommendation detail %d, skipping (provider=aws service=%s): %v", i, params.Service, err)
 				continue
 			}
 
