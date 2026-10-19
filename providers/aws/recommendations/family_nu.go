@@ -407,6 +407,10 @@ type FamilyExpiryReport struct {
 	// be deducted: an unparsable instance class (NU 0) or a family key with no
 	// coverage family (e.g. an engine spelled differently from the coverage
 	// report). Callers must surface this; it never means "no expiry".
+	// It also counts expiring RIs of non-size-flexible engines (SQL Server):
+	// those are not lost, their expiry is handled per pool by
+	// AdjustExistingCoverageForExpiringCommitmentsWithCoverage, so for them it
+	// is informational, not a failure.
 	Unusable int
 }
 
