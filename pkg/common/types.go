@@ -217,7 +217,9 @@ type Recommendation struct {
 	Term           string         `json:"term" csv:"Term"`                      // 1yr, 3yr
 	PaymentOption  string         `json:"payment_option" csv:"PaymentOption"`   // all-upfront, partial, no-upfront, monthly
 
-	// Cost information
+	// Cost information. OnDemandCost, EstimatedSavings and SavingsPercentage are
+	// USD: providers skip a recommendation whose source amounts are not USD.
+	// CommitmentCurrency covers only the commitment legs.
 	OnDemandCost      float64 `json:"on_demand_cost" csv:"OnDemandCost"`
 	CommitmentCost    float64 `json:"commitment_cost" csv:"CommitmentCost"`
 	EstimatedSavings  float64 `json:"estimated_savings" csv:"EstimatedSavings"`

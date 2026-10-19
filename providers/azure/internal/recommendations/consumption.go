@@ -27,6 +27,18 @@ const consumptionLookBack = "Last7Days"
 // it is the only one a recommendation may be denominated in.
 const currencyUSD = "USD"
 
+// ErrNotUSD marks a recommendation skipped because its source amounts are not
+// denominated in USD; common.Recommendation costs are USD by contract.
+var ErrNotUSD = errors.New("recommendation amounts are not denominated in USD")
+
+// RequireUSDCode returns an error wrapping ErrNotUSD unless code is USD.
+func RequireUSDCode(code string) error {
+	if !strings.EqualFold(code, currencyUSD) {
+		return fmt.Errorf("%w: currencyCode %q", ErrNotUSD, code)
+	}
+	return nil
+}
+
 // ConsumptionFilter builds the OData filter for the Consumption
 // ReservationRecommendations API: Shared scope, one resource type and an
 // explicit lookback window.
