@@ -15,7 +15,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sts"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
-	"github.com/LeanerCloud/cloud-commitments-go/pkg/retry"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/offeringprice"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/reservationexpiry"
@@ -141,9 +140,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 // matching an owned node on offering ID, node count and start time (see
 // findMatchingNodes). With an empty IdempotencyToken (CLI) no lookup runs.
 //
-// PurchaseReservedNodeOfferingInput has no Tags field; tagging happens
-// post-purchase via redshift:CreateTags, which requires a full ARN. Tagging
-// failure is logged but does NOT fail the purchase.
+// Reserved nodes cannot be tagged, so the purchased node is not tagged.
 func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
 	result := common.PurchaseResult{
 		Recommendation: rec,
@@ -191,106 +188,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		return result, result.Error
 	}
 
-	if err := c.tagReservedNode(ctx, result.CommitmentID, rec, opts.Source, opts.IdempotencyToken); err != nil {
-		log.Printf("WARNING: failed to tag Redshift reserved node %s after purchase (node is bought; tag missing — idempotency guard degrades for this node, issue #641): %v", result.CommitmentID, err)
-	}
-
 	return result, nil
-}
-
-// resolveAccountID fetches the caller's AWS account ID via STS and caches it.
-// Returns ("", nil) — i.e. an empty string with no error — when the STS
-// client is nil (e.g. a test client that skipped SetSTSAPI). Callers must
-// treat empty as "can't tag" and skip the tag call.
-func (c *Client) resolveAccountID(ctx context.Context) (string, error) {
-	c.accountOnce.Do(func() {
-		if c.stsClient == nil {
-			return
-		}
-		out, err := c.stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
-		if err != nil {
-			c.accountErr = err
-			return
-		}
-		if out != nil && out.Account != nil {
-			c.accountID = *out.Account
-		}
-	})
-	return c.accountID, c.accountErr
-}
-
-// tagReservedNode constructs the reserved-node ARN and calls redshift:CreateTags.
-// Retries up to 4 attempts (1s/2s/4s backoff) on validation errors that can
-// indicate the node isn't yet visible to the tagging API. Returns nil when
-// there is nothing to tag (no source AND no idempotency token) OR when the
-// account ID can't be resolved — both mean "don't tag", logged by the caller.
-//
-// The idempotency token tag (issue #641) is load-bearing for the pre-purchase
-// findNodeByIdempotencyToken guard: if it is not written, a re-drive cannot
-// recognize this node as already-purchased.
-func (c *Client) tagReservedNode(ctx context.Context, nodeID string, rec common.Recommendation, source, idempotencyToken string) error {
-	if source == "" && idempotencyToken == "" {
-		return nil
-	}
-	accountID, err := c.resolveAccountID(ctx)
-	if err != nil {
-		return fmt.Errorf("resolve account ID: %w", err)
-	}
-	if accountID == "" {
-		return fmt.Errorf("account ID unavailable (no STS client)")
-	}
-
-	arn := fmt.Sprintf("arn:aws:redshift:%s:%s:reservednode:%s", c.region, accountID, nodeID)
-	// Rich self-describing tag set (issue #687): the Redshift purchase API
-	// does not accept a customer-supplied node ID, so the only way to make
-	// the reserved node identifiable from the AWS console alone (without
-	// cross-referencing CUDly) is to encode the same descriptors that the
-	// other AWS service clients embed in their reservation name. The Name tag
-	// uses BuildReservationName to produce the same rich format so operators
-	// can identify the node without cross-referencing CUDly's purchase audit log.
-	displayName := common.BuildReservationName(common.ReservationNameFields{
-		Service:      "redshift",
-		Region:       rec.Region,
-		ResourceType: rec.ResourceType,
-		Count:        rec.Count,
-		Term:         rec.Term,
-		Payment:      rec.PaymentOption,
-		Now:          time.Now(),
-	}, "redshift-reserved-")
-	tags := []redshifttypes.Tag{
-		{Key: aws.String("Name"), Value: aws.String(displayName)},
-		{Key: aws.String("Purpose"), Value: aws.String("Reserved Node Purchase")},
-		{Key: aws.String("NodeType"), Value: aws.String(rec.ResourceType)},
-		{Key: aws.String("Region"), Value: aws.String(rec.Region)},
-		{Key: aws.String("Count"), Value: aws.String(fmt.Sprintf("%d", rec.Count))},
-		{Key: aws.String("Term"), Value: aws.String(rec.Term)},
-		{Key: aws.String("PaymentOption"), Value: aws.String(rec.PaymentOption)},
-		{Key: aws.String("PurchaseDate"), Value: aws.String(time.Now().Format("2006-01-02"))},
-		{Key: aws.String("Tool"), Value: aws.String("CUDly")},
-	}
-	if source != "" {
-		tags = append(tags, redshifttypes.Tag{Key: aws.String(common.PurchaseTagKey), Value: aws.String(source)})
-	}
-	if idempotencyToken != "" {
-		tags = append(tags, redshifttypes.Tag{Key: aws.String(common.IdempotencyTagKey), Value: aws.String(idempotencyToken)})
-	}
-
-	cfg := retry.Config{MaxAttempts: 4, BaseDelay: time.Second, MaxDelay: 4 * time.Second}
-	return retry.Do(ctx, cfg, func(perAttemptCtx context.Context, _ int) error {
-		_, err := c.client.CreateTags(perAttemptCtx, &redshift.CreateTagsInput{
-			ResourceName: aws.String(arn),
-			Tags:         tags,
-		})
-		if err == nil {
-			return nil
-		}
-		// All Redshift CreateTags errors that aren't transient (e.g. auth,
-		// invalid ARN) are permanent. No documented "resource not yet
-		// visible" retry condition for reserved nodes, so a single pass
-		// is usually enough; the retry budget exists to absorb network
-		// flakes not state-machine delays.
-		return fmt.Errorf("%w: %w", retry.ErrPermanent, err)
-	})
 }
 
 // maxOfferingPages is the maximum number of DescribeReservedNodeOfferings
