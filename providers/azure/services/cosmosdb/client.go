@@ -574,8 +574,12 @@ func (c *Client) getCosmosPricing(ctx context.Context, sku, region string, termY
 			return nil, fmt.Errorf("unsupported Cosmos DB pricing SKU %q", sku)
 		}
 	}
-	filter := fmt.Sprintf("serviceName eq 'Azure Cosmos DB' and productName eq 'Azure Cosmos DB' and armRegionName eq 'Global' and armSkuName eq '%s' and priceType eq 'Reservation'",
-		strings.ReplaceAll(sku, "'", "''"))
+	qSKU, err := pricing.ODataString(sku)
+	if err != nil {
+		return nil, err
+	}
+	filter := fmt.Sprintf("serviceName eq 'Azure Cosmos DB' and productName eq 'Azure Cosmos DB' and armRegionName eq 'Global' and armSkuName eq %s and priceType eq 'Reservation'",
+		qSKU)
 
 	priceData, err := c.fetchAzurePricing(ctx, filter)
 	if err != nil {

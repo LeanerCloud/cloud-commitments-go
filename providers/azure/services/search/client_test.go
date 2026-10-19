@@ -580,9 +580,16 @@ func TestSearchClient_GetOfferingDetails_Pagination(t *testing.T) {
 	}
 }
 
-func TestSearchClient_GetOfferingDetails_EscapesRegionAndRejectsUnknownTier(t *testing.T) {
-	const region = "east'us"
-	response := createMockHTTPResponse(http.StatusOK, `{"Items":[{"serviceName":"Azure Cognitive Search","armRegionName":"east'us","skuName":"Standard S1","type":"Reservation","reservationTerm":"1 Year","unitOfMeasure":"1 Hour","retailPrice":800,"currencyCode":"USD"}]}`)
+func TestGetSearchPricing_RejectsInjectedRegion(t *testing.T) {
+	client := NewClientWithHTTP(nil, "sub", "eastus", &MockHTTPClient{})
+	_, err := client.getSearchPricing(context.Background(), "standard", "eastus' or '1' eq '1", 1)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Retail Prices filter")
+}
+
+func TestSearchClient_GetOfferingDetails_BuildsExactFilterAndRejectsUnknownTier(t *testing.T) {
+	const region = "eastus"
+	response := createMockHTTPResponse(http.StatusOK, `{"Items":[{"serviceName":"Azure Cognitive Search","armRegionName":"eastus","skuName":"Standard S1","type":"Reservation","reservationTerm":"1 Year","unitOfMeasure":"1 Hour","retailPrice":800,"currencyCode":"USD"}]}`)
 	t.Cleanup(func() { require.NoError(t, response.Body.Close()) })
 	mockHTTP := &MockHTTPClient{}
 	mockHTTP.On("Do", mock.Anything).Return(response, nil).Once()
@@ -592,7 +599,7 @@ func TestSearchClient_GetOfferingDetails_EscapesRegionAndRejectsUnknownTier(t *t
 	require.NoError(t, err)
 	assert.Equal(t, 800.0, details.TotalCost)
 	req := mockHTTP.Calls[0].Arguments.Get(0).(*http.Request)
-	assert.Equal(t, "serviceName eq 'Azure Cognitive Search' and armRegionName eq 'east''us' and skuName eq 'Standard S1' and priceType eq 'Reservation'", req.URL.Query().Get("$filter"))
+	assert.Equal(t, "serviceName eq 'Azure Cognitive Search' and armRegionName eq 'eastus' and skuName eq 'Standard S1' and priceType eq 'Reservation'", req.URL.Query().Get("$filter"))
 	assert.Contains(t, req.URL.RawQuery, "%24filter=")
 	mockHTTP.AssertExpectations(t)
 

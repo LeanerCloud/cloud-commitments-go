@@ -627,9 +627,13 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 // Returns an error when no price record is found rather than (0, nil), which would
 // conflate "zero rate" with "not found" (feedback_nullable_not_zero).
 func (c *Client) fetchOnDemandRate(ctx context.Context, planType string) (float64, error) {
+	qPlan, err := pricing.ODataString(planType)
+	if err != nil {
+		return 0, err
+	}
 	filter := fmt.Sprintf(
-		"serviceFamily eq 'Compute' and priceType eq 'Consumption' and armSkuName eq '%s'",
-		planType,
+		"serviceFamily eq 'Compute' and priceType eq 'Consumption' and armSkuName eq %s",
+		qPlan,
 	)
 	params := url.Values{}
 	params.Add("$filter", filter)

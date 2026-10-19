@@ -1735,16 +1735,30 @@ func TestCheckAndRegisterCapacityProvider_NonTwoxx(t *testing.T) {
 	assert.Contains(t, err.Error(), "403", "error must surface the HTTP status code")
 }
 
-func TestGetVMPricing_EscapesOData(t *testing.T) {
+func TestGetVMPricing_RejectsInjectedFilterValues(t *testing.T) {
+	for _, tc := range []struct{ name, vmSize, region string }{
+		{"vmSize", "x' or armSkuName ne '", "eastus"},
+		{"region", "Standard_D2s_v3", "eastus' or '1' eq '1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := NewClientWithHTTP(nil, "test-subscription", "eastus", &mocks.MockHTTPClient{})
+			_, err := client.getVMPricing(context.Background(), tc.vmSize, tc.region, 1)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "Retail Prices filter")
+		})
+	}
+}
+
+func TestGetVMPricing_LegitimateValuesBuildExactFilter(t *testing.T) {
 	mockHTTP := &mocks.MockHTTPClient{}
-	client := NewClientWithHTTP(nil, "test-subscription", "east'us", mockHTTP)
+	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
 	response := mocks.CreateMockHTTPResponse(http.StatusOK, `{"Items": []}`)
 	t.Cleanup(func() { require.NoError(t, response.Body.Close()) })
 	mockHTTP.On("Do", mock.Anything).Run(func(args mock.Arguments) {
 		req := args.Get(0).(*http.Request)
-		assert.Equal(t, "serviceName eq 'Virtual Machines' and armRegionName eq 'east''us' and armSkuName eq 'Standard_D2''s_v3' and priceType eq 'Reservation'", req.URL.Query().Get("$filter"))
+		assert.Equal(t, "serviceName eq 'Virtual Machines' and armRegionName eq 'eastus' and armSkuName eq 'Standard_D2s_v3' and priceType eq 'Reservation'", req.URL.Query().Get("$filter"))
 	}).Return(response, nil).Once()
-	_, err := client.getVMPricing(context.Background(), "Standard_D2's_v3", "east'us", 1)
+	_, err := client.getVMPricing(context.Background(), "Standard_D2s_v3", "eastus", 1)
 	require.Error(t, err)
 	mockHTTP.AssertExpectations(t)
 }

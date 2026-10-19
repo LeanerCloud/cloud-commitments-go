@@ -177,7 +177,7 @@ func TestCosmosOffering_CapturedReservations(t *testing.T) {
 }
 
 func TestCosmosOffering_FilterAndEscaping(t *testing.T) {
-	for _, sku := range []string{"100RU", "100RUperSecond", "Cosmos_DB_100_RUs", "Cosmos_DB_test'RU"} {
+	for _, sku := range []string{"100RU", "100RUperSecond", "Cosmos_DB_100_RUs"} {
 		t.Run(sku, func(t *testing.T) {
 			arm := "Cosmos_DB_100_RUs"
 			if strings.HasPrefix(sku, "Cosmos_DB_") {
@@ -196,7 +196,7 @@ func TestCosmosOffering_FilterAndEscaping(t *testing.T) {
 }
 
 func TestCosmosOffering_UnknownAliasesAvoidHTTP(t *testing.T) {
-	for _, sku := range []string{"", "1000RU", "1000000RU", "100mRU", "100ru", "100RU'", " 100RU", "CosmosDB_RU_1000", "EnableCassandra"} {
+	for _, sku := range []string{"", "1000RU", "1000000RU", "100mRU", "100ru", "100RU'", " 100RU", "Cosmos_DB_test'RU", "CosmosDB_RU_1000", "EnableCassandra"} {
 		t.Run(sku, func(t *testing.T) {
 			q, err := cosmosQuote(t, sku, nil)
 			require.Error(t, err)

@@ -87,6 +87,24 @@ func TestRenderSummary_WithFiltered(t *testing.T) {
 	assert.Contains(t, output, "Filtered: 2")
 }
 
+func TestRenderSummary_FilteredReasonsSorted(t *testing.T) {
+	result := makeResult(
+		[]common.Recommendation{{EstimatedSavings: 100.0, CommitmentCost: 500.0}},
+		[]scorer.FilteredRecommendation{
+			{FilterReason: "term 3yr not allowed"},
+			{FilterReason: "savings 2.0% below minimum 5.0%"},
+			{FilterReason: "count 2 below minimum 5"},
+			{FilterReason: "savings 1.0% below minimum 5.0%"},
+			{FilterReason: "payback 18.0 months exceeds maximum"},
+		},
+	)
+	// Map iteration order is random per range, so render repeatedly.
+	for i := 0; i < 20; i++ {
+		output := RenderSummary(result)
+		assert.Contains(t, output, "Filtered: 5 recommendations (count: 1, payback: 1, savings: 2, term: 1)\n")
+	}
+}
+
 func TestRenderTable_RecurringMonthlyCost(t *testing.T) {
 	recurring := 1968.81
 	zero := 0.0
