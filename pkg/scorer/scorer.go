@@ -12,12 +12,25 @@ import (
 )
 
 // Config controls which recommendations are allowed through the scorer.
-// Zero values mean "no filter" for numeric thresholds; empty slice means "all services".
+// Zero values mean "no filter" for numeric thresholds, except that MinSavingsPctSet makes a zero MinSavingsPct a real floor; empty slice means "all services".
 type Config struct {
-	MinSavingsPct      float64  // Minimum savings percentage. 0 = no filter.
+	MinSavingsPct      float64  // Minimum savings percentage. 0 with MinSavingsPctSet false = no filter.
+	MinSavingsPctSet   bool     // True makes MinSavingsPct a real floor even at 0 (drops recs with negative savings).
 	MaxBreakEvenMonths int      // Maximum break-even months. 0 = no filter. No-upfront recs pass; recs whose break-even cannot be computed are filtered (an upfront payment option with no upfront price as FilterReasonPriceUnknown).
 	MinCount           int      // Minimum count per recommendation. 0 = no filter.
 	EnabledServices    []string // Empty = all services. E.g. ["ec2", "rds"].
+}
+
+// Validate rejects a MinSavingsPct that is NaN, infinite or negative. Callers
+// must run it before Score, which filters on whatever it is given.
+func (c Config) Validate() error {
+	if math.IsNaN(c.MinSavingsPct) || math.IsInf(c.MinSavingsPct, 0) {
+		return fmt.Errorf("min_savings_pct must be a finite number")
+	}
+	if c.MinSavingsPct < 0 {
+		return fmt.Errorf("min_savings_pct must be ≥ 0")
+	}
+	return nil
 }
 
 // FilterReasonPriceUnknown prefixes the FilterReason of a recommendation
@@ -90,7 +103,7 @@ func filterReason(rec common.Recommendation, cfg Config, enabledServices map[str
 		}
 	}
 
-	if cfg.MinSavingsPct > 0 && rec.SavingsPercentage < cfg.MinSavingsPct {
+	if (cfg.MinSavingsPct > 0 || cfg.MinSavingsPctSet) && !(rec.SavingsPercentage >= cfg.MinSavingsPct) { // negated so a NaN floor fails closed
 		return fmt.Sprintf("savings %.1f%% below minimum %.1f%%", rec.SavingsPercentage, cfg.MinSavingsPct)
 	}
 

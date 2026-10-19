@@ -1,0 +1,16 @@
+# Trivy ignore policy, read by the CI Trivy fs scan (trivyignores input).
+# Scoped by vulnerability ID and path; expired entries stop suppressing.
+vulnerabilities:
+  # golang.org/x/crypto/openpgp is "unmaintained, unsafe by design" with no
+  # fixed version. No package in any of these modules imports it
+  # (`go mod why golang.org/x/crypto/openpgp`: "main module does not need
+  # package"; `go list -deps -test ./...` has no openpgp). x/crypto is
+  # required only for pkcs12 (azidentity) and cryptobyte (s2a-go via the
+  # Google API client). Issue #127.
+  - id: GO-2026-5932
+    paths:
+      - ci_cd_sanity_tests/go.mod
+      - providers/azure/go.mod
+      - providers/gcp/go.mod
+    statement: openpgp package unused; x/crypto needed for pkcs12/cryptobyte only
+    expired_at: 2027-01-19
