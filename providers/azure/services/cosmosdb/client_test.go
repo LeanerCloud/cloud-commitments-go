@@ -1704,3 +1704,21 @@ func TestReservationResourceTypeCosmosDB_IsCanonical(t *testing.T) {
 		"Cosmos DB filter value must be the Azure REST API canonical enum \"CosmosDB\"; "+
 			"\"CosmosDb\" (pre-fix) is not a valid resourceType")
 }
+
+// TestNewClientWithHTTP_NilFallbackIsHardened verifies that passing nil as the
+// httpClient falls back to the SSRF-hardened httpclient.New(), which rejects
+// IMDS connections, instead of leaving a nil client that panics on first use.
+func TestNewClientWithHTTP_NilFallbackIsHardened(t *testing.T) {
+	c := NewClientWithHTTP(nil, "sub-123", "eastus", nil)
+	require.NotNil(t, c.httpClient)
+	require.NotEqual(t, http.DefaultClient, c.httpClient,
+		"nil fallback must never be http.DefaultClient")
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://169.254.169.254/metadata/instance", nil)
+	require.NoError(t, err)
+	resp, err := c.httpClient.Do(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
+	require.Error(t, err, "nil-fallback client must reject IMDS connections")
+	assert.Contains(t, err.Error(), "blocked")
+}
