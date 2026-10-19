@@ -12,7 +12,7 @@ import (
 )
 
 // Config controls which recommendations are allowed through the scorer.
-// Zero values mean "no filter" for numeric thresholds; empty slice means "all services".
+// Zero values mean "no filter" for numeric thresholds, except that MinSavingsPctSet makes a zero MinSavingsPct a real floor; empty slice means "all services".
 type Config struct {
 	MinSavingsPct      float64  // Minimum savings percentage. 0 with MinSavingsPctSet false = no filter.
 	MinSavingsPctSet   bool     // True makes MinSavingsPct a real floor even at 0 (drops recs with negative savings).
@@ -100,7 +100,7 @@ func filterReason(rec common.Recommendation, cfg Config, enabledServices map[str
 		}
 	}
 
-	if (cfg.MinSavingsPct > 0 || cfg.MinSavingsPctSet) && rec.SavingsPercentage < cfg.MinSavingsPct {
+	if (cfg.MinSavingsPct > 0 || cfg.MinSavingsPctSet) && !(rec.SavingsPercentage >= cfg.MinSavingsPct) { // negated so a NaN floor fails closed
 		return fmt.Sprintf("savings %.1f%% below minimum %.1f%%", rec.SavingsPercentage, cfg.MinSavingsPct)
 	}
 

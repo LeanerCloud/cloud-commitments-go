@@ -252,3 +252,16 @@ func TestConfig_Validate(t *testing.T) {
 		assert.Error(t, Config{MinSavingsPct: v, MinSavingsPctSet: true}.Validate(), "%v", v)
 	}
 }
+
+func TestScore_MinSavingsPct_NonFiniteFailsClosed(t *testing.T) {
+	t.Parallel()
+	recs := []common.Recommendation{
+		rec(common.ServiceEC2, "us-east-1", "a", 30.0, 100.0, 3000.0, 1, 0),
+		rec(common.ServiceRDS, "us-east-1", "b", 99.0, 500.0, 2500.0, 1, 0),
+	}
+	for _, v := range []float64{math.NaN(), math.Inf(1)} {
+		result := Score(recs, Config{MinSavingsPct: v, MinSavingsPctSet: true})
+		assert.Empty(t, result.Passed, "%v", v)
+		assert.Len(t, result.Filtered, 2, "%v", v)
+	}
+}
