@@ -91,6 +91,16 @@ func rdsFamilyKey(region, family, engine, deployment string) string {
 		normaliseDeployment(deployment)
 }
 
+// rdsSizeFlexible reports whether an engine's RIs are size-flexible within an
+// instance family. SQL Server RIs never are, so they stay at the per-size pool
+// granularity instead of being pooled by family. Oracle License Included is
+// also non-flexible but cannot be told apart from BYOL (flexible) until the
+// license model is carried on recs, coverage and commitments, so Oracle stays
+// on the family path.
+func rdsSizeFlexible(engine string) bool {
+	return normaliseRDSEngine(engine) != "sqlserver"
+}
+
 // FamilyCoverage is the family-NU-aggregated view of coverage for an
 // RDS instance family. TotalNU is the sum of (avg × NU(size)) across
 // every size in the family that has CE coverage data; CoveredNU is the
@@ -108,8 +118,9 @@ type FamilyCoverage struct {
 // GetReservationPurchaseRecommendation bundles size-flex demand into a
 // single rec at one size.
 //
-// Skips non-RDS entries (their keys are 2-part, not 4-part) and entries
-// whose instance size isn't in rdsInstanceNU.
+// Skips non-RDS entries (their keys are 2-part, not 4-part), entries
+// whose instance size isn't in rdsInstanceNU, and engines that are not
+// size-flexible (rdsSizeFlexible).
 func AggregateRDSFamilyCoverage(coverage PoolCoverageMap) map[string]FamilyCoverage {
 	out := make(map[string]FamilyCoverage)
 	for key, pc := range coverage {
@@ -119,6 +130,9 @@ func AggregateRDSFamilyCoverage(coverage PoolCoverageMap) map[string]FamilyCover
 			continue
 		}
 		region, instType, engine, deployment := parts[0], parts[1], parts[2], parts[3]
+		if !rdsSizeFlexible(engine) {
+			continue
+		}
 		nu := rdsInstanceNUFromType(instType)
 		if nu == 0 {
 			continue
@@ -216,8 +230,8 @@ func sizeRDSFamilies(
 // deployment), and (b) a slice of non-RDS recs that flow through to the
 // caller's per-pool sizing path unchanged. Recs that are RDS RIs but
 // carry an instance type without a recognizable size suffix (and thus
-// can't be NU-scaled) fall into nonRDS so per-pool sizing still handles
-// them.
+// can't be NU-scaled) and recs of engines that are not size-flexible
+// (rdsSizeFlexible) fall into nonRDS so per-pool sizing still handles them.
 func partitionRDSRecsByFamily(recs []common.Recommendation) (map[string][]int, []common.Recommendation) {
 	familyIdx := make(map[string][]int)
 	nonRDS := make([]common.Recommendation, 0)
@@ -232,6 +246,10 @@ func partitionRDSRecsByFamily(recs []common.Recommendation) (map[string][]int, [
 			continue
 		}
 		engine, deployment := rdsEngineDeploymentFromRec(recs[i])
+		if !rdsSizeFlexible(engine) {
+			nonRDS = append(nonRDS, recs[i])
+			continue
+		}
 		fk := rdsFamilyKey(recs[i].Region, family, engine, deployment)
 		familyIdx[fk] = append(familyIdx[fk], i)
 	}
@@ -316,6 +334,18 @@ func scaleFamilyRecs(recs []common.Recommendation, indices []int, scale float64)
 	return sized, totalNewNU, zeroDrops
 }
 
+// familyProjectedCoverage is the single formula for a family's cumulative
+// projected coverage: existing% plus newNU / familyTotalNU as %, capped at 100.
+// Sizing (annotateFamilyProjection) and RederiveFamilyCoverage both use it so
+// the two can never disagree.
+func familyProjectedCoverage(existingPct, newNU, familyTotalNU float64) float64 {
+	proj := existingPct + newNU/familyTotalNU*100.0
+	if proj > 100 {
+		proj = 100
+	}
+	return proj
+}
+
 // annotateFamilyProjection is the second pass: computes the cumulative
 // family ProjectedCoverage (existing% plus totalNewNU / familyTotalNU
 // expressed as %) and writes the same value onto every rec along with
@@ -323,10 +353,7 @@ func scaleFamilyRecs(recs []common.Recommendation, indices []int, scale float64)
 // same projection lands on every row so each one reflects "where the
 // family lands" rather than its own slice.
 func annotateFamilyProjection(sized []common.Recommendation, existingPct, totalNewNU, familyTotalNU float64) {
-	familyProj := existingPct + totalNewNU/familyTotalNU*100.0
-	if familyProj > 100 {
-		familyProj = 100
-	}
+	familyProj := familyProjectedCoverage(existingPct, totalNewNU, familyTotalNU)
 	for i := range sized {
 		sized[i].ExistingCoveragePct = existingPct
 		sized[i].ExistingCoveragePercentExact = nil
@@ -374,8 +401,11 @@ func isRDSRIRec(rec common.Recommendation) bool {
 // FamilyExpiryReport describes how commitment expiry was folded into family
 // coverage by ApplyFamilyNUSizingRDSWithExpiry.
 type FamilyExpiryReport struct {
-	// ExpiringNU is the normalized units of active RDS RIs ending inside the
-	// window that were deducted from family coverage.
+	// ExpiringNU is the normalized units actually removed from family covered
+	// NU, summed over families (covered NU before minus after). It is below
+	// the expiring RIs' own NU when the min() cap, the partial-inventory cap
+	// or replacement credit absorbs part of it, and 0 when underutilized RIs
+	// leave covered NU unchanged.
 	ExpiringNU float64
 	// ReplacementNU is the normalized units of visible active, non-expiring RDS
 	// RIs that started inside the coverage lookback and so are not yet in the
@@ -386,6 +416,10 @@ type FamilyExpiryReport struct {
 	// be deducted: an unparsable instance class (NU 0) or a family key with no
 	// coverage family (e.g. an engine spelled differently from the coverage
 	// report). Callers must surface this; it never means "no expiry".
+	// It also counts expiring RIs of non-size-flexible engines (SQL Server):
+	// those are not lost, their expiry is handled per pool by
+	// AdjustExistingCoverageForExpiringCommitmentsWithCoverage, so for them it
+	// is informational, not a failure.
 	Unusable int
 }
 
@@ -474,9 +508,10 @@ func adjustFamilyCoverageForExpiry(familyCov map[string]FamilyCoverage, commitme
 	for fk, exp := range totals.expiring {
 		fc := familyCov[fk]
 		rep := totals.replacement[fk]
-		fc.CoveredNU = math.Max(0, math.Max(math.Min(fc.CoveredNU, fc.CoveredNU-exp+rep), math.Min(fc.CoveredNU, totals.active[fk]-exp)))
+		pre := fc.CoveredNU
+		fc.CoveredNU = math.Max(0, math.Max(math.Min(pre, pre-exp+rep), math.Min(pre, totals.active[fk]-exp)))
 		familyCov[fk] = fc
-		report.ExpiringNU += exp
+		report.ExpiringNU += pre - fc.CoveredNU
 		report.ReplacementNU += rep
 	}
 	return report
@@ -526,7 +561,9 @@ func tallyFamilyCommitments(familyCov map[string]FamilyCoverage, commitments []c
 // rdsCommitmentFamilyUnits maps an active RDS commitment to its family key and
 // normalized units. ok is false when the commitment is not an active RDS RI
 // (expiring is then false) or its class cannot be parsed (expiring is then
-// true when it ends inside the window, so the caller can report it).
+// true when it ends inside the window, so the caller can report it). Engines
+// that are not size-flexible are likewise not ok: they are sized per pool, not
+// per family, so an expiring one is reported as unusable here.
 func rdsCommitmentFamilyUnits(c *common.Commitment, cutoff time.Time) (fk string, units float64, expiring, ok bool) {
 	if (c.Service != common.ServiceRDS && c.Service != common.ServiceRelationalDB) || !commitmentIsActive(*c) {
 		return "", 0, false, false
@@ -534,7 +571,7 @@ func rdsCommitmentFamilyUnits(c *common.Commitment, cutoff time.Time) (fk string
 	expiring = !c.EndDate.IsZero() && !c.EndDate.After(cutoff)
 	family := rdsFamilyFromType(c.ResourceType)
 	nu := rdsInstanceNUFromType(c.ResourceType)
-	if family == "" || nu == 0 {
+	if family == "" || nu == 0 || !rdsSizeFlexible(c.Engine) {
 		return "", 0, expiring, false
 	}
 	return rdsFamilyKey(c.Region, family, c.Engine, c.Deployment), float64(c.Count) * nu, expiring, true

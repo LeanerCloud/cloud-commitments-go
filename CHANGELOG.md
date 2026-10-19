@@ -36,6 +36,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   scope (`linked` default, or `payer`) for Reserved Instance recommendations,
   mirroring `SPAccountScope`. Empty keeps the previous linked behaviour; an
   unknown value is rejected (#508).
+- **`recommendations.RederiveFamilyCoverage`:** recomputes the family-wide
+  RDS `ProjectedCoverage` that family-NU sizing wrote, after a caller changed
+  `Count` (`--max-instances`, count override, duplicate-RI dedupe). It shares
+  its formula with sizing, returns a new slice and leaves non-RDS, SQL Server
+  and unsized recs untouched (#511).
 - **`recommendations.AdjustExistingCoverageForExpiringCommitmentsWithCoverageOptions`:**
   the per-pool (EC2 and other non-family) expiry deduction, plus credit for
   replacements already bought. Coverage is a lookback average, so RIs bought
@@ -180,6 +185,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **`scorer`:** `MinCount` no longer applies to Savings Plans. Their `Count`
+  is always 1 (the commitment is dollar-denominated), so `--min-count 2`
+  dropped every Savings Plan recommendation.
+- **`aws/recommendations`:** RDS family-NU sizing and the expiry deduction no longer pool SQL Server by instance family (its RIs are never size-flexible): those recs go to the per-size path and expiring SQL Server RIs count as `Unusable`. Oracle stays pooled until the license model is carried (#342).
+- **`aws/recommendations`:** `FamilyExpiryReport.ExpiringNU` now reports the NU actually removed from family covered NU (before minus after) instead of the expiring RIs' own NU, so it is 0 when underutilized RIs absorb the expiry (#342).
 - **`aws` and `azure/savingsplans` recommendations:** a Cost Explorer RI or
   Savings Plan detail with an explicit non-USD `CurrencyCode`, and an Azure
   benefit recommendation whose `currencyCode` is not USD, are skipped instead

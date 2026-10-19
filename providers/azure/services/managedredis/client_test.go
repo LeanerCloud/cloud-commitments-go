@@ -1025,12 +1025,11 @@ func TestConvertRecommendation_legacy(t *testing.T) {
 
 func TestRedisPricingStruct(t *testing.T) {
 	p := RedisPricing{
-		HourlyRate: 0.5, ReservationPrice: 4380.0, OnDemandPrice: 8760.0,
-		Currency: "USD", SavingsPercentage: 50.0,
+		HourlyRate: 0.5, ReservationPrice: 4380.0,
+		Currency: "USD",
 	}
 	assert.Equal(t, 0.5, p.HourlyRate)
 	assert.Equal(t, "USD", p.Currency)
-	assert.Equal(t, 50.0, p.SavingsPercentage)
 }
 
 // TestPurchaseCommitment_TagInjection verifies that the purchase-automation tag

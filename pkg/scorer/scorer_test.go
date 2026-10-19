@@ -72,6 +72,20 @@ func TestScore_MinCount(t *testing.T) {
 	assert.Contains(t, result.Filtered[0].FilterReason, "count 2")
 }
 
+func TestScore_MinCount_SavingsPlanExempt(t *testing.T) {
+	t.Parallel()
+	sp := rec(common.ServiceSavingsPlansCompute, "us-east-1", "compute-sp", 10.0, 100.0, 1000.0, 1, 0)
+	sp.CommitmentType = common.CommitmentSavingsPlan
+	ri := rec(common.ServiceEC2, "us-east-1", "m5.large", 10.0, 100.0, 1000.0, 1, 0)
+	ri.CommitmentType = common.CommitmentReservedInstance
+	result := Score([]common.Recommendation{sp, ri}, Config{MinCount: 5})
+	assert.Len(t, result.Passed, 1)
+	assert.Equal(t, "compute-sp", result.Passed[0].ResourceType)
+	assert.Len(t, result.Filtered, 1)
+	assert.Equal(t, "m5.large", result.Filtered[0].Recommendation.ResourceType)
+	assert.Contains(t, result.Filtered[0].FilterReason, "count 1 below minimum 5")
+}
+
 func TestScore_EnabledServices(t *testing.T) {
 	t.Parallel()
 	recs := []common.Recommendation{

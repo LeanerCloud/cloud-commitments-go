@@ -47,7 +47,7 @@ func TestExpiryReplacements_Regression(t *testing.T) {
 		sized, _, drops, rep := ApplyFamilyNUSizingRDSWithExpiryOptions(recs, cov, 80, commits, replTestOpts())
 		assert.Empty(t, sized)
 		assert.Equal(t, 1, drops.AlreadyAtTarget)
-		assert.Equal(t, 16.0, rep.ExpiringNU)
+		assert.Zero(t, rep.ExpiringNU, "replacements absorb the whole expiry: covered NU is unchanged")
 		assert.Equal(t, 16.0, rep.ReplacementNU)
 	})
 

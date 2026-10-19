@@ -590,18 +590,14 @@ func TestCosmosDBClient_GetExistingCommitments_Empty(t *testing.T) {
 
 func TestCosmosPricingStructure(t *testing.T) {
 	pricing := CosmosPricing{
-		HourlyRate:        0.10,
-		ReservationPrice:  876.0,
-		OnDemandPrice:     1752.0,
-		Currency:          "USD",
-		SavingsPercentage: 50.0,
+		HourlyRate:       0.10,
+		ReservationPrice: 876.0,
+		Currency:         "USD",
 	}
 
 	assert.Equal(t, 0.10, pricing.HourlyRate)
 	assert.Equal(t, 876.0, pricing.ReservationPrice)
-	assert.Equal(t, 1752.0, pricing.OnDemandPrice)
 	assert.Equal(t, "USD", pricing.Currency)
-	assert.Equal(t, 50.0, pricing.SavingsPercentage)
 }
 
 func TestCosmosDBClient_GetRecommendations_WithMockPager(t *testing.T) {
