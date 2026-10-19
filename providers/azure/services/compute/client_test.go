@@ -1851,3 +1851,67 @@ func TestPurchaseBody_SKUAndQuantityStayInMatchingUnits(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractVMSKUCapabilities_FailsLoudOnBadValues(t *testing.T) {
+	sku := func(vcpus, mem *string) *armcompute.ResourceSKU {
+		n1, n2 := "vCPUs", "MemoryGB"
+		var caps []*armcompute.ResourceSKUCapabilities
+		if vcpus != nil {
+			caps = append(caps, &armcompute.ResourceSKUCapabilities{Name: &n1, Value: vcpus})
+		}
+		if mem != nil {
+			caps = append(caps, &armcompute.ResourceSKUCapabilities{Name: &n2, Value: mem})
+		}
+		return &armcompute.ResourceSKU{Capabilities: caps}
+	}
+	s := func(v string) *string { return &v }
+
+	tests := []struct {
+		name       string
+		sku        *armcompute.ResourceSKU
+		wantErr    bool
+		wantVCPUs  int
+		wantMemory float64
+	}{
+		{"valid", sku(s("4"), s("16.5")), false, 4, 16.5},
+		{"both missing is unknown", sku(nil, nil), false, 0, 0},
+		{"memory missing is unknown", sku(s("4"), nil), false, 4, 0},
+		{"vCPUs unparseable", sku(s("four"), s("16")), true, 0, 0},
+		{"vCPUs negative", sku(s("-1"), s("16")), true, 0, 0},
+		{"memory unparseable", sku(s("4"), s("lots")), true, 0, 0},
+		{"memory NaN", sku(s("4"), s("NaN")), true, 0, 0},
+		{"memory negative", sku(s("4"), s("-2")), true, 0, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v, m, err := extractVMSKUCapabilities(tt.sku)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("want error, got vCPUs=%d memoryGB=%v", v, m)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if v != tt.wantVCPUs || m != tt.wantMemory {
+				t.Fatalf("got (%d, %v), want (%d, %v)", v, m, tt.wantVCPUs, tt.wantMemory)
+			}
+		})
+	}
+}
+
+func TestPopulateVMSKUMapFromPage_SkipsSKUWithUnparseableCapability(t *testing.T) {
+	client := NewClient(nil, "test-subscription", "eastus")
+	out := map[string]vmSKUEntry{}
+	client.populateVMSKUMapFromPage(out, []*armcompute.ResourceSKU{
+		buildVMSKU("Good", 2, "8"),
+		buildVMSKU("Bad", 2, "lots"),
+	})
+	if _, ok := out["Bad"]; ok {
+		t.Fatal("SKU with unparseable MemoryGB must be skipped, not cached with zero")
+	}
+	if e, ok := out["Good"]; !ok || e.vCPUs != 2 || e.memoryGB != 8 {
+		t.Fatalf("Good entry wrong: %+v ok=%v", e, ok)
+	}
+}
