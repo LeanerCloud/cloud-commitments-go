@@ -1168,11 +1168,16 @@ func machineTypeFromResourcePath(resource string) (string, bool) {
 // month (8760 / 12), the month length used across the providers.
 const savingsWindow = 730 * time.Hour
 
+// savingsCurrency is the only currency EstimatedSavings can be reported in:
+// downstream consumers treat it as USD.
+const savingsCurrency = "USD"
+
 // extractCostImpactFromRecommendation extracts the cost impact from a GCP
 // recommendation and normalizes it to savingsWindow using the projection's
 // Duration. A non-zero cost with a missing or non-positive Duration is an error
 // wrapping errBadAmount: the window is unknown, so the amount cannot be trusted
-// as monthly.
+// as monthly. A non-zero cost whose currency is not USD (or is missing) is also
+// an errBadAmount, since the value would otherwise be consumed as USD.
 func extractCostImpactFromRecommendation(gcpRec *recommenderpb.Recommendation, rec *common.Recommendation) error {
 	if gcpRec.PrimaryImpact == nil {
 		return nil
@@ -1186,6 +1191,9 @@ func extractCostImpactFromRecommendation(gcpRec *recommenderpb.Recommendation, r
 	cost := costProj.Cost
 	if cost.Units == 0 && cost.Nanos == 0 {
 		return nil
+	}
+	if cost.CurrencyCode != savingsCurrency {
+		return fmt.Errorf("%w: cost projection currency is %q, only %s is supported", errBadAmount, cost.CurrencyCode, savingsCurrency)
 	}
 	if costProj.GetDuration() == nil || costProj.GetDuration().AsDuration() <= 0 {
 		return fmt.Errorf("%w: cost projection has a non-zero cost but no positive duration", errBadAmount)

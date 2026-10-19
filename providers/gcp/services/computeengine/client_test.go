@@ -1352,7 +1352,7 @@ func TestConverterFillsPricingForScorer(t *testing.T) {
 	client.SetBillingService(billing)
 
 	gcpRec := realisticCUDRecommendation()
-	gcpRec.PrimaryImpact.GetCostProjection().Cost.CurrencyCode = "JPY"
+	gcpRec.PrimaryImpact.GetCostProjection().Cost.CurrencyCode = "USD"
 	rec, err := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
 	require.NoError(t, err)
 	require.NotNil(t, rec)

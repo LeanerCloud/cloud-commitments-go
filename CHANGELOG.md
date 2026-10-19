@@ -176,6 +176,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **`gcp/computeengine`:** a Recommender cost projection with a non-zero cost
+  and a non-USD or missing currency code is now skipped with a logged warning
+  instead of being reported as USD `EstimatedSavings`.
 - **`azure/compute`:** reservation exchange targets are no longer always
   billed Upfront. `ExchangeTarget.BillingPlan` (new, optional) is sent as each
   target's `billingPlan` in the CalculateExchange body, so the session that
