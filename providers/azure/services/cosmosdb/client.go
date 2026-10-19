@@ -558,11 +558,9 @@ func (c *Client) getCommonSKUs() []string {
 
 // CosmosPricing contains pricing information for Cosmos DB.
 type CosmosPricing struct {
-	HourlyRate        float64
-	ReservationPrice  float64
-	OnDemandPrice     float64
-	Currency          string
-	SavingsPercentage float64
+	HourlyRate       float64
+	ReservationPrice float64
+	Currency         string
 }
 
 func (c *Client) getCosmosPricing(ctx context.Context, sku, region string, termYears int) (*CosmosPricing, error) {

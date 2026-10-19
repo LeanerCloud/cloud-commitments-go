@@ -254,18 +254,14 @@ func TestAzureRetailPriceStructure(t *testing.T) {
 
 func TestRedisPricingStructure(t *testing.T) {
 	pricing := RedisPricing{
-		HourlyRate:        0.50,
-		ReservationPrice:  4380.0, // 1 year
-		OnDemandPrice:     8760.0, // 1 year at $1/hour
-		Currency:          "USD",
-		SavingsPercentage: 50.0,
+		HourlyRate:       0.50,
+		ReservationPrice: 4380.0, // 1 year
+		Currency:         "USD",
 	}
 
 	assert.Equal(t, 0.50, pricing.HourlyRate)
 	assert.Equal(t, 4380.0, pricing.ReservationPrice)
-	assert.Equal(t, 8760.0, pricing.OnDemandPrice)
 	assert.Equal(t, "USD", pricing.Currency)
-	assert.Equal(t, 50.0, pricing.SavingsPercentage)
 }
 
 func TestNewClientWithHTTP(t *testing.T) {

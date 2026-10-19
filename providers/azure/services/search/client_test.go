@@ -652,18 +652,14 @@ func TestAzureRetailPriceStructure(t *testing.T) {
 
 func TestSearchPricingStructure(t *testing.T) {
 	pricing := Pricing{
-		HourlyRate:        0.15,
-		ReservationPrice:  1314.0,
-		OnDemandPrice:     2628.0,
-		Currency:          "USD",
-		SavingsPercentage: 50.0,
+		HourlyRate:       0.15,
+		ReservationPrice: 1314.0,
+		Currency:         "USD",
 	}
 
 	assert.Equal(t, 0.15, pricing.HourlyRate)
 	assert.Equal(t, 1314.0, pricing.ReservationPrice)
-	assert.Equal(t, 2628.0, pricing.OnDemandPrice)
 	assert.Equal(t, "USD", pricing.Currency)
-	assert.Equal(t, 50.0, pricing.SavingsPercentage)
 }
 
 func TestSearchClient_GetRecommendations_WithMockPager(t *testing.T) {

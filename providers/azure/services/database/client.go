@@ -587,11 +587,9 @@ func (c *Client) extractManagedInstanceSKUs(capabilities armsql.LocationCapabili
 
 // SQLPricing contains pricing information for SQL Database.
 type SQLPricing struct {
-	HourlyRate        float64
-	ReservationPrice  float64
-	OnDemandPrice     float64
-	Currency          string
-	SavingsPercentage float64
+	HourlyRate       float64
+	ReservationPrice float64
+	Currency         string
 }
 
 // getSQLPricing gets real pricing from Azure Retail Prices API.

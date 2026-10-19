@@ -455,11 +455,9 @@ func (c *Client) GetValidResourceTypes(_ context.Context) ([]string, error) {
 
 // Pricing holds pricing information for Synapse Analytics.
 type Pricing struct {
-	HourlyRate        float64
-	ReservationPrice  float64
-	OnDemandPrice     float64
-	Currency          string
-	SavingsPercentage float64
+	HourlyRate       float64
+	ReservationPrice float64
+	Currency         string
 }
 
 // getSynapsePricing fetches pricing from the Azure Retail Prices API.

@@ -189,18 +189,14 @@ func TestDatabaseClient_GetRegion(t *testing.T) {
 
 func TestSQLPricingStructure(t *testing.T) {
 	pricing := SQLPricing{
-		HourlyRate:        0.25,
-		ReservationPrice:  2190.0,
-		OnDemandPrice:     4380.0,
-		Currency:          "USD",
-		SavingsPercentage: 50.0,
+		HourlyRate:       0.25,
+		ReservationPrice: 2190.0,
+		Currency:         "USD",
 	}
 
 	assert.Equal(t, 0.25, pricing.HourlyRate)
 	assert.Equal(t, 2190.0, pricing.ReservationPrice)
-	assert.Equal(t, 4380.0, pricing.OnDemandPrice)
 	assert.Equal(t, "USD", pricing.Currency)
-	assert.Equal(t, 50.0, pricing.SavingsPercentage)
 }
 
 func TestAzureRetailPriceStructure(t *testing.T) {

@@ -448,11 +448,9 @@ func (c *Client) getCommonSKUs() []string {
 
 // Pricing contains pricing information for Azure Search.
 type Pricing struct {
-	HourlyRate        float64
-	ReservationPrice  float64
-	OnDemandPrice     float64
-	Currency          string
-	SavingsPercentage float64
+	HourlyRate       float64
+	ReservationPrice float64
+	Currency         string
 }
 
 var searchDisplaySKUs = map[string]string{
