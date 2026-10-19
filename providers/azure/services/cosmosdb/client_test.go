@@ -1722,3 +1722,22 @@ func TestNewClientWithHTTP_NilFallbackIsHardened(t *testing.T) {
 	require.Error(t, err, "nil-fallback client must reject IMDS connections")
 	assert.Contains(t, err.Error(), "blocked")
 }
+
+func TestGetCosmosPricing_RejectsInjectedSKU(t *testing.T) {
+	client := NewClientWithHTTP(nil, "sub", "eastus", &MockHTTPClient{})
+	_, err := client.getCosmosPricing(context.Background(), "Cosmos_DB_x' or armSkuName ne '", "eastus", 1)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Retail Prices filter")
+}
+
+func TestGetCosmosPricing_LegitimateSKUBuildsExactFilter(t *testing.T) {
+	response := createMockHTTPResponse(http.StatusOK, `{"Items":[]}`)
+	t.Cleanup(func() { require.NoError(t, response.Body.Close()) })
+	mockHTTP := &MockHTTPClient{}
+	mockHTTP.On("Do", mock.Anything).Return(response, nil).Once()
+	_, err := NewClientWithHTTP(nil, "sub", "eastus", mockHTTP).getCosmosPricing(context.Background(), "100RU", "eastus", 1)
+	require.Error(t, err)
+	req := mockHTTP.Calls[0].Arguments.Get(0).(*http.Request)
+	assert.Equal(t, "serviceName eq 'Azure Cosmos DB' and productName eq 'Azure Cosmos DB' and armRegionName eq 'Global' and armSkuName eq 'Cosmos_DB_100_RUs' and priceType eq 'Reservation'", req.URL.Query().Get("$filter"))
+	mockHTTP.AssertExpectations(t)
+}
