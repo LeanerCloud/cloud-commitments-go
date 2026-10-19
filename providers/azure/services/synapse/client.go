@@ -464,8 +464,16 @@ type Pricing struct {
 
 // getSynapsePricing fetches pricing from the Azure Retail Prices API.
 func (c *Client) getSynapsePricing(ctx context.Context, sku, region string, termYears int) (*Pricing, error) {
-	filter := fmt.Sprintf("serviceName eq 'Azure Synapse Analytics' and productName eq 'Azure Synapse Analytics Dedicated SQL Pool' and armRegionName eq '%s' and skuName eq '%s' and priceType eq 'Reservation'",
-		strings.ReplaceAll(region, "'", "''"), strings.ReplaceAll(sku, "'", "''"))
+	qRegion, err := pricing.ODataString(region)
+	if err != nil {
+		return nil, err
+	}
+	qSKU, err := pricing.ODataString(sku)
+	if err != nil {
+		return nil, err
+	}
+	filter := fmt.Sprintf("serviceName eq 'Azure Synapse Analytics' and productName eq 'Azure Synapse Analytics Dedicated SQL Pool' and armRegionName eq %s and skuName eq %s and priceType eq 'Reservation'",
+		qRegion, qSKU)
 
 	params := url.Values{}
 	params.Add("$filter", filter)

@@ -191,16 +191,15 @@ func TestRedisOffering_CapturedReservations(t *testing.T) {
 	}
 }
 
-func TestRedisOffering_FilterAndEscaping(t *testing.T) {
+func TestRedisOffering_RejectsQuoteInRegion(t *testing.T) {
 	for _, c := range redisClients() {
 		t.Run(c.name, func(t *testing.T) {
-			r := redisCatalog()[0].row(1)
-			r["armRegionName"] = "east'us"
-			filter := []string{"serviceName eq 'Redis Cache'", "armRegionName eq 'east''us'", "armSkuName eq 'Azure_Redis_Cache_Premium_P1_Cache'", "priceType eq 'Reservation'"}
-			h, _ := redisHTTP(t, [][]map[string]any{{redisConsumption(), r}}, filter)
+			h, requests := redisHTTP(t, nil, nil)
 			q, err := c.newClient("east'us", h).GetOfferingDetails(context.Background(), common.Recommendation{ResourceType: "Premium_P1", Term: "1yr", PaymentOption: "upfront"})
-			require.NoError(t, err)
-			assert.Equal(t, 1553.0, q.TotalCost)
+			require.Error(t, err)
+			assert.Nil(t, q)
+			assert.Contains(t, err.Error(), "Retail Prices filter")
+			assert.Equal(t, int32(0), requests.Load())
 		})
 	}
 }

@@ -583,8 +583,16 @@ type SQLPricing struct {
 
 // getSQLPricing gets real pricing from Azure Retail Prices API.
 func (c *Client) getSQLPricing(ctx context.Context, sku, region string, termYears int) (*SQLPricing, error) {
-	filter := fmt.Sprintf("serviceName eq 'SQL Database' and armRegionName eq '%s' and armSkuName eq '%s' and priceType eq 'Reservation'",
-		strings.ReplaceAll(region, "'", "''"), strings.ReplaceAll(sku, "'", "''"))
+	qRegion, err := pricing.ODataString(region)
+	if err != nil {
+		return nil, err
+	}
+	qSKU, err := pricing.ODataString(sku)
+	if err != nil {
+		return nil, err
+	}
+	filter := fmt.Sprintf("serviceName eq 'SQL Database' and armRegionName eq %s and armSkuName eq %s and priceType eq 'Reservation'",
+		qRegion, qSKU)
 
 	priceData, err := c.fetchAzurePricing(ctx, filter)
 	if err != nil {
