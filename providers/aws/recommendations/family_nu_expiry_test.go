@@ -120,8 +120,9 @@ func TestApplyFamilyNUSizingRDSWithExpiry(t *testing.T) {
 
 	t.Run("size-flexibility by engine: only flexible engines are pooled by family", func(t *testing.T) {
 		// Same 80 NU usage at 80% covered; expiring 4 x large, long-lived 6 x xlarge.
-		// Pooled by family this sizes 2 x xlarge. SQL Server and Oracle RIs cannot
-		// cover a larger size, so they must be left to the per-size path.
+		// Pooled by family this sizes 2 x xlarge. SQL Server RIs cannot cover a
+		// larger size, so they must be left to the per-size path. Oracle (license
+		// model unknown) stays pooled, as before.
 		for _, tc := range []struct {
 			engine, ceEngine string
 			flexible         bool
@@ -129,7 +130,7 @@ func TestApplyFamilyNUSizingRDSWithExpiry(t *testing.T) {
 			{"mysql", "MySQL", true},
 			{"postgres", "PostgreSQL", true},
 			{"sqlserver-ee", "SQL Server", false},
-			{"oracle-ee", "Oracle", false},
+			{"oracle-ee", "Oracle", true},
 		} {
 			t.Run(tc.engine, func(t *testing.T) {
 				cov := PoolCoverageMap{rdsPoolKey("us-east-1", "db.r6g.xlarge", tc.ceEngine, "Single-AZ"): {Pct: 80, AvgInstancesPerHour: 10}}

@@ -176,7 +176,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
-- **`aws/recommendations`:** RDS family-NU sizing and the expiry deduction no longer pool SQL Server and Oracle by instance family (their RIs are not size-flexible; the license model is not carried, so Oracle BYOL is included): those recs go to the per-size path and expiring RIs of those engines count as `Unusable` (#342).
+- **`aws/recommendations`:** RDS family-NU sizing and the expiry deduction no longer pool SQL Server by instance family (its RIs are never size-flexible): those recs go to the per-size path and expiring SQL Server RIs count as `Unusable`. Oracle stays pooled until the license model is carried (#342).
 - **`aws/recommendations`:** `FamilyExpiryReport.ExpiringNU` now reports the NU actually removed from family covered NU (before minus after) instead of the expiring RIs' own NU, so it is 0 when underutilized RIs absorb the expiry (#342).
 - **`azure`:** the Retail Prices `$filter` values built from SKU and region in
   the search, compute, cosmosdb and savingsplans clients are now validated with

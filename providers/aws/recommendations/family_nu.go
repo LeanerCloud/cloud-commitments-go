@@ -92,16 +92,13 @@ func rdsFamilyKey(region, family, engine, deployment string) string {
 }
 
 // rdsSizeFlexible reports whether an engine's RIs are size-flexible within an
-// instance family. SQL Server and Oracle are not (Oracle only for License
-// Included, but the license model is not carried on recs, coverage or
-// commitments, so both are treated as fixed-size), so they stay at the
-// per-size pool granularity instead of being pooled by family.
+// instance family. SQL Server RIs never are, so they stay at the per-size pool
+// granularity instead of being pooled by family. Oracle License Included is
+// also non-flexible but cannot be told apart from BYOL (flexible) until the
+// license model is carried on recs, coverage and commitments, so Oracle stays
+// on the family path.
 func rdsSizeFlexible(engine string) bool {
-	switch normaliseRDSEngine(engine) {
-	case "sqlserver", "oracle":
-		return false
-	}
-	return true
+	return normaliseRDSEngine(engine) != "sqlserver"
 }
 
 // FamilyCoverage is the family-NU-aggregated view of coverage for an
