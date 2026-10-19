@@ -353,6 +353,20 @@ func TestParseSavingsPlanDetail_MoneyFieldUnparseable(t *testing.T) {
 				UpfrontCost:                aws.String("not-a-float"),
 			},
 		},
+		{
+			name: "unparseable CurrentAverageHourlyOnDemandSpend",
+			detail: &types.SavingsPlansPurchaseRecommendationDetail{
+				HourlyCommitmentToPurchase:        aws.String("1.0"),
+				CurrentAverageHourlyOnDemandSpend: aws.String("oops"),
+			},
+		},
+		{
+			name: "unparseable EstimatedSavingsPercentage",
+			detail: &types.SavingsPlansPurchaseRecommendationDetail{
+				HourlyCommitmentToPurchase: aws.String("1.0"),
+				EstimatedSavingsPercentage: aws.String("20%"),
+			},
+		},
 		// NaN / ±Inf are accepted by strconv.ParseFloat with a nil error, so
 		// without an explicit non-finite guard these would flow through as a
 		// corrupt money value. They must be rejected like any unparseable field.
