@@ -248,8 +248,11 @@ func TestConfig_Validate(t *testing.T) {
 	for _, v := range []float64{0, 5, 100} {
 		assert.NoError(t, Config{MinSavingsPct: v, MinSavingsPctSet: true}.Validate(), "%v", v)
 	}
-	for _, v := range []float64{-1, math.NaN(), math.Inf(1), math.Inf(-1)} {
-		assert.Error(t, Config{MinSavingsPct: v, MinSavingsPctSet: true}.Validate(), "%v", v)
+	const negative, nonFinite = "min_savings_pct must be ≥ 0", "min_savings_pct must be a finite number"
+	for v, want := range map[float64]string{
+		-1: negative, math.NaN(): nonFinite, math.Inf(1): nonFinite, math.Inf(-1): nonFinite,
+	} {
+		assert.EqualError(t, Config{MinSavingsPct: v, MinSavingsPctSet: true}.Validate(), want, "%v", v)
 	}
 }
 

@@ -24,8 +24,11 @@ type Config struct {
 // Validate rejects a MinSavingsPct that is NaN, infinite or negative. Callers
 // must run it before Score, which filters on whatever it is given.
 func (c Config) Validate() error {
-	if math.IsNaN(c.MinSavingsPct) || math.IsInf(c.MinSavingsPct, 0) || c.MinSavingsPct < 0 {
-		return fmt.Errorf("min_savings_pct must be ≥ 0 and finite, got %v", c.MinSavingsPct)
+	if math.IsNaN(c.MinSavingsPct) || math.IsInf(c.MinSavingsPct, 0) {
+		return fmt.Errorf("min_savings_pct must be a finite number")
+	}
+	if c.MinSavingsPct < 0 {
+		return fmt.Errorf("min_savings_pct must be ≥ 0")
 	}
 	return nil
 }
