@@ -506,11 +506,9 @@ func (c *Client) commonSKUs() []string {
 
 // RedisPricing holds pricing details for a given Redis Cache SKU.
 type RedisPricing struct {
-	HourlyRate        float64
-	ReservationPrice  float64
-	OnDemandPrice     float64
-	Currency          string
-	SavingsPercentage float64
+	HourlyRate       float64
+	ReservationPrice float64
+	Currency         string
 }
 
 func (c *Client) getRedisPricing(ctx context.Context, sku, region string, termYears int) (*RedisPricing, error) {

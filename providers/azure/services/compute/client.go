@@ -687,11 +687,9 @@ func (c *Client) isAvailableInRegion(sku *armcompute.ResourceSKU, region string)
 
 // VMPricing contains VM pricing information.
 type VMPricing struct {
-	HourlyRate        float64
-	ReservationPrice  float64
-	OnDemandPrice     float64
-	Currency          string
-	SavingsPercentage float64
+	HourlyRate       float64
+	ReservationPrice float64
+	Currency         string
 }
 
 // getVMPricing gets real VM pricing from Azure Retail Prices API.

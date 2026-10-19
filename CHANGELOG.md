@@ -178,6 +178,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - **`aws/recommendations`:** RDS family-NU sizing and the expiry deduction no longer pool SQL Server by instance family (its RIs are never size-flexible): those recs go to the per-size path and expiring SQL Server RIs count as `Unusable`. Oracle stays pooled until the license model is carried (#342).
 - **`aws/recommendations`:** `FamilyExpiryReport.ExpiringNU` now reports the NU actually removed from family covered NU (before minus after) instead of the expiring RIs' own NU, so it is 0 when underutilized RIs absorb the expiry (#342).
+- **`aws` and `azure/savingsplans` recommendations:** a Cost Explorer RI or
+  Savings Plan detail with an explicit non-USD `CurrencyCode`, and an Azure
+  benefit recommendation whose `currencyCode` is not USD, are skipped instead
+  of passing non-USD `OnDemandCost`/`EstimatedSavings` through as USD. AWS
+  reports each skip in `IncompleteRecommendationsError` (wraps
+  `recommendations.ErrNotUSD`); Azure records it in the collection's skip log,
+  surfacing as `PartialResultError`. An absent AWS `CurrencyCode` is unchanged
+  (#124)
+
+- **`aws/recommendations`:** the Savings Plans coverage and utilization and
+  on-demand Cost Explorer fetchers now hold the shared concurrency slot around
+  each call, so they count toward `CUDLY_MAX_PARALLELISM` (#8).
 - **`azure`:** the Retail Prices `$filter` values built from SKU and region in
   the search, compute, cosmosdb and savingsplans clients are now validated with
   `pricing.ODataString`, so an injected value is rejected before any request is

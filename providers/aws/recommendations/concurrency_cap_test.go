@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/stretchr/testify/assert"
@@ -19,6 +20,24 @@ type semCountingCE struct {
 	mockCostExplorerAPI
 	coverageCalls    atomic.Int32
 	utilizationCalls atomic.Int32
+	spCoverageCalls  atomic.Int32
+	spUtilCalls      atomic.Int32
+	onDemandCalls    atomic.Int32
+}
+
+func (m *semCountingCE) GetSavingsPlansCoverage(ctx context.Context, params *costexplorer.GetSavingsPlansCoverageInput, optFns ...func(*costexplorer.Options)) (*costexplorer.GetSavingsPlansCoverageOutput, error) {
+	m.spCoverageCalls.Add(1)
+	return &costexplorer.GetSavingsPlansCoverageOutput{}, nil
+}
+
+func (m *semCountingCE) GetSavingsPlansUtilization(ctx context.Context, params *costexplorer.GetSavingsPlansUtilizationInput, optFns ...func(*costexplorer.Options)) (*costexplorer.GetSavingsPlansUtilizationOutput, error) {
+	m.spUtilCalls.Add(1)
+	return &costexplorer.GetSavingsPlansUtilizationOutput{}, nil
+}
+
+func (m *semCountingCE) GetCostAndUsage(ctx context.Context, params *costexplorer.GetCostAndUsageInput, optFns ...func(*costexplorer.Options)) (*costexplorer.GetCostAndUsageOutput, error) {
+	m.onDemandCalls.Add(1)
+	return &costexplorer.GetCostAndUsageOutput{}, nil
 }
 
 func (m *semCountingCE) GetReservationCoverage(ctx context.Context, params *costexplorer.GetReservationCoverageInput, optFns ...func(*costexplorer.Options)) (*costexplorer.GetReservationCoverageOutput, error) {
@@ -97,5 +116,78 @@ func TestFetchPages_ReleaseSemaphoreSlot(t *testing.T) {
 	assert.Equal(t, int32(1), mock.coverageCalls.Load())
 	assert.Equal(t, int32(1), mock.utilizationCalls.Load())
 	require.True(t, sem.TryAcquire(1), "semaphore slot leaked: fetch did not release after the SDK call")
+	sem.Release(1)
+}
+
+// heldSlotCtx is like fullSemaphoreCtx but the context is live with a short
+// deadline. The rate limiter wait succeeds, so only a missing Acquire lets the
+// call through; a correct fetcher blocks on Acquire until the deadline.
+func heldSlotCtx(t *testing.T) context.Context {
+	t.Helper()
+	sem := semaphore.NewWeighted(1)
+	require.NoError(t, sem.Acquire(context.Background(), 1))
+	t.Cleanup(func() { sem.Release(1) })
+	ctx, cancel := context.WithTimeout(concurrency.WithSharedSemaphore(context.Background(), sem), 200*time.Millisecond)
+	t.Cleanup(cancel)
+	return ctx
+}
+
+// TestFetchSPAndOnDemandPages_RespectSharedSemaphore is the issue #8 (A07-018)
+// regression test: with the cap saturated, the SP coverage, SP utilization and
+// on-demand fetchers must block on Acquire instead of reaching the CE SDK.
+func TestFetchSPAndOnDemandPages_RespectSharedSemaphore(t *testing.T) {
+	cases := []struct {
+		name  string
+		call  func(c *Client, ctx context.Context) error
+		calls func(m *semCountingCE) int32
+	}{
+		{"sp coverage", func(c *Client, ctx context.Context) error {
+			_, err := c.fetchSPCoveragePage(ctx, &costexplorer.GetSavingsPlansCoverageInput{})
+			return err
+		}, func(m *semCountingCE) int32 { return m.spCoverageCalls.Load() }},
+		{"sp utilization", func(c *Client, ctx context.Context) error {
+			_, err := c.fetchSPUtilizationPage(ctx, &costexplorer.GetSavingsPlansUtilizationInput{})
+			return err
+		}, func(m *semCountingCE) int32 { return m.spUtilCalls.Load() }},
+		{"on-demand", func(c *Client, ctx context.Context) error {
+			_, err := c.fetchOnDemandPage(ctx, &costexplorer.GetCostAndUsageInput{})
+			return err
+		}, func(m *semCountingCE) int32 { return m.onDemandCalls.Load() }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &semCountingCE{}
+			client := NewClientWithAPI(mock, "us-east-1")
+
+			err := tc.call(client, heldSlotCtx(t))
+
+			require.Error(t, err)
+			assert.ErrorIs(t, err, context.DeadlineExceeded)
+			assert.Equal(t, int32(0), tc.calls(mock), "CE call escaped the shared concurrency semaphore")
+		})
+	}
+}
+
+// TestFetchSPAndOnDemandPages_ReleaseSemaphoreSlot checks the slot is returned
+// after each successful call.
+func TestFetchSPAndOnDemandPages_ReleaseSemaphoreSlot(t *testing.T) {
+	mock := &semCountingCE{}
+	client := NewClientWithAPI(mock, "us-east-1")
+	sem := semaphore.NewWeighted(1)
+	// Bounded so a leaked slot fails the test instead of hanging it.
+	ctx, cancel := context.WithTimeout(concurrency.WithSharedSemaphore(context.Background(), sem), 2*time.Second)
+	defer cancel()
+
+	_, err := client.fetchSPCoveragePage(ctx, &costexplorer.GetSavingsPlansCoverageInput{})
+	require.NoError(t, err)
+	_, err = client.fetchSPUtilizationPage(ctx, &costexplorer.GetSavingsPlansUtilizationInput{})
+	require.NoError(t, err)
+	_, err = client.fetchOnDemandPage(ctx, &costexplorer.GetCostAndUsageInput{})
+	require.NoError(t, err)
+
+	assert.Equal(t, int32(1), mock.spCoverageCalls.Load())
+	assert.Equal(t, int32(1), mock.spUtilCalls.Load())
+	assert.Equal(t, int32(1), mock.onDemandCalls.Load())
+	require.True(t, sem.TryAcquire(1), "semaphore slot leaked")
 	sem.Release(1)
 }

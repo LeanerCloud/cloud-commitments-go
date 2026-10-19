@@ -11,6 +11,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
 )
 
 // ec2ComputeService is the CE SERVICE dimension value for EC2 compute.
@@ -207,7 +209,11 @@ func (c *Client) fetchOnDemandPage(ctx context.Context, input *costexplorer.GetC
 		if waitErr := rateLimiter.Wait(ctx); waitErr != nil {
 			return nil, fmt.Errorf("rate limiter wait: %w", waitErr)
 		}
+		if acqErr := concurrency.Acquire(ctx); acqErr != nil {
+			return nil, fmt.Errorf("concurrency acquire failed: %w", acqErr)
+		}
 		out, err := c.costExplorerClient.GetCostAndUsage(ctx, input)
+		concurrency.Release(ctx)
 		if !rateLimiter.ShouldRetry(err) {
 			if err != nil {
 				return nil, fmt.Errorf("GetCostAndUsage: %w", err)
