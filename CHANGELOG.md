@@ -176,6 +176,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **`aws/recommendations`:** `FamilyExpiryReport.ExpiringNU` now reports the NU actually removed from family covered NU (before minus after) instead of the expiring RIs' own NU, so it is 0 when underutilized RIs absorb the expiry (#342).
 - **`azure`:** the Retail Prices `$filter` values built from SKU and region in
   the search, compute, cosmosdb and savingsplans clients are now validated with
   `pricing.ODataString`, so an injected value is rejected before any request is

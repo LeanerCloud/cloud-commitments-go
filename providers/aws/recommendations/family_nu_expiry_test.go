@@ -107,7 +107,15 @@ func TestApplyFamilyNUSizingRDSWithExpiry(t *testing.T) {
 		require.Len(t, sized, 1)
 		assert.InDelta(t, 50.0, sized[0].ExistingCoveragePct, 1e-9)
 		assert.Equal(t, 1, sized[0].Count, "gap 30% of 16 NU = 4.8 NU over a 16 NU rec: floor(1.2)")
-		assert.Equal(t, 8.0, rep.ExpiringNU)
+		assert.Equal(t, 4.0, rep.ExpiringNU, "covered 12 -> 8 is a 4 NU deduction, not the 8 NU expiring")
+	})
+
+	t.Run("ExpiringNU is the actual deduction: underutilized RIs absorb it", func(t *testing.T) {
+		// 40 NU covered, 80 NU active, 16 NU expiring: covered stays 40.
+		cov := expiryTestCov("db.r6g.xlarge", 10, 50)
+		commits := []common.Commitment{expiryTestRI("db.r6g.xlarge", "a", 2, 15), expiryTestRI("db.r6g.xlarge", "a", 8, 300)}
+		_, _, _, rep := ApplyFamilyNUSizingRDSWithExpiry(expiryTestRec("db.r6g.xlarge", 10), cov, 80, commits, 30)
+		assert.Zero(t, rep.ExpiringNU)
 	})
 
 	t.Run("control: outside window", func(t *testing.T) {

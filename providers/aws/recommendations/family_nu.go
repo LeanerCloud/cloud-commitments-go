@@ -374,8 +374,11 @@ func isRDSRIRec(rec common.Recommendation) bool {
 // FamilyExpiryReport describes how commitment expiry was folded into family
 // coverage by ApplyFamilyNUSizingRDSWithExpiry.
 type FamilyExpiryReport struct {
-	// ExpiringNU is the normalized units of active RDS RIs ending inside the
-	// window that were deducted from family coverage.
+	// ExpiringNU is the normalized units actually removed from family covered
+	// NU, summed over families (covered NU before minus after). It is below
+	// the expiring RIs' own NU when the min() cap, the partial-inventory cap
+	// or replacement credit absorbs part of it, and 0 when underutilized RIs
+	// leave covered NU unchanged.
 	ExpiringNU float64
 	// ReplacementNU is the normalized units of visible active, non-expiring RDS
 	// RIs that started inside the coverage lookback and so are not yet in the
@@ -474,9 +477,10 @@ func adjustFamilyCoverageForExpiry(familyCov map[string]FamilyCoverage, commitme
 	for fk, exp := range totals.expiring {
 		fc := familyCov[fk]
 		rep := totals.replacement[fk]
-		fc.CoveredNU = math.Max(0, math.Max(math.Min(fc.CoveredNU, fc.CoveredNU-exp+rep), math.Min(fc.CoveredNU, totals.active[fk]-exp)))
+		pre := fc.CoveredNU
+		fc.CoveredNU = math.Max(0, math.Max(math.Min(pre, pre-exp+rep), math.Min(pre, totals.active[fk]-exp)))
 		familyCov[fk] = fc
-		report.ExpiringNU += exp
+		report.ExpiringNU += pre - fc.CoveredNU
 		report.ReplacementNU += rep
 	}
 	return report
