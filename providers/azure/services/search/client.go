@@ -75,10 +75,14 @@ func NewClient(cred azcore.TokenCredential, subscriptionID, region string) *Clie
 }
 
 // NewClientWithHTTP creates a new Azure Search client with a custom HTTP client (for testing).
-// httpClient is used as-is and bypasses the SSRF dial guard of
-// httpclient.New(): metadata, NAT64/6to4 and unspecified addresses are
+// When httpClient is nil, the SSRF-hardened httpclient.New() is used so the nil
+// fallback also blocks IMDS connections. A non-nil httpClient is used as-is and
+// bypasses that guard: metadata, NAT64/6to4 and unspecified addresses are
 // dialable unless the caller's client blocks them itself.
 func NewClientWithHTTP(cred azcore.TokenCredential, subscriptionID, region string, httpClient HTTPClient) *Client {
+	if httpClient == nil {
+		httpClient = httpclient.New()
+	}
 	return &Client{
 		cred:           cred,
 		subscriptionID: subscriptionID,
