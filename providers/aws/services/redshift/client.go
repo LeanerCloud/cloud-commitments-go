@@ -137,12 +137,13 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 
 // PurchaseCommitment purchases a Redshift Reserved Node.
 //
-// PurchaseReservedNodeOfferingInput has no Tags field — tagging happens
-// post-purchase via redshift:CreateTags, which requires a full ARN
-// (arn:aws:redshift:<region>:<account>:reservednode:<id>). The account ID
-// is resolved lazily on first tag call via sts:GetCallerIdentity and cached
-// for the lifetime of the client. Tagging failure is logged but does NOT
-// fail the purchase — the reserved node is already bought.
+// The purchase API takes no client token, so a re-drive is recognized by
+// matching an owned node on offering ID, node count and start time (see
+// findMatchingNodes). With an empty IdempotencyToken (CLI) no lookup runs.
+//
+// PurchaseReservedNodeOfferingInput has no Tags field; tagging happens
+// post-purchase via redshift:CreateTags, which requires a full ARN. Tagging
+// failure is logged but does NOT fail the purchase.
 func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
 	result := common.PurchaseResult{
 		Recommendation: rec,
@@ -157,35 +158,9 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		return result, result.Error
 	}
 
-	// Idempotency dedupe guard (issue #641). Redshift's
-	// PurchaseReservedNodeOfferingInput has NO customer-supplied ID and NO
-	// ClientToken, the ReservedNode resource has no native AlreadyExists fault,
-	// and DescribeReservedNodes offers no tag filter — so this is an EC2-style
-	// tag-guard: before buying, list active reserved nodes and check (via
-	// DescribeTags on each node's ARN) whether one already carries the
-	// idempotency token tag; if so, this is a re-drive that already succeeded —
-	// short-circuit. A lookup error must NOT fall through to a purchase.
-	//
-	// CAVEAT (documented residual window): the guard's correctness depends on
-	// the post-purchase CreateTags below actually persisting on a reserved-node
-	// ARN, which AWS has not confirmed it supports. If tagging is silently
-	// unsupported the guard cannot recognize the prior purchase and a re-drive
-	// could double-buy — the same irreducible "purchase-then-tag-fails" window
-	// EC2 has, but potentially permanent here. This residual is backstopped by
-	// the recovery sweep's safe-fail + operator-confirm (issue #635), which is
-	// why #641 does not by itself unblock Redshift auto-re-drive.
 	if opts.IdempotencyToken != "" {
-		existingID, found, lookupErr := c.findNodeByIdempotencyToken(ctx, opts.IdempotencyToken)
-		if lookupErr != nil {
-			result.Error = fmt.Errorf("idempotency lookup failed before Redshift purchase (refusing to purchase to avoid a possible double-buy): %w", lookupErr)
+		if done := c.guardAgainstRepurchase(ctx, &result, offeringID, rec.Count, opts); done {
 			return result, result.Error
-		}
-		if found {
-			log.Printf("Redshift reserved node for idempotency token %s already exists (%s); skipping purchase (issue #641 re-drive)", common.MaskToken(opts.IdempotencyToken), existingID)
-			result.Success = true
-			result.ExistingCommitment = true
-			result.CommitmentID = existingID
-			return result, nil
 		}
 	}
 
@@ -222,10 +197,6 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 
 	return result, nil
 }
-
-// maxReservedNodePages bounds the idempotency reserved-node scan.
-// An incomplete scan refuses purchase rather than reporting no match.
-const maxReservedNodePages = 10
 
 // findNodeByIdempotencyToken looks for a nonterminal Redshift
 // reserved node tagged with the given idempotency token (issue #641). Redshift
