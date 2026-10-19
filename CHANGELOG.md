@@ -32,6 +32,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **`recommendations.RederiveFamilyCoverage`:** recomputes the family-wide
+  RDS `ProjectedCoverage` that family-NU sizing wrote, after a caller changed
+  `Count` (`--max-instances`, count override, duplicate-RI dedupe). It shares
+  its formula with sizing, returns a new slice and leaves non-RDS, SQL Server
+  and unsized recs untouched (#511).
 - **`recommendations.AdjustExistingCoverageForExpiringCommitmentsWithCoverageOptions`:**
   the per-pool (EC2 and other non-family) expiry deduction, plus credit for
   replacements already bought. Coverage is a lookback average, so RIs bought
