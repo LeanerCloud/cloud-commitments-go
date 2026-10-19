@@ -98,8 +98,11 @@ func TestRenderSummary_FilteredReasonsSorted(t *testing.T) {
 			{FilterReason: "payback 18.0 months exceeds maximum"},
 		},
 	)
-	output := RenderSummary(result)
-	assert.Contains(t, output, "Filtered: 5 recommendations (count: 1, payback: 1, savings: 2, term: 1)\n")
+	// Map iteration order is random per range, so render repeatedly.
+	for i := 0; i < 20; i++ {
+		output := RenderSummary(result)
+		assert.Contains(t, output, "Filtered: 5 recommendations (count: 1, payback: 1, savings: 2, term: 1)\n")
+	}
 }
 
 func TestRenderTable_RecurringMonthlyCost(t *testing.T) {
