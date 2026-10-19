@@ -124,10 +124,14 @@ func NewClient(cred azcore.TokenCredential, subscriptionID, region string) *Clie
 }
 
 // NewClientWithHTTP creates a new Azure Database client with a custom HTTP client (for testing).
-// httpClient is used as-is and bypasses the SSRF dial guard of
-// httpclient.New(): metadata, NAT64/6to4 and unspecified addresses are
+// When httpClient is nil, the SSRF-hardened httpclient.New() is used so the nil
+// fallback also blocks IMDS connections. A non-nil httpClient is used as-is and
+// bypasses that guard: metadata, NAT64/6to4 and unspecified addresses are
 // dialable unless the caller's client blocks them itself.
 func NewClientWithHTTP(cred azcore.TokenCredential, subscriptionID, region string, httpClient HTTPClient) *Client {
+	if httpClient == nil {
+		httpClient = httpclient.New()
+	}
 	return &Client{
 		cred:           cred,
 		subscriptionID: subscriptionID,
@@ -583,8 +587,16 @@ type SQLPricing struct {
 
 // getSQLPricing gets real pricing from Azure Retail Prices API.
 func (c *Client) getSQLPricing(ctx context.Context, sku, region string, termYears int) (*SQLPricing, error) {
-	filter := fmt.Sprintf("serviceName eq 'SQL Database' and armRegionName eq '%s' and armSkuName eq '%s' and priceType eq 'Reservation'",
-		strings.ReplaceAll(region, "'", "''"), strings.ReplaceAll(sku, "'", "''"))
+	qRegion, err := pricing.ODataString(region)
+	if err != nil {
+		return nil, err
+	}
+	qSKU, err := pricing.ODataString(sku)
+	if err != nil {
+		return nil, err
+	}
+	filter := fmt.Sprintf("serviceName eq 'SQL Database' and armRegionName eq %s and armSkuName eq %s and priceType eq 'Reservation'",
+		qRegion, qSKU)
 
 	priceData, err := c.fetchAzurePricing(ctx, filter)
 	if err != nil {

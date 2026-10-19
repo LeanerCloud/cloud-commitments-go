@@ -558,37 +558,16 @@ func TestDatabaseClient_GetOfferingDetails_SelectsSyntheticVCoreRow(t *testing.T
 	}
 }
 
-func TestDatabaseClient_GetOfferingDetails_ExactEscapedReservationFilter(t *testing.T) {
-	const region, sku = "east'us", "GeneralPurpose_Gen5_'2"
-	row := azpricing.RetailPriceItem{
-		ServiceName: "SQL Database", ArmRegionName: region, ArmSKUName: sku,
-		Type: "Reservation", ReservationTerm: "1 Year", UnitOfMeasure: "1 Hour",
-		CurrencyCode: "EUR", RetailPrice: 1200,
-	}
-	body, err := json.Marshal(AzureRetailPrice{Items: []azpricing.RetailPriceItem{row}})
-	require.NoError(t, err)
-	mockHTTP := &MockHTTPClient{}
-	response := createMockHTTPResponse(http.StatusOK, string(body))
-	t.Cleanup(func() {
-		require.NoError(t, response.Body.Close())
+func TestDatabaseClient_GetOfferingDetails_RejectsQuoteInRegionAndSKU(t *testing.T) {
+	// Quote characters are rejected outright (not escaped); the mock has no
+	// expectations, so any request would panic.
+	client := NewClientWithHTTP(nil, "sub", "east'us", &MockHTTPClient{})
+	details, err := client.GetOfferingDetails(context.Background(), common.Recommendation{
+		ResourceType: "GeneralPurpose_Gen5_'2", Term: "1yr", PaymentOption: "upfront",
 	})
-	mockHTTP.On("Do", mock.Anything).Return(response, nil).Run(func(args mock.Arguments) {
-		req := args.Get(0).(*http.Request)
-		assert.Equal(t, http.MethodGet, req.Method)
-		assert.Equal(t, "https", req.URL.Scheme)
-		assert.Equal(t, "prices.azure.com", req.URL.Host)
-		assert.Equal(t, "/api/retail/prices", req.URL.Path)
-		assert.Equal(t, "2023-01-01-preview", req.URL.Query().Get("api-version"))
-		assert.Equal(t, "serviceName eq 'SQL Database' and armRegionName eq 'east''us' and armSkuName eq 'GeneralPurpose_Gen5_''2' and priceType eq 'Reservation'", req.URL.Query().Get("$filter"))
-	}).Once()
-	details, err := NewClientWithHTTP(nil, "sub", region, mockHTTP).GetOfferingDetails(context.Background(), common.Recommendation{
-		ResourceType: sku, Term: "1yr", PaymentOption: "upfront",
-	})
-	require.NoError(t, err)
-	require.NotNil(t, details)
-	assert.Equal(t, 1200.0, details.TotalCost)
-	assert.Equal(t, "EUR", details.Currency)
-	mockHTTP.AssertExpectations(t)
+	require.Error(t, err)
+	assert.Nil(t, details)
+	assert.Contains(t, err.Error(), "Retail Prices filter")
 }
 
 func TestDatabaseClient_GetOfferingDetails_ReservationAcrossPages(t *testing.T) {
@@ -2117,4 +2096,66 @@ func TestDatabaseClient_ServerInfo_FetchedOnce(t *testing.T) {
 	// Servers pager is also walked once (zero pages = no servers found).
 	assert.Equal(t, 0, serversPager.CallCount,
 		"servers pager NextPage not called when it has no pages")
+}
+
+// An injected SKU or region must be rejected before any Retail Prices request
+// is built; the mock has no expectations, so any HTTP call would panic.
+func TestGetSQLPricing_RejectsInjectedFilterValues(t *testing.T) {
+	for _, tc := range []struct{ name, sku, region string }{
+		{"sku", "x' or armSkuName ne '", "eastus"},
+		{"region", "GP_Gen5_2", "eastus' or '1' eq '1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := NewClientWithHTTP(nil, "test-subscription", "eastus", &MockHTTPClient{})
+			_, err := client.getSQLPricing(context.Background(), tc.sku, tc.region, 1)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "Retail Prices filter")
+		})
+	}
+}
+
+func TestDatabaseClient_GetOfferingDetails_ExactReservationFilter(t *testing.T) {
+	const region, sku = "eastus", "GP_Gen5_2"
+	row := azpricing.RetailPriceItem{
+		ServiceName: "SQL Database", ArmRegionName: region, ArmSKUName: sku,
+		Type: "Reservation", ReservationTerm: "1 Year", UnitOfMeasure: "1 Hour",
+		CurrencyCode: "EUR", RetailPrice: 1200,
+	}
+	body, err := json.Marshal(AzureRetailPrice{Items: []azpricing.RetailPriceItem{row}})
+	require.NoError(t, err)
+	mockHTTP := &MockHTTPClient{}
+	response := createMockHTTPResponse(http.StatusOK, string(body))
+	t.Cleanup(func() {
+		require.NoError(t, response.Body.Close())
+	})
+	mockHTTP.On("Do", mock.Anything).Return(response, nil).Run(func(args mock.Arguments) {
+		req := args.Get(0).(*http.Request)
+		assert.Equal(t, "2023-01-01-preview", req.URL.Query().Get("api-version"))
+		assert.Equal(t, "serviceName eq 'SQL Database' and armRegionName eq 'eastus' and armSkuName eq 'GP_Gen5_2' and priceType eq 'Reservation'", req.URL.Query().Get("$filter"))
+	}).Once()
+	details, err := NewClientWithHTTP(nil, "sub", region, mockHTTP).GetOfferingDetails(context.Background(), common.Recommendation{
+		ResourceType: sku, Term: "1yr", PaymentOption: "upfront",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, details)
+	assert.Equal(t, 1200.0, details.TotalCost)
+	mockHTTP.AssertExpectations(t)
+}
+
+// TestNewClientWithHTTP_NilFallbackIsHardened verifies that passing nil as the
+// httpClient falls back to the SSRF-hardened httpclient.New(), which rejects
+// IMDS connections, instead of leaving a nil client that panics on first use.
+func TestNewClientWithHTTP_NilFallbackIsHardened(t *testing.T) {
+	c := NewClientWithHTTP(nil, "sub-123", "eastus", nil)
+	require.NotNil(t, c.httpClient)
+	require.NotEqual(t, http.DefaultClient, c.httpClient,
+		"nil fallback must never be http.DefaultClient")
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://169.254.169.254/metadata/instance", nil)
+	require.NoError(t, err)
+	resp, err := c.httpClient.Do(req)
+	if resp != nil {
+		defer resp.Body.Close()
+	}
+	require.Error(t, err, "nil-fallback client must reject IMDS connections")
+	assert.Contains(t, err.Error(), "blocked")
 }

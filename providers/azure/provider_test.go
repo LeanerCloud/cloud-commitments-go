@@ -1559,11 +1559,13 @@ func TestAzureProvider_ConcurrentCredentialSwapAndFetch_NoDataRace(t *testing.T)
 				// Both readers of the swapped fields: GetAccounts reaches
 				// fetchAccounts, GetServiceClientForAccount builds a client
 				// straight from the credential.
-				if _, err := p.GetAccounts(context.Background()); err != nil {
+				// The swappers invalidate constantly, so a fetch failing as
+				// stale is the expected outcome here, not a defect.
+				if _, err := p.GetAccounts(context.Background()); err != nil && !errors.Is(err, errAccountsStale) {
 					errs <- err
 					return
 				}
-				if _, err := p.GetServiceClientForAccount(context.Background(), common.ServiceCompute, "eastus", "sub-1"); err != nil {
+				if _, err := p.GetServiceClientForAccount(context.Background(), common.ServiceCompute, "eastus", "sub-1"); err != nil && !errors.Is(err, errAccountsStale) {
 					errs <- err
 					return
 				}
@@ -1702,9 +1704,9 @@ func TestAzureProvider_InvalidateAccountsCache_DuringInFlightFetch(t *testing.T)
 	close(gated.release)
 
 	first := <-done
-	require.NoError(t, first.err)
-	require.Len(t, first.accounts, 1)
-	assert.Equal(t, "sub-gen-1", first.accounts[0].ID)
+	require.ErrorIs(t, first.err, errAccountsStale,
+		"a fetch invalidated mid-flight must fail, not hand back the stale snapshot")
+	assert.Empty(t, first.accounts)
 
 	// The invalidated snapshot must not have been published: this read has to
 	// re-hit ARM and observe the current subscription list.
@@ -1715,6 +1717,39 @@ func TestAzureProvider_InvalidateAccountsCache_DuringInFlightFetch(t *testing.T)
 	require.Len(t, second, 1)
 	assert.Equal(t, "sub-gen-2", second[0].ID,
 		"read after invalidation must see fresh data, not the resurrected pre-invalidation snapshot")
+}
+
+// A credential swap landing during an in-flight fetch must not hand the old
+// credential's subscription list to the caller that joined the singleflight
+// (GetRecommendationsClient would fan out over it using the new credential),
+// and must not populate the cache.
+func TestAzureProvider_SetCredential_DuringInFlightFetch_ReturnsError(t *testing.T) {
+	clearAzureSubscriptionEnv(t)
+	gated := &gatedGenerationSubscriptionsClient{
+		firstInFlight: make(chan struct{}),
+		release:       make(chan struct{}),
+	}
+	p := &Provider{cred: &mockTokenCredential{}}
+	p.SetSubscriptionsClient(gated)
+
+	type fetchResult struct {
+		accounts []common.Account
+		err      error
+	}
+	done := make(chan fetchResult, 1)
+	go func() {
+		accts, err := p.getOrFetchAccounts(context.Background())
+		done <- fetchResult{accounts: accts, err: err}
+	}()
+
+	<-gated.firstInFlight
+	p.SetCredential(&mockTokenCredential{})
+	close(gated.release)
+
+	res := <-done
+	require.ErrorIs(t, res.err, errAccountsStale)
+	assert.Nil(t, res.accounts)
+	assert.Nil(t, p.readCachedAccounts(), "stale fetch must not write the cache")
 }
 
 func TestAzureProvider_GetRecommendationsClient_MultiSubscriptionFanOut(t *testing.T) {
