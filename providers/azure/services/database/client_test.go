@@ -2113,3 +2113,31 @@ func TestGetSQLPricing_RejectsInjectedFilterValues(t *testing.T) {
 		})
 	}
 }
+
+func TestDatabaseClient_GetOfferingDetails_ExactReservationFilter(t *testing.T) {
+	const region, sku = "eastus", "GP_Gen5_2"
+	row := azpricing.RetailPriceItem{
+		ServiceName: "SQL Database", ArmRegionName: region, ArmSKUName: sku,
+		Type: "Reservation", ReservationTerm: "1 Year", UnitOfMeasure: "1 Hour",
+		CurrencyCode: "EUR", RetailPrice: 1200,
+	}
+	body, err := json.Marshal(AzureRetailPrice{Items: []azpricing.RetailPriceItem{row}})
+	require.NoError(t, err)
+	mockHTTP := &MockHTTPClient{}
+	response := createMockHTTPResponse(http.StatusOK, string(body))
+	t.Cleanup(func() {
+		require.NoError(t, response.Body.Close())
+	})
+	mockHTTP.On("Do", mock.Anything).Return(response, nil).Run(func(args mock.Arguments) {
+		req := args.Get(0).(*http.Request)
+		assert.Equal(t, "2023-01-01-preview", req.URL.Query().Get("api-version"))
+		assert.Equal(t, "serviceName eq 'SQL Database' and armRegionName eq 'eastus' and armSkuName eq 'GP_Gen5_2' and priceType eq 'Reservation'", req.URL.Query().Get("$filter"))
+	}).Once()
+	details, err := NewClientWithHTTP(nil, "sub", region, mockHTTP).GetOfferingDetails(context.Background(), common.Recommendation{
+		ResourceType: sku, Term: "1yr", PaymentOption: "upfront",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, details)
+	assert.Equal(t, 1200.0, details.TotalCost)
+	mockHTTP.AssertExpectations(t)
+}

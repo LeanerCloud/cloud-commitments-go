@@ -97,9 +97,10 @@ func accountsSFKey(gen uint64) string {
 	return accountsCacheSFKeyPrefix + strconv.FormatUint(gen, 10)
 }
 
-// errAccountsStale is returned when the accounts cache was invalidated (or the
-// credential swapped) while a fetch was in flight. Callers may retry.
-var errAccountsStale = errors.New("azure accounts cache: invalidated or credential changed during fetch, retry")
+// errAccountsStale signals that the credential, subscriptions client or cache
+// generation changed while a fetch was in flight (a SetCredential contract
+// violation), so the fetched list belongs to the previous principal.
+var errAccountsStale = errors.New("azure accounts cache: credential or subscriptions client changed during fetch")
 
 // fetchAccountsShared collapses concurrent cold-cache callers onto a single
 // in-flight ARM subscriptions.List and returns the SHARED (un-cloned) slice.
