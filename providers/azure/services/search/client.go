@@ -470,7 +470,11 @@ func (c *Client) getSearchPricing(ctx context.Context, sku, region string, termY
 	if !ok {
 		return nil, fmt.Errorf("unsupported Azure Search SKU %q", sku)
 	}
-	filter := fmt.Sprintf("serviceName eq 'Azure Cognitive Search' and armRegionName eq '%s' and skuName eq '%s' and priceType eq 'Reservation'", strings.ReplaceAll(region, "'", "''"), displaySKU)
+	qRegion, err := pricing.ODataString(region)
+	if err != nil {
+		return nil, err
+	}
+	filter := fmt.Sprintf("serviceName eq 'Azure Cognitive Search' and armRegionName eq %s and skuName eq '%s' and priceType eq 'Reservation'", qRegion, displaySKU)
 
 	priceData, err := c.fetchAzurePricing(ctx, filter)
 	if err != nil {

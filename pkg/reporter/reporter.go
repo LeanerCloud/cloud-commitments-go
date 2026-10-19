@@ -4,6 +4,8 @@ package reporter
 import (
 	"bytes"
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"text/tabwriter"
 
@@ -116,7 +118,8 @@ func RenderSummary(result scorer.ScoredResult) string {
 		}
 		fmt.Fprintf(&sb, "Filtered: %d recommendations", len(result.Filtered))
 		first := true
-		for reason, count := range reasons {
+		for _, reason := range slices.Sorted(maps.Keys(reasons)) {
+			count := reasons[reason]
 			if first {
 				fmt.Fprintf(&sb, " (%s: %d", reason, count)
 				first = false

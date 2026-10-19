@@ -811,3 +811,10 @@ func TestCommitmentCurrency_LowercaseNormalised(t *testing.T) {
 	require.NoError(t, c.ValidateOffering(context.Background(), currencyRec("eur")))
 	assert.Equal(t, "EUR", *rp.captured.Benefits[0].Properties.Commitment.CurrencyCode)
 }
+
+func TestFetchOnDemandRate_RejectsInjectedPlanType(t *testing.T) {
+	c := NewClientWithHTTP(nil, "sub", "eastus", &mockHTTPClient{})
+	_, err := c.fetchOnDemandRate(context.Background(), "x' or armSkuName ne '")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Retail Prices filter")
+}

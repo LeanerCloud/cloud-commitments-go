@@ -696,8 +696,16 @@ type VMPricing struct {
 
 // getVMPricing gets real VM pricing from Azure Retail Prices API.
 func (c *Client) getVMPricing(ctx context.Context, vmSize, region string, termYears int) (*VMPricing, error) {
-	filter := fmt.Sprintf("serviceName eq 'Virtual Machines' and armRegionName eq '%s' and armSkuName eq '%s' and priceType eq 'Reservation'",
-		strings.ReplaceAll(region, "'", "''"), strings.ReplaceAll(vmSize, "'", "''"))
+	qRegion, err := pricing.ODataString(region)
+	if err != nil {
+		return nil, err
+	}
+	qSKU, err := pricing.ODataString(vmSize)
+	if err != nil {
+		return nil, err
+	}
+	filter := fmt.Sprintf("serviceName eq 'Virtual Machines' and armRegionName eq %s and armSkuName eq %s and priceType eq 'Reservation'",
+		qRegion, qSKU)
 
 	priceData, err := c.fetchAzurePricing(ctx, filter)
 	if err != nil {

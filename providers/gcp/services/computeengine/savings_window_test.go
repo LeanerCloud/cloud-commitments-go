@@ -73,3 +73,45 @@ func TestConvertGCPRecommendation_MissingDurationSkipsRecommendation(t *testing.
 	require.NoError(t, err)
 	assert.Nil(t, converted)
 }
+
+func TestExtractCostImpact_RequiresUSD(t *testing.T) {
+	month := durationpb.New(savingsWindow)
+	cases := map[string]struct {
+		cost    *money.Money
+		wantErr bool
+		want    float64
+	}{
+		"USD non-zero":                {&money.Money{Units: -120, CurrencyCode: "USD"}, false, 120},
+		"EUR non-zero":                {&money.Money{Units: -120, CurrencyCode: "EUR"}, true, 0},
+		"empty currency non-zero":     {&money.Money{Units: -120}, true, 0},
+		"EUR nanos only":              {&money.Money{Nanos: -5, CurrencyCode: "EUR"}, true, 0},
+		"zero cost, empty currency":   {&money.Money{}, false, 0},
+		"zero cost, non-USD currency": {&money.Money{CurrencyCode: "EUR"}, false, 0},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			var rec common.Recommendation
+			err := extractCostImpactFromRecommendation(costImpact(tc.cost, month), &rec)
+			if tc.wantErr {
+				require.ErrorIs(t, err, errBadAmount)
+				assert.Contains(t, err.Error(), tc.cost.CurrencyCode)
+				assert.Zero(t, rec.EstimatedSavings)
+				return
+			}
+			require.NoError(t, err)
+			assert.InDelta(t, tc.want, rec.EstimatedSavings, 1e-9)
+		})
+	}
+}
+
+// A non-USD recommendation is skipped, not reported as USD savings.
+func TestConvertGCPRecommendation_NonUSDCostSkipsRecommendation(t *testing.T) {
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "test-project", "us-central1")
+	gcpRec := realisticCUDRecommendation()
+	gcpRec.PrimaryImpact.GetCostProjection().Cost.CurrencyCode = "EUR"
+
+	converted, err := client.convertOrSkipBadAmount(ctx, gcpRec, common.RecommendationParams{})
+	require.NoError(t, err)
+	assert.Nil(t, converted)
+}
