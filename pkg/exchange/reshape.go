@@ -323,9 +323,9 @@ const (
 // confidenceComponent maps SavingsAbs + RecommendationCount to a [0,1]
 // confidence score using the exported Confidence* thresholds:
 //
-//	high   (ConfidenceHighSavingsUSD+ savings, ConfidenceHighMinCount+ instances) -> 1.0
-//	medium (ConfidenceMediumSavingsUSD+ savings)                                  -> 0.5
-//	low    (otherwise)                                                            -> 0.0
+//	high:   savings >= ConfidenceHighSavingsUSD and count >= ConfidenceHighMinCount -> 1.0
+//	medium: savings >= ConfidenceMediumSavingsUSD -> 0.5
+//	low:    otherwise -> 0.0
 //
 // When SavingsAbs is nil (not supplied) or RecommendationCount is zero
 // (missing) the component returns 0.5 (neutral) so that an absent field
