@@ -176,6 +176,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- `reporter.RenderSummary` now lists filtered-reason categories in sorted order instead of random map order (#110).
 - **`azure/compute`:** reservation exchange targets are no longer always
   billed Upfront. `ExchangeTarget.BillingPlan` (new, optional) is sent as each
   target's `billingPlan` in the CalculateExchange body, so the session that
