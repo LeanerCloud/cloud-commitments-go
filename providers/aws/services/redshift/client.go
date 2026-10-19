@@ -115,6 +115,8 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 // The purchase API takes no client token, so a re-drive is recognized by
 // matching an owned node on offering ID, node count and start time (see
 // findMatchingNodes). With an empty IdempotencyToken (CLI) no lookup runs.
+// The tokenized path relies on the caller contract documented on
+// findMatchingNodes: no concurrent same-spec purchase for the account and region.
 //
 // Reserved nodes cannot be tagged, so the purchased node is not tagged.
 func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {

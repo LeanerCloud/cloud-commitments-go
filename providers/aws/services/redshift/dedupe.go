@@ -20,7 +20,8 @@ const (
 	// the purchase rather than reporting no match.
 	maxReservedNodePages = 10
 	// redshiftClockSkew is the slack between the caller's RequestedAt and AWS's
-	// node StartTime. The window has no upper bound.
+	// node StartTime. The window deliberately has no upper bound: a late
+	// StartTime must never cause a double buy.
 	redshiftClockSkew = 5 * time.Minute
 	// recoverLookupTimeout bounds the post-error lookup, which runs on a
 	// context detached from the caller's cancellation.
@@ -34,6 +35,12 @@ var errRequestedAtRequired = errors.New("RequestedAt is required with an idempot
 // offering ID and node count whose StartTime is not before requestedAt minus
 // redshiftClockSkew. A node missing StartTime, offering ID or
 // node count counts as a match on that field (fail closed). The offering ID fixes node type, term and offering type.
+//
+// Caller contract: because the window is open-ended, the caller must not
+// dispatch another Redshift purchase for the same account, region, offering ID
+// and node count while a re-drive of an earlier lineage is still possible (the
+// platform's execution claim provides this). Otherwise a re-drive may adopt the
+// later node or be refused as ambiguous.
 func (c *Client) findMatchingNodes(ctx context.Context, offeringID string, count int, requestedAt time.Time) ([]string, error) {
 	since := requestedAt.Add(-redshiftClockSkew)
 	var ids []string
