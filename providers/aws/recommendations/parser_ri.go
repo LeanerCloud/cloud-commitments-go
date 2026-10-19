@@ -65,6 +65,10 @@ func (c *Client) parseRecommendationDetail(ctx context.Context, details *types.R
 		Timestamp:      time.Now(),
 	}
 
+	if err := requireUSD(aws.ToString(details.CurrencyCode)); err != nil {
+		return nil, fmt.Errorf("account %s: %w", aws.ToString(details.AccountId), err)
+	}
+
 	// Parse recommended quantity. RecommendedCount preserves AWS's pre-sizing
 	// count so the CSV can show what AWS proposed alongside what --coverage /
 	// --target-coverage chose; Count is the working value the sizing step

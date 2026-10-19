@@ -21,6 +21,7 @@ import (
 type currencySDKFixture struct {
 	t             *testing.T
 	detail        map[string]any
+	extra         []any
 	payment, term string
 	sp            bool
 	calls         int
@@ -55,10 +56,10 @@ func (f *currencySDKFixture) Do(req *http.Request) (*http.Response, error) {
 	if f.sp {
 		assert.Equal(f.t, "COMPUTE_SP", input["SavingsPlansType"])
 		response = map[string]any{"SavingsPlansPurchaseRecommendation": map[string]any{
-			"SavingsPlansPurchaseRecommendationDetails": []any{f.detail}}}
+			"SavingsPlansPurchaseRecommendationDetails": append([]any{f.detail}, f.extra...)}}
 	} else {
 		assert.Equal(f.t, "Amazon Relational Database Service", input["Service"])
-		response = map[string]any{"Recommendations": []any{map[string]any{"RecommendationDetails": []any{f.detail}}}}
+		response = map[string]any{"Recommendations": []any{map[string]any{"RecommendationDetails": append([]any{f.detail}, f.extra...)}}}
 	}
 	body, err := json.Marshal(response)
 	if err != nil {
@@ -113,22 +114,21 @@ func TestCommitmentCurrencySDKRequiredLegs(t *testing.T) {
 			code, upfront, recurring *string
 			want                     string
 		}{
-			{"partial-EUR", "partial-upfront", aws.String("EUR"), aws.String("120"), aws.String("10"), "EUR"},
-			{"partial-JPY", "partial-upfront", aws.String("JPY"), aws.String("120"), aws.String("10"), "JPY"},
+			{"partial-USD", "partial-upfront", aws.String("USD"), aws.String("120"), aws.String("10"), "USD"},
 			{"currency-absent", "partial-upfront", nil, aws.String("120"), aws.String("10"), ""},
 			{"currency-empty", "partial-upfront", aws.String(""), aws.String("120"), aws.String("10"), ""},
 			{"currency-blank", "partial-upfront", aws.String(" \t"), aws.String("120"), aws.String("10"), ""},
-			{"partial-missing-upfront", "partial-upfront", aws.String("EUR"), nil, aws.String("10"), ""},
-			{"partial-missing-recurring", "partial-upfront", aws.String("EUR"), aws.String("120"), nil, ""},
-			{"partial-explicit-zero", "partial-upfront", aws.String("EUR"), aws.String("0"), aws.String("0"), "EUR"},
-			{"all-missing-upfront", "all-upfront", aws.String("EUR"), nil, nil, ""},
-			{"all-contract-zero", "all-upfront", aws.String("EUR"), aws.String("120"), nil, "EUR"},
-			{"all-explicit-zero", "all-upfront", aws.String("EUR"), aws.String("120"), aws.String("0"), "EUR"},
-			{"no-contract-zero", "no-upfront", aws.String("EUR"), nil, aws.String("10"), "EUR"},
-			{"no-explicit-zero", "no-upfront", aws.String("EUR"), aws.String("0"), aws.String("0"), "EUR"},
-			{"no-missing-recurring", "no-upfront", aws.String("EUR"), nil, nil, ""},
-			{"no-contradictory-upfront", "no-upfront", aws.String("EUR"), aws.String("120"), aws.String("10"), ""},
-			{"unknown-payment", "unknown", aws.String("EUR"), aws.String("120"), aws.String("10"), ""},
+			{"partial-missing-upfront", "partial-upfront", aws.String("USD"), nil, aws.String("10"), ""},
+			{"partial-missing-recurring", "partial-upfront", aws.String("USD"), aws.String("120"), nil, ""},
+			{"partial-explicit-zero", "partial-upfront", aws.String("USD"), aws.String("0"), aws.String("0"), "USD"},
+			{"all-missing-upfront", "all-upfront", aws.String("USD"), nil, nil, ""},
+			{"all-contract-zero", "all-upfront", aws.String("USD"), aws.String("120"), nil, "USD"},
+			{"all-explicit-zero", "all-upfront", aws.String("USD"), aws.String("120"), aws.String("0"), "USD"},
+			{"no-contract-zero", "no-upfront", aws.String("USD"), nil, aws.String("10"), "USD"},
+			{"no-explicit-zero", "no-upfront", aws.String("USD"), aws.String("0"), aws.String("0"), "USD"},
+			{"no-missing-recurring", "no-upfront", aws.String("USD"), nil, nil, ""},
+			{"no-contradictory-upfront", "no-upfront", aws.String("USD"), aws.String("120"), aws.String("10"), ""},
+			{"unknown-payment", "unknown", aws.String("USD"), aws.String("120"), aws.String("10"), ""},
 		} {
 			t.Run(fmt.Sprintf("sp=%t/%s", sp, tc.name), func(t *testing.T) {
 				got, err := currencySDKRecommendation(t, sp, tc.payment, "1yr", tc.code, tc.upfront, tc.recurring)
@@ -151,14 +151,14 @@ func TestCommitmentCurrencySDKRequiredLegs(t *testing.T) {
 
 func TestCommitmentCurrencySDKContradictions(t *testing.T) {
 	t.Parallel()
-	got, err := currencySDKRecommendation(t, false, "all-upfront", "1yr", aws.String("EUR"), aws.String("120"), aws.String("10"))
+	got, err := currencySDKRecommendation(t, false, "all-upfront", "1yr", aws.String("USD"), aws.String("120"), aws.String("10"))
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	assert.Empty(t, got[0].CommitmentCurrency)
 	assert.Equal(t, 120.0, got[0].CommitmentCost)
 	require.NotNil(t, got[0].RecurringMonthlyCost)
 	assert.Equal(t, 10.0, *got[0].RecurringMonthlyCost)
-	got, err = currencySDKRecommendation(t, true, "no-upfront", "1yr", aws.String("EUR"), nil, aws.String("1e308"))
+	got, err = currencySDKRecommendation(t, true, "no-upfront", "1yr", aws.String("USD"), nil, aws.String("1e308"))
 	require.NoError(t, err)
 	require.Len(t, got, 1)
 	assert.Empty(t, got[0].CommitmentCurrency)
@@ -178,7 +178,7 @@ func TestCommitmentCurrencySDKMalformedAmounts(t *testing.T) {
 					} else {
 						recurring = aws.String(value)
 					}
-					got, err := currencySDKRecommendation(t, sp, "partial-upfront", "1yr", aws.String("EUR"), up, recurring)
+					got, err := currencySDKRecommendation(t, sp, "partial-upfront", "1yr", aws.String("USD"), up, recurring)
 					require.Error(t, err)
 					assert.Empty(t, got)
 				})
@@ -201,11 +201,11 @@ func TestCommitmentCurrencySDKAmountsScaleAndJSON(t *testing.T) {
 		{"SP-all-upfront", "all-upfront", "1yr", "8760", "1", true, 8760, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := currencySDKRecommendation(t, tc.sp, tc.payment, tc.term, aws.String("EUR"), aws.String(tc.upfront), aws.String(tc.recurring))
+			got, err := currencySDKRecommendation(t, tc.sp, tc.payment, tc.term, aws.String("USD"), aws.String(tc.upfront), aws.String(tc.recurring))
 			require.NoError(t, err)
 			require.Len(t, got, 1)
 			rec := got[0]
-			require.Equal(t, "EUR", rec.CommitmentCurrency)
+			require.Equal(t, "USD", rec.CommitmentCurrency)
 			assert.Equal(t, tc.wantUpfront, rec.CommitmentCost)
 			require.NotNil(t, rec.RecurringMonthlyCost)
 			assert.Equal(t, tc.wantMonthly, *rec.RecurringMonthlyCost)
@@ -228,9 +228,9 @@ func TestCommitmentCurrencySDKAmountsScaleAndJSON(t *testing.T) {
 				assert.Equal(t, 1, resized.Count)
 				assert.Equal(t, 60.0, resized.CommitmentCost)
 				assert.Equal(t, 5.0, *resized.RecurringMonthlyCost)
-				assert.Equal(t, "EUR", resized.CommitmentCurrency)
+				assert.Equal(t, "USD", resized.CommitmentCurrency)
 			}
-			assert.Equal(t, "EUR", scaled.CommitmentCurrency)
+			assert.Equal(t, "USD", scaled.CommitmentCurrency)
 			assert.Equal(t, tc.wantMonthly, *rec.RecurringMonthlyCost)
 			if tc.sp {
 				original := rec.Details.(*common.SavingsPlanDetails)

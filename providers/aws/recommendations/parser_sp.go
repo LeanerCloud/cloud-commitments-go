@@ -213,6 +213,9 @@ func (c *Client) parseSavingsPlanDetail(
 	params *common.RecommendationParams,
 	planType types.SupportedSavingsPlansType,
 ) (*common.Recommendation, error) {
+	if err := requireUSD(aws.ToString(detail.CurrencyCode)); err != nil {
+		return nil, fmt.Errorf("account %s: %w", aws.ToString(detail.AccountId), err)
+	}
 	nums, err := parseSPNumbers(detail)
 	if err != nil {
 		return nil, err

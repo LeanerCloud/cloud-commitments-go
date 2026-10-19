@@ -176,6 +176,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **`aws` and `azure/savingsplans` recommendations:** a Cost Explorer RI or
+  Savings Plan detail with an explicit non-USD `CurrencyCode`, and an Azure
+  benefit recommendation whose `currencyCode` is not USD, are skipped instead
+  of passing non-USD `OnDemandCost`/`EstimatedSavings` through as USD. AWS
+  reports each skip in `IncompleteRecommendationsError` (wraps
+  `recommendations.ErrNotUSD`); Azure records it in the collection's skip log,
+  surfacing as `PartialResultError`. An absent AWS `CurrencyCode` is unchanged
+  (#124)
+
 - **`azure/compute`:** reservation exchange targets are no longer always
   billed Upfront. `ExchangeTarget.BillingPlan` (new, optional) is sent as each
   target's `billingPlan` in the CalculateExchange body, so the session that
