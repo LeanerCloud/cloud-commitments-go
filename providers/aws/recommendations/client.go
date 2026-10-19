@@ -145,12 +145,17 @@ func (c *Client) GetRecommendations(ctx context.Context, params *common.Recommen
 		return c.getSavingsPlansRecommendations(ctx, params)
 	}
 
+	scope, err := convertAccountScope(params.RIAccountScope, "RI")
+	if err != nil {
+		return nil, err
+	}
+
 	input := &costexplorer.GetReservationPurchaseRecommendationInput{
 		Service:              aws.String(getServiceStringForCostExplorer(params.Service)),
 		PaymentOption:        convertPaymentOption(params.PaymentOption),
 		TermInYears:          convertTermInYears(params.Term),
 		LookbackPeriodInDays: convertLookbackPeriod(params.LookbackPeriod),
-		AccountScope:         types.AccountScopeLinked,
+		AccountScope:         scope,
 	}
 
 	if isEC2Service(params.Service) {

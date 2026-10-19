@@ -554,6 +554,10 @@ type RecommendationParams struct {
 	// recommendations: "linked" or "payer" (case-insensitive). Empty means
 	// linked. Payer scope only applies to a management account.
 	SPAccountScope string
+	// RIAccountScope selects the Cost Explorer account scope for Reserved
+	// Instance recommendations, with the same values as SPAccountScope:
+	// "linked" or "payer" (case-insensitive). Empty means linked.
+	RIAccountScope string
 	// ExperimentalGCPPlanTerm (GCP Compute Engine only, ignored elsewhere)
 	// takes the CUD term from the recommendation's root Commitment plan
 	// instead of Term. EXPERIMENTAL: the payload shape is unverified against a

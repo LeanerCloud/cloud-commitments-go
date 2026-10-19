@@ -32,6 +32,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **`RecommendationParams.RIAccountScope`:** selects the Cost Explorer account
+  scope (`linked` default, or `payer`) for Reserved Instance recommendations,
+  mirroring `SPAccountScope`. Empty keeps the previous linked behaviour; an
+  unknown value is rejected (#508).
 - **`recommendations.AdjustExistingCoverageForExpiringCommitmentsWithCoverageOptions`:**
   the per-pool (EC2 and other non-family) expiry deduction, plus credit for
   replacements already bought. Coverage is a lookback average, so RIs bought

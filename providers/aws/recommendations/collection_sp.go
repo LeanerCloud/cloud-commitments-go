@@ -62,13 +62,19 @@ func (c *Client) getSavingsPlansRecommendations(ctx context.Context, params *com
 // the Cost Explorer scope. Empty is linked, the long-standing default; an
 // unknown value is an error rather than a silent fallback.
 func convertSavingsPlansAccountScope(s string) (types.AccountScope, error) {
+	return convertAccountScope(s, "Savings Plans")
+}
+
+// convertAccountScope is shared by the Savings Plans and RI recommendation
+// paths so both accept the same values.
+func convertAccountScope(s, kind string) (types.AccountScope, error) {
 	switch strings.ToLower(s) {
 	case "", "linked":
 		return types.AccountScopeLinked, nil
 	case "payer":
 		return types.AccountScopePayer, nil
 	}
-	return "", fmt.Errorf("invalid Savings Plans account scope %q: want linked or payer", s)
+	return "", fmt.Errorf("invalid %s account scope %q: want linked or payer", kind, s)
 }
 
 func (c *Client) fetchSPAllPages(
