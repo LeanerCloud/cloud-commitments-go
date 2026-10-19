@@ -118,6 +118,45 @@ func TestApplyFamilyNUSizingRDSWithExpiry(t *testing.T) {
 		assert.Zero(t, rep.ExpiringNU)
 	})
 
+	t.Run("size-flexibility by engine: only flexible engines are pooled by family", func(t *testing.T) {
+		// Same 80 NU usage at 80% covered; expiring 4 x large, long-lived 6 x xlarge.
+		// Pooled by family this sizes 2 x xlarge. SQL Server and Oracle RIs cannot
+		// cover a larger size, so they must be left to the per-size path.
+		for _, tc := range []struct {
+			engine, ceEngine string
+			flexible         bool
+		}{
+			{"mysql", "MySQL", true},
+			{"postgres", "PostgreSQL", true},
+			{"sqlserver-ee", "SQL Server", false},
+			{"oracle-ee", "Oracle", false},
+		} {
+			t.Run(tc.engine, func(t *testing.T) {
+				cov := PoolCoverageMap{rdsPoolKey("us-east-1", "db.r6g.xlarge", tc.ceEngine, "Single-AZ"): {Pct: 80, AvgInstancesPerHour: 10}}
+				recs := expiryTestRec("db.r6g.xlarge", 5)
+				recs[0].Details = &common.DatabaseDetails{Engine: tc.engine, AZConfig: "single-az"}
+				commits := []common.Commitment{expiryTestRI("db.r6g.large", "a", 4, 15), expiryTestRI("db.r6g.xlarge", "a", 6, 300)}
+				for i := range commits {
+					commits[i].Engine = tc.engine
+				}
+				sized, nonRDS, drops, rep := ApplyFamilyNUSizingRDSWithExpiry(recs, cov, 80, commits, 30)
+				if tc.flexible {
+					require.Len(t, sized, 1)
+					assert.Equal(t, 2, sized[0].Count)
+					assert.Empty(t, nonRDS)
+					assert.Equal(t, 16.0, rep.ExpiringNU)
+					assert.Zero(t, rep.Unusable)
+					return
+				}
+				assert.Empty(t, sized)
+				assert.Len(t, nonRDS, 1, "left to the per-size path")
+				assert.Zero(t, drops)
+				assert.Zero(t, rep.ExpiringNU)
+				assert.Equal(t, 1, rep.Unusable, "the expiring RI is reported, not silently pooled")
+			})
+		}
+	})
+
 	t.Run("control: outside window", func(t *testing.T) {
 		cov, recs, _ := expiryTestScenario()
 		commits := []common.Commitment{expiryTestRI("db.r6g.large", "a", 4, 180), expiryTestRI("db.r6g.xlarge", "a", 6, 300)}
