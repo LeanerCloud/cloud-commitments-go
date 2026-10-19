@@ -789,6 +789,11 @@ func (c *Client) serverInfo(ctx context.Context) (azConfig, deployment string) {
 	}
 	az, dep, complete := c.fetchServerInfo(ctx)
 	if !complete {
+		if ctx.Err() != nil {
+			// The caller's own cancellation says nothing about the
+			// subscription; do not penalize other callers.
+			return "", ""
+		}
 		delay := c.serverInfoRetryDelay
 		if delay == 0 {
 			delay = serverInfoRetryDelayDefault

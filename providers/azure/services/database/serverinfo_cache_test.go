@@ -103,3 +103,15 @@ func TestServerInfo_ConcurrentCallsWalkOnce(t *testing.T) {
 	wg.Wait()
 	assert.Equal(t, 1, p.calls)
 }
+
+func TestServerInfo_CallerCancellationDoesNotStartCooldown(t *testing.T) {
+	p := &flakyMIPager{}
+	c := newServerInfoClient(p)
+	c.serverInfoRetryDelay = time.Hour
+
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	assert.Empty(t, c.cachedDominantAZConfig(canceled))
+	assert.Equal(t, "zoneRedundant", c.cachedDominantAZConfig(context.Background()),
+		"a live ctx must re-walk after another caller's canceled ctx")
+}
