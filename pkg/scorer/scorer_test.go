@@ -1,6 +1,7 @@
 package scorer
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -209,5 +210,45 @@ func TestScore_MaxBreakEvenMonths_PriceUnknown(t *testing.T) {
 		if p.ResourceType != "r5.large" {
 			assert.Zero(t, p.BreakEvenMonths, "unknown or zero break-even is never surfaced")
 		}
+	}
+}
+
+func TestScore_MinSavingsPctSet(t *testing.T) {
+	t.Parallel()
+	recs := []common.Recommendation{
+		rec(common.ServiceEC2, "us-east-1", "neg", -12.0, -100.0, 3000.0, 1, 0),
+		rec(common.ServiceEC2, "us-east-1", "zero", 0.0, 0.0, 3000.0, 1, 0),
+		rec(common.ServiceEC2, "us-east-1", "low", 3.2, 100.0, 3000.0, 1, 0),
+		rec(common.ServiceRDS, "us-east-1", "high", 20.0, 500.0, 2500.0, 1, 0),
+	}
+	tests := []struct {
+		name string
+		cfg  Config
+		want []string
+	}{
+		{"unset zero is no filter", Config{}, []string{"high", "low", "zero", "neg"}},
+		{"set to 0 is a floor at 0", Config{MinSavingsPctSet: true}, []string{"high", "low", "zero"}},
+		{"set to 5 filters at 5", Config{MinSavingsPct: 5, MinSavingsPctSet: true}, []string{"high"}},
+		{"positive without set is unchanged", Config{MinSavingsPct: 5}, []string{"high"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var got []string
+			for _, r := range Score(recs, tt.cfg).Passed {
+				got = append(got, r.ResourceType)
+			}
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestConfig_Validate(t *testing.T) {
+	t.Parallel()
+	for _, v := range []float64{0, 5, 100} {
+		assert.NoError(t, Config{MinSavingsPct: v, MinSavingsPctSet: true}.Validate(), "%v", v)
+	}
+	for _, v := range []float64{-1, math.NaN(), math.Inf(1), math.Inf(-1)} {
+		assert.Error(t, Config{MinSavingsPct: v, MinSavingsPctSet: true}.Validate(), "%v", v)
 	}
 }
