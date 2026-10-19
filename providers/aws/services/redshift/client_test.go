@@ -11,7 +11,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/redshift"
 	"github.com/aws/aws-sdk-go-v2/service/redshift/types"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -44,35 +43,6 @@ func (m *MockRedshiftClient) DescribeReservedNodes(ctx context.Context, params *
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*redshift.DescribeReservedNodesOutput), args.Error(1)
-}
-
-func (m *MockRedshiftClient) CreateTags(ctx context.Context, params *redshift.CreateTagsInput, optFns ...func(*redshift.Options)) (*redshift.CreateTagsOutput, error) {
-	args := m.Called(ctx, params)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*redshift.CreateTagsOutput), args.Error(1)
-}
-
-func (m *MockRedshiftClient) DescribeTags(ctx context.Context, params *redshift.DescribeTagsInput, optFns ...func(*redshift.Options)) (*redshift.DescribeTagsOutput, error) {
-	args := m.Called(ctx, params)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*redshift.DescribeTagsOutput), args.Error(1)
-}
-
-// MockRedshiftSTSClient implements STSAPI for testing.
-type MockRedshiftSTSClient struct {
-	mock.Mock
-}
-
-func (m *MockRedshiftSTSClient) GetCallerIdentity(ctx context.Context, params *sts.GetCallerIdentityInput, optFns ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error) {
-	args := m.Called(ctx, params)
-	if args.Get(0) == nil {
-		return nil, args.Error(1)
-	}
-	return args.Get(0).(*sts.GetCallerIdentityOutput), args.Error(1)
 }
 
 func TestClient_ReservationStatesPreventDuplicatePurchases(t *testing.T) {
@@ -164,7 +134,6 @@ func TestClient_ReservationStatesPreventDuplicatePurchases(t *testing.T) {
 					assert.ErrorIs(t, err, sentinel)
 					assert.False(t, result.Success)
 					m.AssertNumberOfCalls(t, "PurchaseReservedNodeOffering", 1)
-					m.AssertNotCalled(t, "DescribeTags", mock.Anything, mock.Anything)
 				}
 			})
 		})
@@ -1044,13 +1013,6 @@ func expectRSOffering(m *MockRedshiftClient) {
 				},
 			},
 		}, nil)
-}
-
-func rsClientWithAccount(mockRS *MockRedshiftClient) *Client {
-	stsMock := &MockRedshiftSTSClient{}
-	stsMock.On("GetCallerIdentity", mock.Anything, mock.Anything).
-		Return(&sts.GetCallerIdentityOutput{Account: aws.String("123456789012")}, nil)
-	return &Client{client: mockRS, stsClient: stsMock, region: "eu-west-1"}
 }
 
 // TestFindOfferingID_PaginationCapFires asserts that findOfferingID returns a

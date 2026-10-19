@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"log"
 	"sort"
-	"sync"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/redshift"
 	redshifttypes "github.com/aws/aws-sdk-go-v2/service/redshift/types"
-	"github.com/aws/aws-sdk-go-v2/service/sts"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/offeringprice"
@@ -26,28 +24,12 @@ type API interface {
 	PurchaseReservedNodeOffering(ctx context.Context, params *redshift.PurchaseReservedNodeOfferingInput, optFns ...func(*redshift.Options)) (*redshift.PurchaseReservedNodeOfferingOutput, error)
 	DescribeReservedNodeOfferings(ctx context.Context, params *redshift.DescribeReservedNodeOfferingsInput, optFns ...func(*redshift.Options)) (*redshift.DescribeReservedNodeOfferingsOutput, error)
 	DescribeReservedNodes(ctx context.Context, params *redshift.DescribeReservedNodesInput, optFns ...func(*redshift.Options)) (*redshift.DescribeReservedNodesOutput, error)
-	CreateTags(ctx context.Context, params *redshift.CreateTagsInput, optFns ...func(*redshift.Options)) (*redshift.CreateTagsOutput, error)
-	DescribeTags(ctx context.Context, params *redshift.DescribeTagsInput, optFns ...func(*redshift.Options)) (*redshift.DescribeTagsOutput, error)
-}
-
-// STSAPI is the subset of STS this client calls to resolve the caller's
-// account ID for ARN construction. Declared at package level so tests can
-// substitute a fake.
-type STSAPI interface {
-	GetCallerIdentity(ctx context.Context, params *sts.GetCallerIdentityInput, optFns ...func(*sts.Options)) (*sts.GetCallerIdentityOutput, error)
 }
 
 // Client handles AWS Redshift Reserved Nodes.
 type Client struct {
-	client    API
-	stsClient STSAPI
-	region    string
-
-	// accountID is resolved lazily on first tag call via STS. Guarded by
-	// accountOnce so concurrent purchases don't each call STS.
-	accountOnce sync.Once
-	accountID   string
-	accountErr  error
+	client API
+	region string
 }
 
 // NewClient creates a new Redshift client with purchase-path retry/timeout
@@ -55,20 +37,14 @@ type Client struct {
 func NewClient(cfg aws.Config) *Client {
 	pcfg := purchasecfg.NewConfig(cfg)
 	return &Client{
-		client:    redshift.NewFromConfig(pcfg),
-		stsClient: sts.NewFromConfig(pcfg),
-		region:    cfg.Region,
+		client: redshift.NewFromConfig(pcfg),
+		region: cfg.Region,
 	}
 }
 
 // SetRedshiftAPI sets a custom Redshift API client (for testing).
 func (c *Client) SetRedshiftAPI(api API) {
 	c.client = api
-}
-
-// SetSTSAPI sets a custom STS client (for testing).
-func (c *Client) SetSTSAPI(api STSAPI) {
-	c.stsClient = api
 }
 
 // GetServiceType returns the service type.
