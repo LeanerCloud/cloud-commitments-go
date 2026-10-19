@@ -97,6 +97,10 @@ func accountsSFKey(gen uint64) string {
 	return accountsCacheSFKeyPrefix + strconv.FormatUint(gen, 10)
 }
 
+// errAccountsStale is returned when the accounts cache was invalidated (or the
+// credential swapped) while a fetch was in flight. Callers may retry.
+var errAccountsStale = errors.New("azure accounts cache: invalidated or credential changed during fetch, retry")
+
 // fetchAccountsShared collapses concurrent cold-cache callers onto a single
 // in-flight ARM subscriptions.List and returns the SHARED (un-cloned) slice.
 // Callers must clone before handing the result outside the package.
@@ -122,14 +126,19 @@ func (p *Provider) fetchAccountsShared(ctx context.Context) ([]common.Account, e
 		}
 
 		p.accountsMu.Lock()
-		// Publish only when no InvalidateAccountsCache landed while the ARM
-		// call was in flight. A fetch that started before an invalidation
-		// carries a pre-invalidation snapshot; writing it now would silently
-		// resurrect exactly the data the caller asked to discard.
-		if p.accountsGen == gen {
-			p.cachedAccounts = accounts
+		defer p.accountsMu.Unlock()
+		// A generation bump while the ARM call was in flight (SetCredential,
+		// SetSubscriptionsClient or InvalidateAccountsCache) makes this list a
+		// snapshot of what the PREVIOUS principal could see. Publishing it would
+		// resurrect discarded data, and handing it to the callers that joined
+		// the singleflight would let GetRecommendationsClient fan out over the
+		// old credential's subscriptions using the new credential. Fail loud
+		// instead of re-fetching: a swap mid-fetch is a caller contract
+		// violation, and one retry loop here would hide it.
+		if p.accountsGen != gen {
+			return nil, errAccountsStale
 		}
-		p.accountsMu.Unlock()
+		p.cachedAccounts = accounts
 
 		return accounts, nil
 	})
