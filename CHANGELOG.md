@@ -176,6 +176,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **`aws/recommendations`:** the Savings Plans coverage and utilization and
+  on-demand Cost Explorer fetchers now hold the shared concurrency slot around
+  each call, so they count toward `CUDLY_MAX_PARALLELISM` (#8).
 - **`gcp/computeengine`:** a Recommender cost projection with a non-zero cost
   and a non-USD or missing currency code is now skipped with a logged warning
   instead of being reported as USD `EstimatedSavings`.
