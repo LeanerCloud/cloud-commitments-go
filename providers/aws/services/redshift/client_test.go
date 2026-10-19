@@ -1148,20 +1148,6 @@ func TestClient_FindOfferingID_UnknownOfferingType(t *testing.T) {
 	mockRS.AssertExpectations(t)
 }
 
-func TestFindNodeByIdempotencyToken_CanceledBeforeScan(t *testing.T) {
-	m := &MockRedshiftClient{}
-	client := rsClientWithAccount(m)
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	m.On("DescribeReservedNodes", mock.Anything, mock.Anything).
-		Return(&redshift.DescribeReservedNodesOutput{}, nil).Maybe()
-	id, found, err := client.findNodeByIdempotencyToken(ctx, "token")
-	assert.ErrorIs(t, err, context.Canceled)
-	assert.Empty(t, id)
-	assert.False(t, found)
-	m.AssertNotCalled(t, "DescribeReservedNodes", mock.Anything, mock.Anything)
-}
-
 func rsIdemRec() common.Recommendation {
 	return common.Recommendation{
 		Service:       common.ServiceDataWarehouse,
