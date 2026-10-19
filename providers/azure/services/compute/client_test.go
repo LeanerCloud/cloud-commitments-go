@@ -1870,17 +1870,22 @@ func TestExtractVMSKUCapabilities_FailsLoudOnBadValues(t *testing.T) {
 		name       string
 		sku        *armcompute.ResourceSKU
 		wantErr    bool
+		errParts   []string
 		wantVCPUs  int
 		wantMemory float64
 	}{
-		{"valid", sku(s("4"), s("16.5")), false, 4, 16.5},
-		{"both missing is unknown", sku(nil, nil), false, 0, 0},
-		{"memory missing is unknown", sku(s("4"), nil), false, 4, 0},
-		{"vCPUs unparseable", sku(s("four"), s("16")), true, 0, 0},
-		{"vCPUs negative", sku(s("-1"), s("16")), true, 0, 0},
-		{"memory unparseable", sku(s("4"), s("lots")), true, 0, 0},
-		{"memory NaN", sku(s("4"), s("NaN")), true, 0, 0},
-		{"memory negative", sku(s("4"), s("-2")), true, 0, 0},
+		{"valid", sku(s("4"), s("16.5")), false, nil, 4, 16.5},
+		{"both missing is unknown", sku(nil, nil), false, nil, 0, 0},
+		{"memory missing is unknown", sku(s("4"), nil), false, nil, 4, 0},
+		{"vCPUs unparseable", sku(s("four"), s("16")), true, []string{"vCPUs", "four"}, 0, 0},
+		{"vCPUs decimal", sku(s("2.5"), s("16")), true, []string{"vCPUs", "2.5"}, 0, 0},
+		{"vCPUs negative", sku(s("-1"), s("16")), true, []string{"vCPUs", "-1"}, 0, 0},
+		{"memory unparseable", sku(s("4"), s("lots")), true, []string{"MemoryGB", "lots"}, 0, 0},
+		{"memory NaN", sku(s("4"), s("NaN")), true, []string{"MemoryGB", "NaN"}, 0, 0},
+		{"memory +Inf", sku(s("4"), s("+Inf")), true, []string{"MemoryGB", "+Inf"}, 0, 0},
+		{"memory -Inf", sku(s("4"), s("-Inf")), true, []string{"MemoryGB", "-Inf"}, 0, 0},
+		{"memory Inf", sku(s("4"), s("Inf")), true, []string{"MemoryGB", "Inf"}, 0, 0},
+		{"memory negative", sku(s("4"), s("-2")), true, []string{"MemoryGB", "-2"}, 0, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1888,6 +1893,11 @@ func TestExtractVMSKUCapabilities_FailsLoudOnBadValues(t *testing.T) {
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("want error, got vCPUs=%d memoryGB=%v", v, m)
+				}
+				for _, part := range tt.errParts {
+					if !strings.Contains(err.Error(), part) {
+						t.Fatalf("error %q does not contain %q", err, part)
+					}
 				}
 				return
 			}

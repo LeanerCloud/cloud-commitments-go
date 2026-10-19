@@ -62,9 +62,10 @@ type HTTPClient interface {
 //   - vCPUs: Capabilities[Name=="vCPUs"].Value, parsed as int.
 //   - memoryGB: Capabilities[Name=="MemoryGB"].Value, parsed as float64.
 //
-// Either field stays at the zero value when the capability is missing
-// or unparseable; common.ComputeDetails treats 0 as "unknown" (the
-// JSON tags on VCPU/MemoryGB are omitempty).
+// A field stays at the zero value when its capability is missing;
+// common.ComputeDetails treats 0 as "unknown" (the JSON tags on
+// VCPU/MemoryGB are omitempty). A SKU with a present but unparseable
+// capability is omitted from the catalog entirely.
 
 // maxRecsPages caps Consumption API recommendation pagination to avoid
 // burning a Lambda deadline on a stalled or unexpectedly deep result set.
@@ -923,6 +924,7 @@ func extractVMSKUCapabilities(sku *armcompute.ResourceSKU) (vCPUs int, memoryGB 
 	return vCPUs, memoryGB, nil
 }
 
+// parseSKUVCPUs parses a vCPUs capability value as a non-negative integer.
 func parseSKUVCPUs(raw string) (int, error) {
 	v, err := strconv.Atoi(raw)
 	if err != nil || v < 0 {
@@ -931,6 +933,8 @@ func parseSKUVCPUs(raw string) (int, error) {
 	return v, nil
 }
 
+// parseSKUMemoryGB parses a MemoryGB capability value as a finite,
+// non-negative float.
 func parseSKUMemoryGB(raw string) (float64, error) {
 	v, err := strconv.ParseFloat(raw, 64)
 	if err != nil || math.IsNaN(v) || math.IsInf(v, 0) || v < 0 {
