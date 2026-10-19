@@ -176,6 +176,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **`scorer`:** `MinCount` no longer applies to Savings Plans. Their `Count`
+  is always 1 (the commitment is dollar-denominated), so `--min-count 2`
+  dropped every Savings Plan recommendation.
 - **`aws` and `azure/savingsplans` recommendations:** a Cost Explorer RI or
   Savings Plan detail with an explicit non-USD `CurrencyCode`, and an Azure
   benefit recommendation whose `currencyCode` is not USD, are skipped instead

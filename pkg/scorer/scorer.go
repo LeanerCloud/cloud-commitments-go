@@ -17,7 +17,7 @@ type Config struct {
 	MinSavingsPct      float64  // Minimum savings percentage. 0 with MinSavingsPctSet false = no filter.
 	MinSavingsPctSet   bool     // True makes MinSavingsPct a real floor even at 0 (drops recs with negative savings).
 	MaxBreakEvenMonths int      // Maximum break-even months. 0 = no filter. No-upfront recs pass; recs whose break-even cannot be computed are filtered (an upfront payment option with no upfront price as FilterReasonPriceUnknown).
-	MinCount           int      // Minimum count per recommendation. 0 = no filter.
+	MinCount           int      // Minimum count per recommendation. 0 = no filter. Does not apply to Savings Plans (dollar-denominated; their Count is always 1).
 	EnabledServices    []string // Empty = all services. E.g. ["ec2", "rds"].
 }
 
@@ -113,10 +113,19 @@ func filterReason(rec common.Recommendation, cfg Config, enabledServices map[str
 		}
 	}
 
-	if cfg.MinCount > 0 && rec.Count < cfg.MinCount {
-		return fmt.Sprintf("count %d below minimum %d", rec.Count, cfg.MinCount)
+	if reason := minCountReason(rec, cfg.MinCount); reason != "" {
+		return reason
 	}
 
+	return ""
+}
+
+// minCountReason returns why rec fails a positive minCount, or "" if it passes.
+// Savings Plans are exempt: they are dollar-denominated and always carry Count 1.
+func minCountReason(rec common.Recommendation, minCount int) string {
+	if minCount > 0 && rec.CommitmentType != common.CommitmentSavingsPlan && rec.Count < minCount {
+		return fmt.Sprintf("count %d below minimum %d", rec.Count, minCount)
+	}
 	return ""
 }
 
