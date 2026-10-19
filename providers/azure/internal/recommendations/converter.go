@@ -198,9 +198,22 @@ func extractModern(rec *armconsumption.ModernReservationRecommendation) *Extract
 	if quantity != nil {
 		out.Count = int(*quantity)
 	}
-	out.OnDemandCost = amountValue(props.CostWithNoReservedInstances)
-	out.CommitmentCost = amountValue(props.TotalCostWithReservedInstances)
-	out.EstimatedSavings = amountValue(props.NetSavings)
+	// Absent amounts leave the float64 fields at their zero value, exactly as
+	// the Legacy path does; the zero is never a reported price. The only
+	// production caller, ExtractConsumption, rejects a recommendation whose
+	// on-demand or total amount is absent before the fields are used.
+	onDemand := amountValuePtr(props.CostWithNoReservedInstances)
+	total := amountValuePtr(props.TotalCostWithReservedInstances)
+	netSavings := amountValuePtr(props.NetSavings)
+	if onDemand != nil {
+		out.OnDemandCost = *onDemand
+	}
+	if total != nil {
+		out.CommitmentCost = *total
+	}
+	if netSavings != nil {
+		out.EstimatedSavings = *netSavings
+	}
 	// Covered/effective recurring cost = what the customer pays WITH the
 	// reservation. Prefer the provider-reported total-with-RI; fall back to
 	// on-demand minus net savings; nil (never 0) when neither is available.
@@ -208,9 +221,9 @@ func extractModern(rec *armconsumption.ModernReservationRecommendation) *Extract
 	// fallback/nil logic matches the Legacy path's *float64 inputs.
 	out.RecurringMonthlyCost = deriveCoveredMonthlyCost(
 		out.ResourceType,
-		amountValuePtr(props.TotalCostWithReservedInstances),
-		amountValuePtr(props.CostWithNoReservedInstances),
-		amountValuePtr(props.NetSavings),
+		total,
+		onDemand,
+		netSavings,
 	)
 
 	return out
@@ -343,17 +356,6 @@ func normaliseTerm(term *string) string {
 		logging.Warnf("azure recommendations: unrecognized Term value %q; passing through verbatim", *term)
 		return *term
 	}
-}
-
-// amountValue unwraps Modern's *Amount{Currency, Value} wrapper to a
-// bare float. Returns 0 for nil or missing-Value payloads. Currency is
-// discarded — downstream Recommendation consumers assume a single-
-// currency view per subscription, same as the Legacy path.
-func amountValue(a *armconsumption.Amount) float64 {
-	if a == nil || a.Value == nil {
-		return 0
-	}
-	return *a.Value
 }
 
 // amountValuePtr unwraps Modern's *Amount to a *float64, preserving the

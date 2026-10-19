@@ -957,16 +957,13 @@ func TestGetOfferingDetails_Pagination(t *testing.T) {
 	}
 }
 
-func TestGetOfferingDetails_QueryEscapesRegionAndSKU(t *testing.T) {
-	client, requests := synapseQuoteClient(t, "east'us", synapsePricePage(t, []map[string]any{
-		synapseCapturedDW100c(map[string]any{"armRegionName": "east'us", "skuName": "DW'100c"}),
-	}, ""))
+func TestGetOfferingDetails_RejectsQuoteInRegionAndSKU(t *testing.T) {
+	client, requests := synapseQuoteClient(t, "east'us", synapsePricePage(t, nil, ""))
 	quote, err := client.GetOfferingDetails(context.Background(), common.Recommendation{ResourceType: "DW'100c", Term: "1yr", PaymentOption: "upfront"})
-	require.NoError(t, err)
-	assert.Equal(t, 8333.0, quote.TotalCost)
-	require.Len(t, *requests, 1)
-	assert.Equal(t, "serviceName eq 'Azure Synapse Analytics' and productName eq 'Azure Synapse Analytics Dedicated SQL Pool' and armRegionName eq 'east''us' and skuName eq 'DW''100c' and priceType eq 'Reservation'", (*requests)[0].URL.Query().Get("$filter"))
-	assert.Contains(t, (*requests)[0].URL.RawQuery, "%24filter=")
+	require.Error(t, err)
+	assert.Nil(t, quote)
+	assert.Contains(t, err.Error(), "Retail Prices filter")
+	assert.Empty(t, *requests)
 }
 
 func TestGetOfferingDetails_RejectsUnsupportedTermAndPayment(t *testing.T) {
