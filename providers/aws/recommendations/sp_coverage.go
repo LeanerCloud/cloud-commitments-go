@@ -11,6 +11,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
 )
 
 // SPCoverageSummary is the Savings Plans coverage summary (optionally scoped
@@ -380,7 +382,11 @@ func (c *Client) fetchSPCoveragePage(ctx context.Context, input *costexplorer.Ge
 		if waitErr := rateLimiter.Wait(ctx); waitErr != nil {
 			return nil, fmt.Errorf("rate limiter wait failed: %w", waitErr)
 		}
+		if acqErr := concurrency.Acquire(ctx); acqErr != nil {
+			return nil, fmt.Errorf("concurrency acquire failed: %w", acqErr)
+		}
 		result, err := c.costExplorerClient.GetSavingsPlansCoverage(ctx, input)
+		concurrency.Release(ctx)
 		if !rateLimiter.ShouldRetry(err) {
 			if err != nil {
 				return nil, fmt.Errorf("failed to get SP coverage: %w", err)
@@ -469,7 +475,11 @@ func (c *Client) fetchSPUtilizationPage(ctx context.Context, input *costexplorer
 		if waitErr := rateLimiter.Wait(ctx); waitErr != nil {
 			return nil, fmt.Errorf("rate limiter wait failed: %w", waitErr)
 		}
+		if acqErr := concurrency.Acquire(ctx); acqErr != nil {
+			return nil, fmt.Errorf("concurrency acquire failed: %w", acqErr)
+		}
 		result, err := c.costExplorerClient.GetSavingsPlansUtilization(ctx, input)
+		concurrency.Release(ctx)
 		if !rateLimiter.ShouldRetry(err) {
 			if err != nil {
 				return nil, fmt.Errorf("failed to get SP utilization: %w", err)

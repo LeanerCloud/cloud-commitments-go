@@ -31,7 +31,7 @@ func (c *Client) parseSavingsPlansRecommendations(
 			incomplete.FailedDetails++
 			incomplete.Causes = append(incomplete.Causes, fmt.Errorf("service %s term %s payment %s plan %s page %d detail %d: %w",
 				params.Service, params.Term, params.PaymentOption, planType, page, i, err))
-			log.Printf("WARNING: skipping SP recommendation (planType=%s): %v", planType, err)
+			log.Printf("WARNING: skipping SP recommendation (provider=aws service=%s planType=%s): %v", params.Service, planType, err)
 			continue
 		}
 		if rec != nil {
@@ -213,6 +213,9 @@ func (c *Client) parseSavingsPlanDetail(
 	params *common.RecommendationParams,
 	planType types.SupportedSavingsPlansType,
 ) (*common.Recommendation, error) {
+	if err := requireUSD(aws.ToString(detail.CurrencyCode)); err != nil {
+		return nil, fmt.Errorf("account %s: %w", aws.ToString(detail.AccountId), err)
+	}
 	nums, err := parseSPNumbers(detail)
 	if err != nil {
 		return nil, err

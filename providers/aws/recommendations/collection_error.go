@@ -4,7 +4,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 )
+
+// ErrNotUSD marks a detail skipped because Cost Explorer priced it in a
+// non-USD currency; common.Recommendation costs are USD by contract. It
+// surfaces through IncompleteRecommendationsError.Causes.
+var ErrNotUSD = errors.New("recommendation amounts are not denominated in USD")
+
+// requireUSD rejects an explicit non-USD CurrencyCode. An absent or blank code
+// is accepted: CE fixtures omit it and the field is documented as optional.
+func requireUSD(code string) error {
+	code = strings.TrimSpace(code)
+	if code == "" || strings.EqualFold(code, "USD") {
+		return nil
+	}
+	return fmt.Errorf("%w: CurrencyCode %q", ErrNotUSD, code)
+}
 
 // IncompleteRecommendationsError accompanies survivors of an incomplete collection.
 // Each cause represents one rejected detail or one failed collection scope.
