@@ -70,9 +70,6 @@ type Client struct {
 	// recLookbackPeriod is forwarded to GetReservationPurchaseRecommendation
 	// as LookbackPeriodInDays. Defaults to "7d" when empty.
 	recLookbackPeriod string
-	// riAccountScope ("linked" or "payer"; empty is linked) is forwarded by
-	// GetRecommendationsForService, which takes no params.
-	riAccountScope string
 }
 
 // NewClient creates a new recommendations client.
@@ -132,12 +129,6 @@ func (c *Client) instanceTypeLookup(ctx context.Context, instanceType string) (i
 // An empty or unrecognized value falls back to "7d" at call time.
 func (c *Client) SetRecLookbackPeriod(period string) {
 	c.recLookbackPeriod = period
-}
-
-// SetRIAccountScope configures the Cost Explorer account scope used by
-// GetRecommendationsForService: "linked" (default) or "payer".
-func (c *Client) SetRIAccountScope(scope string) {
-	c.riAccountScope = scope
 }
 
 // GetRecommendations fetches Reserved Instance recommendations for any service.
@@ -286,7 +277,6 @@ func (c *Client) fetchSingleComboRecs(ctx context.Context, service common.Servic
 		Term:           term,
 		LookbackPeriod: lookback,
 		Region:         "",
-		RIAccountScope: c.riAccountScope,
 	}
 	recs, err := c.GetRecommendations(ctx, &params)
 	if ctx.Err() != nil {

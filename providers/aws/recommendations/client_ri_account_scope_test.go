@@ -23,9 +23,7 @@ func (f *riScopeFixture) Do(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 	scope, _ := input["AccountScope"].(string)
-	if scope != "" {
-		f.scopes = append(f.scopes, scope)
-	}
+	f.scopes = append(f.scopes, scope)
 	return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/x-amz-json-1.1"}},
 		Body: io.NopCloser(strings.NewReader(`{"Recommendations":[]}`)), Request: req}, nil
 }
@@ -60,22 +58,4 @@ func TestRIAccountScopeRejectsUnknown(t *testing.T) {
 		Service: common.ServiceRDS, Term: "1yr", PaymentOption: "no-upfront", LookbackPeriod: "7d", RIAccountScope: "org"})
 	require.ErrorContains(t, err, "invalid RI account scope")
 	require.Empty(t, f.scopes)
-}
-
-func TestRIAccountScopeForService(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct{ in, want string }{{"", "LINKED"}, {"payer", "PAYER"}} {
-		t.Run(tc.in, func(t *testing.T) {
-			t.Parallel()
-			f := &riScopeFixture{}
-			c := riScopeClient(f)
-			c.SetRIAccountScope(tc.in)
-			_, err := c.GetRecommendationsForService(context.Background(), common.ServiceRDS)
-			require.NoError(t, err)
-			require.Len(t, f.scopes, 6)
-			for _, s := range f.scopes {
-				require.Equal(t, tc.want, s)
-			}
-		})
-	}
 }
