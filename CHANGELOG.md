@@ -181,6 +181,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **`scorer`:** `MinCount` no longer applies to Savings Plans. Their `Count`
+  is always 1 (the commitment is dollar-denominated), so `--min-count 2`
+  dropped every Savings Plan recommendation.
 - **`aws/recommendations`:** RDS family-NU sizing and the expiry deduction no longer pool SQL Server by instance family (its RIs are never size-flexible): those recs go to the per-size path and expiring SQL Server RIs count as `Unusable`. Oracle stays pooled until the license model is carried (#342).
 - **`aws/recommendations`:** `FamilyExpiryReport.ExpiringNU` now reports the NU actually removed from family covered NU (before minus after) instead of the expiring RIs' own NU, so it is 0 when underutilized RIs absorb the expiry (#342).
 - **`aws` and `azure/savingsplans` recommendations:** a Cost Explorer RI or
