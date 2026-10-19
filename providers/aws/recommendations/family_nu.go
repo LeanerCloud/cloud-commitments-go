@@ -334,6 +334,18 @@ func scaleFamilyRecs(recs []common.Recommendation, indices []int, scale float64)
 	return sized, totalNewNU, zeroDrops
 }
 
+// familyProjectedCoverage is the single formula for a family's cumulative
+// projected coverage: existing% plus newNU / familyTotalNU as %, capped at 100.
+// Sizing (annotateFamilyProjection) and RederiveFamilyCoverage both use it so
+// the two can never disagree.
+func familyProjectedCoverage(existingPct, newNU, familyTotalNU float64) float64 {
+	proj := existingPct + newNU/familyTotalNU*100.0
+	if proj > 100 {
+		proj = 100
+	}
+	return proj
+}
+
 // annotateFamilyProjection is the second pass: computes the cumulative
 // family ProjectedCoverage (existing% plus totalNewNU / familyTotalNU
 // expressed as %) and writes the same value onto every rec along with
@@ -341,10 +353,7 @@ func scaleFamilyRecs(recs []common.Recommendation, indices []int, scale float64)
 // same projection lands on every row so each one reflects "where the
 // family lands" rather than its own slice.
 func annotateFamilyProjection(sized []common.Recommendation, existingPct, totalNewNU, familyTotalNU float64) {
-	familyProj := existingPct + totalNewNU/familyTotalNU*100.0
-	if familyProj > 100 {
-		familyProj = 100
-	}
+	familyProj := familyProjectedCoverage(existingPct, totalNewNU, familyTotalNU)
 	for i := range sized {
 		sized[i].ExistingCoveragePct = existingPct
 		sized[i].ExistingCoveragePercentExact = nil
