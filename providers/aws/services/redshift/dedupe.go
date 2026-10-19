@@ -22,6 +22,9 @@ const (
 	// redshiftClockSkew is the slack between the caller's RequestedAt and AWS's
 	// node StartTime. The window has no upper bound.
 	redshiftClockSkew = 5 * time.Minute
+	// recoverLookupTimeout bounds the post-error lookup, which runs on a
+	// context detached from the caller's cancellation.
+	recoverLookupTimeout = 30 * time.Second
 )
 
 // errRequestedAtRequired refuses a tokenized purchase that cannot be matched.
@@ -94,6 +97,25 @@ func (c *Client) guardAgainstRepurchase(ctx context.Context, result *common.Purc
 	default:
 		return false
 	}
+	return true
+}
+
+// adoptAfterUnknownOutcome runs after a purchase error. When the outcome is
+// unknown and exactly one node matches, the purchase did happen: adopt it. A
+// missing or ambiguous match leaves the original error in place.
+func (c *Client) adoptAfterUnknownOutcome(ctx context.Context, result *common.PurchaseResult, offeringID string, count int, opts common.PurchaseOptions) bool {
+	if !errors.Is(result.Error, common.ErrOutcomeUnknown) || opts.IdempotencyToken == "" || opts.RequestedAt.IsZero() {
+		return false
+	}
+	lookupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recoverLookupTimeout)
+	defer cancel()
+	ids, err := c.findMatchingNodes(lookupCtx, offeringID, count, opts.RequestedAt)
+	if err != nil || len(ids) != 1 {
+		log.Printf("Redshift purchase outcome unknown and not recoverable (matches=%d, lookup error=%v)", len(ids), err)
+		return false
+	}
+	log.Printf("Redshift purchase for token %s had an unknown outcome; adopted matching node %s", common.MaskToken(opts.IdempotencyToken), ids[0])
+	adopt(result, ids[0])
 	return true
 }
 

@@ -147,6 +147,9 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	response, err := c.client.PurchaseReservedNodeOffering(ctx, input, func(o *redshift.Options) { o.RetryMaxAttempts = 1 })
 	if err != nil {
 		result.Error = fmt.Errorf("failed to purchase Redshift Reserved Node: %w", purchasecfg.ClassifyPurchaseError(err))
+		if c.adoptAfterUnknownOutcome(ctx, &result, offeringID, rec.Count, opts) {
+			return result, nil
+		}
 		return result, result.Error
 	}
 
@@ -161,6 +164,9 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	} else {
 		// A 200 without a node: the buy most likely happened.
 		result.Error = fmt.Errorf("purchase response was empty: %w", common.ErrOutcomeUnknown)
+		if c.adoptAfterUnknownOutcome(ctx, &result, offeringID, rec.Count, opts) {
+			return result, nil
+		}
 		return result, result.Error
 	}
 

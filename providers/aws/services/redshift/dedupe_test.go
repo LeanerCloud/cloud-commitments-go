@@ -4,13 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"testing"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/redshift"
 	"github.com/aws/aws-sdk-go-v2/service/redshift/types"
+	"github.com/aws/smithy-go"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -193,4 +197,117 @@ func TestDedupe_CanceledContextRefusesBeforeScan(t *testing.T) {
 	_, err := c.findMatchingNodes(ctx, "offering-1", 1, dedupeReqAt)
 	assert.ErrorIs(t, err, context.Canceled)
 	m.AssertNotCalled(t, "DescribeReservedNodes", mock.Anything, mock.Anything)
+}
+
+func unknownOutcome() error {
+	return fmt.Errorf("%w: connection reset", common.ErrOutcomeUnknown)
+}
+
+func clean4xx() error {
+	return &awshttp.ResponseError{ResponseError: &smithyhttp.ResponseError{
+		Response: &smithyhttp.Response{Response: &http.Response{StatusCode: http.StatusBadRequest}},
+		Err:      &smithy.GenericAPIError{Code: "InvalidParameterValue", Message: "bad"},
+	}}
+}
+
+// recoverMock returns an empty guard lookup first, then the post-error lookup.
+func recoverMock(buy func(*MockRedshiftClient), second ...types.ReservedNode) (*Client, *MockRedshiftClient) {
+	m := &MockRedshiftClient{}
+	expectRSOffering(m)
+	buy(m)
+	m.On("DescribeReservedNodes", mock.Anything, mock.Anything).Return(&redshift.DescribeReservedNodesOutput{}, nil).Once()
+	m.On("DescribeReservedNodes", mock.Anything, mock.Anything).Return(&redshift.DescribeReservedNodesOutput{ReservedNodes: second}, nil).Maybe()
+	return &Client{client: m, region: "eu-west-1"}, m
+}
+
+func buyFails(err error) func(*MockRedshiftClient) {
+	return func(m *MockRedshiftClient) {
+		m.On("PurchaseReservedNodeOffering", mock.Anything, mock.Anything).Return((*redshift.PurchaseReservedNodeOfferingOutput)(nil), err)
+	}
+}
+
+func buyEmpty(m *MockRedshiftClient) {
+	m.On("PurchaseReservedNodeOffering", mock.Anything, mock.Anything).Return(&redshift.PurchaseReservedNodeOfferingOutput{}, nil)
+}
+
+func TestDedupe_RecoverAfterUnknownOutcome(t *testing.T) {
+	one := dnode("rn-bought", "payment-pending", dedupeReqAt.Add(time.Second))
+	two := dnode("rn-bought2", "active", dedupeReqAt.Add(time.Second))
+	for _, tc := range []struct {
+		name  string
+		buy   func(*MockRedshiftClient)
+		nodes []types.ReservedNode
+		adopt bool
+	}{
+		{"timeout then one match adopts", buyFails(unknownOutcome()), []types.ReservedNode{one}, true},
+		{"empty 200 then one match adopts", buyEmpty, []types.ReservedNode{one}, true},
+		{"timeout then none keeps original error", buyFails(unknownOutcome()), nil, false},
+		{"timeout then ambiguous keeps original error", buyFails(unknownOutcome()), []types.ReservedNode{one, two}, false},
+		{"empty 200 then none keeps original error", buyEmpty, nil, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, m := recoverMock(tc.buy, tc.nodes...)
+			result, err := c.PurchaseCommitment(context.Background(), rsIdemRec(), dedupeOpts())
+			m.AssertNumberOfCalls(t, "PurchaseReservedNodeOffering", 1)
+			m.AssertNumberOfCalls(t, "DescribeReservedNodes", 2)
+			if tc.adopt {
+				require.NoError(t, err)
+				assert.True(t, result.Success)
+				assert.True(t, result.ExistingCommitment)
+				assert.Equal(t, "rn-bought", result.CommitmentID)
+				assert.NoError(t, result.Error)
+				return
+			}
+			assert.ErrorIs(t, err, common.ErrOutcomeUnknown)
+			assert.False(t, result.Success)
+		})
+	}
+}
+
+func TestDedupe_RecoverLookupErrorKeepsOriginalError(t *testing.T) {
+	c, m := recoverMock(buyFails(unknownOutcome()))
+	m.ExpectedCalls = m.ExpectedCalls[:len(m.ExpectedCalls)-1]
+	m.On("DescribeReservedNodes", mock.Anything, mock.Anything).Return((*redshift.DescribeReservedNodesOutput)(nil), errors.New("throttled"))
+	result, err := c.PurchaseCommitment(context.Background(), rsIdemRec(), dedupeOpts())
+	assert.ErrorIs(t, err, common.ErrOutcomeUnknown)
+	assert.False(t, result.Success)
+}
+
+func TestDedupe_Clean4xxDoesNoRecoveryLookup(t *testing.T) {
+	c, m := recoverMock(buyFails(clean4xx()), dnode("rn-bought", "active", dedupeReqAt))
+	result, err := c.PurchaseCommitment(context.Background(), rsIdemRec(), dedupeOpts())
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, common.ErrOutcomeUnknown)
+	assert.False(t, result.Success)
+	m.AssertNumberOfCalls(t, "DescribeReservedNodes", 1)
+}
+
+func TestDedupe_RecoverLookupIsDetachedAndBounded(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m := &MockRedshiftClient{}
+	expectRSOffering(m)
+	m.On("PurchaseReservedNodeOffering", mock.Anything, mock.Anything).
+		Run(func(mock.Arguments) { cancel() }).
+		Return((*redshift.PurchaseReservedNodeOfferingOutput)(nil), unknownOutcome())
+	m.On("DescribeReservedNodes", mock.Anything, mock.Anything).Return(&redshift.DescribeReservedNodesOutput{}, nil).Once()
+	var lookupErr error
+	var deadline time.Time
+	var hasDeadline bool
+	m.On("DescribeReservedNodes", mock.Anything, mock.Anything).
+		Run(func(args mock.Arguments) {
+			lookupCtx := args.Get(0).(context.Context)
+			lookupErr = lookupCtx.Err()
+			deadline, hasDeadline = lookupCtx.Deadline()
+		}).
+		Return(&redshift.DescribeReservedNodesOutput{ReservedNodes: []types.ReservedNode{dnode("rn-bought", "active", dedupeReqAt)}}, nil)
+	c := &Client{client: m, region: "eu-west-1"}
+
+	result, err := c.PurchaseCommitment(ctx, rsIdemRec(), dedupeOpts())
+	require.NoError(t, err)
+	assert.Equal(t, "rn-bought", result.CommitmentID)
+	assert.NoError(t, lookupErr, "the lookup must survive the caller's cancellation")
+	require.True(t, hasDeadline, "the lookup must carry a deadline")
+	assert.LessOrEqual(t, time.Until(deadline), recoverLookupTimeout)
+	assert.Equal(t, 30*time.Second, recoverLookupTimeout)
 }
