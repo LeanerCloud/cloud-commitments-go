@@ -104,14 +104,23 @@ type Client struct {
 	skuCacheOnce sync.Once
 	skuCacheMap  map[string]sqlSKUEntry
 
-	// Lazy server-info cache. Populated once by fetchServerInfo, which
-	// walks the managed-instances and servers pagers. Both azConfig and
-	// deployment are derived in a single pass so the injected test pager
-	// is consumed exactly once. Mirrors the cosmosdb cachedAPIType pattern.
-	serverInfoOnce sync.Once
-	azConfig       string
-	deployment     string
+	// Lazy server-info cache. Populated by fetchServerInfo, which walks the
+	// managed-instances and servers pagers. Both azConfig and deployment are
+	// derived in a single pass so the injected test pager is consumed once.
+	// Only a complete walk is cached (serverInfoLoaded); a failed or
+	// canceled walk is retried, but not before serverInfoRetryAfter so a
+	// persistently failing subscription is not re-walked per recommendation.
+	serverInfoMu         sync.Mutex
+	serverInfoLoaded     bool
+	serverInfoRetryAfter time.Time
+	serverInfoRetryDelay time.Duration
+	azConfig             string
+	deployment           string
 }
+
+// serverInfoRetryDelayDefault is the minimum wait before re-walking the
+// server pagers after an incomplete walk.
+const serverInfoRetryDelayDefault = 30 * time.Second
 
 // NewClient creates a new Azure Database client.
 func NewClient(cred azcore.TokenCredential, subscriptionID, region string) *Client {
@@ -587,8 +596,16 @@ type SQLPricing struct {
 
 // getSQLPricing gets real pricing from Azure Retail Prices API.
 func (c *Client) getSQLPricing(ctx context.Context, sku, region string, termYears int) (*SQLPricing, error) {
-	filter := fmt.Sprintf("serviceName eq 'SQL Database' and armRegionName eq '%s' and armSkuName eq '%s' and priceType eq 'Reservation'",
-		strings.ReplaceAll(region, "'", "''"), strings.ReplaceAll(sku, "'", "''"))
+	qRegion, err := pricing.ODataString(region)
+	if err != nil {
+		return nil, err
+	}
+	qSKU, err := pricing.ODataString(sku)
+	if err != nil {
+		return nil, err
+	}
+	filter := fmt.Sprintf("serviceName eq 'SQL Database' and armRegionName eq %s and armSkuName eq %s and priceType eq 'Reservation'",
+		qRegion, qSKU)
 
 	priceData, err := c.fetchAzurePricing(ctx, filter)
 	if err != nil {
@@ -752,13 +769,11 @@ func populateSQLSKUMapFromVersion(out map[string]sqlSKUEntry, engineVersion stri
 // exist, or the fetch fails.
 //
 // Both AZConfig and Deployment are populated by a single
-// fetchServerInfo call gated by serverInfoOnce; there is no double walk.
+// fetchServerInfo call cached by serverInfo; there is no double walk.
 // This ensures the injected test pager is consumed exactly once.
 func (c *Client) cachedDominantAZConfig(ctx context.Context) string {
-	c.serverInfoOnce.Do(func() {
-		c.azConfig, c.deployment = c.fetchServerInfo(ctx)
-	})
-	return c.azConfig
+	az, _ := c.serverInfo(ctx)
+	return az
 }
 
 // cachedDominantDeployment returns the dominant Deployment observed
@@ -766,10 +781,40 @@ func (c *Client) cachedDominantAZConfig(ctx context.Context) string {
 // unavailable. Values: "managed" / "single". Shares the single
 // fetchServerInfo walk with cachedDominantAZConfig.
 func (c *Client) cachedDominantDeployment(ctx context.Context) string {
-	c.serverInfoOnce.Do(func() {
-		c.azConfig, c.deployment = c.fetchServerInfo(ctx)
-	})
-	return c.deployment
+	_, dep := c.serverInfo(ctx)
+	return dep
+}
+
+// serverInfo returns the cached AZConfig/Deployment, walking the pagers when
+// no complete walk has been cached. A complete walk is cached even when its
+// answer is empty (no servers, or a mixed fleet): that is a real answer. An
+// incomplete walk (page error, cancellation, page cap) returns empty without
+// caching, and further walks are suppressed until serverInfoRetryAfter.
+func (c *Client) serverInfo(ctx context.Context) (azConfig, deployment string) {
+	c.serverInfoMu.Lock()
+	defer c.serverInfoMu.Unlock()
+	if c.serverInfoLoaded {
+		return c.azConfig, c.deployment
+	}
+	if time.Now().Before(c.serverInfoRetryAfter) {
+		return "", ""
+	}
+	az, dep, complete := c.fetchServerInfo(ctx)
+	if !complete {
+		if ctx.Err() != nil {
+			// The caller's own cancellation says nothing about the
+			// subscription; do not penalize other callers.
+			return "", ""
+		}
+		delay := c.serverInfoRetryDelay
+		if delay == 0 {
+			delay = serverInfoRetryDelayDefault
+		}
+		c.serverInfoRetryAfter = time.Now().Add(delay)
+		return "", ""
+	}
+	c.azConfig, c.deployment, c.serverInfoLoaded = az, dep, true
+	return az, dep
 }
 
 // fetchServerInfo performs a single walk of each pager (managed
@@ -780,14 +825,16 @@ func (c *Client) cachedDominantDeployment(ctx context.Context) string {
 //
 // AZConfig: "zoneRedundant" / "none" / "" (ambiguous or no signal).
 // Deployment: "managed" / "single" / "" (mixed or no signal).
-func (c *Client) fetchServerInfo(ctx context.Context) (azConfig, deployment string) {
+// complete is false when either walk ended early; the empty values then mean
+// "unknown" and must not be cached.
+func (c *Client) fetchServerInfo(ctx context.Context) (azConfig, deployment string, complete bool) {
 	zoneRedundantCount, nonZoneRedundantCount, managedCount, complete := c.walkManagedInstances(ctx)
 	if !complete {
-		return "", ""
+		return "", "", false
 	}
 	hasServers, serversComplete := c.hasRegularServers(ctx)
 	if !serversComplete {
-		return "", ""
+		return "", "", false
 	}
 
 	// Derive AZConfig from zone-redundancy counts.
@@ -814,7 +861,7 @@ func (c *Client) fetchServerInfo(ctx context.Context) (azConfig, deployment stri
 		deployment = ""
 	}
 
-	return azConfig, deployment
+	return azConfig, deployment, true
 }
 
 // walkManagedInstances walks the managed-instances pager once and

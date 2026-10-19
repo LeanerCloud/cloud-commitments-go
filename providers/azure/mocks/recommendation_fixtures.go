@@ -171,7 +171,7 @@ type ModernOpt func(*armconsumption.ModernReservationRecommendation, *armconsump
 // *ModernReservationRecommendation (MCA billing account shape). Defaults
 // mirror the Legacy builder: "eastus" location, "Shared" scope, "P1Y"
 // term, quantity 1, empty SKU. Cost fields use Azure's *Amount wrapper —
-// pass WithModernCosts or leave them nil to exercise the amountValue
+// pass WithModernCosts or leave them nil to exercise the amountValuePtr
 // nil-guard.
 func BuildModernReservationRecommendation(opts ...ModernOpt) *armconsumption.ModernReservationRecommendation {
 	location := "eastus"

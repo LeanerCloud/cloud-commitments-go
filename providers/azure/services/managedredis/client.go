@@ -518,8 +518,16 @@ func (c *Client) getRedisPricing(ctx context.Context, sku, region string, termYe
 	if err != nil {
 		return nil, err
 	}
-	filter := fmt.Sprintf("serviceName eq 'Redis Cache' and armRegionName eq '%s' and armSkuName eq '%s' and priceType eq 'Reservation'",
-		strings.ReplaceAll(region, "'", "''"), identity.ArmSKUName)
+	qRegion, err := pricing.ODataString(region)
+	if err != nil {
+		return nil, err
+	}
+	qSKU, err := pricing.ODataString(identity.ArmSKUName)
+	if err != nil {
+		return nil, err
+	}
+	filter := fmt.Sprintf("serviceName eq 'Redis Cache' and armRegionName eq %s and armSkuName eq %s and priceType eq 'Reservation'",
+		qRegion, qSKU)
 
 	params := url.Values{}
 	params.Add("$filter", filter)

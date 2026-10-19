@@ -82,7 +82,8 @@ func TestFetchServerInfo_ServersPageCapLeavesSignalsEmpty(t *testing.T) {
 	client.SetManagedInstancesPager(&MockSQLManagedInstancesPager{pages: []armsql.ManagedInstancesClientListResponse{buildMIPage(true)}})
 	client.SetServersPager(&countingServersPager{limit: 1000})
 
-	azConfig, deployment := client.fetchServerInfo(context.Background())
+	azConfig, deployment, complete := client.fetchServerInfo(context.Background())
+	assert.False(t, complete)
 	assert.Empty(t, azConfig)
 	assert.Empty(t, deployment, "an incomplete server walk must not read as no servers")
 }
@@ -110,7 +111,8 @@ func TestFetchServerInfo_CancelAfterManagedWalkLeavesSignalsEmpty(t *testing.T) 
 	})
 	client.SetServersPager(&MockSQLServersPager{pages: []armsql.ServersClientListResponse{{}}})
 
-	azConfig, deployment := client.fetchServerInfo(ctx)
+	azConfig, deployment, complete := client.fetchServerInfo(ctx)
+	assert.False(t, complete)
 	assert.Empty(t, azConfig)
 	assert.Empty(t, deployment)
 }
