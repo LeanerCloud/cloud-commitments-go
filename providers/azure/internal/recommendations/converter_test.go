@@ -370,9 +370,10 @@ func TestExtract_Modern_NormalizedSizeRungIsCountedNormalized(t *testing.T) {
 		"the normalized size must be counted by RecommendedQuantityNormalized")
 }
 
-func TestExtract_Modern_MissingCostAmountsReadAsZero(t *testing.T) {
-	// *Amount fields left nil by default — amountValue guards both
-	// "nil *Amount" and "non-nil *Amount with nil Value".
+func TestExtract_Modern_MissingCostAmountsLeaveFieldsUnset(t *testing.T) {
+	// *Amount fields left nil by default. Plain Extract leaves the float64
+	// fields unset; ExtractConsumption rejects such a payload (see
+	// TestExtractConsumption_ModernAmountPresence).
 	rec := mocks.BuildModernReservationRecommendation()
 	f := Extract(rec)
 	require.NotNil(t, f)
