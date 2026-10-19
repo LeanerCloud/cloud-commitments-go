@@ -2089,7 +2089,7 @@ func TestDatabaseClient_ServerInfo_FetchedOnce(t *testing.T) {
 		out := client.convertAzureSQLRecommendation(context.Background(), rec)
 		require.NotNil(t, out)
 	}
-	// The pager is walked exactly once: the sync.Once gate fires on the
+	// The pager is walked exactly once: the serverInfo cache fills on the
 	// first converter call and all subsequent calls read the cached value.
 	assert.Equal(t, 1, miPager.CallCount,
 		"managed-instances pager must be walked ONCE regardless of converter call count")

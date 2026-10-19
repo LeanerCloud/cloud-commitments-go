@@ -292,3 +292,44 @@ func TestAppendConsumptionVariants_LookupFailureFailsCollection(t *testing.T) {
 		})
 	}
 }
+
+func TestExtractConsumption_ModernAmountPresence(t *testing.T) {
+	usd := "USD"
+	amt := func(v float64) *armconsumption.Amount { return &armconsumption.Amount{Currency: &usd, Value: &v} }
+	noValue := &armconsumption.Amount{Currency: &usd}
+	build := func(onDemand, total, net *armconsumption.Amount) armconsumption.ReservationRecommendationClassification {
+		return mocks.BuildModernReservationRecommendation(func(_ *armconsumption.ModernReservationRecommendation, p *armconsumption.ModernReservationRecommendationProperties) {
+			p.CostWithNoReservedInstances, p.TotalCostWithReservedInstances, p.NetSavings = onDemand, total, net
+		})
+	}
+	scale := DaysPerMonth / 7.0
+	cases := []struct {
+		name        string
+		rec         armconsumption.ReservationRecommendationClassification
+		wantErr     string
+		wantOnDmd   float64
+		wantSavings float64
+	}{
+		{name: "values", rec: build(amt(191), amt(116), amt(75)), wantOnDmd: 191 * scale, wantSavings: 75 * scale},
+		{name: "explicit zero on-demand and total stay zero, not skipped", rec: build(amt(0), amt(0), amt(0))},
+		{name: "absent on-demand amount", rec: build(nil, amt(116), amt(75)), wantErr: "missing CostWithNoReservedInstances"},
+		{name: "on-demand amount without value", rec: build(noValue, amt(116), amt(75)), wantErr: "missing CostWithNoReservedInstances"},
+		{name: "absent total amount", rec: build(amt(191), nil, amt(75)), wantErr: "missing TotalCostWithReservedInstances"},
+		{name: "total amount without value", rec: build(amt(191), noValue, amt(75)), wantErr: "missing TotalCostWithReservedInstances"},
+		{name: "absent net savings is not used and does not skip", rec: build(amt(191), amt(116), nil), wantOnDmd: 191 * scale, wantSavings: 75 * scale},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f, err := ExtractConsumption(tc.rec)
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
+				assert.Nil(t, f)
+				return
+			}
+			require.NoError(t, err)
+			require.NotNil(t, f)
+			assert.InDelta(t, tc.wantOnDmd, f.OnDemandCost, 1e-9)
+			assert.InDelta(t, tc.wantSavings, f.EstimatedSavings, 1e-9)
+		})
+	}
+}
