@@ -545,6 +545,8 @@ jobs:
           severity: 'CRITICAL,HIGH'
           # Keep the existing scanner binary pinned.
           version: 'v0.72.0'
+          # Scoped, expiring ignore entries (see the file for reasons).
+          trivyignores: '.trivyignore.yaml'
 
       - name: Upload Trivy results to GitHub Security
         # Tolerate a missing SARIF only when the Trivy fs step never ran.

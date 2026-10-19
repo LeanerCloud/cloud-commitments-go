@@ -137,6 +137,7 @@ func applyYAMLBase(cfg *Config, yc yamlConfig) error {
 func applyYAMLScorer(cfg *Config, yc yamlConfig) {
 	if yc.Scorer.MinSavingsPct != nil {
 		cfg.Scorer.MinSavingsPct = *yc.Scorer.MinSavingsPct
+		cfg.Scorer.MinSavingsPctSet = true
 	}
 	if yc.Scorer.MaxBreakEvenMonths != nil {
 		cfg.Scorer.MaxBreakEvenMonths = *yc.Scorer.MaxBreakEvenMonths
@@ -244,6 +245,7 @@ func applyEnvScorer(cfg *Config) error {
 			return fmt.Errorf("CUDLY_MIN_SAVINGS_PCT: invalid value %q: %w", v, err)
 		}
 		cfg.Scorer.MinSavingsPct = f
+		cfg.Scorer.MinSavingsPctSet = true
 	}
 	if v := os.Getenv("CUDLY_MAX_BREAK_EVEN_MONTHS"); v != "" {
 		n, err := strconv.Atoi(v)
@@ -310,6 +312,7 @@ func applyFlagsScorer(cfg *Config, flags *pflag.FlagSet) error {
 			return fmt.Errorf("--min-savings-pct: %w", err)
 		}
 		cfg.Scorer.MinSavingsPct = v
+		cfg.Scorer.MinSavingsPctSet = true
 	}
 	if flags.Changed("max-break-even-months") {
 		v, err := flags.GetInt("max-break-even-months")
@@ -378,8 +381,8 @@ func validate(cfg Config) error {
 	if cfg.IdempotencyWindow <= 0 {
 		return fmt.Errorf("idempotency_window must be positive, got %s", cfg.IdempotencyWindow)
 	}
-	if cfg.Scorer.MinSavingsPct < 0 {
-		return fmt.Errorf("min_savings_pct must be ≥ 0")
+	if err := cfg.Scorer.Validate(); err != nil {
+		return err
 	}
 	return nil
 }

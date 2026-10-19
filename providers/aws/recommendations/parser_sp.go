@@ -81,8 +81,7 @@ func parseOptionalFloat(field string, s *string) (float64, error) {
 
 // parseOptionalFloatOrWarn parses a *string as float64 but treats present-but-
 // unparseable as a non-fatal warning (logs and returns 0). Use ONLY for
-// display-only fields (savings percentage, RI AverageUtilization, SP on-demand
-// spend) where a bad value degrades gracefully. Money fields and any value a
+// display-only fields (RI AverageUtilization) where a bad value degrades gracefully. Money fields and any value a
 // sizing path reads (average instances used, SP estimated utilization) must use
 // parseOptionalFloat and propagate the error: 0 means "no signal" to sizing.
 func parseOptionalFloatOrWarn(field string, s *string) float64 {
@@ -169,44 +168,57 @@ func spRecurringMonthlyCost(hourly, upfront float64, term, paymentOption string)
 	return monthly, nil
 }
 
+// spNumbers holds the numeric fields of one SP recommendation detail.
+type spNumbers struct {
+	hourlyCommitment, monthlySavings, upfrontCost float64
+	savingsPercent, recommendedUtilization        float64
+	hourlyOnDemand                                float64
+}
+
+// parseSPNumbers strictly parses every numeric field of detail. A nil field is
+// absent and yields 0; a present-but-invalid one (unparseable, non-finite,
+// negative) fails the whole detail, as on the RI path. EstimatedAverageUtilization
+// is a sizing input where 0 means "no signal", so it must not degrade silently.
+func parseSPNumbers(detail *types.SavingsPlansPurchaseRecommendationDetail) (spNumbers, error) {
+	var n spNumbers
+	for _, f := range []struct {
+		name string
+		src  *string
+		dst  *float64
+	}{
+		{"HourlyCommitmentToPurchase", detail.HourlyCommitmentToPurchase, &n.hourlyCommitment},
+		{"EstimatedMonthlySavingsAmount", detail.EstimatedMonthlySavingsAmount, &n.monthlySavings},
+		{"UpfrontCost", detail.UpfrontCost, &n.upfrontCost},
+		{"EstimatedSavingsPercentage", detail.EstimatedSavingsPercentage, &n.savingsPercent},
+		{"EstimatedAverageUtilization", detail.EstimatedAverageUtilization, &n.recommendedUtilization},
+		{"CurrentAverageHourlyOnDemandSpend", detail.CurrentAverageHourlyOnDemandSpend, &n.hourlyOnDemand},
+	} {
+		v, err := parseOptionalFloat(f.name, f.src)
+		if err != nil {
+			return spNumbers{}, err
+		}
+		*f.dst = v
+	}
+	return n, nil
+}
+
 // parseSavingsPlanDetail converts a single Savings Plan recommendation detail
 // into a *common.Recommendation. Returns (nil, error) when any money field
-// (HourlyCommitmentToPurchase, EstimatedMonthlySavingsAmount, UpfrontCost) is
-// present in the API response but cannot be parsed as float64 — mirroring the
-// RI path (parseAWSCostDetails) which errors on the same class rather than
-// silently substituting 0. Non-money fields (percentages, utilization) degrade
-// to 0 with a log warning.
+// (HourlyCommitmentToPurchase, EstimatedMonthlySavingsAmount, UpfrontCost,
+// CurrentAverageHourlyOnDemandSpend), the savings percentage or the estimated
+// utilization is present in the API response but cannot be parsed, mirroring
+// the RI path which errors on the same class rather than substituting 0.
 func (c *Client) parseSavingsPlanDetail(
 	detail *types.SavingsPlansPurchaseRecommendationDetail,
 	params *common.RecommendationParams,
 	planType types.SupportedSavingsPlansType,
 ) (*common.Recommendation, error) {
-	hourlyCommitment, err := parseOptionalFloat("HourlyCommitmentToPurchase", detail.HourlyCommitmentToPurchase)
+	nums, err := parseSPNumbers(detail)
 	if err != nil {
 		return nil, err
 	}
-	monthlySavings, err := parseOptionalFloat("EstimatedMonthlySavingsAmount", detail.EstimatedMonthlySavingsAmount)
-	if err != nil {
-		return nil, err
-	}
-	upfrontCost, err := parseOptionalFloat("UpfrontCost", detail.UpfrontCost)
-	if err != nil {
-		return nil, err
-	}
-
-	// Non-money fields: present-but-unparseable degrades to 0 with a warning
-	// rather than dropping the whole recommendation. The RI path uses the same
-	// two-tier treatment (hard error on cost, warn-and-continue on percentages).
-	savingsPercent := parseOptionalFloatOrWarn("EstimatedSavingsPercentage", detail.EstimatedSavingsPercentage)
-	// EstimatedAverageUtilization carries the "if you buy exactly this commitment,
-	// what % of it will AWS expect to be used" signal. It is a sizing input:
-	// --target-coverage treats zero as "no signal" and leaves the recommendation
-	// unsized, so a nil pointer stays 0 but a present-but-invalid value fails the
-	// detail rather than degrading to 0.
-	recommendedUtilization, err := parseOptionalFloat("EstimatedAverageUtilization", detail.EstimatedAverageUtilization)
-	if err != nil {
-		return nil, err
-	}
+	hourlyCommitment, monthlySavings, upfrontCost := nums.hourlyCommitment, nums.monthlySavings, nums.upfrontCost
+	savingsPercent, recommendedUtilization := nums.savingsPercent, nums.recommendedUtilization
 	// onDemandCost is the canonical monthly on-demand baseline for this SP
 	// recommendation. AWS Cost Explorer returns the average hourly on-demand
 	// spend over the lookback period in CurrentAverageHourlyOnDemandSpend;
@@ -217,7 +229,7 @@ func (c *Client) parseSavingsPlanDetail(
 	// monthly_cost + savings + amortized (which is less accurate for SP rows
 	// where monthly_cost reflects only the no-upfront recurring charge, not
 	// the full on-demand baseline). See #303.
-	onDemandCost := parseOptionalFloatOrWarn("CurrentAverageHourlyOnDemandSpend", detail.CurrentAverageHourlyOnDemandSpend) * hoursPerMonth
+	onDemandCost := nums.hourlyOnDemand * hoursPerMonth
 	if detail.CurrentAverageHourlyOnDemandSpend == nil {
 		// CurrentAverageHourlyOnDemandSpend absent from AWS CE response — onDemandCost
 		// will be 0 and the scheduler's nonZeroPtr will store nil, causing the
