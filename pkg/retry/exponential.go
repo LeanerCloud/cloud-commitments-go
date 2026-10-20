@@ -25,14 +25,20 @@ import (
 
 // Config bundles the exponential-backoff knobs.
 type Config struct {
+	// OnAttempt, if non-nil, is invoked once per attempt — see OnAttemptFn.
+	OnAttempt OnAttemptFn
+
 	// MaxAttempts is the total number of attempts (NOT retries). 1 = no
 	// retry, 5 = first attempt + 4 retries.
 	MaxAttempts int
+
 	// BaseDelay is the delay before the SECOND attempt; subsequent
 	// delays double until MaxDelay caps them.
 	BaseDelay time.Duration
+
 	// MaxDelay caps the per-iteration backoff, including any jitter.
 	MaxDelay time.Duration
+
 	// PerAttemptTimeout, if > 0, wraps each op invocation in a
 	// context.WithTimeout derived from the outer ctx, so a single hung
 	// attempt fails fast and the retry budget continues, while outer
@@ -40,14 +46,13 @@ type Config struct {
 	// context passed to op; op must honor that ctx for an attempt to fail
 	// fast. Zero disables.
 	PerAttemptTimeout time.Duration
+
 	// Jitter, if true, adds ±25% noise to each backoff (the result is still
 	// capped at MaxDelay) via math/rand/v2
 	// (lock-free per-goroutine source, no global RNG mutex contention
 	// under concurrent retries). math/rand/v2 is sufficient for backoff
 	// jitter; cryptographic randomness is not needed.
 	Jitter bool
-	// OnAttempt, if non-nil, is invoked once per attempt — see OnAttemptFn.
-	OnAttempt OnAttemptFn
 }
 
 // OnAttemptFn is called BEFORE each attempt (after any backoff

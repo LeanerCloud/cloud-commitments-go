@@ -10,13 +10,13 @@ import "github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 
 // Capabilities declares the request values a provider can honor.
 type Capabilities struct {
-	Provider         common.ProviderType
-	Terms            []string                      // "1yr","3yr"
-	PaymentOptions   []string                      // canonical payment tokens
-	Lookbacks        []string                      // "7d","30d","60d"; empty when the provider has no lookback input
-	DefaultLookback  string                        // filled into an empty request lookback; empty when the provider has none
-	AccountScopes    []string                      // "linked","payer"
-	OfferingClasses  []string                      // "standard","convertible"
-	SavingsPlanTypes bool                          // IncludeSPTypes/ExcludeSPTypes are meaningful
 	Unavailable      map[common.ServiceType]string // service -> reason it cannot be recommended via API
+	Provider         common.ProviderType
+	DefaultLookback  string   // filled into an empty request lookback; empty when the provider has none
+	Terms            []string // "1yr","3yr"
+	PaymentOptions   []string // canonical payment tokens
+	Lookbacks        []string // "7d","30d","60d"; empty when the provider has no lookback input
+	AccountScopes    []string // "linked","payer"
+	OfferingClasses  []string // "standard","convertible"
+	SavingsPlanTypes bool     // IncludeSPTypes/ExcludeSPTypes are meaningful
 }

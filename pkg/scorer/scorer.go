@@ -14,11 +14,11 @@ import (
 // Config controls which recommendations are allowed through the scorer.
 // Zero values mean "no filter" for numeric thresholds, except that MinSavingsPctSet makes a zero MinSavingsPct a real floor; empty slice means "all services".
 type Config struct {
+	EnabledServices    []string // Empty = all services. E.g. ["ec2", "rds"].
 	MinSavingsPct      float64  // Minimum savings percentage. 0 with MinSavingsPctSet false = no filter.
-	MinSavingsPctSet   bool     // True makes MinSavingsPct a real floor even at 0 (drops recs with negative savings).
 	MaxBreakEvenMonths int      // Maximum break-even months. 0 = no filter. No-upfront recs pass; recs whose break-even cannot be computed are filtered (an upfront payment option with no upfront price as FilterReasonPriceUnknown).
 	MinCount           int      // Minimum count per recommendation. 0 = no filter. Does not apply to Savings Plans (dollar-denominated; their Count is always 1).
-	EnabledServices    []string // Empty = all services. E.g. ["ec2", "rds"].
+	MinSavingsPctSet   bool     // True makes MinSavingsPct a real floor even at 0 (drops recs with negative savings).
 }
 
 // Validate rejects a MinSavingsPct that is NaN, infinite or negative. Callers
@@ -40,8 +40,8 @@ const FilterReasonPriceUnknown = "price-unknown"
 
 // FilteredRecommendation holds a recommendation that did not pass a filter, with the reason.
 type FilteredRecommendation struct {
-	Recommendation common.Recommendation
 	FilterReason   string
+	Recommendation common.Recommendation
 }
 
 // ScoredResult holds recommendations that passed the scorer (Passed) and those that did not (Filtered).
