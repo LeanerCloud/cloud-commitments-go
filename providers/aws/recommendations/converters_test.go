@@ -5,6 +5,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
@@ -88,12 +89,8 @@ func TestGetServiceStringForCostExplorer(t *testing.T) {
 
 func TestConvertPaymentOption(t *testing.T) {
 	t.Parallel()
-	// convertPaymentOption is the legacy wrapper used by client.go (RI path,
-	// owned by #865/#1075); it silently returns the empty ("") PaymentOption
-	// for unrecognized values, which Cost Explorer then rejects with a
-	// validation error. This test covers the valid cases only; the fail-loud
-	// path is tested by TestConvertPaymentOptionE_FailLoud. New callers must
-	// use convertPaymentOptionE and propagate the error.
+	// Valid cases only; the fail-loud path is tested by
+	// TestConvertPaymentOptionE_FailLoud.
 	tests := []struct {
 		name     string
 		option   string
@@ -118,7 +115,8 @@ func TestConvertPaymentOption(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := convertPaymentOption(tt.option)
+			result, err := convertPaymentOptionE(tt.option)
+			require.NoError(t, err)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -126,9 +124,7 @@ func TestConvertPaymentOption(t *testing.T) {
 
 // TestConvertPaymentOptionE_FailLoud is the regression test for H3:
 // convertPaymentOptionE must return an error on any unrecognized payment option
-// instead of silently substituting the empty ("") PaymentOption (the old
-// behavior of the convertPaymentOption default branch, which surfaced to CE
-// as a confusing validation error). Callers on the SP recommendation path use
+// instead of silently substituting the empty ("") PaymentOption. Callers on the SP recommendation path use
 // this erroring variant so a typo or new/renamed option is caught before the
 // wrong recs are queried.
 func TestConvertPaymentOptionE_FailLoud(t *testing.T) {
@@ -236,10 +232,7 @@ func TestConvertLookbackPeriodE_FailLoud(t *testing.T) {
 
 func TestConvertTermInYears(t *testing.T) {
 	t.Parallel()
-	// convertTermInYears is the legacy wrapper used by client.go (RI path);
-	// it silently returns the empty ("") TermInYears for unrecognized values,
-	// which Cost Explorer then rejects with a validation error. This test
-	// covers the valid cases only; the fail-loud path is tested by
+	// Valid cases only; the fail-loud path is tested by
 	// TestConvertTermInYearsE_FailLoud.
 	tests := []struct {
 		name     string
@@ -270,7 +263,8 @@ func TestConvertTermInYears(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := convertTermInYears(tt.term)
+			result, err := convertTermInYearsE(tt.term)
+			require.NoError(t, err)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -278,10 +272,7 @@ func TestConvertTermInYears(t *testing.T) {
 
 func TestConvertLookbackPeriod(t *testing.T) {
 	t.Parallel()
-	// convertLookbackPeriod is the legacy wrapper used by client.go (RI path);
-	// it silently returns the empty ("") LookbackPeriodInDays for unrecognized
-	// values, which Cost Explorer then rejects with a validation error. This
-	// test covers valid cases only; the fail-loud path is tested by
+	// Valid cases only; the fail-loud path is tested by
 	// TestConvertLookbackPeriodE_FailLoud.
 	tests := []struct {
 		name     string
@@ -322,7 +313,8 @@ func TestConvertLookbackPeriod(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := convertLookbackPeriod(tt.period)
+			result, err := convertLookbackPeriodE(tt.period)
+			require.NoError(t, err)
 			assert.Equal(t, tt.expected, result)
 		})
 	}

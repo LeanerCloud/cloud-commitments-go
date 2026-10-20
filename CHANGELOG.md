@@ -142,6 +142,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **`provider`:** `ProviderConfig` is renamed to `Config` (#39). `ProviderConfig` stays as a deprecated type alias, so existing consumers keep compiling; migrate to `provider.Config`. The provider modules move over once their pinned `pkg` version includes the rename.
 - **`provider`:** `ProviderConfig` is renamed to `Config` (#39). `ProviderConfig` stays as a type alias, so existing consumers keep compiling; migrate to `provider.Config`. The provider modules move over once their pinned `pkg` version includes the rename.
 - **`httpclient`:** dials to the RFC 8215 local-use NAT64 prefix `64:ff9b:1::/48` are refused when any RFC 6052 layout (/48, /56, /64, /96) embeds a metadata IPv4 address; Teredo `2001::/32` stays allowed (#238).
+- **CI:** the security-scan job runs a pinned gitleaks CLI (v8.30.1, sha256-verified) over the checkout with `.gitleaks.toml` and fails on any finding (#101).
 - **`common.HoursPerMonth`:** exported 730-hour average month (`HoursPerYear / 12`) next to `HoursPerYear`; the remaining bare 730 and 8760 literals in the aws and gcp providers use the shared constants (#109).
 - **`gcp`:** region-lookup permission errors are now classified by type only (googleapi 403 or gRPC `PermissionDenied`) through the shared `IsPermissionError`. gRPC `PermissionDenied` is now skipped with a warning like a 403, and an untyped error whose text merely contains "403" and "permission" now propagates instead of being skipped (#6).
 - **BREAKING `gcp`: stored contexts removed (#6).** `computeengine.NewClient`
@@ -219,6 +220,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   `math.MaxFloat64`: `MaxPaymentPerExchangeUSD` and `MaxPaymentDailyUSD`
   are now required, so an omitted cap can no longer mean unlimited spend on
   the auto-exchange path (#83).
+- **`aws/recommendations`:** `GetRecommendations` for RI services now rejects an unrecognized term, payment option or lookback period instead of letting Cost Explorer apply its own defaults under the requested label; the deprecated silent converters are removed (#53).
+- **`aws/recommendations`:** `GetRecommendations` for RI services now rejects a non-empty unrecognized term, payment option or lookback period instead of letting Cost Explorer apply its own defaults under the requested label; an unset (empty) value still means the Cost Explorer default. The deprecated silent converters are removed (#53).
 - **Azure savings plan recommendations use a 730 hour month** (was 730.5),
   matching `common.HoursPerMonth` and the 8760 hour year; monthly recurring
   cost, on-demand cost and savings shift by about 0.07% (#583).
