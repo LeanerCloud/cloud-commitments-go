@@ -23,6 +23,10 @@ const awsReservationNameMaxLen = 60
 // deterministic assertions. Production callers leave randSource nil (the
 // builder then uses crypto/rand) and pass time.Now().
 type ReservationNameFields struct {
+	// Now is the timestamp baseline. Must be non-zero for production calls.
+	// Tests inject a fixed value for determinism.
+	Now time.Time
+
 	// Service is the short identifier for the AWS service, e.g. "rds",
 	// "cache", "memdb", "opensearch", "redshift". Set per-call by the
 	// service client; the builder treats it as opaque and sanitizes it.
@@ -35,9 +39,6 @@ type ReservationNameFields struct {
 	// "m5.large"). Dots are converted to hyphens by SanitizeReservationID.
 	ResourceType string
 
-	// Count is the reservation quantity. Always rendered as "{N}x".
-	Count int
-
 	// Term is the commitment term, normalized to "1yr" / "3yr" by upstream
 	// recommendation parsers. The builder collapses it to "1yr"/"3yr" when
 	// possible, and sanitizes otherwise.
@@ -49,14 +50,13 @@ type ReservationNameFields struct {
 	// segment stays under 8 chars.
 	Payment string
 
-	// Now is the timestamp baseline. Must be non-zero for production calls.
-	// Tests inject a fixed value for determinism.
-	Now time.Time
-
 	// randSource is an optional 4-byte source for the random suffix.
 	// When nil (production), the builder reads from crypto/rand. Tests set
 	// it via WithRandSource to make output deterministic.
 	randSource []byte
+
+	// Count is the reservation quantity. Always rendered as "{N}x".
+	Count int
 }
 
 // WithRandSource returns a copy of f with the given bytes used as the
