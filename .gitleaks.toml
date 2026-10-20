@@ -1,6 +1,8 @@
 # gitleaks configuration for the CI "Secret scan (gitleaks)" step.
-# Extends the default ruleset; every allowlist below is scoped to one file AND
-# one literal, so a real secret added to the same file still fails the scan.
+# Extends the default ruleset; every allowlist below matches one exact literal.
+# Do NOT add `paths` with condition = "AND" here: in gitleaks 8.30.1 that skips
+# the whole file, so a real secret planted next to a fixture goes undetected.
+# scripts/test-gitleaks-config.sh guards this.
 title = "cloud-commitments-go gitleaks config"
 
 [extend]
@@ -8,18 +10,12 @@ useDefault = true
 
 [[allowlists]]
 description = "git-secrets 1.3.0 release commit SHA pinned in pre-commit.yml"
-condition = "AND"
-paths = ['''\.github/workflows/pre-commit\.yml$''']
 regexes = ['''ad82d68ee924906a0401dfd48de5057731a9bc84''']
 
 [[allowlists]]
 description = "synthetic bearer token fixture in purchaseguard tests"
-condition = "AND"
-paths = ['''providers/aws/internal/purchaseguard/guard_test\.go$''']
 regexes = ['''tok-0123456789abcdef''']
 
 [[allowlists]]
 description = "synthetic hex token fixture in the Azure idempotency marker tests"
-condition = "AND"
-paths = ['''providers/azure/services/internal/reservations/idempotencymarker_test\.go$''']
 regexes = ['''4f1c2b0e9d8a7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b''']

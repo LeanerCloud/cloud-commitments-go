@@ -470,7 +470,8 @@ jobs:
         # The release tarball is pinned by version and sha256 (from the
         # release's gitleaks_<version>_checksums.txt), so a moved tag or a
         # tampered asset fails the step. Scans the checked-out tree with the
-        # repo's .gitleaks.toml; any finding exits 1.
+        # repo's .gitleaks.toml; any finding exits 1. The config self-test then
+        # proves a secret planted beside an allowlisted fixture is still caught.
         if: always() && steps.checkout.outcome == 'success'
         env:
           GITLEAKS_VERSION: '8.30.1'
@@ -485,6 +486,7 @@ jobs:
           tar -xzf "${archive}" -C "${RUNNER_TEMP}/gitleaks" gitleaks
           "${RUNNER_TEMP}/gitleaks/gitleaks" dir . \
             --config .gitleaks.toml --redact --no-banner --exit-code 1
+          GITLEAKS="${RUNNER_TEMP}/gitleaks/gitleaks" bash scripts/test-gitleaks-config.sh
 
       - name: Run govulncheck CVE scanner (all modules)
         # Independent scanners still run after another scanner fails.
