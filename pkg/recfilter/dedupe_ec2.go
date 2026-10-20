@@ -60,8 +60,8 @@ type ec2Entry struct {
 	// regional Linux/Unix default-tenancy reservation of a known size, which pays
 	// for any size of its family (see ec2FlexUnits); 0 keeps the entry exact-type.
 	flexUnits int
-	// flexLeft is the unspent budget in the same units. count stays the node count
-	// the exact-type view sees: flexLeft rounded up to whole nodes.
+	// flexLeft is the unspent budget in the same units and the single source of truth
+	// for a flex entry; count is unused for it.
 	flexLeft int
 }
 
@@ -111,6 +111,24 @@ func newEC2Dedupe(commitments []common.Commitment, logf Logf) *ec2Dedupe {
 		sort.SliceStable(list, func(i, j int) bool { return list[i].wildcards < list[j].wildcards })
 	}
 	return d
+}
+
+// nodesLeft is the whole nodes of the entry's own size still unspent. A flex entry whose
+// leftover budget is below one node has none, so a partly spent node is never credited twice.
+func (e *ec2Entry) nodesLeft() int {
+	if e.flexUnits > 0 {
+		return e.flexLeft / e.flexUnits
+	}
+	return e.count
+}
+
+func (e *ec2Entry) spend(nodes int) int {
+	if e.flexUnits > 0 {
+		e.flexLeft -= nodes * e.flexUnits
+	} else {
+		e.count -= nodes
+	}
+	return nodes
 }
 
 func wildcardCount(e *ec2Entry) int {
@@ -187,13 +205,10 @@ func (d *ec2Dedupe) adjust(rec common.Recommendation) (common.Recommendation, er
 		if remaining <= 0 {
 			break
 		}
-		if e.count <= 0 || !e.covers(platform, tenancy, scope) {
+		if e.nodesLeft() <= 0 || !e.covers(platform, tenancy, scope) {
 			continue
 		}
-		used := min(e.count, remaining)
-		e.count -= used
-		e.flexLeft = max(e.flexLeft-used*e.flexUnits, 0)
-		remaining -= used
+		remaining -= e.spend(min(e.nodesLeft(), remaining))
 	}
 	remaining = d.consumeFamily(rec, platform, tenancy, remaining)
 	if remaining <= 0 {

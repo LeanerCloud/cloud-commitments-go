@@ -1,6 +1,8 @@
 package recfilter
 
 import (
+	"math/rand"
+	"strings"
 	"testing"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -66,4 +68,64 @@ func TestEC2SizeFlexBudgetSharedAcrossRecs(t *testing.T) {
 	passed := runEC2(t, nil, []common.Commitment{flexCommitment("m5.xlarge", "linux", "default", "regional", "", 1)},
 		flexRec("m5.large", "linux", "default", 1), flexRec("m5.large", "linux", "default", 1), flexRec("m5.large", "linux", "default", 1))
 	assert.Len(t, passed, 1)
+}
+
+func TestEC2SizeFlexPartialNodeNotCreditedTwice(t *testing.T) {
+	t.Parallel()
+	ri := []common.Commitment{flexCommitment("m5.xlarge", "linux", "default", "regional", "", 1)}
+	// 8 units owned: a large (4) leaves 4, which is below one xlarge (8).
+	for name, recs := range map[string][]common.Recommendation{
+		"large then xlarge": {flexRec("m5.large", "linux", "default", 1), flexRec("m5.xlarge", "linux", "default", 1)},
+		"xlarge then large": {flexRec("m5.xlarge", "linux", "default", 1), flexRec("m5.large", "linux", "default", 1)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			passed := runEC2(t, nil, ri, recs...)
+			require.Len(t, passed, 1)
+			assert.Equal(t, 1, passed[0].Count)
+		})
+	}
+}
+
+func TestEC2SizeFlexSuppressedUnitsNeverExceedOwned(t *testing.T) {
+	t.Parallel()
+	sizes := []string{"large", "xlarge", "2xlarge"}
+	units := map[string]int{"large": 4, "xlarge": 8, "2xlarge": 16}
+	rng := rand.New(rand.NewSource(323))
+	for iter := 0; iter < 300; iter++ {
+		var commitments []common.Commitment
+		owned := 0
+		for i := rng.Intn(3) + 1; i > 0; i-- {
+			sz, n := sizes[rng.Intn(3)], rng.Intn(3)+1
+			commitments = append(commitments, flexCommitment("m5."+sz, "linux", "default", "regional", "", n))
+			owned += units[sz] * n
+		}
+		var recs []common.Recommendation
+		demanded := 0
+		for i := rng.Intn(5) + 1; i > 0; i-- {
+			sz, n := sizes[rng.Intn(3)], rng.Intn(3)+1
+			recs = append(recs, flexRec("m5."+sz, "linux", "default", n))
+			demanded += units[sz] * n
+		}
+		kept := 0
+		for _, r := range runEC2(t, nil, commitments, recs...) {
+			kept += units[strings.TrimPrefix(r.ResourceType, "m5.")] * r.Count
+		}
+		suppressed := demanded - kept
+		require.LessOrEqual(t, suppressed, owned, "iter %d: suppressed %d units from %d owned", iter, suppressed, owned)
+	}
+}
+
+func TestEC2SizeFlexExcludedFamiliesStayExact(t *testing.T) {
+	t.Parallel()
+	for _, family := range []string{"g5", "G4dn", "p5", "inf2", "u7i-6tb"} {
+		t.Run(family, func(t *testing.T) {
+			t.Parallel()
+			ri := []common.Commitment{flexCommitment(strings.ToLower(family)+".xlarge", "linux", "default", "regional", "", 1)}
+			passed := runEC2(t, nil, ri, flexRec(strings.ToLower(family)+".large", "linux", "default", 2))
+			require.Len(t, passed, 1)
+			assert.Equal(t, 2, passed[0].Count)
+			assert.Empty(t, runEC2(t, nil, ri, flexRec(strings.ToLower(family)+".xlarge", "linux", "default", 1)), "same type still dedupes")
+		})
+	}
 }

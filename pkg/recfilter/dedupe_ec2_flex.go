@@ -16,14 +16,15 @@ import (
 // exact-type key: other platforms and dedicated tenancy are not size-flexible, and an
 // empty (wildcard) platform or tenancy may not be, so it must never join or spend a
 // flex budget. Callers also require a regional scope for entries: zonal
-// reservations are not size-flexible. Sizes without a known factor, such as metal, stay exact.
+// reservations are not size-flexible. Sizes without a known factor, such as metal, and families AWS excludes
+// (common.EC2SizeFlexibleFamily) stay exact.
 func ec2FlexKey(resourceType, region, platform, tenancy string) (family string, units int, ok bool) {
 	if platform != "linux/unix" || tenancy != "default" {
 		return "", 0, false
 	}
 	prefix, size, found := strings.Cut(resourceType, ".")
 	nf := common.EC2NormalizationFactor(size)
-	if !found || prefix == "" || nf == 0 {
+	if !found || prefix == "" || nf == 0 || !common.EC2SizeFlexibleFamily(prefix) {
 		return "", 0, false
 	}
 	return fmt.Sprintf("ec2flex|%s|%s", strings.ToLower(prefix), region), int(nf * 4), true
@@ -51,7 +52,6 @@ func (d *ec2Dedupe) consumeFamily(rec common.Recommendation, platform, tenancy s
 		}
 		take := min(e.flexLeft, need)
 		e.flexLeft -= take
-		e.count = (e.flexLeft + e.flexUnits - 1) / e.flexUnits
 		need -= take
 	}
 	return remaining - covered
