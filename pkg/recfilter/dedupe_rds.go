@@ -38,3 +38,13 @@ func rdsDeploymentFactor(normalizedDeployment string) int {
 	}
 	return 1
 }
+
+// rdsBudgetDeployment is the deployment part of a size-flexible budget key. Single-AZ and
+// Multi-AZ share one family budget, because the size-flexible benefit applies to both
+// configurations and a Multi-AZ node costs twice the units. Any other option keeps its own budget.
+func rdsBudgetDeployment(normalizedDeployment string) string {
+	if normalizedDeployment == rdsSingleAZ || normalizedDeployment == rdsMultiAZ {
+		return rdsSingleAZ + "|" + rdsMultiAZ
+	}
+	return normalizedDeployment
+}

@@ -35,13 +35,15 @@ func TestRDSSizeFlexDedupe(t *testing.T) {
 		{"other family", "db.r6g.large", "single-az", 1, common.ServiceRDS, "db.m6g.medium", "mysql", "single-az", "us-east-1", 1, 1, ""},
 		{"other engine", "db.r6g.large", "single-az", 1, common.ServiceRDS, "db.r6g.medium", "postgres", "single-az", "us-east-1", 1, 1, ""},
 		{"other region", "db.r6g.large", "single-az", 1, common.ServiceRDS, "db.r6g.medium", "mysql", "single-az", "us-west-2", 1, 1, ""},
-		{"other deployment", "db.r6g.large", "single-az", 1, common.ServiceRDS, "db.r6g.medium", "mysql", "multi-az", "us-east-1", 1, 1, ""},
+		{"single-az large covers one multi-az medium", "db.r6g.large", "single-az", 1, common.ServiceRDS, "db.r6g.medium", "mysql", "multi-az", "us-east-1", 1, 0, ""},
 		{"multi-az large covers two single-az larges", "db.r6g.large", "multi-az", 1, common.ServiceRDS, "db.r6g.large", "postgres", "single-az", "us-east-1", 2, 0, "postgres"},
 		{"multi-az large covers one of three single-az larges", "db.r6g.large", "multi-az", 1, common.ServiceRDS, "db.r6g.large", "postgres", "single-az", "us-east-1", 3, 1, "postgres"},
 		{"multi-az xlarge covers four single-az larges", "db.r6g.xlarge", "Multi-AZ", 1, common.ServiceRDS, "db.r6g.large", "postgres", "single-az", "us-east-1", 4, 0, "postgres"},
 		{"multi-az large covers one multi-az large", "db.r6g.large", "multi-az", 1, common.ServiceRDS, "db.r6g.large", "postgres", "multi-az", "us-east-1", 1, 0, "postgres"},
 		{"multi-az large covers one of two multi-az larges", "db.r6g.large", "multi-az", 1, common.ServiceRDS, "db.r6g.large", "postgres", "multi-az", "us-east-1", 2, 1, "postgres"},
-		{"single-az never covers multi-az", "db.r6g.xlarge", "single-az", 1, common.ServiceRDS, "db.r6g.large", "postgres", "multi-az", "us-east-1", 1, 1, "postgres"},
+		{"single-az xlarge covers one multi-az large", "db.r6g.xlarge", "single-az", 1, common.ServiceRDS, "db.r6g.large", "postgres", "multi-az", "us-east-1", 1, 0, "postgres"},
+		{"single-az large does not cover multi-az large", "db.r6g.large", "single-az", 1, common.ServiceRDS, "db.r6g.large", "postgres", "multi-az", "us-east-1", 1, 1, "postgres"},
+		{"single-az sqlserver never covers multi-az", "db.m6i.xlarge", "single-az", 1, common.ServiceRDS, "db.m6i.large", "sqlserver-se", "multi-az", "us-east-1", 1, 1, "sqlserver-se"},
 		{"multi-az sqlserver stays exact", "db.m6i.large", "multi-az", 1, common.ServiceRDS, "db.m6i.large", "sqlserver-se", "single-az", "us-east-1", 2, 2, "sqlserver-se"},
 		{"unknown size stays exact", "db.r6g.metal", "single-az", 1, common.ServiceRDS, "db.r6g.medium", "mysql", "single-az", "us-east-1", 1, 1, ""},
 		{"exact class still matches", "db.r6g.metal", "single-az", 1, common.ServiceRDS, "db.r6g.metal", "mysql", "single-az", "us-east-1", 1, 0, ""},
@@ -78,6 +80,25 @@ func TestRDSSizeFlexDedupe(t *testing.T) {
 			require.Len(t, passed, 1)
 			assert.Equal(t, tt.want, passed[0].Count)
 		})
+	}
+}
+
+// A recommendation without a deployment (Aurora) is its own pool: it never spends a
+// Single-AZ or Multi-AZ budget, and they never spend its budget.
+func TestRDSEmptyDeploymentIsSeparatePool(t *testing.T) {
+	t.Parallel()
+	for _, deployment := range []string{"multi-az", "single-az"} {
+		client := &fakeServiceClient{commitments: []common.Commitment{{
+			Provider: common.ProviderAWS, Service: common.ServiceRDS, ResourceType: "db.r6g.large",
+			Region: "us-east-1", Engine: "postgres", Deployment: deployment, Count: 1,
+			State: common.CommitmentStateActive, StartDate: time.Now(),
+		}}}
+		rec := common.Recommendation{Provider: common.ProviderAWS, Service: common.ServiceRDS, ResourceType: "db.r6g.large",
+			Region: "us-east-1", Count: 2, Details: &common.DatabaseDetails{Engine: "postgres"}}
+		passed, _, err := NewDuplicateChecker(0).AdjustRecommendationsForExisting(context.Background(), []common.Recommendation{rec}, client)
+		require.NoError(t, err)
+		require.Len(t, passed, 1, deployment)
+		assert.Equal(t, 2, passed[0].Count, deployment)
 	}
 }
 

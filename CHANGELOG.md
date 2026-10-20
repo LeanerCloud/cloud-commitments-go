@@ -204,11 +204,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   family, so a recent Multi-AZ db.r6g.large PostgreSQL reservation suppresses
   two Single-AZ db.r6g.large recommendations. Single-AZ never covers Multi-AZ,
   and exact-class engines such as SQL Server keep their key.
+- **Size-flexible RDS reservations now cover Single-AZ and Multi-AZ demand in
+  the duplicate-purchase guard** (#323): Single-AZ and Multi-AZ share one
+  family budget in size units, and a Multi-AZ node costs twice the units. A
+  recent Multi-AZ db.r6g.large PostgreSQL reservation suppresses two Single-AZ
+  db.r6g.large recommendations, and a Single-AZ db.r6g.xlarge suppresses one
+  Multi-AZ db.r6g.large. Exact-class engines such as SQL Server keep their key.
 - **The duplicate-purchase guard now treats regional Linux/Unix default-tenancy
   EC2 reservations as size-flexible** (#323): a recent m5.xlarge reservation
   suppresses two m5.large recommendations in the same region, counted in
   normalized units. Zonal, Windows/RHEL/SUSE, dedicated, wildcard and
-  unknown-size entries stay exact-type.
+  unknown-size entries stay exact-type, as do the families AWS excludes from
+  size flexibility (G4ad, G4dn, G5, G5g, G6, G6e, G6f, Gr6, Gr6f, hpc7a, P5,
+  Inf1, Inf2, u7i-6tb, u7i-8tb). A partly spent reservation is never credited
+  as a whole node.
 - **Unbounded AWS pagination loops now stop at a page cap and honour
   cancellation** (#561): the existing-commitment and valid-resource-type scans
   for ElastiCache, RDS, OpenSearch, Redshift and EC2 check the context before

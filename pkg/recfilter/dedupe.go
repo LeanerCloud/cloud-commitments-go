@@ -218,6 +218,7 @@ func buildExistingCommitmentsMap(commitments []common.Commitment, logf Logf) map
 		resourceType, nodeUnits := c.ResourceType, 1
 		if family, units, ok := rdsFlexKey(c.Provider, c.Service, normalizedEngine, c.ResourceType); ok {
 			resourceType, nodeUnits = family, units*rdsDeploymentFactor(normalizedDeployment)
+			normalizedDeployment = rdsBudgetDeployment(normalizedDeployment)
 		}
 		key := dedupeKey(resourceType, c.Region, normalizedEngine, normalizedDeployment)
 		existingMap[key] += c.Count * nodeUnits
@@ -256,17 +257,6 @@ func adjustRecommendationsAgainstExisting(recs []common.Recommendation, existing
 	return passed, filtered, nil
 }
 
-// spendBudget takes up to want nodes from the budget under key and returns how many it covered.
-func spendBudget(existingMap map[string]int, key string, cover elastiCacheCover, want int) int {
-	available := existingMap[key]
-	if available <= 0 || want <= 0 {
-		return 0
-	}
-	covered, spent := cover.consume(available, want)
-	existingMap[key] -= spent
-	return covered
-}
-
 // adjustSingleRecommendation adjusts a single recommendation based on existing
 // commitments. A reduced count scales the money fields with it.
 func adjustSingleRecommendation(rec common.Recommendation, existingMap map[string]int, logf Logf) (common.Recommendation, error) {
@@ -277,12 +267,10 @@ func adjustSingleRecommendation(rec common.Recommendation, existingMap map[strin
 	deployment := common.NormalizeDeploymentName(common.DeploymentFromDetails(rec.Details))
 	resourceType := rec.ResourceType
 	covers := []elastiCacheCover{{engine, 1, 1}}
-	flexUnits := 0
 	if family, units, ok := rdsFlexKey(rec.Provider, rec.Service, engine, rec.ResourceType); ok {
 		// A size-flexible budget holds units: one node of this size spends units of them.
-		units *= rdsDeploymentFactor(deployment)
-		resourceType, covers = family, []elastiCacheCover{{engine, 1, units}}
-		flexUnits = units
+		resourceType, covers = family, []elastiCacheCover{{engine, 1, units * rdsDeploymentFactor(deployment)}}
+		deployment = rdsBudgetDeployment(deployment)
 	}
 	key := dedupeKey(resourceType, rec.Region, engine, deployment)
 	if isElastiCache {
@@ -291,13 +279,13 @@ func adjustSingleRecommendation(rec common.Recommendation, existingMap map[strin
 	}
 	remaining := rec.Count
 	for _, cover := range covers {
-		remaining -= spendBudget(existingMap, dedupeKey(resourceType, rec.Region, cover.engine, deployment), cover, remaining)
+		candidate := dedupeKey(resourceType, rec.Region, cover.engine, deployment)
+		if available := existingMap[candidate]; available > 0 {
+			covered, spent := cover.consume(available, remaining)
+			remaining -= covered
+			existingMap[candidate] -= spent
+		}
 	}
-	if flexUnits > 0 && deployment == rdsSingleAZ {
-		// A Multi-AZ size-flexible reservation also pays for Single-AZ nodes; the reverse never holds.
-		remaining -= spendBudget(existingMap, dedupeKey(resourceType, rec.Region, engine, rdsMultiAZ), elastiCacheCover{engine, 1, flexUnits}, remaining)
-	}
-
 	if remaining <= 0 {
 		logf.printf("    [DuplicateChecker] SKIP %s: recent commitments cover recommended %d", key, rec.Count)
 		return common.Recommendation{Count: 0}, nil
