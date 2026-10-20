@@ -2,6 +2,8 @@ package common //nolint:revive // pkg/common is the module's core domain package
 
 import (
 	"encoding/json"
+	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -262,4 +264,48 @@ func TestDecodeServiceDetailsFor_LegacyDashFormSP(t *testing.T) {
 	sp, ok := out.(*SavingsPlanDetails)
 	require.True(t, ok, "got %T", out)
 	assert.Equal(t, "Compute", sp.PlanType)
+}
+
+// TestDecodeServiceDetailsFor_EveryEmittedPair lists every (service slug,
+// Details type) a provider sets on recommendations (audit of
+// providers/{aws,azure,gcp}: aws parser_services.go / parser_sp.go,
+// azure database/cache/cosmosdb/compute/synapse/savingsplans clients, gcp
+// computeengine) and asserts each survives marshal -> decode with the same
+// type. A pair missing from the codec makes this fail.
+func TestDecodeServiceDetailsFor_EveryEmittedPair(t *testing.T) {
+	t.Parallel()
+	pairs := []struct {
+		service string
+		details ServiceDetails
+	}{
+		{string(ServiceEC2), &ComputeDetails{Platform: "Linux/UNIX"}},
+		{string(ServiceCompute), &ComputeDetails{Platform: "Linux/UNIX"}},
+		{string(ServiceCompute), ComputeDetails{MemoryGB: 8}}, // azure/gcp compute, value form
+		{string(ServiceRDS), &DatabaseDetails{Engine: "mysql"}},
+		{string(ServiceRelationalDB), &DatabaseDetails{Engine: "sqlserver"}}, // azure database
+		{string(ServiceElastiCache), &CacheDetails{Engine: "redis"}},
+		{string(ServiceCache), &CacheDetails{Engine: "redis"}}, // azure cache
+		{string(ServiceMemoryDB), &CacheDetails{Engine: "redis"}},
+		{string(ServiceOpenSearch), &SearchDetails{}},
+		{string(ServiceSearch), &SearchDetails{}},
+		{string(ServiceRedshift), &DataWarehouseDetails{}},
+		{string(ServiceDataWarehouse), &DataWarehouseDetails{}},                // azure synapse
+		{string(ServiceNoSQL), NoSQLDetails{Engine: "cosmos", APIType: "sql"}}, // azure cosmosdb (value form)
+		{string(ServiceSavingsPlansAll), &SavingsPlanDetails{PlanType: "Compute"}},
+		{string(ServiceSavingsPlansCompute), &SavingsPlanDetails{PlanType: "Compute"}},
+		{string(ServiceSavingsPlansEC2Instance), &SavingsPlanDetails{PlanType: "EC2Instance"}},
+		{string(ServiceSavingsPlansSageMaker), &SavingsPlanDetails{PlanType: "SageMaker"}},
+		{string(ServiceSavingsPlansDatabase), &SavingsPlanDetails{PlanType: "Database"}},
+	}
+	for _, p := range pairs {
+		t.Run(fmt.Sprintf("%s_%T", p.service, p.details), func(t *testing.T) {
+			t.Parallel()
+			raw, err := MarshalServiceDetails(p.details)
+			require.NoError(t, err)
+			out, err := DecodeServiceDetailsFor(p.service, raw)
+			require.NoError(t, err)
+			require.NotNil(t, out)
+			assert.Equal(t, reflect.Indirect(reflect.ValueOf(p.details)).Type(), reflect.Indirect(reflect.ValueOf(out)).Type())
+		})
+	}
 }
