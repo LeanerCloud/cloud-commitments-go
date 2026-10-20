@@ -1,6 +1,7 @@
 package exchange
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -232,6 +233,9 @@ func TestFindBestFit_CapsAtOwnedCapacity(t *testing.T) {
 		{"nothing fits: sub-nano usage but nano not owned", 0.1, 0.2, "", 0},
 		{"sub-nano usage uses nano when owned", 0.1, 0.25, "nano", 1},
 		{"zero usage", 0, 8, "", 0},
+		{"usage above owned does not fall back to nano", 20, 16, "", 0},
+		{"NaN usage", math.NaN(), 16, "", 0},
+		{"custom NF 0.3 at 90% must not return nano", 0.27, 0.3, "", 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -286,4 +290,14 @@ func TestAnalyzeReshaping_Metal(t *testing.T) {
 			assert.NotEqual(t, "metal", s)
 		}
 	})
+}
+
+// 2x m5.xlarge at 100.5% used (16.08 > 16 owned) must not collapse to 1x nano.
+func TestAnalyzeReshaping_OverUtilizedHasNoNanoTarget(t *testing.T) {
+	t.Parallel()
+	ri := RIInfo{ID: "r", InstanceType: "m5.xlarge", InstanceCount: 2, OfferingClass: "convertible"}
+	recs := AnalyzeReshaping([]RIInfo{ri}, []UtilizationInfo{{RIID: "r", UtilizationPercent: 100.5}}, 101)
+	for _, rec := range recs {
+		assert.NotEqual(t, "m5.nano", rec.TargetInstanceType)
+	}
 }

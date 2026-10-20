@@ -724,7 +724,7 @@ func pricingGatePasses(src RIInfo, off OfferingOption, hasSrc bool) bool {
 // count up to cover the usage; if that over-allocates past normalizedPurchased, try
 // the next smaller size. Returns ("", 0) when nothing fits, so the caller skips the RI.
 func findBestFit(normalizedUsed, normalizedPurchased float64) (size string, count int32) {
-	if normalizedUsed <= 0 {
+	if !(normalizedUsed > 0) { // also rejects NaN
 		return "", 0
 	}
 
@@ -740,10 +740,12 @@ func findBestFit(normalizedUsed, normalizedPurchased float64) (size string, coun
 		}
 	}
 
-	// normalizedUsed is smaller than the smallest size — use the smallest if owned.
+	// Only usage below the smallest size's factor falls back to that size;
+	// anything else that reached here simply does not fit.
 	s := sizeOrder[0]
-	if normalizationFactors[s] > normalizedPurchased {
-		return "", 0
+	nf := normalizationFactors[s]
+	if normalizedUsed < nf && nf <= normalizedPurchased {
+		return s, 1
 	}
-	return s, 1
+	return "", 0
 }
