@@ -220,6 +220,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   sending an empty `ProductDescription` filter, send the engine lowercased as
   ElastiCache reports it, and verify the chosen offering's node type, duration
   and engine before buying it (#53).
+- AWS EC2 RI purchases refuse an offering whose total upfront exceeds the
+  recommendation's approved upfront by more than 5%, and send the same ceiling
+  as the API's `LimitPrice` (USD only), so a repriced or differently-priced
+  offering can no longer bypass the approved cap (#53).
 - **`ReshapeBuffer` rejects nil payment caps** instead of mapping them to
   `math.MaxFloat64`: `MaxPaymentPerExchangeUSD` and `MaxPaymentDailyUSD`
   are now required, so an omitted cap can no longer mean unlimited spend on
