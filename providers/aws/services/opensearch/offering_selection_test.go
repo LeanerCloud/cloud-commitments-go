@@ -165,6 +165,7 @@ func selectionRecommendation(payment string) common.Recommendation {
 }
 
 func TestOpenSearchOfferingSelectionPurchase(t *testing.T) {
+	t.Parallel()
 	for _, option := range []struct {
 		slug string
 		enum types.ReservedInstancePaymentOption
@@ -209,6 +210,7 @@ func TestOpenSearchOfferingSelectionPurchase(t *testing.T) {
 }
 
 func TestOpenSearchOfferingSelectionMatchFirstControl(t *testing.T) {
+	t.Parallel()
 	selected := selectedOffering("first-match", string(types.ReservedInstancePaymentOptionAllUpfront))
 	fixture := newOfferingFixture(t, [][]fixtureOffering{{selected}}, selected)
 	result, err := fixture.client.PurchaseCommitment(context.Background(), selectionRecommendation("all-upfront"), common.PurchaseOptions{})
@@ -224,6 +226,7 @@ func TestOpenSearchOfferingSelectionMatchFirstControl(t *testing.T) {
 }
 
 func TestOpenSearchOfferingSelectionExhaustedMismatches(t *testing.T) {
+	t.Parallel()
 	selected := selectedOffering("never-returned", string(types.ReservedInstancePaymentOptionAllUpfront))
 	wrong := selectedOffering("wrong-payment", string(types.ReservedInstancePaymentOptionNoUpfront))
 	fixture := newOfferingFixture(t, [][]fixtureOffering{{wrong}, {wrong}}, selected)
@@ -237,6 +240,7 @@ func TestOpenSearchOfferingSelectionExhaustedMismatches(t *testing.T) {
 }
 
 func TestOpenSearchOfferingSelectionInvalidPaymentNoHTTP(t *testing.T) {
+	t.Parallel()
 	for _, payment := range []struct{ name, value string }{
 		{"empty", ""}, {"unknown", "unknown"}, {"spaced", "All Upfront"}, {"raw-enum", "ALL_UPFRONT"},
 	} {
@@ -264,6 +268,7 @@ func TestOpenSearchOfferingSelectionInvalidPaymentNoHTTP(t *testing.T) {
 }
 
 func TestOpenSearchOfferingSelectionValidateAndDetails(t *testing.T) {
+	t.Parallel()
 	selected := selectedOffering("selected-for-details", string(types.ReservedInstancePaymentOptionPartialUpfront))
 	wrong := selectedOffering("wrong-payment", string(types.ReservedInstancePaymentOptionNoUpfront))
 	fixture := newOfferingFixture(t, [][]fixtureOffering{{wrong}, {selected}}, selected)
