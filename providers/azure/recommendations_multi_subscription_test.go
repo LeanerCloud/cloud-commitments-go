@@ -107,7 +107,6 @@ func TestNewMultiSubscriptionRecommendationsClient_BuildsClientsPerAccount(t *te
 }
 
 func TestNewMultiSubscriptionRecommendationsClient_ClientConstructionFailurePropagates(t *testing.T) {
-	t.Parallel()
 	orig := newSubscriptionRecommendationsClientFn
 	t.Cleanup(func() { newSubscriptionRecommendationsClientFn = orig })
 	newSubscriptionRecommendationsClientFn = func(_ azcore.TokenCredential, subscriptionID string) (provider.RecommendationsClient, error) {

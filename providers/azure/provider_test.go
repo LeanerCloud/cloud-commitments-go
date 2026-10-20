@@ -455,7 +455,6 @@ func TestAzureProvider_GetServiceClient_AllServiceTypes(t *testing.T) {
 }
 
 func TestAzureClients_GetExistingCommitments_PagerConstructionError(t *testing.T) {
-	t.Parallel()
 	// Keep this test sequential: the SDK reads this process-wide configuration.
 	originalCloud := cloud.AzurePublic
 	t.Cleanup(func() { cloud.AzurePublic = originalCloud })
