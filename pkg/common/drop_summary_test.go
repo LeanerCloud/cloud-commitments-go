@@ -7,6 +7,7 @@ import (
 )
 
 func TestDropSummary_Add_And_Total(t *testing.T) {
+	t.Parallel()
 	d := NewDropSummary()
 	assert.Equal(t, 0, d.Total())
 	assert.True(t, d.IsEmpty())
@@ -20,12 +21,14 @@ func TestDropSummary_Add_And_Total(t *testing.T) {
 }
 
 func TestDropSummary_Add_Zero_NoOp(t *testing.T) {
+	t.Parallel()
 	d := NewDropSummary()
 	d.Add(DropMinPoolSize, 0)
 	assert.True(t, d.IsEmpty())
 }
 
 func TestDropSummary_NilReceiver_Safe(t *testing.T) {
+	t.Parallel()
 	var d *DropSummary
 	d.Add(DropMinPoolSize, 3) // must not panic
 	assert.Equal(t, 0, d.Total())
@@ -36,6 +39,7 @@ func TestDropSummary_NilReceiver_Safe(t *testing.T) {
 // Regression: a zero-value DropSummary (declared without NewDropSummary)
 // must not panic on Add because the internal map is lazily initialized.
 func TestDropSummary_ZeroValue_Safe(t *testing.T) {
+	t.Parallel()
 	var d DropSummary
 	d.Add(DropMinPoolSize, 3) // must not panic on nil map
 	d.Add(DropTargetAlreadyMet, 2)
@@ -45,6 +49,7 @@ func TestDropSummary_ZeroValue_Safe(t *testing.T) {
 }
 
 func TestDropSummary_FormatOneLine(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		setup    func(*DropSummary)
@@ -92,6 +97,7 @@ func TestDropSummary_FormatOneLine(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			d := NewDropSummary()
 			tt.setup(d)
 			assert.Equal(t, tt.expected, d.FormatOneLine())
@@ -100,6 +106,7 @@ func TestDropSummary_FormatOneLine(t *testing.T) {
 }
 
 func TestDropSummary_Add_PerReasonTallies(t *testing.T) {
+	t.Parallel()
 	d := NewDropSummary()
 	d.Add(DropMinPoolSize, 3)
 	d.Add(DropMinPoolSize, 2)
@@ -111,6 +118,7 @@ func TestDropSummary_Add_PerReasonTallies(t *testing.T) {
 }
 
 func TestDropSummary_Add_NegativePanics(t *testing.T) {
+	t.Parallel()
 	d := NewDropSummary()
 	assert.PanicsWithValue(t,
 		`common.DropSummary.Add: negative count -1 for reason "--min-pool-size"`,
@@ -121,6 +129,7 @@ func TestDropSummary_Add_NegativePanics(t *testing.T) {
 // A negative that would cancel a positive in Total() is the case the guard
 // exists for: Total() alone would read 0 and look correct.
 func TestDropSummary_Add_NegativeCannotCancelInTotal(t *testing.T) {
+	t.Parallel()
 	d := NewDropSummary()
 	d.Add(DropMinPoolSize, 2)
 	d.Add(DropDuplicateDedup, 5)
@@ -132,6 +141,7 @@ func TestDropSummary_Add_NegativeCannotCancelInTotal(t *testing.T) {
 }
 
 func TestDropSummary_Add_NegativePanicsOnNilReceiver(t *testing.T) {
+	t.Parallel()
 	var d *DropSummary
 	assert.Panics(t, func() { d.Add(DropMinPoolSize, -1) })
 }

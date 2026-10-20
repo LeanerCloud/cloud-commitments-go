@@ -12,6 +12,7 @@ import (
 // NAT64, 6to4 and IPv4-compatible spellings of metadata addresses, plus the
 // unspecified addresses, must be refused at dial time.
 func TestBlockMetadata_EmbeddedAndUnspecified(t *testing.T) {
+	t.Parallel()
 	blocked := []string{
 		"[64:ff9b::a9fe:a9fe]:80",
 		"[64:ff9b::169.254.169.254]:80",
@@ -37,6 +38,7 @@ func TestBlockMetadata_EmbeddedAndUnspecified(t *testing.T) {
 	}
 	for _, addr := range blocked {
 		t.Run(addr, func(t *testing.T) {
+			t.Parallel()
 			if err := blockMetadata("tcp", addr, nil); err == nil {
 				t.Fatalf("%s must be blocked", addr)
 			}
@@ -56,6 +58,7 @@ func TestBlockMetadata_EmbeddedAndUnspecified(t *testing.T) {
 	}
 	for _, addr := range allowed {
 		t.Run(addr, func(t *testing.T) {
+			t.Parallel()
 			if err := blockMetadata("tcp", addr, nil); err != nil {
 				t.Fatalf("%s must stay allowed: %v", addr, err)
 			}
@@ -66,6 +69,7 @@ func TestBlockMetadata_EmbeddedAndUnspecified(t *testing.T) {
 // The guard runs for every dial, so a redirect to an embedded form or an
 // unspecified address is refused as well.
 func TestNew_BlocksEmbeddedFormsViaRedirect(t *testing.T) {
+	t.Parallel()
 	for _, target := range []string{
 		"http://[64:ff9b::a9fe:a9fe]/latest/meta-data/",
 		"http://[2002:a9fe:a9fe::]/latest/meta-data/",
@@ -74,6 +78,7 @@ func TestNew_BlocksEmbeddedFormsViaRedirect(t *testing.T) {
 		"http://[::]/",
 	} {
 		t.Run(target, func(t *testing.T) {
+			t.Parallel()
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				http.Redirect(w, r, target, http.StatusFound)
 			}))

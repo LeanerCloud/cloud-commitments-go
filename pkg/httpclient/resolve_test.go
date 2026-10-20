@@ -141,13 +141,17 @@ func TestNew_BlocksHostnameResolvingToIMDS(t *testing.T) {
 		// decodes it (and the decimal/octal forms) to 169.254.169.254.
 		"http://0xa9fea9fe/latest/meta-data/",
 	} {
-		t.Run(url, func(t *testing.T) { assertBlocked(t, c, url) })
+		t.Run(url, func(t *testing.T) {
+			t.Parallel()
+			assertBlocked(t, c, url)
+		})
 	}
 }
 
 // Literal addresses outside the old two-entry map: the IPv4-mapped IPv6 form
 // of IMDS, and the ECS / EKS Pod Identity credential endpoints.
 func TestNew_BlocksMetadataLiteralsOutsideExactMatch(t *testing.T) {
+	t.Parallel()
 	c := newContainedClient(t)
 	for _, url := range []string{
 		"http://[::ffff:169.254.169.254]/metadata/identity/oauth2/token",
@@ -158,13 +162,17 @@ func TestNew_BlocksMetadataLiteralsOutsideExactMatch(t *testing.T) {
 		"http://[fe80::1]/",
 		"http://[fe80::1%251]/",
 	} {
-		t.Run(url, func(t *testing.T) { assertBlocked(t, c, url) })
+		t.Run(url, func(t *testing.T) {
+			t.Parallel()
+			assertBlocked(t, c, url)
+		})
 	}
 }
 
 // Metadata services on routable addresses outside link-local (Azure WireServer,
 // Alibaba Cloud IMDS), reached directly, IPv4-mapped, or via a redirect.
 func TestNew_BlocksRoutableMetadataAddresses(t *testing.T) {
+	t.Parallel()
 	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "http://168.63.129.16/machine?comp=goalstate", http.StatusFound)
 	}))
@@ -178,12 +186,16 @@ func TestNew_BlocksRoutableMetadataAddresses(t *testing.T) {
 		"http://100.100.100.200/latest/meta-data/",
 		redirect.URL,
 	} {
-		t.Run(url, func(t *testing.T) { assertBlocked(t, c, url) })
+		t.Run(url, func(t *testing.T) {
+			t.Parallel()
+			assertBlocked(t, c, url)
+		})
 	}
 }
 
 // GCP's IPv6 metadata server (fd20:ce::254) is a ULA, outside fe80::/10.
 func TestNew_BlocksGCPIPv6Metadata(t *testing.T) {
+	t.Parallel()
 	const target = "http://[fd20:ce::254]/computeMetadata/v1/instance/service-accounts/default/token"
 	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, target, http.StatusFound)
@@ -192,7 +204,10 @@ func TestNew_BlocksGCPIPv6Metadata(t *testing.T) {
 
 	c := newContainedClient(t)
 	for _, url := range []string{target, redirect.URL} {
-		t.Run(url, func(t *testing.T) { assertBlocked(t, c, url) })
+		t.Run(url, func(t *testing.T) {
+			t.Parallel()
+			assertBlocked(t, c, url)
+		})
 	}
 }
 
@@ -209,6 +224,7 @@ func TestNew_BlocksRedirectToIMDS(t *testing.T) {
 }
 
 func TestContainedClient_AllowsLoopback(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
@@ -225,6 +241,7 @@ func TestContainedClient_AllowsLoopback(t *testing.T) {
 }
 
 func TestContainedClient_DeniesDocumentationAddress(t *testing.T) {
+	t.Parallel()
 	resp, err := newContainedClient(t).Get("http://192.0.2.1/")
 	if err == nil {
 		resp.Body.Close()

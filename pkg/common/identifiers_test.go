@@ -8,6 +8,7 @@ import (
 )
 
 func TestIdempotentReservationID_DeterministicAndSafe(t *testing.T) {
+	t.Parallel()
 	token := DeriveIdempotencyToken("exec-1", 0)
 
 	a := IdempotentReservationID("rds-id-", token)
@@ -22,12 +23,14 @@ func TestIdempotentReservationID_DeterministicAndSafe(t *testing.T) {
 }
 
 func TestIdempotentReservationID_DistinctTokensDistinctIDs(t *testing.T) {
+	t.Parallel()
 	id0 := IdempotentReservationID("rds-id-", DeriveIdempotencyToken("exec-1", 0))
 	id1 := IdempotentReservationID("rds-id-", DeriveIdempotencyToken("exec-1", 1))
 	assert.NotEqual(t, id0, id1, "different recs in an execution must get different IDs")
 }
 
 func TestIdempotentReservationID_EmptyTokenReturnsEmpty(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "", IdempotentReservationID("rds-id-", ""),
 		"empty token must yield empty so the caller keeps its non-idempotent fallback")
 }

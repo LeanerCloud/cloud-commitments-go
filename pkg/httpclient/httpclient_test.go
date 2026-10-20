@@ -10,6 +10,7 @@ import (
 // New must hand back a dedicated hardened client, never the process-wide
 // default client/transport (SEC-04 regression guard).
 func TestNew_NotDefaultClient(t *testing.T) {
+	t.Parallel()
 	c := New()
 
 	if c == http.DefaultClient {
@@ -24,6 +25,7 @@ func TestNew_NotDefaultClient(t *testing.T) {
 }
 
 func TestNew_BlocksIMDS(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		url  string
@@ -35,12 +37,14 @@ func TestNew_BlocksIMDS(t *testing.T) {
 	c := newContainedClient(t)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assertBlocked(t, c, tt.url)
 		})
 	}
 }
 
 func TestNew_AllowsRegularEndpoints(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -64,12 +68,14 @@ func TestNew_AllowsRegularEndpoints(t *testing.T) {
 // neighbors of each stay allowed. IPv4 link-local is deliberately a whole /16,
 // so 169.254.169.253 is blocked, not allowed (#227).
 func TestBlockMetadata_NeighborsOfSingleAddressEntries(t *testing.T) {
+	t.Parallel()
 	blocked := []string{
 		"169.254.169.253:80", // inside the link-local /16
 		"169.254.169.255:80",
 	}
 	for _, addr := range blocked {
 		t.Run("blocked "+addr, func(t *testing.T) {
+			t.Parallel()
 			if err := blockMetadata("tcp", addr, nil); err == nil {
 				t.Fatalf("%s must be blocked", addr)
 			}
@@ -85,6 +91,7 @@ func TestBlockMetadata_NeighborsOfSingleAddressEntries(t *testing.T) {
 	}
 	for _, addr := range allowed {
 		t.Run("allowed "+addr, func(t *testing.T) {
+			t.Parallel()
 			if err := blockMetadata("tcp", addr, nil); err != nil {
 				t.Fatalf("%s must stay allowed: %v", addr, err)
 			}

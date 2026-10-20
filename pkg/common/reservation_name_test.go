@@ -15,6 +15,7 @@ var testFixedNow = time.Date(2026, 5, 21, 0, 20, 19, 0, time.UTC)
 func testFixedRand() []byte { return []byte{0xa1, 0xb2, 0xc3, 0xd4} }
 
 func TestBuildReservationName_HappyPath(t *testing.T) {
+	t.Parallel()
 	got := BuildReservationName(ReservationNameFields{
 		Service:      "opensearch",
 		Region:       "us-east-1",
@@ -36,6 +37,7 @@ func TestBuildReservationName_HappyPath(t *testing.T) {
 }
 
 func TestBuildReservationName_ShortInput_FullName(t *testing.T) {
+	t.Parallel()
 	// Short fields fit comfortably under the cap; verify the exact format.
 	got := BuildReservationName(ReservationNameFields{
 		Service:      "rds",
@@ -54,6 +56,7 @@ func TestBuildReservationName_ShortInput_FullName(t *testing.T) {
 }
 
 func TestBuildReservationName_LengthFit_DropsRandomFirst(t *testing.T) {
+	t.Parallel()
 	// Pick fields that compose just barely over 60 with the rand suffix but
 	// fit without it: svc(rds=3) + region(eu-west-1=9) + sku("m6gd.xlarge"->"m6gd-xlarge"=11) +
 	// count(1x=2) + term(1yr=3) + paymt(allup=5) + ts(15) + rand(8) + 7 separators
@@ -75,6 +78,7 @@ func TestBuildReservationName_LengthFit_DropsRandomFirst(t *testing.T) {
 }
 
 func TestBuildReservationName_LengthFit_DropsTimestampNext(t *testing.T) {
+	t.Parallel()
 	// Pick a length where rand-dropped still overflows by ts-and-not-payment.
 	// With cache service code (5) + region (us-east-1 = 9) + a 24-char SKU,
 	// count + term + payment + ts = ~24+9+5+2+3+5+15 + 6 seps = 69; drop
@@ -98,6 +102,7 @@ func TestBuildReservationName_LengthFit_DropsTimestampNext(t *testing.T) {
 }
 
 func TestBuildReservationName_LengthFit_DropsPaymentLast(t *testing.T) {
+	t.Parallel()
 	// Compose so that even dropping rand+ts is not enough, forcing
 	// payment to drop too. Required-only must still fit at ≤60.
 	got := BuildReservationName(ReservationNameFields{
@@ -121,6 +126,7 @@ func TestBuildReservationName_LengthFit_DropsPaymentLast(t *testing.T) {
 }
 
 func TestBuildReservationName_LengthFit_WorstCase_TruncatesSKUNotCountTerm(t *testing.T) {
+	t.Parallel()
 	// Pathological: a SKU so long that even all optional segments dropped
 	// leaves us over 60. The builder must truncate the SKU itself rather
 	// than the joined string, so count and term still survive the cap.
@@ -143,6 +149,7 @@ func TestBuildReservationName_LengthFit_WorstCase_TruncatesSKUNotCountTerm(t *te
 }
 
 func TestBuildReservationName_PaymentNormalization(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in   string
 		want string
@@ -156,6 +163,7 @@ func TestBuildReservationName_PaymentNormalization(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.in, func(t *testing.T) {
+			t.Parallel()
 			got := normalizeReservationPayment(tc.in)
 			assert.Equal(t, tc.want, got)
 		})
@@ -163,6 +171,7 @@ func TestBuildReservationName_PaymentNormalization(t *testing.T) {
 }
 
 func TestBuildReservationName_PaymentUnknown_TruncatedAndSanitized(t *testing.T) {
+	t.Parallel()
 	got := normalizeReservationPayment("monthly_billing")
 	// Dropped underscores, then truncated to 6 chars.
 	assert.LessOrEqual(t, len(got), 6)
@@ -170,6 +179,7 @@ func TestBuildReservationName_PaymentUnknown_TruncatedAndSanitized(t *testing.T)
 }
 
 func TestBuildReservationName_SKUDotsToHyphens(t *testing.T) {
+	t.Parallel()
 	got := BuildReservationName(ReservationNameFields{
 		Service:      "rds",
 		Region:       "us-east-1",
@@ -185,6 +195,7 @@ func TestBuildReservationName_SKUDotsToHyphens(t *testing.T) {
 }
 
 func TestBuildReservationName_TermNormalization(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in   string
 		want string
@@ -200,6 +211,7 @@ func TestBuildReservationName_TermNormalization(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.in, func(t *testing.T) {
+			t.Parallel()
 			got := normalizeReservationTerm(tc.in)
 			assert.Equal(t, tc.want, got)
 		})
@@ -207,6 +219,7 @@ func TestBuildReservationName_TermNormalization(t *testing.T) {
 }
 
 func TestBuildReservationName_DeterministicWithFixedSources(t *testing.T) {
+	t.Parallel()
 	fields := ReservationNameFields{
 		Service:      "rds",
 		Region:       "us-east-1",
@@ -223,6 +236,7 @@ func TestBuildReservationName_DeterministicWithFixedSources(t *testing.T) {
 }
 
 func TestBuildReservationName_AlwaysSanitized(t *testing.T) {
+	t.Parallel()
 	got := BuildReservationName(ReservationNameFields{
 		Service:      "rds",
 		Region:       "us-east-1",
@@ -241,6 +255,7 @@ func TestBuildReservationName_AlwaysSanitized(t *testing.T) {
 }
 
 func TestBuildReservationName_NowInUTC(t *testing.T) {
+	t.Parallel()
 	// Pass a non-UTC time; builder must normalize to UTC for the timestamp.
 	loc, err := time.LoadLocation("America/Los_Angeles")
 	if err != nil {
@@ -261,6 +276,7 @@ func TestBuildReservationName_NowInUTC(t *testing.T) {
 }
 
 func TestBuildReservationName_PerServicePrefixes(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		svc    string
 		prefix string
@@ -273,6 +289,7 @@ func TestBuildReservationName_PerServicePrefixes(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.svc, func(t *testing.T) {
+			t.Parallel()
 			got := BuildReservationName(ReservationNameFields{
 				Service:      tc.svc,
 				Region:       "us-east-1",
