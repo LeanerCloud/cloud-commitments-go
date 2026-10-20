@@ -85,9 +85,15 @@ type SQLManagedInstancesPager interface {
 
 // Client handles Azure SQL Database Reserved Capacity.
 type Client struct {
+	// Lazy server-info cache. Populated by fetchServerInfo, which walks the
+	// managed-instances and servers pagers. Both azConfig and deployment are
+	// derived in a single pass so the injected test pager is consumed once.
+	// Only a complete walk is cached (serverInfoLoaded); a failed or
+	// canceled walk is retried, but not before serverInfoRetryAfter so a
+	// persistently failing subscription is not re-walked per recommendation.
+	serverInfoRetryAfter time.Time
+
 	cred                  azcore.TokenCredential
-	subscriptionID        string
-	region                string
 	httpClient            HTTPClient
 	recommendationsPager  RecommendationsPager
 	reservationsPager     ReservationsDetailsPager
@@ -100,8 +106,10 @@ type Client struct {
 	// call — single ListByLocation per region instead of N+1 per rec.
 	// A failed fetch leaves skuCacheMap nil; converters then fall back
 	// to empty EngineVersion with a one-time WARN log.
-	skuCacheOnce sync.Once
-	skuCacheMap  map[string]sqlSKUEntry
+	skuCacheMap map[string]sqlSKUEntry
+
+	subscriptionID string
+	region         string
 
 	// Lazy server-info cache. Populated by fetchServerInfo, which walks the
 	// managed-instances and servers pagers. Both azConfig and deployment are
@@ -109,12 +117,25 @@ type Client struct {
 	// Only a complete walk is cached (serverInfoLoaded); a failed or
 	// canceled walk is retried, but not before serverInfoRetryAfter so a
 	// persistently failing subscription is not re-walked per recommendation.
-	serverInfoMu         sync.Mutex
-	serverInfoLoaded     bool
-	serverInfoRetryAfter time.Time
-	serverInfoRetryDelay time.Duration
 	azConfig             string
 	deployment           string
+	serverInfoRetryDelay time.Duration
+
+	// Lazy SKU catalog cache. Populated once on the first
+	// recommendation conversion in this client's GetRecommendations
+	// call — single ListByLocation per region instead of N+1 per rec.
+	// A failed fetch leaves skuCacheMap nil; converters then fall back
+	// to empty EngineVersion with a one-time WARN log.
+	skuCacheOnce sync.Once
+
+	// Lazy server-info cache. Populated by fetchServerInfo, which walks the
+	// managed-instances and servers pagers. Both azConfig and deployment are
+	// derived in a single pass so the injected test pager is consumed once.
+	// Only a complete walk is cached (serverInfoLoaded); a failed or
+	// canceled walk is retried, but not before serverInfoRetryAfter so a
+	// persistently failing subscription is not re-walked per recommendation.
+	serverInfoMu     sync.Mutex
+	serverInfoLoaded bool
 }
 
 // serverInfoRetryDelayDefault is the minimum wait before re-walking the
@@ -570,9 +591,9 @@ func (c *Client) extractManagedInstanceSKUs(capabilities armsql.LocationCapabili
 
 // SQLPricing contains pricing information for SQL Database.
 type SQLPricing struct {
+	Currency         string
 	HourlyRate       float64
 	ReservationPrice float64
-	Currency         string
 }
 
 // getSQLPricing gets real pricing from Azure Retail Prices API.

@@ -28,6 +28,9 @@ import (
 // ExchangeableReservation represents an Azure VM reservation that is
 // eligible for exchange.
 type ExchangeableReservation struct {
+	// ExpiryDate is when the reservation expires. Zero if not set by Azure.
+	ExpiryDate time.Time `json:"expiry_date,omitempty"`
+
 	// ReservationOrderID is the GUID of the parent reservation order,
 	// parsed from the ARM resource ID. Required by CalculateExchange.
 	ReservationOrderID string `json:"reservation_order_id"`
@@ -59,15 +62,8 @@ type ExchangeableReservation struct {
 	// Azure did not report one, which CalculateExchange refuses.
 	AppliedScopeType armreservations.AppliedScopeType `json:"applied_scope_type,omitempty"`
 
-	// AppliedScopes are the ARM scopes (e.g. "/subscriptions/{id}") a Single
-	// scoped reservation applies to. Empty for Shared.
-	AppliedScopes []string `json:"applied_scopes,omitempty"`
-
 	// SKU is the VM size (e.g. "Standard_D2s_v3").
 	SKU string `json:"sku"`
-
-	// Quantity is the number of VM instances covered.
-	Quantity int32 `json:"quantity"`
 
 	// Region is the ARM region name (e.g. "eastus"). May be empty for
 	// reservations with AppliedScopeType == Shared.
@@ -79,15 +75,19 @@ type ExchangeableReservation struct {
 	// pair as unsupported.
 	Term string `json:"term,omitempty"`
 
-	// ExpiryDate is when the reservation expires. Zero if not set by Azure.
-	ExpiryDate time.Time `json:"expiry_date,omitempty"`
-
 	// InstanceFlexibility reports the instance size flexibility setting.
 	// Always "On" for reservations returned by this function.
 	InstanceFlexibility string `json:"instance_flexibility"`
 
 	// DisplayName is the human-readable reservation name set at purchase time.
 	DisplayName string `json:"display_name,omitempty"`
+
+	// AppliedScopes are the ARM scopes (e.g. "/subscriptions/{id}") a Single
+	// scoped reservation applies to. Empty for Shared.
+	AppliedScopes []string `json:"applied_scopes,omitempty"`
+
+	// Quantity is the number of VM instances covered.
+	Quantity int32 `json:"quantity"`
 }
 
 // ExchangeableReservationPager defines the paging contract for listing
@@ -194,13 +194,13 @@ func isExchangeEligible(item *armreservations.ReservationResponse) bool {
 // when the source pointer is nil. Grouped into a struct (rather than 7
 // positional returns) per gocritic's tooManyResultsChecker.
 type reservationFields struct {
+	expiryDate  time.Time
 	id          string
 	sku         string
 	region      string
 	term        string
 	displayName string
 	quantity    int32
-	expiryDate  time.Time
 }
 
 // extractReservationFields reads the optional pointer fields from item and its

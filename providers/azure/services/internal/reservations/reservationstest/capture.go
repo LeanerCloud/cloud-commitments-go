@@ -18,14 +18,17 @@ import (
 // Capture is an HTTP client that records the calculatePrice request body and
 // answers every call with a minimal success response. It performs no network IO.
 type Capture struct {
-	mu        sync.Mutex
-	Calls     int
-	BodyBytes []byte
-	// Requests lists every request received, in order.
-	Requests []Request
 	// FailWhen, when set, is consulted after the request is recorded. A
 	// non-nil return is returned from Do as the transport error.
 	FailWhen func(*Request) error
+
+	BodyBytes []byte
+
+	// Requests lists every request received, in order.
+	Requests []Request
+
+	Calls int
+	mu    sync.Mutex
 }
 
 // Request is one recorded HTTP request.
@@ -98,10 +101,11 @@ func (c *Capture) BodyWithoutDisplayName() ([]byte, error) {
 // CountingCred is an azcore.TokenCredential that counts GetToken calls and can
 // fail on demand.
 type CountingCred struct {
-	mu    sync.Mutex
-	Calls int
 	// Err, when non-nil, is returned from every GetToken call.
 	Err error
+
+	Calls int
+	mu    sync.Mutex
 }
 
 var _ azcore.TokenCredential = (*CountingCred)(nil)

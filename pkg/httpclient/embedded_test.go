@@ -66,6 +66,80 @@ func TestBlockMetadata_EmbeddedAndUnspecified(t *testing.T) {
 	}
 }
 
+// nat64Local returns an address in 64:ff9b:1::/48 whose RFC 6052 layout
+// (index into rfc6052Layouts) carries v4.
+func nat64Local(t *testing.T, layout int, v4 string) string {
+	t.Helper()
+	b := netip.MustParseAddr("64:ff9b:1::").As16()
+	o := netip.MustParseAddr(v4).As4()
+	for i, off := range rfc6052Layouts[layout] {
+		b[off] = o[i]
+	}
+	return "[" + netip.AddrFrom16(b).String() + "]:80"
+}
+
+// A local-use NAT64 prefix (RFC 8215) may embed any IPv4 under any RFC 6052
+// layout (/48, /56, /64, /96), so each layout carrying a metadata address must
+// be refused, and a global one must not.
+func TestBlockMetadata_LocalNAT64AllLayouts(t *testing.T) {
+	t.Parallel()
+	for layout := range rfc6052Layouts {
+		for _, v4 := range []string{
+			"169.254.169.254", // IMDS
+			"169.254.170.2",   // ECS credentials
+			"168.63.129.16",   // Azure WireServer
+			"100.100.100.200", // Alibaba IMDS
+		} {
+			addr := nat64Local(t, layout, v4)
+			t.Run(addr, func(t *testing.T) {
+				t.Parallel()
+				if err := blockMetadata("tcp", addr, nil); err == nil {
+					t.Fatalf("%s (layout %d, %s) must be blocked", addr, layout, v4)
+				}
+			})
+		}
+		addr := nat64Local(t, layout, "8.8.8.8")
+		t.Run(addr, func(t *testing.T) {
+			t.Parallel()
+			if err := blockMetadata("tcp", addr, nil); err != nil {
+				t.Fatalf("%s must stay allowed: %v", addr, err)
+			}
+		})
+	}
+	for _, addr := range []string{
+		"[64:ff9b:1::a9fe:a9fe]:80", // /96 literal from the issue
+		"[64:ff9b:1::169.254.169.254]:80",
+		"[64:ff9b:1::a9fe:a9fe%eth0]:80",
+	} {
+		t.Run(addr, func(t *testing.T) {
+			t.Parallel()
+			if err := blockMetadata("tcp", addr, nil); err == nil {
+				t.Fatalf("%s must be blocked", addr)
+			}
+		})
+	}
+	if err := blockMetadata("tcp", "[64:ff9b:2::a9fe:a9fe]:80", nil); err != nil {
+		t.Fatalf("address outside the /48 must stay allowed: %v", err)
+	}
+}
+
+// Teredo is intentionally not decoded (see the Teredo comment in
+// httpclient.go).
+func TestBlockMetadata_TeredoStaysAllowed(t *testing.T) {
+	t.Parallel()
+	for _, addr := range []string{
+		"[2001:0:4136:e378:8000:63bf:5601:5601]:80", // client field de-obfuscates to 169.254.169.254
+		"[2001::a9fe:a9fe]:80",
+	} {
+		t.Run(addr, func(t *testing.T) {
+			t.Parallel()
+			if err := blockMetadata("tcp", addr, nil); err != nil {
+				t.Fatalf("%s must stay allowed: %v", addr, err)
+			}
+		})
+	}
+}
+
 // The guard runs for every dial, so a redirect to an embedded form or an
 // unspecified address is refused as well.
 func TestNew_BlocksEmbeddedFormsViaRedirect(t *testing.T) {

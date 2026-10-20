@@ -180,13 +180,13 @@ func aggregateUtilizationDetail(agg map[string]*riAccumulator, detail types.Rese
 // parseUtilizationHours strictly parses the three required hours fields.
 func parseUtilizationHours(u *types.ReservationAggregates) (purchased, actual, unused float64, err error) {
 	for _, f := range []struct {
-		name string
 		src  *string
 		dst  *float64
+		name string
 	}{
-		{"PurchasedHours", u.PurchasedHours, &purchased},
-		{"TotalActualHours", u.TotalActualHours, &actual},
-		{"UnusedHours", u.UnusedHours, &unused},
+		{src: u.PurchasedHours, dst: &purchased, name: "PurchasedHours"},
+		{src: u.TotalActualHours, dst: &actual, name: "TotalActualHours"},
+		{src: u.UnusedHours, dst: &unused, name: "UnusedHours"},
 	} {
 		if f.src == nil {
 			return 0, 0, 0, fmt.Errorf("%s is missing while other utilization hours are present", f.name)

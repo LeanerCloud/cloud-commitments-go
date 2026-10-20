@@ -330,8 +330,8 @@ func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation, 
 
 // rdsOfferingPageResult holds the outcome of a single DescribeReservedDBInstancesOfferings page.
 type rdsOfferingPageResult struct {
-	id     string  // non-empty when an exact match was found on this page
 	marker *string // pagination cursor for the next page; nil when exhausted
+	id     string  // non-empty when an exact match was found on this page
 }
 
 // fetchRDSOfferingPage calls DescribeReservedDBInstancesOfferings for one page and
@@ -519,9 +519,9 @@ func (c *Client) offeringDuration(term string) (duration string, seconds int64, 
 type rdsOfferingKey struct {
 	class        string
 	engine       string
-	multiAZ      bool
-	duration     int64
 	offeringType string
+	duration     int64
+	multiAZ      bool
 }
 
 func (k rdsOfferingKey) matches(o *types.ReservedDBInstancesOffering) bool {

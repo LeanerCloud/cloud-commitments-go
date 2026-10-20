@@ -52,6 +52,12 @@ func SanitizeDisplayName(s string) string {
 // deterministic assertions. Production callers leave randSource nil (the
 // builder then uses crypto/rand) and pass time.Now().
 type DisplayNameFields struct {
+	// Now is the timestamp baseline. Tests inject a fixed value for
+	// determinism; production callers should pass time.Now(). A zero
+	// time.Time is replaced with time.Now() by the builder so the
+	// timestamp segment never emits the placeholder "00010101T000000".
+	Now time.Time
+
 	// Service is a short identifier for the Azure service, e.g. "vm",
 	// "redis", "cosmos", "sql", "search". Set per-call by the service
 	// client; the builder treats it as opaque and sanitizes it.
@@ -62,9 +68,6 @@ type DisplayNameFields struct {
 
 	// ResourceType is the Azure SKU name (e.g. "Standard_D2a_v4").
 	ResourceType string
-
-	// Count is the reservation quantity. Always rendered as "{N}x".
-	Count int
 
 	// Term is the commitment term, normalized to "1yr" / "3yr" by upstream
 	// recommendation parsers. Pass through as-is; the builder collapses
@@ -77,16 +80,13 @@ type DisplayNameFields struct {
 	// "monthly") so the segment stays under 8 chars.
 	Payment string
 
-	// Now is the timestamp baseline. Tests inject a fixed value for
-	// determinism; production callers should pass time.Now(). A zero
-	// time.Time is replaced with time.Now() by the builder so the
-	// timestamp segment never emits the placeholder "00010101T000000".
-	Now time.Time
-
 	// randSource is an optional 4-byte source for the random suffix.
 	// When nil (production), the builder reads from crypto/rand. Tests set
 	// it via WithRandSource to make output deterministic.
 	randSource []byte
+
+	// Count is the reservation quantity. Always rendered as "{N}x".
+	Count int
 }
 
 // WithRandSource returns a copy of f with the given bytes used as the
