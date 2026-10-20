@@ -15,7 +15,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.3.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/search/armsearch v1.4.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/sql/armsql v1.2.0
-	github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261020113129-aca2f2a0b1f4
+	github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261020124817-768bc51a4c54
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/sync v0.23.0
 )
