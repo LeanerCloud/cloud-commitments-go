@@ -9,6 +9,17 @@ type RedisIdentity struct {
 	ArmSKUName, SKUName, ProductName, MeterName string
 }
 
+// ParseRedisIdentity maps a Redis reservation SKU to its exact Retail Prices
+// identity. It accepts only the legacy Premium (P1-P5), Enterprise (E*) and
+// Enterprise Flash (F*) families.
+//
+// Newer Azure_Managed_Redis_* identities (for example
+// Azure_Managed_Redis_Balanced_B10) are deliberately unsupported: they return
+// an "unsupported Redis reservation SKU" error before any quote request is
+// built, so callers never price them from a legacy filter. Adding a parser
+// prefix alone would not make them supported, because discovery,
+// recommendation mapping and quote identity must agree first. Supporting them
+// is tracked in #188.
 func ParseRedisIdentity(sku string) (RedisIdentity, error) {
 	arm := sku
 	if strings.HasPrefix(arm, "Premium_") {
