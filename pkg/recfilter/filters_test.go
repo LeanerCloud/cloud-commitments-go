@@ -34,6 +34,7 @@ func TestIncludesEngine_CEAndRISpellingsBothMatch(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			f := Filters{IncludeEngines: tt.includeEngines}
 			rec := common.Recommendation{Details: &common.DatabaseDetails{Engine: tt.recEngine}}
 			assert.Equal(t, tt.expected, f.IncludesEngine(&rec))
@@ -83,29 +84,34 @@ func TestIncludesEngine_UppercaseRecognizedAliasFilters(t *testing.T) {
 }
 
 func TestIncludesRegion_EmptyIncludeListAllowsAll(t *testing.T) {
+	t.Parallel()
 	f := Filters{}
 	assert.True(t, f.IncludesRegion("us-east-1"))
 	assert.True(t, f.IncludesRegion("eu-west-1"))
 }
 
 func TestIncludesInstanceType_EmptyIncludeListAllowsAll(t *testing.T) {
+	t.Parallel()
 	f := Filters{}
 	assert.True(t, f.IncludesInstanceType("db.t3.micro"))
 	assert.True(t, f.IncludesInstanceType("cache.r5.large"))
 }
 
 func TestIncludesEngine_EmptyIncludeListAllowsAll(t *testing.T) {
+	t.Parallel()
 	f := Filters{}
 	rec := common.Recommendation{Details: &common.DatabaseDetails{Engine: "mysql"}}
 	assert.True(t, f.IncludesEngine(&rec))
 }
 
 func TestIncludesRegion_ExcludeBeatsInclude(t *testing.T) {
+	t.Parallel()
 	f := Filters{IncludeRegions: []string{"us-east-1"}, ExcludeRegions: []string{"us-east-1"}}
 	assert.False(t, f.IncludesRegion("us-east-1"))
 }
 
 func TestIncludesInstanceType_ExcludeBeatsInclude(t *testing.T) {
+	t.Parallel()
 	f := Filters{IncludeInstanceTypes: []string{"db.t3.micro"}, ExcludeInstanceTypes: []string{"db.t3.micro"}}
 	assert.False(t, f.IncludesInstanceType("db.t3.micro"))
 }
@@ -113,6 +119,7 @@ func TestIncludesInstanceType_ExcludeBeatsInclude(t *testing.T) {
 // Exclude entries are normalized on the same axis as include entries: an
 // operator excluding "postgres" must not still get "postgresql" rows.
 func TestIncludesEngine_ExcludeNormalizesAliases(t *testing.T) {
+	t.Parallel()
 	f := Filters{ExcludeEngines: []string{"postgres"}}
 	rec := common.Recommendation{Details: &common.DatabaseDetails{Engine: "PostgreSQL"}}
 	assert.False(t, f.IncludesEngine(&rec))
@@ -122,12 +129,14 @@ func TestIncludesEngine_ExcludeNormalizesAliases(t *testing.T) {
 }
 
 func TestIncludesEngine_ExcludeBeatsInclude(t *testing.T) {
+	t.Parallel()
 	f := Filters{IncludeEngines: []string{"mysql"}, ExcludeEngines: []string{"mysql"}}
 	rec := common.Recommendation{Details: &common.DatabaseDetails{Engine: "mysql"}}
 	assert.False(t, f.IncludesEngine(&rec))
 }
 
 func TestIncludesPoolSize(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		avg      float64
@@ -143,6 +152,7 @@ func TestIncludesPoolSize(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			f := Filters{MinPoolSize: tt.minPool}
 			rec := common.Recommendation{AverageInstancesUsedPerHour: tt.avg}
 			assert.Equal(t, tt.expected, f.IncludesPoolSize(&rec))
@@ -151,6 +161,7 @@ func TestIncludesPoolSize(t *testing.T) {
 }
 
 func TestApplyMinPoolSize_NilLogfSafeAndRecordsDrop(t *testing.T) {
+	t.Parallel()
 	f := Filters{MinPoolSize: 2.0}
 	recs := []common.Recommendation{
 		{Region: "us-east-1", ResourceType: "db.t3.micro", AverageInstancesUsedPerHour: 1.5},
@@ -166,6 +177,7 @@ func TestApplyMinPoolSize_NilLogfSafeAndRecordsDrop(t *testing.T) {
 }
 
 func TestApplyMinPoolSize_DisabledReturnsUnchangedNoDrops(t *testing.T) {
+	t.Parallel()
 	f := Filters{MinPoolSize: 0}
 	recs := []common.Recommendation{
 		{Region: "us-east-1", ResourceType: "db.t3.micro", AverageInstancesUsedPerHour: 0.1},
@@ -179,6 +191,7 @@ func TestApplyMinPoolSize_DisabledReturnsUnchangedNoDrops(t *testing.T) {
 }
 
 func TestApplyMinPoolSize_LogfReceivesExpectedLines(t *testing.T) {
+	t.Parallel()
 	f := Filters{MinPoolSize: 2.0}
 	recs := []common.Recommendation{
 		{Service: common.ServiceRDS, Region: "us-east-1", ResourceType: "db.t3.micro", AverageInstancesUsedPerHour: 1.5},
@@ -205,6 +218,7 @@ func TestApplyMinPoolSize_LogfReceivesExpectedLines(t *testing.T) {
 // providers/aws, which the pkg module cannot import. Callers compose the
 // portable checks with their own region handling.
 func TestDimensionPredicates_IgnoreAccount(t *testing.T) {
+	t.Parallel()
 	f := Filters{}
 	rec := common.Recommendation{
 		Region:       "us-east-1",

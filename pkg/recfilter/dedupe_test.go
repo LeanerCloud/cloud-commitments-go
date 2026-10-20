@@ -240,6 +240,7 @@ func (c *customDedupeClient) FilterRecommendationsForRecentCommitments(recs []co
 }
 
 func TestProviderDedupeDoesNotFallThrough(t *testing.T) {
+	t.Parallel()
 	for _, filterErr := range []error{nil, errors.New("provider inventory unusable")} {
 		c := &customDedupeClient{
 			fakeServiceClient: fakeServiceClient{commitments: []common.Commitment{
