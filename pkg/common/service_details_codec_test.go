@@ -228,6 +228,7 @@ func TestDecodeServiceDetailsFor_UnknownService(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(t, out)
 	assert.Contains(t, err.Error(), "not-a-real-service")
+	assert.ErrorIs(t, err, ErrUntypedServiceDetails)
 }
 
 // TestDecodeServiceDetailsFor_MemoryDB pins that MemoryDB recs, which the AWS

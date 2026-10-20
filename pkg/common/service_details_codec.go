@@ -35,6 +35,7 @@ package common //nolint:revive // pkg/common is the module's core domain package
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 )
 
@@ -42,6 +43,12 @@ import (
 // check below doesn't allocate on every call (this is the read-back step
 // of every purchase, so it's worth avoiding the string conversion that
 // would otherwise happen on the same path).
+// ErrUntypedServiceDetails is returned (wrapped) by DecodeServiceDetailsFor
+// when a payload exists for a service with no typed details. Read paths over
+// persisted rows can match it with errors.Is to surface or skip the row;
+// purchase paths should treat it as a hard failure.
+var ErrUntypedServiceDetails = errors.New("service details payload for a service with no typed details")
+
 var jsonNullBytes = []byte("null")
 
 // MarshalServiceDetails encodes a ServiceDetails value into a raw JSON
@@ -95,7 +102,7 @@ func DecodeServiceDetailsFor(service string, raw json.RawMessage) (ServiceDetail
 		if len(raw) == 0 || bytes.Equal(raw, jsonNullBytes) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("service details payload present for service %q, which has no typed details", service)
+		return nil, fmt.Errorf("service details payload present for service %q: %w", service, ErrUntypedServiceDetails)
 	}
 	if len(raw) == 0 || bytes.Equal(raw, jsonNullBytes) {
 		// Legacy row or genuinely absent payload — hand back a zero-
