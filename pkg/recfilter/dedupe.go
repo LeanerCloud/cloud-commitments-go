@@ -17,6 +17,15 @@ type recentCommitmentFilter interface {
 	FilterRecommendationsForRecentCommitments(recs []common.Recommendation, existing []common.Commitment) (passed, filtered []common.Recommendation, err error)
 }
 
+// coveringCommitmentLister is implemented by clients whose inventory
+// (GetExistingCommitments, where Account is the payer) leaves out commitments
+// billed elsewhere that still apply to the client's scope. The duplicate check
+// uses this wider list instead, so a recent covering commitment suppresses a
+// re-buy without being counted in a second owner's inventory.
+type coveringCommitmentLister interface {
+	GetCoveringCommitments(ctx context.Context) ([]common.Commitment, error)
+}
+
 // DuplicateChecker checks for existing commitments to avoid duplicates.
 type DuplicateChecker struct {
 	LookbackHours int // How many hours to look back for recent purchases
@@ -45,7 +54,7 @@ func NewDuplicateChecker(hours int) *DuplicateChecker {
 // Note: This is designed to prevent re-purchasing something you just bought, not to prevent
 // purchasing RIs in other accounts that happen to have the same characteristics.
 func (d *DuplicateChecker) AdjustRecommendationsForExisting(ctx context.Context, recs []common.Recommendation, client provider.ServiceClient) (passed, filtered []common.Recommendation, err error) {
-	existing, err := client.GetExistingCommitments(ctx)
+	existing, err := commitmentsForDedupe(ctx, client)
 	if err != nil {
 		return recs, nil, err
 	}
@@ -78,6 +87,15 @@ func (d *DuplicateChecker) AdjustRecommendationsForExisting(ctx context.Context,
 			len(passed), len(recs), len(filtered))
 	}
 	return passed, filtered, nil
+}
+
+// commitmentsForDedupe returns the commitments a recommendation is checked
+// against: the covering list when the client provides one, else its inventory.
+func commitmentsForDedupe(ctx context.Context, client provider.ServiceClient) ([]common.Commitment, error) {
+	if lister, ok := client.(coveringCommitmentLister); ok {
+		return lister.GetCoveringCommitments(ctx)
+	}
+	return client.GetExistingCommitments(ctx)
 }
 
 // filterRecentCommitments filters commitments to only recent purchases within the lookback window.
