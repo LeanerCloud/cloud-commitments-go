@@ -67,7 +67,13 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 	commitments := make([]common.Commitment, 0)
 	var marker *string
 
-	for {
+	for page := 0; ; page++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if page >= maxListPages {
+			return nil, fmt.Errorf("pagination cap reached after %d pages for Redshift reserved nodes (issue #561)", maxListPages)
+		}
 		input := &redshift.DescribeReservedNodesInput{
 			Marker:     marker,
 			MaxRecords: aws.Int32(100),
@@ -184,6 +190,12 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 // fields -- all matching must be done client-side. The cap is the primary guard
 // against indefinite pagination on sparse offerings.
 const maxOfferingPages = 5
+
+// maxListPages bounds the full-list scans (existing commitments and the
+// valid-resource-types sweep). At 100 per page this is far above any real
+// account; hitting it means a token cycle or runaway API, so the scan fails
+// loud instead of looping or returning a partial list (issue #561).
+const maxListPages = 50
 
 // findOfferingID finds the appropriate Reserved Node offering ID.
 // Redshift's DescribeReservedNodeOfferings has no server-side node-type or
@@ -443,7 +455,13 @@ func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	nodeTypes := make(map[string]bool)
 	var marker *string
 
-	for {
+	for page := 0; ; page++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if page >= maxListPages {
+			return nil, fmt.Errorf("pagination cap reached after %d pages for Redshift offerings (issue #561)", maxListPages)
+		}
 		input := &redshift.DescribeReservedNodeOfferingsInput{
 			MaxRecords: aws.Int32(100),
 			Marker:     marker,
