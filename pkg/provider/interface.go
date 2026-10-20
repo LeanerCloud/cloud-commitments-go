@@ -98,7 +98,8 @@ type ProviderConfig struct {
 	// module already depends on the AWS SDK core (see go.mod and the exchange
 	// package); the Azure and GCP slots are typed as `any` to keep this module
 	// free of Azure/GCP SDK dependencies. Providers type-assert to their
-	// expected concrete type and ignore mismatches:
+	// expected concrete type; on a mismatch they log a warning and fall back
+	// to ambient credentials:
 	//   - AzureTokenCredential: github.com/Azure/azure-sdk-for-go/sdk/azcore.TokenCredential
 	//   - GCPTokenSource:        golang.org/x/oauth2.TokenSource
 	// When unset (nil), providers fall back to ambient credentials

@@ -2,9 +2,8 @@
 // It wraps the EC2 GetReservedInstancesExchangeQuote and AcceptReservedInstancesExchangeQuote
 // APIs with input validation and spend-cap guardrails.
 //
-// The package is AWS-specific but lives in the shared pkg module on purpose:
-// the platform imports it at this path, so relocating it under providers/aws
-// would be a cross-repo breaking change (#13).
+// Kept in pkg because pkg/insurance and the platform import it at this path;
+// moving it under providers/aws would break both (#13).
 package exchange
 
 import (

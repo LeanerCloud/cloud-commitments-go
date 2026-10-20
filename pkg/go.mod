@@ -3,11 +3,9 @@ module github.com/LeanerCloud/cloud-commitments-go/pkg
 go 1.26.9
 
 // This module contains shared types, provider interfaces, and the exchange package.
-// The exchange package has AWS SDK dependencies (ec2, sts) for RI exchange operations.
-// Its placement here, rather than under providers/aws, is deliberate: the platform
-// imports github.com/LeanerCloud/cloud-commitments-go/pkg/exchange, so moving it
-// would break that import path for every consumer. Azure and GCP builds do not
-// compile it, so they never pull the EC2/STS SDKs. See #13.
+// The exchange package uses the AWS SDK v2 EC2 client stack for RI exchange operations.
+// Kept in pkg because pkg/insurance and the platform import pkg/exchange, so moving it
+// would break both import paths (#13). Azure and GCP builds do not compile it.
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.41.5
