@@ -99,7 +99,7 @@ func currencySDKRecommendation(t *testing.T, sp bool, payment, term string, code
 	got, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{
 		Service: service, Term: term, PaymentOption: payment, LookbackPeriod: "7d"})
 	wantCalls := 1
-	if sp && payment == "unknown" {
+	if payment == "unknown" {
 		wantCalls = 0
 	}
 	assert.Equal(t, wantCalls, fixture.calls)
@@ -132,7 +132,7 @@ func TestCommitmentCurrencySDKRequiredLegs(t *testing.T) {
 		} {
 			t.Run(fmt.Sprintf("sp=%t/%s", sp, tc.name), func(t *testing.T) {
 				got, err := currencySDKRecommendation(t, sp, tc.payment, "1yr", tc.code, tc.upfront, tc.recurring)
-				if sp && tc.payment == "unknown" {
+				if tc.payment == "unknown" {
 					require.Error(t, err)
 					assert.Empty(t, got)
 					return

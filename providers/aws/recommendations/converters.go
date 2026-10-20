@@ -29,18 +29,6 @@ func getServiceStringForCostExplorer(service common.ServiceType) string {
 	}
 }
 
-// convertPaymentOption converts payment option string to AWS type.
-//
-// Deprecated: this function silently returns the empty ("") PaymentOption for
-// unrecognized values, which Cost Explorer rejects with a validation error. It
-// is retained only for the legacy RI recommendation-fetch path in client.go
-// (owned by #865/#1075). New callers must use convertPaymentOptionE and
-// propagate the error. See open-questions/fix-aws-converters.md OQ-1.
-func convertPaymentOption(option string) types.PaymentOption {
-	v, _ := convertPaymentOptionE(option) //nolint:errcheck // intentional: documented deprecated silent-fallback shim for the legacy caller in client.go, tracked in open-questions/fix-aws-converters.md OQ-1 (#865/#1075); changing this now would alter that legacy path's behavior
-	return v
-}
-
 // convertPaymentOptionE converts a payment option string to the AWS Cost Explorer
 // typed enum, returning an error for any value not in the known set.
 // Known values: "all-upfront", "partial-upfront", "no-upfront".
@@ -71,18 +59,6 @@ func convertTermInYearsE(term string) (types.TermInYears, error) {
 	}
 }
 
-// convertTermInYears converts term string to AWS type.
-//
-// Deprecated: this function silently returns the empty ("") TermInYears for
-// unrecognized values, which Cost Explorer rejects with a validation error. It
-// is retained only for the legacy RI recommendation-fetch path in client.go
-// (owned by #865/#1075). New callers must use convertTermInYearsE and
-// propagate the error. See open-questions/fix-aws-converters.md OQ-1.
-func convertTermInYears(term string) types.TermInYears {
-	v, _ := convertTermInYearsE(term) //nolint:errcheck // intentional: documented deprecated silent-fallback shim, see convertPaymentOption above (OQ-1, #865/#1075)
-	return v
-}
-
 // convertLookbackPeriodE converts a lookback period string to the AWS Cost Explorer
 // typed enum, returning an error for any value not in the known set.
 // Known values: "7d", "7", "30d", "30", "60d", "60".
@@ -97,18 +73,6 @@ func convertLookbackPeriodE(period string) (types.LookbackPeriodInDays, error) {
 	default:
 		return "", fmt.Errorf("unsupported lookback period %q: must be one of 7d, 30d, 60d", period)
 	}
-}
-
-// convertLookbackPeriod converts lookback period string to AWS type.
-//
-// Deprecated: this function silently returns the empty ("") LookbackPeriodInDays
-// for unrecognized values, which Cost Explorer rejects with a validation error.
-// It is retained only for the legacy RI recommendation-fetch path in client.go
-// (owned by #865/#1075). New callers must use convertLookbackPeriodE and
-// propagate the error. See open-questions/fix-aws-converters.md OQ-1.
-func convertLookbackPeriod(period string) types.LookbackPeriodInDays {
-	v, _ := convertLookbackPeriodE(period) //nolint:errcheck // intentional: documented deprecated silent-fallback shim, see convertPaymentOption above (OQ-1, #865/#1075)
-	return v
 }
 
 // convertSavingsPlansPaymentOption converts payment option for Savings Plans,

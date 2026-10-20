@@ -150,11 +150,27 @@ func (c *Client) GetRecommendations(ctx context.Context, params *common.Recommen
 		return nil, err
 	}
 
+	// An unrecognized value would be omitted from the request and Cost Explorer
+	// would apply its own defaults, while the parser labels every rec with the
+	// requested strings. Fail loud instead of storing a mislabelled commitment.
+	paymentOption, err := convertPaymentOptionE(params.PaymentOption)
+	if err != nil {
+		return nil, fmt.Errorf("invalid RI recommendation params: %w", err)
+	}
+	termInYears, err := convertTermInYearsE(params.Term)
+	if err != nil {
+		return nil, fmt.Errorf("invalid RI recommendation params: %w", err)
+	}
+	lookback, err := convertLookbackPeriodE(params.LookbackPeriod)
+	if err != nil {
+		return nil, fmt.Errorf("invalid RI recommendation params: %w", err)
+	}
+
 	input := &costexplorer.GetReservationPurchaseRecommendationInput{
 		Service:              aws.String(getServiceStringForCostExplorer(params.Service)),
-		PaymentOption:        convertPaymentOption(params.PaymentOption),
-		TermInYears:          convertTermInYears(params.Term),
-		LookbackPeriodInDays: convertLookbackPeriod(params.LookbackPeriod),
+		PaymentOption:        paymentOption,
+		TermInYears:          termInYears,
+		LookbackPeriodInDays: lookback,
 		AccountScope:         scope,
 	}
 

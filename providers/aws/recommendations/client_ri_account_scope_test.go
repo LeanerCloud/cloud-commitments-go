@@ -59,3 +59,32 @@ func TestRIAccountScopeRejectsUnknown(t *testing.T) {
 	require.ErrorContains(t, err, "invalid RI account scope")
 	require.Empty(t, f.scopes)
 }
+
+// An unrecognized term, payment option or lookback must fail before any
+// Cost Explorer call: the zero-value enum is omitted from the request, CE
+// applies its own defaults, and the parser would label the recs with the
+// requested strings (for example "0yr" or an empty payment option).
+func TestRIRecommendationsRejectUnrecognizedParams(t *testing.T) {
+	t.Parallel()
+	valid := common.RecommendationParams{Service: common.ServiceRDS, Term: "1yr", PaymentOption: "no-upfront", LookbackPeriod: "7d"}
+	for _, tc := range []struct {
+		name   string
+		mutate func(*common.RecommendationParams)
+		want   string
+	}{
+		{"zero term", func(p *common.RecommendationParams) { p.Term = "0yr" }, `unsupported term "0yr"`},
+		{"empty term", func(p *common.RecommendationParams) { p.Term = "" }, "unsupported term"},
+		{"empty payment", func(p *common.RecommendationParams) { p.PaymentOption = "" }, "unsupported payment option"},
+		{"unknown lookback", func(p *common.RecommendationParams) { p.LookbackPeriod = "14d" }, `unsupported lookback period "14d"`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			f := &riScopeFixture{}
+			p := valid
+			tc.mutate(&p)
+			_, err := riScopeClient(f).GetRecommendations(context.Background(), &p)
+			require.ErrorContains(t, err, tc.want)
+			require.Empty(t, f.scopes, "no Cost Explorer request may be sent")
+		})
+	}
+}

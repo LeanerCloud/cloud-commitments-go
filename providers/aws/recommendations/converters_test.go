@@ -5,6 +5,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
@@ -118,7 +119,8 @@ func TestConvertPaymentOption(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := convertPaymentOption(tt.option)
+			result, err := convertPaymentOptionE(tt.option)
+			require.NoError(t, err)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -270,7 +272,8 @@ func TestConvertTermInYears(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := convertTermInYears(tt.term)
+			result, err := convertTermInYearsE(tt.term)
+			require.NoError(t, err)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -322,7 +325,8 @@ func TestConvertLookbackPeriod(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := convertLookbackPeriod(tt.period)
+			result, err := convertLookbackPeriodE(tt.period)
+			require.NoError(t, err)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
