@@ -69,7 +69,7 @@ func TestRootCUDPublicPurchasePath(t *testing.T) {
 					svc := &MockCommitmentsService{operation: &MockOperation{}}
 					if existingKind != "" {
 						cud := recentCUD()
-						cud.Type = stringPtr(existingKind)
+						cud.Type = new(existingKind)
 						svc.commitments = []*computepb.Commitment{cud}
 					}
 					client.SetCommitmentsService(svc)
@@ -121,9 +121,9 @@ func TestCUDStoredTypePublicPath(t *testing.T) {
 					client, err := NewClient(ctx, rec.Account, rec.Region)
 					require.NoError(t, err)
 					cud := recentCUD()
-					cud.Type = stringPtr("MEMORY_OPTIMIZED_X4_960_12T")
+					cud.Type = new("MEMORY_OPTIMIZED_X4_960_12T")
 					if sameBucket && valid {
-						cud.Type = stringPtr(want)
+						cud.Type = new(want)
 					}
 					service := &MockCommitmentsService{operation: &MockOperation{}, commitments: []*computepb.Commitment{cud}}
 					client.SetCommitmentsService(service)
@@ -179,11 +179,11 @@ func TestCUDTypeFallbackWithAbsentDetails(t *testing.T) {
 
 func recentCUD() *computepb.Commitment {
 	return &computepb.Commitment{
-		Name: stringPtr("recent-cud"), Type: stringPtr("GENERAL_PURPOSE_N2"),
-		Status: stringPtr("ACTIVE"), StartTimestamp: stringPtr(time.Now().Add(-time.Hour).Format(time.RFC3339)),
+		Name: new("recent-cud"), Type: new("GENERAL_PURPOSE_N2"),
+		Status: new("ACTIVE"), StartTimestamp: new(time.Now().Add(-time.Hour).Format(time.RFC3339)),
 		Resources: []*computepb.ResourceCommitment{
-			{Type: stringPtr("MEMORY"), Amount: int64Ptr(65536)},
-			{Type: stringPtr("VCPU"), Amount: int64Ptr(16)},
+			{Type: new("MEMORY"), Amount: new(int64(65536))},
+			{Type: new("VCPU"), Amount: new(int64(16))},
 		},
 	}
 }
@@ -211,25 +211,25 @@ func TestCUDDuplicatePurchasePath(t *testing.T) {
 		}, 0},
 		{"different family", func(c *computepb.Commitment, r *common.Recommendation) { r.ResourceType = "c3-standard-32" }, 1},
 		{"queued future", func(c *computepb.Commitment, r *common.Recommendation) {
-			c.Status = stringPtr("NOT_YET_ACTIVE")
-			c.StartTimestamp = stringPtr(time.Now().Add(time.Hour).Format(time.RFC3339))
+			c.Status = new("NOT_YET_ACTIVE")
+			c.StartTimestamp = new(time.Now().Add(time.Hour).Format(time.RFC3339))
 		}, 0},
-		{"creating", func(c *computepb.Commitment, r *common.Recommendation) { c.Status = stringPtr("CREATING") }, 0},
-		{"unknown state", func(c *computepb.Commitment, r *common.Recommendation) { c.Status = stringPtr("FUTURE_STATE") }, 0},
-		{"expired", func(c *computepb.Commitment, r *common.Recommendation) { c.Status = stringPtr("EXPIRED") }, 1},
+		{"creating", func(c *computepb.Commitment, r *common.Recommendation) { c.Status = new("CREATING") }, 0},
+		{"unknown state", func(c *computepb.Commitment, r *common.Recommendation) { c.Status = new("FUTURE_STATE") }, 0},
+		{"expired", func(c *computepb.Commitment, r *common.Recommendation) { c.Status = new("EXPIRED") }, 1},
 		{"canceled", func(c *computepb.Commitment, r *common.Recommendation) {
-			c.Status = stringPtr(computepb.Commitment_CANCELLED.String()) //nolint:misspell // SDK identifier
+			c.Status = new(computepb.Commitment_CANCELLED.String()) //nolint:misspell // SDK identifier
 		}, 1},
 		{"stale advice outside window", func(c *computepb.Commitment, r *common.Recommendation) {
-			c.StartTimestamp = stringPtr(time.Now().Add(-48 * time.Hour).Format(time.RFC3339))
+			c.StartTimestamp = new(time.Now().Add(-48 * time.Hour).Format(time.RFC3339))
 			r.Timestamp = time.Now().Add(-72 * time.Hour)
 		}, 1},
 		{"legacy custom N1", func(c *computepb.Commitment, r *common.Recommendation) {
-			c.Type = stringPtr("GENERAL_PURPOSE")
+			c.Type = new("GENERAL_PURPOSE")
 			r.ResourceType = "custom-32-262144"
 		}, 0},
 		{"M1 M2 shared pool", func(c *computepb.Commitment, r *common.Recommendation) {
-			c.Type = stringPtr("MEMORY_OPTIMIZED")
+			c.Type = new("MEMORY_OPTIMIZED")
 			r.ResourceType = "m2-ultramem-208"
 		}, 0},
 	} {
@@ -267,16 +267,16 @@ func TestCUDInventoryRejectsUnusableMetadata(t *testing.T) {
 	for name, mutate := range map[string]func(*computepb.Commitment){
 		"missing name":       func(c *computepb.Commitment) { c.Name = nil },
 		"missing start":      func(c *computepb.Commitment) { c.StartTimestamp = nil },
-		"invalid start":      func(c *computepb.Commitment) { c.StartTimestamp = stringPtr("yesterday") },
-		"unknown family":     func(c *computepb.Commitment) { c.Type = stringPtr("FUTURE_FAMILY") },
-		"undefined family":   func(c *computepb.Commitment) { c.Type = stringPtr("UNDEFINED_TYPE") },
-		"unknown resource":   func(c *computepb.Commitment) { c.Resources[0].Type = stringPtr("FUTURE_RESOURCE") },
-		"undefined resource": func(c *computepb.Commitment) { c.Resources[0].Type = stringPtr("UNDEFINED_TYPE") },
+		"invalid start":      func(c *computepb.Commitment) { c.StartTimestamp = new("yesterday") },
+		"unknown family":     func(c *computepb.Commitment) { c.Type = new("FUTURE_FAMILY") },
+		"undefined family":   func(c *computepb.Commitment) { c.Type = new("UNDEFINED_TYPE") },
+		"unknown resource":   func(c *computepb.Commitment) { c.Resources[0].Type = new("FUTURE_RESOURCE") },
+		"undefined resource": func(c *computepb.Commitment) { c.Resources[0].Type = new("UNDEFINED_TYPE") },
 		"nil resource type":  func(c *computepb.Commitment) { c.Resources[0].Type = nil },
 		"nil memory amount":  func(c *computepb.Commitment) { c.Resources[0].Amount = nil },
 		"nil vcpu amount":    func(c *computepb.Commitment) { c.Resources[1].Amount = nil },
-		"negative amount":    func(c *computepb.Commitment) { c.Resources[1].Amount = int64Ptr(-1) },
-		"zero amount":        func(c *computepb.Commitment) { c.Resources[1].Amount = int64Ptr(0) },
+		"negative amount":    func(c *computepb.Commitment) { c.Resources[1].Amount = new(int64(-1)) },
+		"zero amount":        func(c *computepb.Commitment) { c.Resources[1].Amount = new(int64(0)) },
 		"missing vcpu":       func(c *computepb.Commitment) { c.Resources = c.Resources[:1] },
 		"nil resource":       func(c *computepb.Commitment) { c.Resources[0] = nil },
 		"duplicate vcpu":     func(c *computepb.Commitment) { c.Resources = append(c.Resources, c.Resources[1]) },

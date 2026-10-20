@@ -844,14 +844,14 @@ func (c *Client) buildInsertRequest(rec common.Recommendation, opts common.Purch
 
 	// This client supports VCPU+MEMORY commitments; memory Amount is in MB.
 	commitment := &computepb.Commitment{
-		Name:        stringPtr(commitmentName),
-		Plan:        stringPtr(plan),
-		Type:        stringPtr(commitType.String()),
-		Description: stringPtr(description),
+		Name:        new(commitmentName),
+		Plan:        new(plan),
+		Type:        new(commitType.String()),
+		Description: new(description),
 		Resources: []*computepb.ResourceCommitment{
 			{
-				Type:   stringPtr(computepb.ResourceCommitment_VCPU.String()),
-				Amount: int64Ptr(int64(rec.Count)),
+				Type:   new(computepb.ResourceCommitment_VCPU.String()),
+				Amount: new(int64(rec.Count)),
 			},
 			{
 				// GCP's ResourceCommitment.Type enum is VCPU/MEMORY/LOCAL_SSD/
@@ -859,8 +859,8 @@ func (c *Client) buildInsertRequest(rec common.Recommendation, opts common.Purch
 				// MB). Sending "MEMORY_MB" is an invalid enum value and GCP rejects
 				// the commitments.insert, failing the purchase (issue #1022). Taking
 				// the wire value from the SDK enum keeps that compiler-checked.
-				Type:   stringPtr(computepb.ResourceCommitment_MEMORY.String()),
-				Amount: int64Ptr(memMB),
+				Type:   new(computepb.ResourceCommitment_MEMORY.String()),
+				Amount: new(memMB),
 			},
 		},
 	}
@@ -875,7 +875,7 @@ func (c *Client) buildInsertRequest(rec common.Recommendation, opts common.Purch
 		return nil, "", fmt.Errorf("derive GCP request ID: %w", err)
 	}
 	if requestID != "" {
-		insertReq.RequestId = stringPtr(requestID)
+		insertReq.RequestId = new(requestID)
 		log.Printf("GCP CUD purchase using idempotent request ID for token %s (commitment %s); a re-drive will not double-purchase (issue #654)",
 			common.MaskToken(opts.IdempotencyToken), commitmentName)
 	}
@@ -1459,12 +1459,3 @@ func idempotentCommitmentName(token string) (string, error) {
 }
 
 var idempotencyTokenPattern = regexp.MustCompile(`^[0-9a-f]+$`)
-
-// Helper functions.
-func stringPtr(s string) *string {
-	return &s
-}
-
-func int64Ptr(i int64) *int64 {
-	return &i
-}

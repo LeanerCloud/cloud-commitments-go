@@ -376,22 +376,6 @@ func TestComputePricingStructure(t *testing.T) {
 	assert.Equal(t, 50.0, pricing.SavingsPercentage)
 }
 
-func TestStringPtr(t *testing.T) {
-	t.Parallel()
-	s := "test"
-	ptr := stringPtr(s)
-	require.NotNil(t, ptr)
-	assert.Equal(t, "test", *ptr)
-}
-
-func TestInt64Ptr(t *testing.T) {
-	t.Parallel()
-	i := int64(42)
-	ptr := int64Ptr(i)
-	require.NotNil(t, ptr)
-	assert.Equal(t, int64(42), *ptr)
-}
-
 func TestComputeEngineClient_ValidateOffering_NoCredentials(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -817,13 +801,13 @@ func TestComputeEngineClient_PurchaseCommitment_ReDriveAlreadyExists(t *testing.
 	}{
 		{name: "matching commitment is the earlier purchase", opts: tokenOpts, getStatus: http.StatusOK, wantGets: 1},
 		{name: "different vCPU amount stays a failure", opts: tokenOpts, getStatus: http.StatusOK, wantGets: 1,
-			existing:  func(c *computepb.Commitment) { c.Resources[0].Amount = int64Ptr(4) },
+			existing:  func(c *computepb.Commitment) { c.Resources[0].Amount = new(int64(4)) },
 			wantErrIs: errExistingCommitmentMismatch},
 		{name: "different plan stays a failure", opts: tokenOpts, getStatus: http.StatusOK, wantGets: 1,
-			existing:  func(c *computepb.Commitment) { c.Plan = stringPtr(computepb.Commitment_TWELVE_MONTH.String()) },
+			existing:  func(c *computepb.Commitment) { c.Plan = new(computepb.Commitment_TWELVE_MONTH.String()) },
 			wantErrIs: errExistingCommitmentMismatch},
 		{name: "different type stays a failure", opts: tokenOpts, getStatus: http.StatusOK, wantGets: 1,
-			existing:  func(c *computepb.Commitment) { c.Type = stringPtr(computepb.Commitment_COMPUTE_OPTIMIZED.String()) },
+			existing:  func(c *computepb.Commitment) { c.Type = new(computepb.Commitment_COMPUTE_OPTIMIZED.String()) },
 			wantErrIs: errExistingCommitmentMismatch},
 		{name: "non-409 insert error 400 is not adopted", opts: tokenOpts, insertStatus: http.StatusBadRequest,
 			getStatus: http.StatusOK, wantErr: "insert rejected 400"},
@@ -831,11 +815,11 @@ func TestComputeEngineClient_PurchaseCommitment_ReDriveAlreadyExists(t *testing.
 			getStatus: http.StatusOK, wantErr: "insert rejected 500"},
 		{name: "extra resource stays a failure", opts: tokenOpts, getStatus: http.StatusOK, wantGets: 1,
 			existing: func(c *computepb.Commitment) {
-				c.Resources = append(c.Resources, &computepb.ResourceCommitment{Type: stringPtr("LOCAL_SSD"), Amount: int64Ptr(375)})
+				c.Resources = append(c.Resources, &computepb.ResourceCommitment{Type: new("LOCAL_SSD"), Amount: new(int64(375))})
 			},
 			wantErrIs: errExistingCommitmentMismatch},
 		{name: "matching commitment still CREATING is adopted", opts: tokenOpts, getStatus: http.StatusOK, wantGets: 1,
-			existing: func(c *computepb.Commitment) { c.Status = stringPtr(computepb.Commitment_CREATING.String()) }},
+			existing: func(c *computepb.Commitment) { c.Status = new(computepb.Commitment_CREATING.String()) }},
 		{name: "unreadable existing commitment stays a failure", opts: tokenOpts, getStatus: http.StatusForbidden, wantGets: 1,
 			wantErr: "could not be read to confirm"},
 		{name: "no token keeps the conflict a failure", opts: common.PurchaseOptions{}, getStatus: http.StatusOK,
@@ -847,7 +831,7 @@ func TestComputeEngineClient_PurchaseCommitment_ReDriveAlreadyExists(t *testing.
 			insertReq, name, err := planner.buildInsertRequest(rec, tt.opts)
 			require.NoError(t, err)
 			existing := proto.Clone(insertReq.GetCommitmentResource()).(*computepb.Commitment)
-			existing.Status = stringPtr(computepb.Commitment_NOT_YET_ACTIVE.String())
+			existing.Status = new(computepb.Commitment_NOT_YET_ACTIVE.String())
 			if tt.existing != nil {
 				tt.existing(existing)
 			}
