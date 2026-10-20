@@ -26,12 +26,16 @@ const (
 // ComputePricing is the price of a commitment's resources, for one term.
 type ComputePricing struct {
 	Currency string
+
 	// HourlyRate is the committed price per hour for the whole resource set.
 	HourlyRate float64
+
 	// CommitmentPrice is the committed price over the whole term.
 	CommitmentPrice float64
+
 	// OnDemandPrice is the on-demand price of the same resources over the term.
-	OnDemandPrice     float64
+	OnDemandPrice float64
+
 	SavingsPercentage float64
 }
 

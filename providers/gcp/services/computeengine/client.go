@@ -264,13 +264,11 @@ type Client struct {
 	machineTypesService MachineTypesService
 	billingService      BillingService
 	recommenderClient   RecommenderClient
-
-	projectID  string
-	region     string
-	clientOpts []option.ClientOption
-	skuCache   []*cloudbilling.Sku
-
-	skuMu sync.Mutex
+	projectID           string
+	region              string
+	clientOpts          []option.ClientOption
+	skuCache            []*cloudbilling.Sku
+	skuMu               sync.Mutex
 }
 
 // NewClient creates a new GCP Compute Engine client.
