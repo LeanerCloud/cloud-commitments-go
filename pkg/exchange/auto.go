@@ -182,32 +182,53 @@ type SkippedRecommendation struct {
 
 const staleProcessingThreshold = 15 * time.Minute
 
+// validateMode fails closed: an unknown or empty mode must never fall through
+// to auto execution.
+func validateMode(mode string) error {
+	switch Mode(mode) {
+	case ExchangeModeAuto, ExchangeModeManual:
+		return nil
+	default:
+		return fmt.Errorf("invalid exchange mode %q: must be %q or %q",
+			mode, ExchangeModeAuto, ExchangeModeManual)
+	}
+}
+
+// cancelStalePending cancels stale pending records with origin-scoped
+// cancellation. DryRun skips ALL mutations including cancellation. Non-DryRun
+// cancels only pending records that share this run's origin so the standalone
+// task does not wipe out ladder-linked pendings and vice versa.
+// Race condition note: if a user clicks approve at 5h59m while this new run
+// fires and cancels pending records, the TransitionRIExchangeStatus atomic
+// WHERE clause prevents the exchange from executing (record already canceled
+// -> returns nil -> handler returns 409).
+func cancelStalePending(ctx context.Context, params RunAutoExchangeParams) {
+	if params.DryRun {
+		return
+	}
+	origin := common.ExchangeOriginStandalone
+	if params.LadderRunID != nil {
+		origin = common.ExchangeOriginLadder
+	}
+	canceled, err := params.Store.CancelPendingExchangesByOrigin(ctx, origin)
+	if err != nil {
+		logging.Warnf("failed to cancel pending exchanges: %v", err)
+	} else if canceled > 0 {
+		logging.Infof("canceled %d stale pending exchange records (origin=%s)", canceled, origin)
+	}
+}
+
 // RunAutoExchange orchestrates automated RI exchanges.
 func RunAutoExchange(ctx context.Context, params RunAutoExchangeParams) (*AutoExchangeResult, error) {
-	result := &AutoExchangeResult{Mode: params.Config.Mode}
-
-	// 1. Cancel stale pending records with origin-scoped cancellation.
-	// DryRun skips ALL mutations including cancellation (no state is changed).
-	// Non-DryRun: cancel only pending records that share this run's origin so
-	// the standalone task does not wipe out ladder-linked pendings and vice versa.
-	// Race condition note: if a user clicks approve at 5h59m while this new run
-	// fires and cancels pending records, the TransitionRIExchangeStatus atomic
-	// WHERE clause prevents the exchange from executing (record already canceled
-	// → returns nil → handler returns 409).
-	if !params.DryRun {
-		origin := common.ExchangeOriginStandalone
-		if params.LadderRunID != nil {
-			origin = common.ExchangeOriginLadder
-		}
-		canceled, err := params.Store.CancelPendingExchangesByOrigin(ctx, origin)
-		if err != nil {
-			logging.Warnf("failed to cancel pending exchanges: %v", err)
-		} else if canceled > 0 {
-			logging.Infof("canceled %d stale pending exchange records (origin=%s)", canceled, origin)
-		}
+	if err := validateMode(params.Config.Mode); err != nil {
+		return nil, err
 	}
 
-	// 2. Log warning for stale processing records
+	result := &AutoExchangeResult{Mode: params.Config.Mode}
+
+	cancelStalePending(ctx, params)
+
+	// Log warning for stale processing records
 	stale, err := params.Store.GetStaleProcessingExchanges(ctx, staleProcessingThreshold)
 	if err != nil {
 		logging.Warnf("failed to check stale processing exchanges: %v", err)
@@ -277,7 +298,7 @@ func processRecommendation(ctx context.Context, params RunAutoExchangeParams, re
 
 	paymentDueStr := quote.PaymentDueUSD.FloatString(6)
 
-	if params.Config.Mode == "manual" {
+	if Mode(params.Config.Mode) == ExchangeModeManual {
 		outcome := processManualExchange(ctx, params, rec, offeringID, paymentDueStr)
 		if outcome.Error != "" {
 			result.Failed = append(result.Failed, outcome)

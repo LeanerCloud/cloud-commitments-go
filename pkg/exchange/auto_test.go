@@ -1128,3 +1128,24 @@ func TestResolveOffering_ForwardsAvailabilityZone(t *testing.T) {
 		Scope: "Availability Zone", AvailabilityZone: "us-east-1b", Duration: 31536000,
 	}, got)
 }
+
+func TestRunAutoExchange_InvalidMode_FailsClosed(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"", "Auto", "autoo", "manual ", "dry-run"} {
+		t.Run("mode="+mode, func(t *testing.T) {
+			t.Parallel()
+			store := &mockExchangeStore{dailySpend: "0"}
+			client := &mockExchangeClient{quoteResult: defaultQuote(), executeResult: "exch-1"}
+			params := defaultParams(store, client)
+			params.Config.Mode = mode
+
+			result, err := RunAutoExchange(context.Background(), params)
+			require.Error(t, err)
+			assert.Nil(t, result)
+			assert.Contains(t, err.Error(), "invalid exchange mode")
+			assert.Zero(t, client.executeCalls)
+			assert.Empty(t, store.savedRecords)
+			assert.Nil(t, store.cancelByOriginLast)
+		})
+	}
+}
