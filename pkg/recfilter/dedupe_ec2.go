@@ -56,6 +56,13 @@ type ec2Entry struct {
 	platform, tenancy string
 	scope             scopeState
 	count, wildcards  int
+	// flexUnits is the quarter normalized units of one node when the entry is a
+	// regional Linux/Unix default-tenancy reservation of a known size, which pays
+	// for any size of its family (see ec2FlexUnits); 0 keeps the entry exact-type.
+	flexUnits int
+	// flexLeft is the unspent budget in the same units and the single source of truth
+	// for a flex entry; count is unused for it.
+	flexLeft int
 }
 
 func (e *ec2Entry) covers(platform, tenancy string, scope scopeState) bool {
@@ -69,8 +76,10 @@ func (e *ec2Entry) covers(platform, tenancy string, scope scopeState) bool {
 // still suppresses, as for every other service.
 type ec2Dedupe struct {
 	entries map[string][]*ec2Entry
-	warned  map[string]bool
-	logf    Logf
+	// families lists the size-flexible entries by family and region, in input order.
+	families map[string][]*ec2Entry
+	warned   map[string]bool
+	logf     Logf
 }
 
 func isAWSCompute(p common.ProviderType, s common.ServiceType) bool {
@@ -82,7 +91,7 @@ func ec2BaseKey(resourceType, region string) string {
 }
 
 func newEC2Dedupe(commitments []common.Commitment, logf Logf) *ec2Dedupe {
-	d := &ec2Dedupe{entries: map[string][]*ec2Entry{}, warned: map[string]bool{}, logf: logf}
+	d := &ec2Dedupe{entries: map[string][]*ec2Entry{}, families: map[string][]*ec2Entry{}, warned: map[string]bool{}, logf: logf}
 	for i := range commitments {
 		c := &commitments[i]
 		if !isAWSCompute(c.Provider, c.Service) {
@@ -93,11 +102,33 @@ func newEC2Dedupe(commitments []common.Commitment, logf Logf) *ec2Dedupe {
 		e.wildcards = wildcardCount(e)
 		key := ec2BaseKey(c.ResourceType, c.Region)
 		d.entries[key] = append(d.entries[key], e)
+		if family, units, ok := ec2FlexKey(c.ResourceType, c.Region, platform, tenancy); ok && scope.kind == scopeRegionalKind {
+			e.flexUnits, e.flexLeft = units, max(e.count, 0)*units
+			d.families[family] = append(d.families[family], e)
+		}
 	}
 	for _, list := range d.entries {
 		sort.SliceStable(list, func(i, j int) bool { return list[i].wildcards < list[j].wildcards })
 	}
 	return d
+}
+
+// nodesLeft is the whole nodes of the entry's own size still unspent. A flex entry whose
+// leftover budget is below one node has none, so a partly spent node is never credited twice.
+func (e *ec2Entry) nodesLeft() int {
+	if e.flexUnits > 0 {
+		return e.flexLeft / e.flexUnits
+	}
+	return e.count
+}
+
+func (e *ec2Entry) spend(nodes int) int {
+	if e.flexUnits > 0 {
+		e.flexLeft -= nodes * e.flexUnits
+	} else {
+		e.count -= nodes
+	}
+	return nodes
 }
 
 func wildcardCount(e *ec2Entry) int {
@@ -174,13 +205,12 @@ func (d *ec2Dedupe) adjust(rec common.Recommendation) (common.Recommendation, er
 		if remaining <= 0 {
 			break
 		}
-		if e.count <= 0 || !e.covers(platform, tenancy, scope) {
+		if e.nodesLeft() <= 0 || !e.covers(platform, tenancy, scope) {
 			continue
 		}
-		used := min(e.count, remaining)
-		e.count -= used
-		remaining -= used
+		remaining -= e.spend(min(e.nodesLeft(), remaining))
 	}
+	remaining = d.consumeFamily(rec, platform, tenancy, remaining)
 	if remaining <= 0 {
 		d.logf.printf("    [DuplicateChecker] SKIP %s: recent commitments cover recommended %d", ec2BaseKey(rec.ResourceType, rec.Region), rec.Count)
 		return common.Recommendation{Count: 0}, nil

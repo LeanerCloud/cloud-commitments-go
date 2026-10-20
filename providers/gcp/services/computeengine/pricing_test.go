@@ -69,7 +69,7 @@ func n2AmericasSKUs() []*cloudbilling.Sku {
 func TestGetComputePricing_N2StandardFromLiveShapedCatalog(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "p", "us-central1")
+	client, _ := NewClient("p", "us-central1")
 	client.SetBillingService(&MockBillingService{skus: &cloudbilling.ListSkusResponse{Skus: n2AmericasSKUs()}})
 	res := computeResources{vcpus: 8, memoryGiB: 32}
 
@@ -152,7 +152,7 @@ func TestEnrichRecWithPricing_MonthlyFiguresPerTerm(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
-			client, _ := NewClient(ctx, "p", "us-central1")
+			client, _ := NewClient("p", "us-central1")
 			client.SetBillingService(&MockBillingService{skus: &cloudbilling.ListSkusResponse{Skus: n2AmericasSKUs()}})
 			rec := newRec("n2-standard-8", 8, 32)
 			rec.Term = tc.term
@@ -174,7 +174,7 @@ func TestEnrichRecWithPricing_InvalidCurrency(t *testing.T) {
 		t.Run("commitment currency "+currency, func(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
-			client, err := NewClient(ctx, "test-project", "us-central1")
+			client, err := NewClient("test-project", "us-central1")
 			require.NoError(t, err)
 			skus := n2AmericasSKUs()
 			skus[2].PricingInfo[0].PricingExpression.TieredRates[0].UnitPrice.CurrencyCode = currency

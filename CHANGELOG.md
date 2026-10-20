@@ -127,6 +127,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Changed
 
 - **`gcp`:** region-lookup permission errors are now classified by type only (googleapi 403 or gRPC `PermissionDenied`) through the shared `IsPermissionError`. gRPC `PermissionDenied` is now skipped with a warning like a 403, and an untyped error whose text merely contains "403" and "permission" now propagates instead of being skipped (#6).
+- **BREAKING `gcp`: stored contexts removed (#6).** `computeengine.NewClient`
+  no longer takes a `context.Context` (it was stored and never read), and
+  `computeengine.BillingService.ListSKUs` now takes `ctx` as its first
+  parameter, so custom implementations must add it. `Provider` and
+  `RecommendationsClientAdapter` no longer store a context (unexported
+  fields; no API change). Downstream call sites to update: mcp
+  `tools/gcp_computeengine_cud_safeguards_test.go:76,125`,
+  `tools/search_dedupe_test.go:344`,
+  `cmd/cudly-mcp/gcp_purchase_protocol_test.go:102`; platform
+  `internal/purchase/gcp_history_cost_test.go:48`. No cli, mcp or platform
+  code references `BillingService`, `ListSKUs` or a `gcp.Provider` literal.
 - **`azure`:** managedredis and synapse reservations now get the same generated display name as the other services (`redis-<region>-<sku>-<n>x-<term>-<payment>-...` and `synapse-...`) instead of the fixed `Azure Cache for Redis Reservation - <sku>` / `Synapse SQL Pool Reservation - <sku>`. This also removes the stray space before the idempotency marker on managedredis. Idempotency lookup keys on the tag or the marker suffix, not the base name (#538).
 - **BREAKING `gcp`: Cloud SQL and Memorystore no longer return CUD
   recommendations (#294).** They came from the project-scoped
@@ -190,6 +201,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **exchange:** `RunAutoExchange` now stops and returns the error when cancelling stale pending exchanges fails, instead of logging it and creating new exchanges while a stale pending one may still be approvable.
 - **exchange:** `RunAutoExchange` now rejects any mode other than `auto` or `manual` (including empty) with an error before any store or exchange call; previously every non-`manual` value auto-executed exchanges.
 - **aws/ec2:** `GetOfferingDetails` always priced the convertible offering and its doc comment wrongly said the class does not change prices. Added `GetOfferingDetailsForClass` to price the class the purchase uses; `GetOfferingDetails` keeps the convertible default (#570).
+- **A Multi-AZ size-flexible RDS reservation now covers Single-AZ demand in the
+  duplicate-purchase guard** (#323): it counts as twice the size units of its
+  family, so a recent Multi-AZ db.r6g.large PostgreSQL reservation suppresses
+  two Single-AZ db.r6g.large recommendations. Single-AZ never covers Multi-AZ,
+  and exact-class engines such as SQL Server keep their key.
+- **Size-flexible RDS reservations now cover Single-AZ and Multi-AZ demand in
+  the duplicate-purchase guard** (#323): Single-AZ and Multi-AZ share one
+  family budget in size units, and a Multi-AZ node costs twice the units. A
+  recent Multi-AZ db.r6g.large PostgreSQL reservation suppresses two Single-AZ
+  db.r6g.large recommendations, and a Single-AZ db.r6g.xlarge suppresses one
+  Multi-AZ db.r6g.large. Exact-class engines such as SQL Server keep their key.
+- **The duplicate-purchase guard now treats regional Linux/Unix default-tenancy
+  EC2 reservations as size-flexible** (#323): a recent m5.xlarge reservation
+  suppresses two m5.large recommendations in the same region, counted in
+  normalized units. Zonal, Windows/RHEL/SUSE, dedicated, wildcard and
+  unknown-size entries stay exact-type, as do the families AWS excludes from
+  size flexibility (G4ad, G4dn, G5, G5g, G6, G6e, G6f, Gr6, Gr6f, hpc7a, P5,
+  Inf1, Inf2, u7i-6tb, u7i-8tb). A partly spent reservation is never credited
+  as a whole node.
 - **Unbounded AWS pagination loops now stop at a page cap and honour
   cancellation** (#561): the existing-commitment and valid-resource-type scans
   for ElastiCache, RDS, OpenSearch, Redshift and EC2 check the context before

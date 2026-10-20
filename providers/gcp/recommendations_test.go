@@ -95,7 +95,6 @@ func TestRecommendationsClientAdapter_GetRecommendationsForService(t *testing.T)
 	t.Parallel()
 	ctx := context.Background()
 	adapter := &RecommendationsClientAdapter{
-		ctx:       ctx,
 		projectID: "test-project",
 	}
 
@@ -118,7 +117,6 @@ func TestRecommendationsClientAdapter_GetAllRecommendations(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	adapter := &RecommendationsClientAdapter{
-		ctx:       ctx,
 		projectID: "test-project",
 	}
 
@@ -134,13 +132,10 @@ func TestRecommendationsClientAdapter_GetAllRecommendations(t *testing.T) {
 
 func TestRecommendationsClientAdapter_Fields(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
 	adapter := &RecommendationsClientAdapter{
-		ctx:       ctx,
 		projectID: "my-gcp-project",
 	}
 
-	assert.Equal(t, ctx, adapter.ctx)
 	assert.Equal(t, "my-gcp-project", adapter.projectID)
 	assert.Nil(t, adapter.clientOpts)
 }
@@ -164,7 +159,6 @@ func TestRecommendationsClientAdapter_Fields(t *testing.T) {
 func TestRecommendationsClientAdapter_GetRecommendations_PropagatesContextCancellation(t *testing.T) {
 	t.Parallel()
 	adapter := &RecommendationsClientAdapter{
-		ctx:       context.Background(),
 		projectID: "test-project",
 	}
 

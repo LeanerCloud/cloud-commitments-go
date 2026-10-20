@@ -217,7 +217,8 @@ func buildExistingCommitmentsMap(commitments []common.Commitment, logf Logf) map
 		normalizedDeployment := common.NormalizeDeploymentName(c.Deployment)
 		resourceType, nodeUnits := c.ResourceType, 1
 		if family, units, ok := rdsFlexKey(c.Provider, c.Service, normalizedEngine, c.ResourceType); ok {
-			resourceType, nodeUnits = family, units
+			resourceType, nodeUnits = family, units*rdsDeploymentFactor(normalizedDeployment)
+			normalizedDeployment = rdsBudgetDeployment(normalizedDeployment)
 		}
 		key := dedupeKey(resourceType, c.Region, normalizedEngine, normalizedDeployment)
 		existingMap[key] += c.Count * nodeUnits
@@ -268,7 +269,8 @@ func adjustSingleRecommendation(rec common.Recommendation, existingMap map[strin
 	covers := []elastiCacheCover{{engine, 1, 1}}
 	if family, units, ok := rdsFlexKey(rec.Provider, rec.Service, engine, rec.ResourceType); ok {
 		// A size-flexible budget holds units: one node of this size spends units of them.
-		resourceType, covers = family, []elastiCacheCover{{engine, 1, units}}
+		resourceType, covers = family, []elastiCacheCover{{engine, 1, units * rdsDeploymentFactor(deployment)}}
+		deployment = rdsBudgetDeployment(deployment)
 	}
 	key := dedupeKey(resourceType, rec.Region, engine, deployment)
 	if isElastiCache {
@@ -284,7 +286,6 @@ func adjustSingleRecommendation(rec common.Recommendation, existingMap map[strin
 			existingMap[candidate] -= spent
 		}
 	}
-
 	if remaining <= 0 {
 		logf.printf("    [DuplicateChecker] SKIP %s: recent commitments cover recommended %d", key, rec.Count)
 		return common.Recommendation{Count: 0}, nil

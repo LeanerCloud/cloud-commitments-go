@@ -49,7 +49,7 @@ func billingAgainst(t *testing.T, srv *httptest.Server) *realBillingService {
 	t.Helper()
 	api, err := cloudbilling.NewService(context.Background(), option.WithEndpoint(srv.URL), option.WithoutAuthentication())
 	require.NoError(t, err)
-	return &realBillingService{ctx: context.Background(), service: api}
+	return &realBillingService{service: api}
 }
 
 // The live Compute Engine catalog is 33,453 SKUs over 7 pages of 5000; reading
@@ -60,7 +60,7 @@ func TestRealBillingService_ListSKUsFollowsEveryPage(t *testing.T) {
 	srv := catalogServer(t, 33453, 5000, &tokens)
 	defer srv.Close()
 
-	resp, err := billingAgainst(t, srv).ListSKUs("services/6F81-5844-456A")
+	resp, err := billingAgainst(t, srv).ListSKUs(context.Background(), "services/6F81-5844-456A")
 	require.NoError(t, err)
 	assert.Len(t, resp.Skus, 33453)
 	assert.Len(t, tokens, 7)

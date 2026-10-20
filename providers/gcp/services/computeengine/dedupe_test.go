@@ -52,7 +52,7 @@ func TestRootCUDPublicPurchasePath(t *testing.T) {
 				t.Run(fmt.Sprintf("%s/decoded=%t/existing=%s", kind, decoded, existingKind), func(t *testing.T) {
 					t.Parallel()
 					ctx := context.Background()
-					client, err := NewClient(ctx, "test-project", "us-central1")
+					client, err := NewClient("test-project", "us-central1")
 					require.NoError(t, err)
 					client.SetRecommenderClient(&MockRecommenderClient{iterator: &MockRecommenderIterator{recommendations: []*recommenderpb.Recommendation{rootCUDRecommendation(kind)}}})
 					recs, err := client.GetRecommendations(ctx, &common.RecommendationParams{})
@@ -118,7 +118,7 @@ func TestCUDStoredTypePublicPath(t *testing.T) {
 						rec.Details, err = common.DecodeServiceDetailsFor(string(common.ServiceCompute), raw)
 						require.NoError(t, err)
 					}
-					client, err := NewClient(ctx, rec.Account, rec.Region)
+					client, err := NewClient(rec.Account, rec.Region)
 					require.NoError(t, err)
 					cud := recentCUD()
 					cud.Type = new("MEMORY_OPTIMIZED_X4_960_12T")
@@ -163,7 +163,7 @@ func TestCUDTypeFallbackWithAbsentDetails(t *testing.T) {
 	for _, details := range []common.ServiceDetails{nil, (*common.ComputeDetails)(nil)} {
 		rec := cudRecommendation()
 		rec.Details = details
-		client, err := NewClient(context.Background(), rec.Account, rec.Region)
+		client, err := NewClient(rec.Account, rec.Region)
 		require.NoError(t, err)
 		service := &MockCommitmentsService{operation: &MockOperation{}, commitments: []*computepb.Commitment{recentCUD()}}
 		client.SetCommitmentsService(service)
@@ -238,7 +238,7 @@ func TestCUDDuplicatePurchasePath(t *testing.T) {
 			ctx := context.Background()
 			cud, rec := recentCUD(), cudRecommendation()
 			tc.change(cud, &rec)
-			client, err := NewClient(ctx, rec.Account, rec.Region)
+			client, err := NewClient(rec.Account, rec.Region)
 			require.NoError(t, err)
 			svc := &MockCommitmentsService{commitments: []*computepb.Commitment{cud}, operation: &MockOperation{}}
 			client.SetCommitmentsService(svc)
@@ -286,7 +286,7 @@ func TestCUDInventoryRejectsUnusableMetadata(t *testing.T) {
 			ctx := context.Background()
 			cud := recentCUD()
 			mutate(cud)
-			client, err := NewClient(ctx, "test-project", "us-central1")
+			client, err := NewClient("test-project", "us-central1")
 			require.NoError(t, err)
 			svc := &MockCommitmentsService{commitments: []*computepb.Commitment{recentCUD(), cud}}
 			client.SetCommitmentsService(svc)
@@ -315,7 +315,7 @@ func TestCUDDuplicateIdentity(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
-			client, err := NewClient(ctx, "test-project", "us-central1")
+			client, err := NewClient("test-project", "us-central1")
 			require.NoError(t, err)
 			client.SetCommitmentsService(&MockCommitmentsService{commitments: []*computepb.Commitment{recentCUD()}})
 			rec := cudRecommendation()
@@ -335,7 +335,7 @@ func TestCUDDuplicateIdentity(t *testing.T) {
 
 func TestCUDNilInventoryRecord(t *testing.T) {
 	t.Parallel()
-	client, err := NewClient(context.Background(), "test-project", "us-central1")
+	client, err := NewClient("test-project", "us-central1")
 	require.NoError(t, err)
 	client.SetCommitmentsService(&MockCommitmentsService{commitments: []*computepb.Commitment{nil}})
 	got, err := client.GetExistingCommitments(context.Background())

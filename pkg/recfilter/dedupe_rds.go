@@ -22,3 +22,29 @@ func rdsFlexKey(providerType common.ProviderType, service common.ServiceType, en
 	}
 	return strings.ToLower(common.RDSFamily(resourceType)) + ".*", int(nu * 4), true
 }
+
+// Normalized deployment names (common.NormalizeDeploymentName) of the RDS deployment options.
+const (
+	rdsSingleAZ = "singleaz"
+	rdsMultiAZ  = "multiaz"
+)
+
+// rdsDeploymentFactor is how many times the size units a node of the deployment option
+// counts in a size-flexible budget: a Multi-AZ node runs two instances, so it counts
+// double: https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_WorkingWithReservedDBInstances.html#USER_WorkingWithReservedDBInstances.SizeFlexible
+func rdsDeploymentFactor(normalizedDeployment string) int {
+	if normalizedDeployment == rdsMultiAZ {
+		return 2
+	}
+	return 1
+}
+
+// rdsBudgetDeployment is the deployment part of a size-flexible budget key. Single-AZ and
+// Multi-AZ share one family budget, because the size-flexible benefit applies to both
+// configurations and a Multi-AZ node costs twice the units. Any other option keeps its own budget.
+func rdsBudgetDeployment(normalizedDeployment string) string {
+	if normalizedDeployment == rdsSingleAZ || normalizedDeployment == rdsMultiAZ {
+		return rdsSingleAZ + "|" + rdsMultiAZ
+	}
+	return normalizedDeployment
+}

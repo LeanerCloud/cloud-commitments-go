@@ -6,6 +6,8 @@ import (
 	"math"
 	"sort"
 	"strings"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // RIInfo describes a Reserved Instance for reshape analysis.
@@ -360,7 +362,7 @@ func nfProximityComponent(off OfferingOption, src RIInfo) float64 {
 	srcNF := src.NormalizationFactor
 	if srcNF <= 0 {
 		_, size := parseInstanceType(src.InstanceType)
-		srcNF = normalizationFactors[size]
+		srcNF = common.EC2NormalizationFactor(size)
 	}
 	if srcNF <= 0 || off.NormalizationFactor <= 0 {
 		return 0.5
@@ -371,32 +373,6 @@ func nfProximityComponent(off OfferingOption, src RIInfo) float64 {
 		return 0.0
 	}
 	return 1.0 - deviation
-}
-
-// normalizationFactors maps EC2 instance sizes to their AWS normalization factors.
-// "metal" is deliberately absent: its factor equals the family's largest size
-// (i3.metal 128, m5.metal 192, m5zn.metal 96), and some families have no metal
-// size, so it cannot be a family-independent constant. Callers that know it set
-// RIInfo.NormalizationFactor.
-// See: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ri-modification-instancemove.html
-var normalizationFactors = map[string]float64{
-	"nano":     0.25,
-	"micro":    0.5,
-	"small":    1,
-	"medium":   2,
-	"large":    4,
-	"xlarge":   8,
-	"2xlarge":  16,
-	"3xlarge":  24,
-	"4xlarge":  32,
-	"6xlarge":  48,
-	"8xlarge":  64,
-	"9xlarge":  72,
-	"10xlarge": 80,
-	"12xlarge": 96,
-	"16xlarge": 128,
-	"18xlarge": 144,
-	"24xlarge": 192,
 }
 
 // sizeOrder lists instance sizes from smallest to largest for iteration.
@@ -420,7 +396,7 @@ func parseInstanceType(instanceType string) (family, size string) {
 // NormalizationFactorForSize returns the normalization factor for a given instance size.
 // Returns 0 if the size is unknown, including "metal" (family-dependent).
 func NormalizationFactorForSize(size string) float64 {
-	return normalizationFactors[size]
+	return common.EC2NormalizationFactor(size)
 }
 
 // AnalyzeReshaping identifies underutilized convertible RIs and suggests optimal
@@ -453,7 +429,7 @@ func resolveNormFactor(ri RIInfo, size string) float64 {
 	if ri.NormalizationFactor != 0 {
 		return ri.NormalizationFactor
 	}
-	return normalizationFactors[size]
+	return common.EC2NormalizationFactor(size)
 }
 
 // analyzeRI evaluates a single RI and returns a reshape recommendation if it is
@@ -730,7 +706,7 @@ func findBestFit(normalizedUsed, normalizedPurchased float64) (size string, coun
 
 	for i := len(sizeOrder) - 1; i >= 0; i-- {
 		s := sizeOrder[i]
-		nf := normalizationFactors[s]
+		nf := common.EC2NormalizationFactor(s)
 		if nf <= 0 || nf > normalizedUsed {
 			continue
 		}
@@ -743,7 +719,7 @@ func findBestFit(normalizedUsed, normalizedPurchased float64) (size string, coun
 	// Only usage below the smallest size's factor falls back to that size;
 	// anything else that reached here simply does not fit.
 	s := sizeOrder[0]
-	nf := normalizationFactors[s]
+	nf := common.EC2NormalizationFactor(s)
 	if normalizedUsed < nf && nf <= normalizedPurchased {
 		return s, 1
 	}

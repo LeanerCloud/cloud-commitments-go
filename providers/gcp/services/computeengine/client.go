@@ -244,7 +244,7 @@ type MachineTypesIterator interface {
 
 // BillingService interface for billing operations (enables mocking).
 type BillingService interface {
-	ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error)
+	ListSKUs(ctx context.Context, serviceID string) (*cloudbilling.ListSkusResponse, error)
 }
 
 // RecommenderIterator interface for recommender iteration (enables mocking).
@@ -260,7 +260,6 @@ type RecommenderClient interface {
 
 // Client handles GCP Compute Engine Committed Use Discounts.
 type Client struct {
-	ctx                 context.Context
 	projectID           string
 	region              string
 	clientOpts          []option.ClientOption
@@ -274,9 +273,8 @@ type Client struct {
 }
 
 // NewClient creates a new GCP Compute Engine client.
-func NewClient(ctx context.Context, projectID, region string, opts ...option.ClientOption) (*Client, error) {
+func NewClient(projectID, region string, opts ...option.ClientOption) (*Client, error) {
 	return &Client{
-		ctx:        ctx,
 		projectID:  projectID,
 		region:     region,
 		clientOpts: opts,
@@ -342,14 +340,13 @@ func (r *realMachineTypesService) Close() error {
 
 // realBillingService wraps the real cloudbilling.APIService.
 type realBillingService struct {
-	ctx     context.Context
 	service *cloudbilling.APIService
 }
 
 // ListSKUs returns every SKU of the service: the Compute Engine catalog is
 // 33,453 SKUs over 7 pages of 5000, so a single call misses most of it.
-func (r *realBillingService) ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error) {
-	skus, err := skulist.All(r.ctx, r.service.Services.Skus.List(serviceID).PageSize(skuPageSize), skulist.DefaultMaxPages)
+func (r *realBillingService) ListSKUs(ctx context.Context, serviceID string) (*cloudbilling.ListSkusResponse, error) {
+	skus, err := skulist.All(ctx, r.service.Services.Skus.List(serviceID).PageSize(skuPageSize), skulist.DefaultMaxPages)
 	if err != nil {
 		return nil, fmt.Errorf("computeengine: list SKUs for %s: %w", serviceID, err)
 	}
@@ -1003,7 +1000,7 @@ func (c *Client) getOrCreateBillingService(ctx context.Context) (BillingService,
 		return nil, fmt.Errorf("failed to create billing service: %w", err)
 	}
 
-	return &realBillingService{ctx: ctx, service: service}, nil
+	return &realBillingService{service: service}, nil
 }
 
 // convertGCPRecommendation converts a GCP Recommender recommendation to common format.
