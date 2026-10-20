@@ -710,7 +710,7 @@ func (c *Client) getVMPricing(ctx context.Context, vmSize, region string, termYe
 	}
 
 	return &VMPricing{
-		HourlyRate:       item.RetailPrice / (8760.0 * float64(termYears)),
+		HourlyRate:       item.RetailPrice / (common.HoursPerYear * float64(termYears)),
 		ReservationPrice: item.RetailPrice,
 		Currency:         item.CurrencyCode,
 	}, nil

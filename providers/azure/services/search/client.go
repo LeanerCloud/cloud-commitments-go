@@ -466,7 +466,7 @@ func (c *Client) getSearchPricing(ctx context.Context, sku, region string, termY
 		return nil, fmt.Errorf("azure search SKU %s in region %s: %w", sku, region, err)
 	}
 
-	hoursInTerm := 8760.0 * float64(termYears)
+	hoursInTerm := common.HoursPerYear * float64(termYears)
 	return &Pricing{
 		HourlyRate:       selected.RetailPrice / hoursInTerm,
 		ReservationPrice: selected.RetailPrice,
