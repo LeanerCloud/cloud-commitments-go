@@ -20,6 +20,7 @@ type recommendationHTTPFixture func(*http.Request) (*http.Response, error)
 func (f recommendationHTTPFixture) Do(req *http.Request) (*http.Response, error) { return f(req) }
 
 func TestRecommendationsClientAdapter_IncompleteSDKResponse(t *testing.T) {
+	t.Parallel()
 	calls := 0
 	client := NewRecommendationsClient(aws.Config{
 		Region: "us-east-1", Credentials: aws.CredentialsProviderFunc(func(context.Context) (aws.Credentials, error) {

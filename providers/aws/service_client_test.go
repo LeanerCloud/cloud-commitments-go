@@ -52,6 +52,7 @@ func newTestRecommendationsClient(ce *mockCostExplorerClient) *recommendations.C
 }
 
 func TestRecommendationsClientAdapter_GetRecommendations_NilParams(t *testing.T) {
+	t.Parallel()
 	adapter := &RecommendationsClientAdapter{client: newTestRecommendationsClient(&mockCostExplorerClient{})}
 
 	recs, err := adapter.GetRecommendations(context.Background(), nil)
@@ -61,6 +62,7 @@ func TestRecommendationsClientAdapter_GetRecommendations_NilParams(t *testing.T)
 }
 
 func TestNewEC2Client(t *testing.T) {
+	t.Parallel()
 	cfg := aws.Config{Region: "us-east-1"}
 	client := NewEC2Client(cfg)
 	require.NotNil(t, client)
@@ -69,6 +71,7 @@ func TestNewEC2Client(t *testing.T) {
 }
 
 func TestNewRDSClient(t *testing.T) {
+	t.Parallel()
 	cfg := aws.Config{Region: "us-west-2"}
 	client := NewRDSClient(cfg)
 	require.NotNil(t, client)
@@ -77,6 +80,7 @@ func TestNewRDSClient(t *testing.T) {
 }
 
 func TestNewElastiCacheClient(t *testing.T) {
+	t.Parallel()
 	cfg := aws.Config{Region: "eu-west-1"}
 	client := NewElastiCacheClient(cfg)
 	require.NotNil(t, client)
@@ -85,6 +89,7 @@ func TestNewElastiCacheClient(t *testing.T) {
 }
 
 func TestNewOpenSearchClient(t *testing.T) {
+	t.Parallel()
 	cfg := aws.Config{Region: "ap-northeast-1"}
 	client := NewOpenSearchClient(cfg)
 	require.NotNil(t, client)
@@ -93,6 +98,7 @@ func TestNewOpenSearchClient(t *testing.T) {
 }
 
 func TestNewRedshiftClient(t *testing.T) {
+	t.Parallel()
 	cfg := aws.Config{Region: "us-east-2"}
 	client := NewRedshiftClient(cfg)
 	require.NotNil(t, client)
@@ -101,6 +107,7 @@ func TestNewRedshiftClient(t *testing.T) {
 }
 
 func TestNewMemoryDBClient(t *testing.T) {
+	t.Parallel()
 	cfg := aws.Config{Region: "eu-central-1"}
 	client := NewMemoryDBClient(cfg)
 	require.NotNil(t, client)
@@ -109,6 +116,7 @@ func TestNewMemoryDBClient(t *testing.T) {
 }
 
 func TestNewSavingsPlansClient(t *testing.T) {
+	t.Parallel()
 	cfg := aws.Config{Region: "us-east-1"}
 	cases := []struct {
 		planType    sptypes.SavingsPlanType
@@ -130,6 +138,7 @@ func TestNewSavingsPlansClient(t *testing.T) {
 }
 
 func TestNewRecommendationsClient(t *testing.T) {
+	t.Parallel()
 	cfg := aws.Config{Region: "us-east-1"}
 	client := NewRecommendationsClient(cfg)
 	require.NotNil(t, client)
@@ -141,6 +150,7 @@ func TestNewRecommendationsClient(t *testing.T) {
 }
 
 func TestRecommendationsClientAdapter_GetRecommendationsForService(t *testing.T) {
+	t.Parallel()
 	// This test just verifies the adapter is wired correctly
 	// Actual API calls would require credentials
 	cfg := aws.Config{Region: "us-east-1"}
@@ -180,6 +190,7 @@ func (t *testRecommendationsClientAdapter) GetAllRecommendations(ctx context.Con
 }
 
 func TestRecommendationsClientAdapter_GetRecommendations_Integration(t *testing.T) {
+	t.Parallel()
 	t.Run("executes filtering logic", func(t *testing.T) {
 		// Create a mock Cost Explorer client
 		mockCE := &mockCostExplorerClient{}
@@ -227,6 +238,7 @@ func TestRecommendationsClientAdapter_GetRecommendations_Integration(t *testing.
 }
 
 func TestRecommendationsClientAdapter_GetRecommendationsForService_WithMock(t *testing.T) {
+	t.Parallel()
 	t.Run("success", func(t *testing.T) {
 		expectedRecs := []common.Recommendation{
 			{Account: "111111111111", Service: common.ServiceCompute},
@@ -258,6 +270,7 @@ func TestRecommendationsClientAdapter_GetRecommendationsForService_WithMock(t *t
 }
 
 func TestRecommendationsClientAdapter_GetAllRecommendations(t *testing.T) {
+	t.Parallel()
 	t.Run("success", func(t *testing.T) {
 		expectedRecs := []common.Recommendation{
 			{Account: "111111111111", Service: common.ServiceCompute},
@@ -298,6 +311,7 @@ func TestRecommendationsClientAdapter_GetAllRecommendations(t *testing.T) {
 // got no region filtering at all -- an eu-west-1 recommendation could
 // surface from a us-east-1 search.
 func TestApplyRecommendationFilters_Region(t *testing.T) {
+	t.Parallel()
 	recs := []common.Recommendation{
 		{Account: "111", Region: "us-east-1"},
 		{Account: "222", Region: "eu-west-1"},
@@ -346,6 +360,7 @@ func TestApplyRecommendationFilters_Region(t *testing.T) {
 // filterByExcludedRegions matched only rec.Region, so every SP rec --
 // region-agnostic or not -- was silently dropped by any region constraint.
 func TestApplyRecommendationFilters_SavingsPlanRegion(t *testing.T) {
+	t.Parallel()
 	accountLevelSP := common.Recommendation{
 		Account:        "111",
 		Region:         "",
@@ -411,6 +426,7 @@ func TestApplyRecommendationFilters_SavingsPlanRegion(t *testing.T) {
 // empty-region-means-agnostic version and passes with the
 // CommitmentSavingsPlan-gated IsRegionAgnostic.
 func TestApplyRecommendationFilters_RegionlessReservationNotExempt(t *testing.T) {
+	t.Parallel()
 	regionlessRI := common.Recommendation{
 		Account:        "111",
 		Region:         "",
@@ -455,6 +471,7 @@ func TestApplyRecommendationFilters_RegionlessReservationNotExempt(t *testing.T)
 // short-circuits on IsRegionAgnostic before the map is ever consulted, so
 // that subtest would pass with or without the blank skip and prove nothing.
 func TestApplyRecommendationFilters_BlankRegionEntryIsNotAMatcher(t *testing.T) {
+	t.Parallel()
 	// Not region-agnostic (a reservation), but carries no region because
 	// Cost Explorer omitted the field. EffectiveRegion is "" and
 	// IsRegionAgnostic is false, so this rec reaches the map lookup.
@@ -506,6 +523,7 @@ func TestApplyRecommendationFilters_BlankRegionEntryIsNotAMatcher(t *testing.T) 
 // This test fails on the CommitmentSavingsPlan-only IsRegionAgnostic and
 // passes once the exemption also requires isAccountLevelSPPlanType.
 func TestApplyRecommendationFilters_RegionlessEC2InstanceSPNotExempt(t *testing.T) {
+	t.Parallel()
 	// An EC2Instance SP whose CE payload carried no region: region-scoped,
 	// but with nothing to match a region filter against.
 	regionlessEC2SP := common.Recommendation{
@@ -598,6 +616,7 @@ func TestApplyRecommendationFilters_RegionlessEC2InstanceSPNotExempt(t *testing.
 // an exported helper must handle even though no Azure code builds a Savings
 // Plans *recommendation* today.
 func TestRegionHelpers_NonAWSRecommendation(t *testing.T) {
+	t.Parallel()
 	nonAWSSP := common.Recommendation{
 		Provider:       common.ProviderAzure,
 		CommitmentType: common.CommitmentSavingsPlan,

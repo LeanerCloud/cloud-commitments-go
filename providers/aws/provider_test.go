@@ -81,6 +81,7 @@ func (m *mockOrganizationsPaginator) NextPage(ctx context.Context, optFns ...fun
 }
 
 func TestNewAWSProvider(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name            string
 		config          *provider.ProviderConfig
@@ -150,11 +151,13 @@ func TestNewAWSProvider(t *testing.T) {
 }
 
 func TestAWSProvider_Name(t *testing.T) {
+	t.Parallel()
 	p := &Provider{}
 	assert.Equal(t, "aws", p.Name())
 }
 
 func TestAWSProvider_DisplayName(t *testing.T) {
+	t.Parallel()
 	p := &Provider{}
 	assert.Equal(t, "Amazon Web Services", p.DisplayName())
 }
@@ -240,6 +243,7 @@ func clearAWSAmbientEnv(t *testing.T) {
 }
 
 func TestAWSProvider_GetSupportedServices(t *testing.T) {
+	t.Parallel()
 	p := &Provider{}
 	services := p.GetSupportedServices()
 
@@ -265,6 +269,7 @@ func TestAWSProvider_GetSupportedServices(t *testing.T) {
 }
 
 func TestAWSProvider_IsConfigured(t *testing.T) {
+	t.Parallel()
 	// Test with various configurations
 	// Note: The actual result depends on the environment (AWS credentials may be present)
 	p := &Provider{}
@@ -273,6 +278,7 @@ func TestAWSProvider_IsConfigured(t *testing.T) {
 }
 
 func TestAWSProvider_IsConfigured_WithProfile(t *testing.T) {
+	t.Parallel()
 	p := &Provider{
 		profile: "test-profile",
 	}
@@ -281,6 +287,7 @@ func TestAWSProvider_IsConfigured_WithProfile(t *testing.T) {
 }
 
 func TestAWSProvider_IsConfigured_WithRegion(t *testing.T) {
+	t.Parallel()
 	p := &Provider{
 		region: "us-west-2",
 	}
@@ -289,6 +296,7 @@ func TestAWSProvider_IsConfigured_WithRegion(t *testing.T) {
 }
 
 func TestAWSProvider_GetServiceClient_UnsupportedService(t *testing.T) {
+	t.Parallel()
 	// Create a provider with a valid config
 	p := &Provider{
 		cfg: aws.Config{Region: "us-east-1"},
@@ -301,6 +309,7 @@ func TestAWSProvider_GetServiceClient_UnsupportedService(t *testing.T) {
 }
 
 func TestAWSProvider_GetServiceClient_AllServiceTypes(t *testing.T) {
+	t.Parallel()
 	// Create a provider with a valid config
 	p := &Provider{
 		cfg: aws.Config{Region: "us-east-1"},
@@ -342,6 +351,7 @@ func TestAWSProvider_GetServiceClient_AllServiceTypes(t *testing.T) {
 }
 
 func TestAWSProvider_GetRecommendationsClient(t *testing.T) {
+	t.Parallel()
 	// Create a provider with a valid config
 	p := &Provider{
 		cfg: aws.Config{Region: "us-east-1"},
@@ -353,6 +363,7 @@ func TestAWSProvider_GetRecommendationsClient(t *testing.T) {
 }
 
 func TestAWSProvider_IsConfigured_WithMock(t *testing.T) {
+	t.Parallel()
 	t.Run("returns true when config loads successfully", func(t *testing.T) {
 		p := &Provider{}
 		p.SetConfigLoader(&mockConfigLoader{
@@ -373,6 +384,7 @@ func TestAWSProvider_IsConfigured_WithMock(t *testing.T) {
 }
 
 func TestAWSProvider_ValidateCredentials_WithMock(t *testing.T) {
+	t.Parallel()
 	t.Run("success with mock STS client", func(t *testing.T) {
 		p := &Provider{}
 		p.SetConfigLoader(&mockConfigLoader{
@@ -421,6 +433,7 @@ func TestAWSProvider_ValidateCredentials_WithMock(t *testing.T) {
 }
 
 func TestAWSProvider_GetAccounts_WithMock(t *testing.T) {
+	t.Parallel()
 	t.Run("returns current account only when no org accounts", func(t *testing.T) {
 		p := &Provider{
 			cfg: aws.Config{Region: "us-east-1"},
@@ -682,6 +695,7 @@ func TestAWSProvider_GetAccounts_WithMock(t *testing.T) {
 }
 
 func TestAWSProvider_GetRegions_WithMock(t *testing.T) {
+	t.Parallel()
 	t.Run("success with regions", func(t *testing.T) {
 		p := &Provider{
 			cfg: aws.Config{Region: "us-east-1"},
@@ -746,6 +760,7 @@ func TestAWSProvider_GetRegions_WithMock(t *testing.T) {
 }
 
 func TestAWSProvider_SetterMethods(t *testing.T) {
+	t.Parallel()
 	t.Run("SetConfigLoader", func(t *testing.T) {
 		p := &Provider{}
 		mockLoader := &mockConfigLoader{}
@@ -786,6 +801,7 @@ func (m *mockCredentialsProvider) Retrieve(ctx context.Context) (aws.Credentials
 }
 
 func TestAWSProvider_GetCredentials_WithMock(t *testing.T) {
+	t.Parallel()
 	t.Run("returns error when not configured", func(t *testing.T) {
 		p := &Provider{}
 		p.SetConfigLoader(&mockConfigLoader{
@@ -882,6 +898,7 @@ func TestAWSProvider_GetCredentials_WithMock(t *testing.T) {
 }
 
 func TestAWSProvider_GetRecommendationsClient_NotConfigured(t *testing.T) {
+	t.Parallel()
 	p := &Provider{}
 	p.SetConfigLoader(&mockConfigLoader{
 		err: errors.New("config error"),
@@ -893,6 +910,7 @@ func TestAWSProvider_GetRecommendationsClient_NotConfigured(t *testing.T) {
 }
 
 func TestAWSProvider_GetServiceClient_NotConfigured(t *testing.T) {
+	t.Parallel()
 	p := &Provider{}
 	p.SetConfigLoader(&mockConfigLoader{
 		err: errors.New("config error"),
@@ -904,6 +922,7 @@ func TestAWSProvider_GetServiceClient_NotConfigured(t *testing.T) {
 }
 
 func TestRealOrganizationsPaginator_HasMorePages(t *testing.T) {
+	t.Parallel()
 	// We'll test this by verifying the realOrganizationsPaginator wrapper works correctly
 	t.Run("HasMorePages delegates to underlying paginator", func(t *testing.T) {
 		// This is a wrapper test - we just verify it doesn't panic and returns a boolean
@@ -935,6 +954,7 @@ func TestRealOrganizationsPaginator_HasMorePages(t *testing.T) {
 }
 
 func TestRealOrganizationsPaginator_NextPage(t *testing.T) {
+	t.Parallel()
 	t.Run("NextPage returns pages in sequence", func(t *testing.T) {
 		mockPages := []*organizations.ListAccountsOutput{
 			{
@@ -980,6 +1000,7 @@ func TestRealOrganizationsPaginator_NextPage(t *testing.T) {
 }
 
 func TestProviderRegistration(t *testing.T) {
+	t.Parallel()
 	t.Run("AWS provider is registered in global registry", func(t *testing.T) {
 		// The init() function should have registered the AWS provider
 		registry := provider.GetRegistry()
@@ -1024,6 +1045,7 @@ func TestProviderRegistration(t *testing.T) {
 // that is the intended guard rail. Re-audit the SDK's `aws.Credentials.Source`
 // values when bumping the SDK if this test breaks.
 func TestGetCredentials_SourceMapping(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		sdkSource  string
