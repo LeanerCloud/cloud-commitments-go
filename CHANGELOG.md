@@ -195,6 +195,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   (until both paths carry the license model, #342), Db2 and unknown engines
   still match the exact class.
 
+- **`aws/savingsplans`:** Savings Plans offering lookup, validation and purchase now fail with `ErrUnsupportedPartition` before any AWS call for `cn-*` (aws-cn) regions, whose plans are priced in CNY while the purchase path is USD-only; `aws` and `aws-us-gov` are unchanged (#7).
 - **MemoryDB reserved-node and offering listings are page-capped and
   cancellable** (#556): `GetExistingCommitments` and `GetValidResourceTypes`
   now check the context per page and fail loudly after 50 pages instead of

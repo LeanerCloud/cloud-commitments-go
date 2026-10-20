@@ -115,11 +115,17 @@ func Currency(service, code string) (string, error) {
 	return code, nil
 }
 
+// IsChinaRegion reports whether region is in the aws-cn partition
+// (cn-north-1, cn-northwest-1), which bills in CNY.
+func IsChinaRegion(region string) bool {
+	return strings.HasPrefix(region, "cn-")
+}
+
 // AssumedUSD is for offering types whose SDK struct has no currency field
 // (ElastiCache, MemoryDB). Commercial and GovCloud AWS bill those in USD; the
 // China partitions do not, so they fail instead of being labeled USD.
 func AssumedUSD(service, region string) (string, error) {
-	if strings.HasPrefix(region, "cn-") {
+	if IsChinaRegion(region) {
 		return "", fmt.Errorf("%s offerings carry no currency code and region %q is not billed in USD", service, region)
 	}
 	return "USD", nil

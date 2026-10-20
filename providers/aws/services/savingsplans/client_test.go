@@ -1853,3 +1853,62 @@ func TestFindOfferingID_CEOfferingIDFastPath(t *testing.T) {
 	assert.Equal(t, "ce-offering-1", id)
 	mockSP.AssertNotCalled(t, "DescribeSavingsPlansOfferings", mock.Anything, mock.Anything)
 }
+
+func TestClient_AWSCNPartitionRejectedBeforeAnyAPICall(t *testing.T) {
+	t.Parallel()
+	newRec := func(region string) common.Recommendation {
+		return common.Recommendation{
+			Service:       common.ServiceSavingsPlansAll,
+			ResourceType:  "Compute",
+			Region:        region,
+			Count:         1,
+			PaymentOption: "all-upfront",
+			Term:          "1yr",
+			Details:       &common.SavingsPlanDetails{PlanType: "Compute", HourlyCommitment: 10.0},
+		}
+	}
+	for _, tc := range []struct{ name, clientRegion, recRegion string }{
+		{"client in cn-north-1", "cn-north-1", ""},
+		{"client in cn-northwest-1", "cn-northwest-1", "cn-northwest-1"},
+		{"recommendation in cn region", "us-east-1", "cn-north-1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mockSP := &MockSavingsPlansClient{} // no expectations: any call panics
+			client := &Client{client: mockSP, region: tc.clientRegion}
+			rec := newRec(tc.recRegion)
+
+			result, err := client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
+			assert.ErrorIs(t, err, ErrUnsupportedPartition)
+			assert.False(t, result.Success)
+
+			assert.ErrorIs(t, client.ValidateOffering(context.Background(), rec), ErrUnsupportedPartition)
+			_, err = client.GetOfferingDetails(context.Background(), rec)
+			assert.ErrorIs(t, err, ErrUnsupportedPartition)
+			mockSP.AssertNotCalled(t, "DescribeSavingsPlansOfferings", mock.Anything, mock.Anything)
+			mockSP.AssertNotCalled(t, "CreateSavingsPlan", mock.Anything, mock.Anything)
+		})
+	}
+}
+
+func TestClient_NonCNPartitionsStillQuote(t *testing.T) {
+	t.Parallel()
+	for _, region := range []string{"us-east-1", "us-gov-west-1", "eu-west-1"} {
+		t.Run(region, func(t *testing.T) {
+			t.Parallel()
+			mockSP := &MockSavingsPlansClient{}
+			mockSP.On("DescribeSavingsPlansOfferings", mock.Anything, mock.Anything).
+				Return(&savingsplans.DescribeSavingsPlansOfferingsOutput{
+					SearchResults: []types.SavingsPlanOffering{{OfferingId: aws.String("offering-1")}},
+				}, nil)
+			client := &Client{client: mockSP, region: region}
+			rec := common.Recommendation{
+				Service: common.ServiceSavingsPlansAll, ResourceType: "Compute", Region: region,
+				Count: 1, PaymentOption: "all-upfront", Term: "1yr",
+				Details: &common.SavingsPlanDetails{PlanType: "Compute", HourlyCommitment: 10.0},
+			}
+			assert.NoError(t, client.ValidateOffering(context.Background(), rec))
+			mockSP.AssertExpectations(t)
+		})
+	}
+}
