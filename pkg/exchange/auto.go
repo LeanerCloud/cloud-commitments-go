@@ -249,10 +249,16 @@ func RunAutoExchange(ctx context.Context, params RunAutoExchangeParams) (*AutoEx
 func processRecommendation(ctx context.Context, params RunAutoExchangeParams, rec ReshapeRecommendation, perExchangeCap *big.Rat, result *AutoExchangeResult) bool {
 	// Skip idle RIs with no target
 	if rec.TargetInstanceType == "" {
+		reason := "RI is idle (0% utilization) - no target instance type recommended"
+		if rec.NormalizedPurchased == 0 {
+			// analyzeRI emits no target without a purchased total only when the
+			// normalization factor is unknown; its Reason says why.
+			reason = rec.Reason
+		}
 		result.Skipped = append(result.Skipped, SkippedRecommendation{
 			SourceRIID:         rec.SourceRIID,
 			SourceInstanceType: rec.SourceInstanceType,
-			Reason:             "RI is idle (0% utilization) - no target instance type recommended",
+			Reason:             reason,
 		})
 		return false
 	}

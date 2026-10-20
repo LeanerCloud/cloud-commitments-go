@@ -1,6 +1,7 @@
 package exchange
 
 import (
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -161,7 +162,7 @@ func TestNormalizationFactorForSize(t *testing.T) {
 	assert.Equal(t, 4.0, NormalizationFactorForSize("large"))
 	assert.Equal(t, 8.0, NormalizationFactorForSize("xlarge"))
 	assert.Equal(t, 192.0, NormalizationFactorForSize("24xlarge"))
-	assert.Equal(t, 192.0, NormalizationFactorForSize("metal"))
+	assert.Equal(t, 0.0, NormalizationFactorForSize("metal"), "metal is family-dependent")
 	assert.Equal(t, 0.0, NormalizationFactorForSize("unknown"))
 }
 
@@ -182,5 +183,121 @@ func TestParseInstanceType(t *testing.T) {
 		family, size := parseInstanceType(tt.input)
 		assert.Equal(t, tt.wantFamily, family, "family for %s", tt.input)
 		assert.Equal(t, tt.wantSize, size, "size for %s", tt.input)
+	}
+}
+
+// Issue #551: the target must never carry more normalized capacity than the
+// source RI owns.
+func TestAnalyzeReshaping_TargetNeverExceedsOwnedCapacity(t *testing.T) {
+	t.Parallel()
+	// Reproduced case: 3x m5.xlarge (24 units) at 80% used to yield 2x m5.2xlarge (32 units).
+	ris := []RIInfo{{ID: "ri-1", InstanceType: "m5.xlarge", InstanceCount: 3, OfferingClass: "convertible"}}
+	recs := AnalyzeReshaping(ris, []UtilizationInfo{{RIID: "ri-1", UtilizationPercent: 80}}, 95)
+	// 3x xlarge is the only shape that covers 19.2 units within 24 owned, i.e. no change.
+	assert.Empty(t, recs)
+
+	families := []string{"m5", "c5", "r5"}
+	sizes := []string{"large", "xlarge", "2xlarge", "4xlarge", "8xlarge", "16xlarge"}
+	for _, fam := range families {
+		for _, sz := range sizes {
+			for count := int32(1); count <= 7; count++ {
+				for util := 1.0; util < 95; util += 3 {
+					ri := RIInfo{ID: "r", InstanceType: fam + "." + sz, InstanceCount: count, OfferingClass: "convertible"}
+					got := AnalyzeReshaping([]RIInfo{ri}, []UtilizationInfo{{RIID: "r", UtilizationPercent: util}}, 95)
+					for _, rec := range got {
+						if rec.TargetInstanceType == "" {
+							continue
+						}
+						_, tsz := parseInstanceType(rec.TargetInstanceType)
+						target := normalizationFactors[tsz] * float64(rec.TargetCount)
+						assert.LessOrEqualf(t, target, rec.NormalizedPurchased,
+							"%dx %s @%.0f%% -> %dx %s", count, ri.InstanceType, util, rec.TargetCount, rec.TargetInstanceType)
+					}
+				}
+			}
+		}
+	}
+}
+
+func TestFindBestFit_CapsAtOwnedCapacity(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name            string
+		used, purchased float64
+		wantSize        string
+		wantCount       int32
+	}{
+		{"exact fit unchanged", 16, 16, "2xlarge", 1},
+		{"covers usage within owned", 14.4, 16, "xlarge", 2},
+		{"falls back to smaller size when larger over-allocates", 19.2, 24, "xlarge", 3},
+		{"nothing fits: sub-nano usage but nano not owned", 0.1, 0.2, "", 0},
+		{"sub-nano usage uses nano when owned", 0.1, 0.25, "nano", 1},
+		{"zero usage", 0, 8, "", 0},
+		{"usage above owned does not fall back to nano", 20, 16, "", 0},
+		{"NaN usage", math.NaN(), 16, "", 0},
+		{"custom NF 0.3 at 90% must not return nano", 0.27, 0.3, "", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			size, count := findBestFit(tt.used, tt.purchased)
+			assert.Equal(t, tt.wantSize, size)
+			assert.Equal(t, tt.wantCount, count)
+		})
+	}
+}
+
+// Issue #552: "metal" is family-dependent, so it is never a table size or a target.
+func TestAnalyzeReshaping_Metal(t *testing.T) {
+	t.Parallel()
+	util := func(id string, u float64) []UtilizationInfo {
+		return []UtilizationInfo{{RIID: id, UtilizationPercent: u}}
+	}
+
+	t.Run("metal source without factor is skipped visibly", func(t *testing.T) {
+		t.Parallel()
+		ri := RIInfo{ID: "r", InstanceType: "i3.metal", InstanceCount: 1, OfferingClass: "convertible"}
+		recs := AnalyzeReshaping([]RIInfo{ri}, util("r", 50), 95)
+		if assert.Len(t, recs, 1) {
+			assert.Empty(t, recs[0].TargetInstanceType)
+			assert.Contains(t, recs[0].Reason, "No normalization factor known for i3.metal")
+		}
+	})
+
+	t.Run("metal source with explicit factor still analyzes", func(t *testing.T) {
+		t.Parallel()
+		// i3.metal = 128 units; 50% used = 64 units = 1x i3.8xlarge.
+		ri := RIInfo{ID: "r", InstanceType: "i3.metal", InstanceCount: 1, OfferingClass: "convertible", NormalizationFactor: 128}
+		recs := AnalyzeReshaping([]RIInfo{ri}, util("r", 50), 95)
+		if assert.Len(t, recs, 1) {
+			assert.Equal(t, "i3.8xlarge", recs[0].TargetInstanceType)
+			assert.Equal(t, int32(1), recs[0].TargetCount)
+		}
+	})
+
+	t.Run("no target is ever metal", func(t *testing.T) {
+		t.Parallel()
+		// Reproduced: 100x t3.2xlarge@95-ish and 2x m5.24xlarge@90% used to pick *.metal.
+		for _, ri := range []RIInfo{
+			{ID: "a", InstanceType: "t3.2xlarge", InstanceCount: 100, OfferingClass: "convertible"},
+			{ID: "b", InstanceType: "m5.24xlarge", InstanceCount: 2, OfferingClass: "convertible"},
+		} {
+			for _, rec := range AnalyzeReshaping([]RIInfo{ri}, util(ri.ID, 90), 95) {
+				assert.NotContains(t, rec.TargetInstanceType, "metal")
+			}
+		}
+		for _, s := range sizeOrder {
+			assert.NotEqual(t, "metal", s)
+		}
+	})
+}
+
+// 2x m5.xlarge at 100.5% used (16.08 > 16 owned) must not collapse to 1x nano.
+func TestAnalyzeReshaping_OverUtilizedHasNoNanoTarget(t *testing.T) {
+	t.Parallel()
+	ri := RIInfo{ID: "r", InstanceType: "m5.xlarge", InstanceCount: 2, OfferingClass: "convertible"}
+	recs := AnalyzeReshaping([]RIInfo{ri}, []UtilizationInfo{{RIID: "r", UtilizationPercent: 100.5}}, 101)
+	for _, rec := range recs {
+		assert.NotEqual(t, "m5.nano", rec.TargetInstanceType)
 	}
 }

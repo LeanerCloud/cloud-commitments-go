@@ -711,6 +711,24 @@ func TestRunAutoExchange_IdleRI_Skipped(t *testing.T) {
 	assert.Contains(t, result.Skipped[0].Reason, "idle")
 }
 
+func TestRunAutoExchange_MetalWithoutFactor_SkippedWithReason(t *testing.T) {
+	t.Parallel()
+	store := &mockExchangeStore{dailySpend: "0"}
+	client := &mockExchangeClient{quoteResult: defaultQuote()}
+	params := defaultParams(store, client)
+	params.RIs = []RIInfo{{ID: "ri-001", InstanceType: "i3.metal", InstanceCount: 1, OfferingClass: "convertible"}}
+
+	result, err := RunAutoExchange(context.Background(), params)
+	require.NoError(t, err)
+
+	require.Len(t, result.Skipped, 1)
+	assert.Contains(t, result.Skipped[0].Reason, "No normalization factor known")
+	assert.NotContains(t, result.Skipped[0].Reason, "idle")
+	assert.Empty(t, result.Pending)
+	assert.Empty(t, result.Completed)
+	assert.Equal(t, 0, client.executeCalls)
+}
+
 // ─── Scoped cancellation tests ────────────────────────────────────────────────
 
 // TestRunAutoExchange_StandaloneDoesNotCancelLadderPendings is the regression
