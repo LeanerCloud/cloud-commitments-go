@@ -202,8 +202,11 @@ func TestRecommendationsClientAdapter_GetRecommendations_Integration(t *testing.
 		adapter := &RecommendationsClientAdapter{client: recClient}
 
 		params := common.RecommendationParams{
-			Service:       common.ServiceCompute,
-			AccountFilter: []string{"111111111111"},
+			Service:        common.ServiceCompute,
+			AccountFilter:  []string{"111111111111"},
+			Term:           "1yr",
+			PaymentOption:  "no-upfront",
+			LookbackPeriod: "30d",
 		}
 
 		// This will call the real adapter method which exercises the filtering code
