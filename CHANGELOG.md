@@ -199,6 +199,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Fixed
 
 - **aws/ec2:** `GetOfferingDetails` always priced the convertible offering and its doc comment wrongly said the class does not change prices. Added `GetOfferingDetailsForClass` to price the class the purchase uses; `GetOfferingDetails` keeps the convertible default (#570).
+- **The duplicate-purchase guard now treats regional Linux/Unix default-tenancy
+  EC2 reservations as size-flexible** (#323): a recent m5.xlarge reservation
+  suppresses two m5.large recommendations in the same region, counted in
+  normalized units. Zonal, Windows/RHEL/SUSE, dedicated, wildcard and
+  unknown-size entries stay exact-type.
 - **Unbounded AWS pagination loops now stop at a page cap and honour
   cancellation** (#561): the existing-commitment and valid-resource-type scans
   for ElastiCache, RDS, OpenSearch, Redshift and EC2 check the context before
