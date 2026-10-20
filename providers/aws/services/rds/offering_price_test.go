@@ -35,6 +35,7 @@ const (
 )
 
 func TestGetOfferingDetails_Pricing(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []priceCase{
 		{name: "hourly charge, usage 0", term: "1yr", duration: oneYear, usage: 0, charges: []float64{0.05}, currency: "USD", region: "", err: "", hourly: 0.05, hours: 8760},
 		{name: "3yr term", term: "3yr", duration: threeYear, usage: 0, charges: []float64{0.05}, currency: "USD", region: "", err: "", hourly: 0.05, hours: 26280},

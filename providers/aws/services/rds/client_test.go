@@ -47,6 +47,7 @@ func (m *MockRDSClient) DescribeReservedDBInstances(ctx context.Context, params 
 }
 
 func TestClient_ReservationStatesPreventDuplicatePurchases(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		state *string
@@ -136,6 +137,7 @@ func TestClient_ReservationStatesPreventDuplicatePurchases(t *testing.T) {
 }
 
 func TestNewClient(t *testing.T) {
+	t.Parallel()
 	cfg := aws.Config{
 		Region: "us-east-1",
 	}
@@ -148,16 +150,19 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestClient_GetServiceType(t *testing.T) {
+	t.Parallel()
 	client := &Client{region: "us-east-1"}
 	assert.Equal(t, common.ServiceRelationalDB, client.GetServiceType())
 }
 
 func TestClient_GetRegion(t *testing.T) {
+	t.Parallel()
 	client := &Client{region: "eu-west-1"}
 	assert.Equal(t, "eu-west-1", client.GetRegion())
 }
 
 func TestClient_GetRecommendations(t *testing.T) {
+	t.Parallel()
 	client := &Client{region: "us-east-1"}
 	recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{})
 	assert.NoError(t, err)
@@ -165,6 +170,7 @@ func TestClient_GetRecommendations(t *testing.T) {
 }
 
 func TestClient_GetExistingCommitments(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		setupMocks  func(*MockRDSClient)
@@ -281,6 +287,7 @@ func TestClient_GetExistingCommitments(t *testing.T) {
 }
 
 func TestClient_GetValidResourceTypes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		setupMocks    func(*MockRDSClient)
@@ -355,6 +362,7 @@ func TestClient_GetValidResourceTypes(t *testing.T) {
 }
 
 func TestClient_ValidateOffering(t *testing.T) {
+	t.Parallel()
 	mockRDS := &MockRDSClient{}
 	client := &Client{
 		client: mockRDS,
@@ -392,6 +400,7 @@ func TestClient_ValidateOffering(t *testing.T) {
 }
 
 func TestClient_ValidateOffering_NotFound(t *testing.T) {
+	t.Parallel()
 	mockRDS := &MockRDSClient{}
 	client := &Client{
 		client: mockRDS,
@@ -421,6 +430,7 @@ func TestClient_ValidateOffering_NotFound(t *testing.T) {
 }
 
 func TestClient_PurchaseCommitment(t *testing.T) {
+	t.Parallel()
 	mockRDS := &MockRDSClient{}
 	client := &Client{
 		client: mockRDS,
@@ -477,6 +487,7 @@ func TestClient_PurchaseCommitment(t *testing.T) {
 }
 
 func TestClient_PurchaseCommitment_EmptyResponse(t *testing.T) {
+	t.Parallel()
 	mockRDS := &MockRDSClient{}
 	client := &Client{
 		client: mockRDS,
@@ -523,6 +534,7 @@ func TestClient_PurchaseCommitment_EmptyResponse(t *testing.T) {
 }
 
 func TestClient_GetOfferingDetails(t *testing.T) {
+	t.Parallel()
 	mockRDS := &MockRDSClient{}
 	client := &Client{
 		client: mockRDS,
@@ -569,6 +581,7 @@ func TestClient_GetOfferingDetails(t *testing.T) {
 }
 
 func TestClient_NormalizeEngineName(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	tests := []struct {
@@ -620,6 +633,7 @@ func TestClient_NormalizeEngineName(t *testing.T) {
 }
 
 func TestClient_ConvertPaymentOption(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	tests := []struct {
@@ -649,6 +663,7 @@ func TestClient_ConvertPaymentOption(t *testing.T) {
 }
 
 func TestClient_GetDurationString(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	tests := []struct {
@@ -687,6 +702,7 @@ func TestClient_GetDurationString(t *testing.T) {
 }
 
 func TestCreatePurchaseTags_IncludesPurchaseAutomation(t *testing.T) {
+	t.Parallel()
 	c := &Client{}
 	rec := common.Recommendation{ResourceType: "db.m5.large", Region: "eu-west-1"}
 	tags := c.createPurchaseTags(rec, common.PurchaseSourceCLI)
@@ -701,6 +717,7 @@ func TestCreatePurchaseTags_IncludesPurchaseAutomation(t *testing.T) {
 }
 
 func TestCreatePurchaseTags_OmitsPurchaseAutomationWhenSourceEmpty(t *testing.T) {
+	t.Parallel()
 	c := &Client{}
 	rec := common.Recommendation{ResourceType: "db.m5.large", Region: "eu-west-1"}
 	tags := c.createPurchaseTags(rec, "")
@@ -747,6 +764,7 @@ func expectOfferingForClass(m *MockRDSClient, class string) {
 // reservation already exists under the token-derived ID, a re-drive returns it
 // WITHOUT calling PurchaseReservedDBInstancesOffering a second time (issue #641).
 func TestClient_PurchaseCommitment_Idempotent_GuardShortCircuits(t *testing.T) {
+	t.Parallel()
 	mockRDS := &MockRDSClient{}
 	client := &Client{client: mockRDS, region: "eu-west-1"}
 
@@ -776,6 +794,7 @@ func TestClient_PurchaseCommitment_Idempotent_GuardShortCircuits(t *testing.T) {
 // purchase proceeds: the by-ID guard reports not-found (NotFound fault), the
 // purchase runs, and the derived ID is used.
 func TestClient_PurchaseCommitment_Idempotent_NotFoundProceeds(t *testing.T) {
+	t.Parallel()
 	mockRDS := &MockRDSClient{}
 	client := &Client{client: mockRDS, region: "eu-west-1"}
 
@@ -804,6 +823,7 @@ func TestClient_PurchaseCommitment_Idempotent_NotFoundProceeds(t *testing.T) {
 // the guard missed but AWS rejects the duplicate ID with the AlreadyExists fault,
 // the re-drive recovers the existing reservation instead of erroring.
 func TestClient_PurchaseCommitment_Idempotent_AlreadyExistsRecovers(t *testing.T) {
+	t.Parallel()
 	mockRDS := &MockRDSClient{}
 	client := &Client{client: mockRDS, region: "eu-west-1"}
 
@@ -834,6 +854,7 @@ func TestClient_PurchaseCommitment_Idempotent_AlreadyExistsRecovers(t *testing.T
 // TestClient_PurchaseCommitment_Idempotent_FailLoudOnLookupError asserts a lookup
 // error fails loud and does NOT fall through to a purchase (no double-buy).
 func TestClient_PurchaseCommitment_Idempotent_FailLoudOnLookupError(t *testing.T) {
+	t.Parallel()
 	mockRDS := &MockRDSClient{}
 	client := &Client{client: mockRDS, region: "eu-west-1"}
 
@@ -856,6 +877,7 @@ func TestClient_PurchaseCommitment_Idempotent_FailLoudOnLookupError(t *testing.T
 // "pagination cap reached" error after maxOfferingPages empty pages and does NOT
 // make a (maxOfferingPages+1)th call (issue #688).
 func TestFindOfferingID_PaginationCapFires(t *testing.T) {
+	t.Parallel()
 	mockRDS := &MockRDSClient{}
 	t.Cleanup(func() { mockRDS.AssertExpectations(t) })
 	client := &Client{client: mockRDS, region: "us-east-1"}
@@ -881,6 +903,7 @@ func TestFindOfferingID_PaginationCapFires(t *testing.T) {
 // returns an offering whose OfferingType does not match the requested payment
 // option (issues #688, #288).
 func TestFindOfferingID_WrongVariantRejected(t *testing.T) {
+	t.Parallel()
 	mockRDS := &MockRDSClient{}
 	t.Cleanup(func() { mockRDS.AssertExpectations(t) })
 	client := &Client{client: mockRDS, region: "us-east-1"}
@@ -909,6 +932,7 @@ func TestFindOfferingID_WrongVariantRejected(t *testing.T) {
 // TestFindOfferingID_HappyPath asserts that findOfferingID returns the correct
 // offering ID when a matching offering is returned on the first page (issue #688).
 func TestFindOfferingID_HappyPath(t *testing.T) {
+	t.Parallel()
 	mockRDS := &MockRDSClient{}
 	t.Cleanup(func() { mockRDS.AssertExpectations(t) })
 	client := &Client{client: mockRDS, region: "us-east-1"}
@@ -941,6 +965,7 @@ func TestFindOfferingID_HappyPath(t *testing.T) {
 // include DeploymentOption; single-AZ and multi-AZ RDS RIs have different
 // prices so fabricating the value risks buying the wrong offering class.
 func TestFindOfferingID_EmptyAZConfig_Errors(t *testing.T) {
+	t.Parallel()
 	mockRDS := &MockRDSClient{}
 	t.Cleanup(func() { mockRDS.AssertExpectations(t) })
 	client := &Client{client: mockRDS, region: "us-east-1"}
@@ -968,6 +993,7 @@ func TestFindOfferingID_EmptyAZConfig_Errors(t *testing.T) {
 // silently falling through to multiAZ==false in paginateRDSOfferings (which
 // would treat the bad value as single-AZ, the same mis-buy as the old default).
 func TestFindOfferingID_InvalidAZConfig_Errors(t *testing.T) {
+	t.Parallel()
 	mockRDS := &MockRDSClient{}
 	t.Cleanup(func() { mockRDS.AssertExpectations(t) })
 	client := &Client{client: mockRDS, region: "us-east-1"}
@@ -998,6 +1024,7 @@ func TestFindOfferingID_InvalidAZConfig_Errors(t *testing.T) {
 // rather than silently matching (and buying) a 1-year offering. A "0" term is
 // what a 0/NULL Term DB row produces on the scheduler purchase path.
 func TestFindOfferingID_InvalidTerm_ErrorsBeforeAPICall(t *testing.T) {
+	t.Parallel()
 	mockRDS := &MockRDSClient{}
 	t.Cleanup(func() { mockRDS.AssertExpectations(t) })
 	client := &Client{client: mockRDS, region: "us-east-1"}
@@ -1028,6 +1055,7 @@ func TestFindOfferingID_InvalidTerm_ErrorsBeforeAPICall(t *testing.T) {
 // Edition-qualified strings (oracle-se2, sqlserver-web, etc.) are valid RDS
 // ProductDescription values and must pass through (see CR #1085).
 func TestNormalizeEngineName_AmbiguousErrors(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	ambiguous := []string{
@@ -1054,6 +1082,7 @@ func TestNormalizeEngineName_AmbiguousErrors(t *testing.T) {
 // normalizeEngineName rather than being rejected by the bare-name ambiguity
 // check. These are valid RDS ProductDescription values that CE can supply.
 func TestNormalizeEngineName_EditionTokensPassThrough(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	cases := []struct {
@@ -1085,6 +1114,7 @@ func TestNormalizeEngineName_EditionTokensPassThrough(t *testing.T) {
 // context.Canceled immediately when the context is already canceled before the
 // first pagination iteration, without calling the AWS API (issue #515).
 func TestFindOfferingID_CtxCancelledBeforePage(t *testing.T) {
+	t.Parallel()
 	mockRDS := &MockRDSClient{}
 	t.Cleanup(func() { mockRDS.AssertExpectations(t) })
 	client := &Client{client: mockRDS, region: "us-east-1"}
@@ -1105,6 +1135,7 @@ func TestFindOfferingID_CtxCancelledBeforePage(t *testing.T) {
 // Marker is a pointer to an empty string (rather than nil) is treated as the
 // terminal page and does not cause an extra API call (issue #515).
 func TestFindOfferingID_EmptyStringTokenEndsPagination(t *testing.T) {
+	t.Parallel()
 	mockRDS := &MockRDSClient{}
 	t.Cleanup(func() { mockRDS.AssertExpectations(t) })
 	client := &Client{client: mockRDS, region: "us-east-1"}
@@ -1131,6 +1162,7 @@ func TestFindOfferingID_EmptyStringTokenEndsPagination(t *testing.T) {
 // ReservedDBInstanceId carrying the service code, region, SKU, count, and
 // term. The token-based path is exercised by the Idempotent_* tests above.
 func TestClient_PurchaseCommitment_NoToken_RichReservationName(t *testing.T) {
+	t.Parallel()
 	mockRDS := &MockRDSClient{}
 	client := &Client{client: mockRDS, region: "eu-west-1"}
 
@@ -1168,6 +1200,7 @@ func TestClient_PurchaseCommitment_NoToken_RichReservationName(t *testing.T) {
 // Issue #211: a duplicate-ID rejection whose recovery lookup finds nothing is a
 // failure, not an adoption.
 func TestClient_PurchaseCommitment_Idempotent_RejectedNotFlagged(t *testing.T) {
+	t.Parallel()
 	mockRDS := &MockRDSClient{}
 	client := &Client{client: mockRDS, region: "eu-west-1"}
 	token := common.DeriveIdempotencyToken("exec-211", 0)
@@ -1209,6 +1242,7 @@ func findWithPage(t *testing.T, offerings ...types.ReservedDBInstancesOffering) 
 // server-side ProductDescription filter is a partial match, so an aurora-mysql
 // row listed first must not be bought for a mysql recommendation.
 func TestFindOfferingID_PartialEngineMatchSkipped(t *testing.T) {
+	t.Parallel()
 	aurora := exactOffering("offering-aurora")
 	aurora.ProductDescription = aws.String("aurora-mysql")
 
@@ -1219,6 +1253,7 @@ func TestFindOfferingID_PartialEngineMatchSkipped(t *testing.T) {
 }
 
 func TestFindOfferingID_OnlyNonExactRowsIsNoMatch(t *testing.T) {
+	t.Parallel()
 	mut := map[string]func(*types.ReservedDBInstancesOffering){
 		"engine":      func(o *types.ReservedDBInstancesOffering) { o.ProductDescription = aws.String("aurora-mysql") },
 		"class":       func(o *types.ReservedDBInstancesOffering) { o.DBInstanceClass = aws.String("db.r6g.xlarge") },
@@ -1244,6 +1279,7 @@ func TestFindOfferingID_OnlyNonExactRowsIsNoMatch(t *testing.T) {
 }
 
 func TestFindOfferingID_TwoDistinctExactMatchesIsError(t *testing.T) {
+	t.Parallel()
 	id, err := findWithPage(t, exactOffering("offering-a"), exactOffering("offering-b"))
 
 	assert.Empty(t, id)
@@ -1253,6 +1289,7 @@ func TestFindOfferingID_TwoDistinctExactMatchesIsError(t *testing.T) {
 }
 
 func TestFindOfferingID_RepeatedSameIDIsNotAmbiguous(t *testing.T) {
+	t.Parallel()
 	id, err := findWithPage(t, exactOffering("offering-a"), exactOffering("offering-a"))
 
 	assert.NoError(t, err)
@@ -1275,6 +1312,7 @@ func findAcrossPages(t *testing.T, pages ...[]types.ReservedDBInstancesOffering)
 }
 
 func TestFindOfferingID_ExactMatchesOnDifferentPagesIsError(t *testing.T) {
+	t.Parallel()
 	id, err := findAcrossPages(t,
 		[]types.ReservedDBInstancesOffering{exactOffering("offering-a")},
 		[]types.ReservedDBInstancesOffering{exactOffering("offering-b")})
@@ -1286,6 +1324,7 @@ func TestFindOfferingID_ExactMatchesOnDifferentPagesIsError(t *testing.T) {
 }
 
 func TestFindOfferingID_SameIDOnDifferentPagesIsNotAmbiguous(t *testing.T) {
+	t.Parallel()
 	id, err := findAcrossPages(t,
 		[]types.ReservedDBInstancesOffering{exactOffering("offering-a")},
 		[]types.ReservedDBInstancesOffering{exactOffering("offering-a")})
@@ -1295,6 +1334,7 @@ func TestFindOfferingID_SameIDOnDifferentPagesIsNotAmbiguous(t *testing.T) {
 }
 
 func TestFindOfferingID_MatchOnLaterPageAfterNonExactFirstPage(t *testing.T) {
+	t.Parallel()
 	aurora := exactOffering("offering-aurora")
 	aurora.ProductDescription = aws.String("aurora-mysql")
 
@@ -1307,6 +1347,7 @@ func TestFindOfferingID_MatchOnLaterPageAfterNonExactFirstPage(t *testing.T) {
 }
 
 func TestFindOfferingID_NoMatchReportsPagesFetched(t *testing.T) {
+	t.Parallel()
 	_, err := findAcrossPages(t, nil, nil)
 
 	if assert.Error(t, err) {
@@ -1320,6 +1361,7 @@ func TestFindOfferingID_NoMatchReportsPagesFetched(t *testing.T) {
 // is the Cost Explorer spelling (with a space) and must be refused the same way
 // rather than fail later as "no offerings found" (issue #302).
 func TestFindOfferingID_LicensedEnginesRefusedBeforeAPICall(t *testing.T) {
+	t.Parallel()
 	for _, engine := range []string{
 		"oracle-se2", "oracle-ee", "sqlserver-se", "sqlserver-web", "sql-server-ex",
 		"SQL Server", "sql server", "SQL Server Enterprise",
@@ -1363,6 +1405,7 @@ func cappedOfferingPages(mockRDS *MockRDSClient, matchPage int) {
 // pages remain, so the lookup must refuse (never return the match) with an
 // error that names the unverified match, and must not fetch past the cap.
 func TestFindOfferingID_MatchBeforeCapRefusesWhenMorePagesRemain(t *testing.T) {
+	t.Parallel()
 	for _, matchPage := range []int{1, maxOfferingPages} {
 		t.Run(fmt.Sprintf("match on page %d", matchPage), func(t *testing.T) {
 			mockRDS := &MockRDSClient{}
@@ -1388,6 +1431,7 @@ func TestFindOfferingID_MatchBeforeCapRefusesWhenMorePagesRemain(t *testing.T) {
 // issue #303: when the final page is the last one the cap allows (no further
 // marker), the walk is complete and the unique match is returned.
 func TestFindOfferingID_MatchOnLastAllowedPageSucceeds(t *testing.T) {
+	t.Parallel()
 	pages := make([][]types.ReservedDBInstancesOffering, maxOfferingPages)
 	pages[maxOfferingPages-1] = []types.ReservedDBInstancesOffering{exactOffering("offering-last")}
 
