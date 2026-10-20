@@ -304,7 +304,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		return result, result.Error
 	}
 	if rec.Count <= 0 {
-		result.Error = fmt.Errorf("quantity must be greater than zero")
+		result.Error = fmt.Errorf("quantity must be greater than zero, got %d", rec.Count)
 		return result, result.Error
 	}
 

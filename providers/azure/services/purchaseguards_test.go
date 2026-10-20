@@ -12,13 +12,12 @@ import (
 )
 
 const (
-	errSource       = "purchase source is required for Azure reservation purchases"
-	errCountZero    = "quantity must be greater than zero, got 0"
-	errCountNoDigit = "quantity must be greater than zero"
-	errResType      = "resource type is required"
-	errBadTerm      = "unsupported reservation term: 2yr"
-	errBadPayment   = `azure reservations support only upfront or monthly billing; "partial-upfront" is not available (partial-upfront has no azure equivalent)`
-	errNoPayment    = "azure reservations support only upfront or monthly billing, and no payment option was supplied; " +
+	errSource     = "purchase source is required for Azure reservation purchases"
+	errCountZero  = "quantity must be greater than zero, got 0"
+	errResType    = "resource type is required"
+	errBadTerm    = "unsupported reservation term: 2yr"
+	errBadPayment = `azure reservations support only upfront or monthly billing; "partial-upfront" is not available (partial-upfront has no azure equivalent)`
+	errNoPayment  = "azure reservations support only upfront or monthly billing, and no payment option was supplied; " +
 		"set it explicitly (upfront or monthly) rather than relying on a default, because Azure's own " +
 		"default is upfront and would charge the whole commitment immediately"
 	errAccessToken = "failed to get access token: token boom"
@@ -47,13 +46,7 @@ func guardCases() []guardCase {
 	idOpts := func(o common.PurchaseOptions) common.PurchaseOptions { return o }
 	return []guardCase{
 		{"missing source", id, func(o common.PurchaseOptions) common.PurchaseOptions { o.Source = ""; return o }, same(errSource)},
-		{"zero count", func(r common.Recommendation) common.Recommendation { r.Count = 0; return r }, idOpts,
-			func(s string) string {
-				if s == "synapse" {
-					return errCountNoDigit
-				}
-				return errCountZero
-			}},
+		{"zero count", func(r common.Recommendation) common.Recommendation { r.Count = 0; return r }, idOpts, same(errCountZero)},
 		{"blank resource type", func(r common.Recommendation) common.Recommendation { r.ResourceType = "  "; return r }, idOpts, same(errResType)},
 		{"bad term", func(r common.Recommendation) common.Recommendation { r.Term = "2yr"; return r }, idOpts,
 			func(s string) string {
