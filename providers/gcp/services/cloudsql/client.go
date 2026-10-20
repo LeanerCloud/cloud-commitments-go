@@ -47,7 +47,7 @@ type RecommenderClient interface {
 }
 
 // Client handles GCP Cloud SQL commitments.
-type Client struct {
+type Client struct { //nolint:govet // fieldalignment: file owned by open PR #471
 	skuMu           sync.Mutex
 	skuCache        *cloudbilling.ListSkusResponse
 	ctx             context.Context
@@ -258,7 +258,7 @@ func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 }
 
 // SQLPricing contains pricing information for Cloud SQL.
-type SQLPricing struct {
+type SQLPricing struct { //nolint:govet // fieldalignment: file owned by open PR #471
 	HourlyRate        float64
 	CommitmentPrice   float64
 	OnDemandPrice     float64

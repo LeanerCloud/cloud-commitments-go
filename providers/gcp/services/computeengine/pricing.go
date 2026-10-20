@@ -25,13 +25,13 @@ const (
 
 // ComputePricing is the price of a commitment's resources, for one term.
 type ComputePricing struct {
+	Currency string
 	// HourlyRate is the committed price per hour for the whole resource set.
 	HourlyRate float64
 	// CommitmentPrice is the committed price over the whole term.
 	CommitmentPrice float64
 	// OnDemandPrice is the on-demand price of the same resources over the term.
 	OnDemandPrice     float64
-	Currency          string
 	SavingsPercentage float64
 }
 
@@ -97,8 +97,8 @@ type skuRates struct {
 }
 
 type familyRates struct {
-	onDemand, commitment skuRates
 	currency             string
+	onDemand, commitment skuRates
 }
 
 // onDemandDescription matches e.g. "N2 Instance Core running in Americas",
@@ -127,11 +127,11 @@ func legacyCommitmentDescription(label string) *regexp.Regexp {
 
 // rateMatcher recognizes the catalog SKUs of one family, region and term.
 type rateMatcher struct {
-	region      string
 	onDemand    *regexp.Regexp
-	commitments []*regexp.Regexp
+	region      string
 	wantTerm    string
 	wantUsage   string
+	commitments []*regexp.Regexp
 }
 
 func newRateMatcher(labels skuFamilyLabels, region string, termYears int) rateMatcher {
@@ -190,8 +190,8 @@ func (r *rateSlot) set(price float64, sku *cloudbilling.Sku) error {
 
 // rateCollector accumulates the four prices wanted from matched SKUs.
 type rateCollector struct {
-	odCPU, odRAM, cCPU, cRAM rateSlot
 	currency                 string
+	odCPU, odRAM, cCPU, cRAM rateSlot
 }
 
 func (c *rateCollector) add(sku *cloudbilling.Sku, isCommit, isRAM bool) error {

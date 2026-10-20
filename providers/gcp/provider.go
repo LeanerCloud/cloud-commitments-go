@@ -93,11 +93,11 @@ func (r *realResourceManagerService) ListProjects(ctx context.Context) ([]*cloud
 
 // Provider implements the provider.Provider interface for Google Cloud Platform.
 type Provider struct {
-	projectID              string
-	clientOpts             []option.ClientOption
 	projectsClient         ProjectsClient
 	regionsClient          RegionsClient
 	resourceManagerService ResourceManagerService
+	projectID              string
+	clientOpts             []option.ClientOption
 }
 
 // NewProvider creates a new GCP provider.

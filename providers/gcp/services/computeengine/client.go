@@ -260,16 +260,17 @@ type RecommenderClient interface {
 
 // Client handles GCP Compute Engine Committed Use Discounts.
 type Client struct {
-	projectID           string
-	region              string
-	clientOpts          []option.ClientOption
 	commitmentsService  CommitmentsService
 	machineTypesService MachineTypesService
 	billingService      BillingService
 	recommenderClient   RecommenderClient
 
-	skuMu    sync.Mutex
-	skuCache []*cloudbilling.Sku
+	projectID  string
+	region     string
+	clientOpts []option.ClientOption
+	skuCache   []*cloudbilling.Sku
+
+	skuMu sync.Mutex
 }
 
 // NewClient creates a new GCP Compute Engine client.

@@ -54,6 +54,7 @@ func gcpRegionConcurrency() int {
 // only an explicit request reaches those clients, which return
 // common.ErrCommitmentPurchaseNotSupported.
 type regionResult struct {
+	lastErr error
 	compute []common.Recommendation
 	// attempted counts the service calls launched for this region (after the
 	// params service filter), failed counts how many of those errored, and
@@ -61,15 +62,14 @@ type regionResult struct {
 	// these across regions for the all-attempted-failed guard (COR-03).
 	attempted int
 	failed    int
-	lastErr   error
 }
 
 // RecommendationsClientAdapter aggregates GCP CUD and commitment recommendations across all services.
 type RecommendationsClientAdapter struct {
+	// regionsFn replaces the live region lookup; tests only.
+	regionsFn  func(context.Context) ([]string, error)
 	projectID  string
 	clientOpts []option.ClientOption
-	// regionsFn replaces the live region lookup; tests only.
-	regionsFn func(context.Context) ([]string, error)
 }
 
 // GetRecommendations retrieves all GCP commitment recommendations across all

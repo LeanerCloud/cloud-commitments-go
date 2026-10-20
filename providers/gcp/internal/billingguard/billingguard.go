@@ -19,8 +19,8 @@ const marker = "failed to create billing service"
 
 type watcher struct {
 	next io.Writer
-	mu   sync.Mutex
 	hits []string
+	mu   sync.Mutex
 }
 
 func (w *watcher) Write(p []byte) (int, error) {

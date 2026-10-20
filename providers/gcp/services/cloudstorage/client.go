@@ -59,7 +59,7 @@ type BillingService interface {
 }
 
 // Client handles GCP Cloud Storage commitments.
-type Client struct {
+type Client struct { //nolint:govet // fieldalignment: file owned by open PR #471
 	ctx            context.Context
 	projectID      string
 	region         string
@@ -219,7 +219,7 @@ func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 }
 
 // StoragePricing contains pricing information for Cloud Storage.
-type StoragePricing struct {
+type StoragePricing struct { //nolint:govet // fieldalignment: file owned by open PR #471
 	HourlyRate        float64
 	CommitmentPrice   float64
 	OnDemandPrice     float64
