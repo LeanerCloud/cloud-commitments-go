@@ -11,6 +11,12 @@ permissions:
 
 jobs:
   sanity:
+    # Fork and Dependabot pull requests never receive secrets; skip them
+    # explicitly rather than passing vacuously. Every other run needs them.
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]')
     runs-on: ubuntu-latest
     permissions:
       id-token: write
@@ -19,36 +25,34 @@ jobs:
       REPORT_PATH: azure_sanity_report.json
 
     steps:
-      - name: Precheck secrets (skip if not configured)
-        id: precheck
+      - name: Require secrets (fail if not configured)
         shell: bash
         env:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         run: |
-          if [[ -z "${AZURE_CLIENT_ID}" || -z "${AZURE_TENANT_ID}" || -z "${AZURE_SUBSCRIPTION_ID}" ]]; then
-            echo "should_run=false" >> "$GITHUB_OUTPUT"
-            echo "Missing Azure secrets. Skipping Azure sanity."
-          else
-            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          missing=()
+          [[ -z "${AZURE_CLIENT_ID}" ]] && missing+=("AZURE_CLIENT_ID")
+          [[ -z "${AZURE_TENANT_ID}" ]] && missing+=("AZURE_TENANT_ID")
+          [[ -z "${AZURE_SUBSCRIPTION_ID}" ]] && missing+=("AZURE_SUBSCRIPTION_ID")
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Azure sanity cannot run: missing secrets: ${missing[*]}"
+            exit 1
           fi
 
       - name: Checkout
-        if: steps.precheck.outputs.should_run == 'true'
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
 
       - name: Setup Go
-        if: steps.precheck.outputs.should_run == 'true'
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
           go-version-file: pkg/go.mod
           cache-dependency-path: '**/go.sum'
 
       - name: Azure Login (OIDC)
-        if: steps.precheck.outputs.should_run == 'true'
         uses: azure/login@532459ea530d8321f2fb9bb10d1e0bcf23869a43 # v3.0.0
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
@@ -56,7 +60,6 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Build + Run Azure sanity
-        if: steps.precheck.outputs.should_run == 'true'
         env:
           AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
@@ -70,13 +73,9 @@ jobs:
             --out "${REPORT_PATH}"
 
       - name: Upload report artifact
-        if: always() && steps.precheck.outputs.should_run == 'true'
+        if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: azure-sanity-report
           path: ${{ env.REPORT_PATH }}
           if-no-files-found: ignore
-
-      - name: Skipped summary
-        if: steps.precheck.outputs.should_run != 'true'
-        run: echo "Azure sanity skipped because required secrets are not configured."
