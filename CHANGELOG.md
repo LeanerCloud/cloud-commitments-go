@@ -127,6 +127,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Changed
 
 - **`gcp`:** region-lookup permission errors are now classified by type only (googleapi 403 or gRPC `PermissionDenied`) through the shared `IsPermissionError`. gRPC `PermissionDenied` is now skipped with a warning like a 403, and an untyped error whose text merely contains "403" and "permission" now propagates instead of being skipped (#6).
+- **BREAKING `gcp`: stored contexts removed (#6).** `computeengine.NewClient`
+  no longer takes a `context.Context` (it was stored and never read), and
+  `computeengine.BillingService.ListSKUs` now takes `ctx` as its first
+  parameter, so custom implementations must add it. `Provider` and
+  `RecommendationsClientAdapter` no longer store a context (unexported
+  fields; no API change). Downstream call sites to update: mcp
+  `tools/gcp_computeengine_cud_safeguards_test.go:76,125`,
+  `tools/search_dedupe_test.go:344`,
+  `cmd/cudly-mcp/gcp_purchase_protocol_test.go:102`; platform
+  `internal/purchase/gcp_history_cost_test.go:48`. No cli, mcp or platform
+  code references `BillingService`, `ListSKUs` or a `gcp.Provider` literal.
 - **`azure`:** managedredis and synapse reservations now get the same generated display name as the other services (`redis-<region>-<sku>-<n>x-<term>-<payment>-...` and `synapse-...`) instead of the fixed `Azure Cache for Redis Reservation - <sku>` / `Synapse SQL Pool Reservation - <sku>`. This also removes the stray space before the idempotency marker on managedredis. Idempotency lookup keys on the tag or the marker suffix, not the base name (#538).
 - **BREAKING `gcp`: Cloud SQL and Memorystore no longer return CUD
   recommendations (#294).** They came from the project-scoped
