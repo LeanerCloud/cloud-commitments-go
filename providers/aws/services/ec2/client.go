@@ -771,22 +771,26 @@ type ConvertibleRI struct {
 	ProductDescription string    `json:"product_description"`
 	InstanceTenancy    string    `json:"instance_tenancy"`
 	Scope              string    `json:"scope"`
+
 	// CurrencyCode is the ISO-4217 currency that FixedPrice / UsagePrice
 	// are denominated in (typically "USD"). Plumbed through to
 	// exchange.RIInfo so the dollar-units pre-filter on cross-family
 	// alternatives can refuse comparisons across currencies.
-	CurrencyCode        string  `json:"currency_code,omitempty"`
+	CurrencyCode string `json:"currency_code,omitempty"`
+
 	FixedPrice          float64 `json:"fixed_price"`
 	UsagePrice          float64 `json:"usage_price"`
 	NormalizationFactor float64 `json:"normalization_factor"`
 	Duration            int64   `json:"duration"`
+
 	// RecurringHourlyAmount is the per-hour recurring charge (sum across
 	// the SDK's RecurringCharges slice) — this is non-zero for
 	// no-upfront and partial-upfront RIs where some of the cost is
 	// billed hourly rather than as the upfront FixedPrice. Used by the
 	// exchange-package dollar-units calculation.
 	RecurringHourlyAmount float64 `json:"recurring_hourly_amount,omitempty"`
-	InstanceCount         int32   `json:"instance_count"`
+
+	InstanceCount int32 `json:"instance_count"`
 }
 
 // ListConvertibleReservedInstances returns all active convertible RIs in the region.

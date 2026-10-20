@@ -24,14 +24,19 @@ type Charge struct {
 type Input struct {
 	// Service names the AWS service in error messages and term parsing.
 	Service string
+
 	// Term is the requested term (rec.Term); it must match the offering.
-	Term    string
+	Term string
+
 	Charges []Charge
+
 	// FixedPrice is the upfront price per reservation.
 	FixedPrice float64
+
 	// UsagePrice is the legacy per-hour price per reservation. It is used
 	// only when the recurring charges sum to zero.
 	UsagePrice float64
+
 	// DurationSeconds is the offering's own duration; 0 means missing.
 	DurationSeconds int64
 }
