@@ -51,6 +51,7 @@ func shapeRec(region string, i int) common.Recommendation {
 }
 
 func TestPoolKeys_DisjointAcrossServices(t *testing.T) {
+	t.Parallel()
 	const region = "us-east-1"
 	seen := map[string]string{}
 	for i, s := range poolKeyShapes {
@@ -64,6 +65,7 @@ func TestPoolKeys_DisjointAcrossServices(t *testing.T) {
 }
 
 func TestPoolKeys_CommitmentCoverageAndLookupAgree(t *testing.T) {
+	t.Parallel()
 	const region = "eu-west-1"
 	lookups := map[string]string{}
 	for i, s := range poolKeyShapes {

@@ -15,6 +15,7 @@ import (
 // the over-subtract clamp, and pool-key mismatch (commitment for a pool
 // nobody recommended).
 func TestAdjustExistingCoverageForExpiringCommitments(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	soon := now.Add(15 * 24 * time.Hour)     // expires in 15 days
 	later := now.Add(180 * 24 * time.Hour)   // expires in 180 days
@@ -252,6 +253,7 @@ func TestAdjustExistingCoverageForExpiringCommitments(t *testing.T) {
 }
 
 func TestExpiringCoverageUsesWholePoolDemand(t *testing.T) {
+	t.Parallel()
 	type expiryAdjust func([]common.Recommendation, []common.Commitment, int) int
 	adjust := expiryAdjust(AdjustExistingCoverageForExpiringCommitments)
 	apis := []struct {
@@ -362,6 +364,7 @@ func TestExpiringCoverageUsesWholePoolDemand(t *testing.T) {
 }
 
 func TestExpiringCoveragePreservesZeroDemandShare(t *testing.T) {
+	t.Parallel()
 	recs := []common.Recommendation{
 		{Service: common.ServiceEC2, Region: "us-east-1", ResourceType: "m5.large", AverageInstancesUsedPerHour: 30},
 		{Service: common.ServiceEC2, Region: "us-east-1", ResourceType: "m5.large", AverageInstancesUsedPerHour: 0},

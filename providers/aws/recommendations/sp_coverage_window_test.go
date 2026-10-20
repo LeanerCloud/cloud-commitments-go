@@ -14,6 +14,7 @@ import (
 )
 
 func TestGetSPCoverageSummary_SparseWindowRates(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"omitted", "zero", "nil"} {
 		for _, paged := range []bool{false, true} {
 			t.Run(mode+"/paged="+strconv.FormatBool(paged), func(t *testing.T) {

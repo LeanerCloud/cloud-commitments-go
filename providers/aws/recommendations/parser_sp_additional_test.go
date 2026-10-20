@@ -15,6 +15,7 @@ import (
 )
 
 func TestParseSavingsPlanDetail(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	tests := []struct {
@@ -160,6 +161,7 @@ func TestParseSavingsPlanDetail(t *testing.T) {
 }
 
 func TestParseSavingsPlansRecommendations(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	spRec := &types.SavingsPlansPurchaseRecommendation{
@@ -202,6 +204,7 @@ func TestParseSavingsPlansRecommendations(t *testing.T) {
 }
 
 func TestParseSavingsPlansRecommendations_Empty(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	spRec := &types.SavingsPlansPurchaseRecommendation{
@@ -261,6 +264,7 @@ func (m *mockCostExplorerForSP) GetCostAndUsage(_ context.Context, _ *costexplor
 }
 
 func TestGetSavingsPlansRecommendations_WithFilters(t *testing.T) {
+	t.Parallel()
 	mockAPI := &mockCostExplorerForSP{
 		responses: map[types.SupportedSavingsPlansType]*costexplorer.GetSavingsPlansPurchaseRecommendationOutput{
 			types.SupportedSavingsPlansTypeComputeSp: {
@@ -306,6 +310,7 @@ func TestGetSavingsPlansRecommendations_WithFilters(t *testing.T) {
 }
 
 func TestGetSavingsPlansRecommendations_EmptyFilters(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	params := common.RecommendationParams{
@@ -330,6 +335,7 @@ func TestGetSavingsPlansRecommendations_EmptyFilters(t *testing.T) {
 // amortized (which is inaccurate for SP rows where monthly_cost only reflects
 // the recurring charge, not the full on-demand baseline).
 func TestParseSavingsPlanDetail_OnDemandCost(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	params := common.RecommendationParams{
@@ -520,6 +526,7 @@ func (m *alwaysNextPageSPMock) GetCostAndUsage(
 
 // TestGetSavingsPlansRecommendations_Paginates asserts multi-page accumulation (issue #692).
 func TestGetSavingsPlansRecommendations_Paginates(t *testing.T) {
+	t.Parallel()
 	mock := &multiPageSPMock{
 		pages: []*costexplorer.GetSavingsPlansPurchaseRecommendationOutput{
 			spOutput(2, aws.String("tok1")),
@@ -547,6 +554,7 @@ func TestGetSavingsPlansRecommendations_Paginates(t *testing.T) {
 // TestGetSavingsPlansRecommendations_EmptyTokenTerminates asserts that an
 // empty-string NextPageToken is treated as terminal (parity with PR #690).
 func TestGetSavingsPlansRecommendations_EmptyTokenTerminates(t *testing.T) {
+	t.Parallel()
 	mock := &multiPageSPMock{
 		pages: []*costexplorer.GetSavingsPlansPurchaseRecommendationOutput{
 			spOutput(2, aws.String("")), // empty string -- must terminate
@@ -571,6 +579,7 @@ func TestGetSavingsPlansRecommendations_EmptyTokenTerminates(t *testing.T) {
 // TestGetSavingsPlansRecommendations_PaginationCapError asserts that exceeding
 // maxRecommendationPages returns a diagnostic error (issue #692).
 func TestGetSavingsPlansRecommendations_PaginationCapError(t *testing.T) {
+	t.Parallel()
 	mock := &alwaysNextPageSPMock{}
 	client := NewClientWithAPI(mock, "us-east-1")
 	params := common.RecommendationParams{

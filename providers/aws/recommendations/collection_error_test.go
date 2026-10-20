@@ -46,6 +46,7 @@ func incompleteRIDetails(valid bool, bad int) []types.ReservationPurchaseRecomme
 }
 
 func TestCollectionCompleteness_Combos(t *testing.T) {
+	t.Parallel()
 	apiFailure := errors.New("access denied")
 	for _, tc := range []struct {
 		name                               string
@@ -108,6 +109,7 @@ func TestCollectionCompleteness_Combos(t *testing.T) {
 }
 
 func TestCollectionCompleteness_NestedServices(t *testing.T) {
+	t.Parallel()
 	detailFailure := errors.New("bad quantity")
 	apiFailure := errors.New("access denied")
 	partial := &IncompleteRecommendationsError{FailedDetails: 1, FailedScopes: 1, Causes: []error{detailFailure, apiFailure}}
@@ -134,6 +136,7 @@ func TestCollectionCompleteness_NestedServices(t *testing.T) {
 }
 
 func TestCollectionCompleteness_Cancellation(t *testing.T) {
+	t.Parallel()
 	for _, terminal := range []error{context.Canceled, context.DeadlineExceeded} {
 		t.Run(terminal.Error(), func(t *testing.T) {
 			calls := 0

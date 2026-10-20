@@ -18,6 +18,7 @@ import (
 )
 
 func TestParseRecommendedQuantity(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	tests := []struct {
@@ -192,6 +193,7 @@ func TestParseRecommendationDetail_WarnsWhenFractionRoundsToZero(t *testing.T) {
 }
 
 func TestParseCostInformation(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	tests := []struct {
@@ -268,6 +270,7 @@ func TestParseCostInformation(t *testing.T) {
 }
 
 func TestParseRecommendationDetail_UnsupportedService(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	details := &types.ReservationPurchaseRecommendationDetail{
@@ -291,6 +294,7 @@ func TestParseRecommendationDetail_UnsupportedService(t *testing.T) {
 }
 
 func TestParseRecommendationDetail_MissingQuantity(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	details := &types.ReservationPurchaseRecommendationDetail{
@@ -314,6 +318,7 @@ func TestParseRecommendationDetail_MissingQuantity(t *testing.T) {
 }
 
 func TestParseRecommendationDetail_WithAccountAndCosts(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	details := &types.ReservationPurchaseRecommendationDetail{
@@ -364,6 +369,7 @@ func TestParseRecommendationDetail_WithAccountAndCosts(t *testing.T) {
 // which would surface a wrong money figure (e.g. $0 upfront on an all-upfront
 // RI) into savings math and purchase decisions.
 func TestParseRecommendationDetail_MalformedCostFields(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	params := common.RecommendationParams{
@@ -447,6 +453,7 @@ func TestParseRecommendationDetail_MalformedCostFields(t *testing.T) {
 }
 
 func TestParseRecommendations(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	awsRecs := []types.ReservationPurchaseRecommendation{
@@ -506,6 +513,7 @@ func TestParseRecommendations(t *testing.T) {
 }
 
 func TestParseRecommendations_ReportsInvalidDetails(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	awsRecs := []types.ReservationPurchaseRecommendation{
@@ -569,6 +577,7 @@ func TestParseRecommendations_ReportsInvalidDetails(t *testing.T) {
 }
 
 func TestParseRecommendations_EmptyInput(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	params := common.RecommendationParams{
@@ -591,6 +600,7 @@ func TestParseRecommendations_EmptyInput(t *testing.T) {
 // sizing path, so it must not be fabricated); an invalid AverageUtilization is
 // display-only and degrades to zero.
 func TestParseRIUtilizationSignals(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	tests := []struct {
@@ -786,6 +796,7 @@ func captureStdoutAndLog(t *testing.T, fn func()) (stdout, logged string) {
 // become 0 = "no signal", so --target-coverage passed the rec through unsized
 // and --min-pool-size kept it. It must now drop the detail and report it.
 func TestParseRecommendations_InvalidAverageInstancesIsReportedNotZeroed(t *testing.T) {
+	t.Parallel()
 	detail := func(avg *string) types.ReservationPurchaseRecommendationDetail {
 		return types.ReservationPurchaseRecommendationDetail{
 			RecommendedNumberOfInstancesToPurchase: aws.String("5"),

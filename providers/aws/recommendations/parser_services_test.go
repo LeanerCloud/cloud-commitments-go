@@ -85,6 +85,7 @@ func TestParsedMemoryDBRecommendationDedupesSDKReservation(t *testing.T) {
 }
 
 func TestParseRDSDetails(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	tests := []struct {
@@ -215,6 +216,7 @@ func TestParseRDSDetails(t *testing.T) {
 }
 
 func TestParseElastiCacheDetails(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	tests := []struct {
@@ -292,6 +294,7 @@ func TestParseElastiCacheDetails(t *testing.T) {
 }
 
 func TestParseEC2Details(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	tests := []struct {
@@ -584,6 +587,7 @@ func TestParseEC2Details(t *testing.T) {
 }
 
 func TestParseOpenSearchDetails(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	tests := []struct {
@@ -658,6 +662,7 @@ func TestParseOpenSearchDetails(t *testing.T) {
 }
 
 func TestParseRedshiftDetails(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	tests := []struct {
@@ -741,6 +746,7 @@ func TestParseRedshiftDetails(t *testing.T) {
 }
 
 func TestParseMemoryDBDetails(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	t.Run("missing MemoryDB instance details returns error", func(t *testing.T) {

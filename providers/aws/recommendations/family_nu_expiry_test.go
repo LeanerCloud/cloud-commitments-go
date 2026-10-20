@@ -45,6 +45,7 @@ func expiryTestScenario() (PoolCoverageMap, []common.Recommendation, []common.Co
 }
 
 func TestApplyFamilyNUSizingRDSWithExpiry(t *testing.T) {
+	t.Parallel()
 	t.Run("expiring large RI against xlarge usage: parent drops family, fix sizes it", func(t *testing.T) {
 		cov, recs, commits := expiryTestScenario()
 		_, _, parent := ApplyFamilyNUSizingRDS(recs, cov, 80)

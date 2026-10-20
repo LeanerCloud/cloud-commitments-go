@@ -141,6 +141,7 @@ func expiryClient(t *testing.T, service string, rows ...expiryRow) provider.Serv
 }
 
 func TestReservationExpirySDKDecoders(t *testing.T) {
+	t.Parallel()
 	start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 	for _, service := range []string{"rds", "elasticache", "memorydb", "opensearch", "redshift"} {
 		t.Run(service, func(t *testing.T) {
@@ -171,6 +172,7 @@ func TestReservationExpirySDKDecoders(t *testing.T) {
 }
 
 func TestReservationExpirySDKDates(t *testing.T) {
+	t.Parallel()
 	start := time.Date(2023, 3, 1, 0, 0, 0, 0, time.UTC)
 	zero := time.Time{}
 	for _, tc := range []struct {
@@ -206,6 +208,7 @@ func expiryRecommendation(resource string) common.Recommendation {
 }
 
 func TestReservationExpirySDKSizing(t *testing.T) {
+	t.Parallel()
 	start := time.Now().UTC().Truncate(time.Second).Add(-365 * 24 * time.Hour)
 	for _, tc := range []struct {
 		name     string
@@ -239,6 +242,7 @@ func TestReservationExpirySDKSizing(t *testing.T) {
 }
 
 func TestReservationExpirySDKDedupe(t *testing.T) {
+	t.Parallel()
 	start := time.Now().UTC().Truncate(time.Second).Add(-time.Hour)
 	client := expiryClient(t, "elasticache", expiryRow{"recent", &start, nil, 2})
 	recs := []common.Recommendation{expiryRecommendation("cache.r6g.large"), expiryRecommendation("cache.r7g.large")}
@@ -249,6 +253,7 @@ func TestReservationExpirySDKDedupe(t *testing.T) {
 }
 
 func TestReservationExpirySDKRDSAdjustment(t *testing.T) {
+	t.Parallel()
 	start := time.Now().UTC().Truncate(time.Second).Add(-365 * 24 * time.Hour)
 	client := expiryClient(t, "rds", expiryRow{"unknown", &start, nil, 2})
 	commits, err := client.GetExistingCommitments(context.Background())

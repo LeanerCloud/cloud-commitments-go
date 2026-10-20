@@ -73,6 +73,7 @@ func fullSemaphoreCtx(t *testing.T) context.Context {
 // Pre-fix this test fails: the call escaped the semaphore, hit the mock,
 // and returned success.
 func TestFetchCoveragePage_RespectsSharedSemaphore(t *testing.T) {
+	t.Parallel()
 	mock := &semCountingCE{}
 	client := NewClientWithAPI(mock, "us-east-1")
 
@@ -87,6 +88,7 @@ func TestFetchCoveragePage_RespectsSharedSemaphore(t *testing.T) {
 // TestFetchUtilizationPage_RespectsSharedSemaphore is the PERF-02 regression
 // test for the utilization path: same invariant as the coverage test.
 func TestFetchUtilizationPage_RespectsSharedSemaphore(t *testing.T) {
+	t.Parallel()
 	mock := &semCountingCE{}
 	client := NewClientWithAPI(mock, "us-east-1")
 
@@ -102,6 +104,7 @@ func TestFetchUtilizationPage_RespectsSharedSemaphore(t *testing.T) {
 // after a successful fetch under a free capacity-1 semaphore, the slot must
 // be available again (no leak that would starve later leaf calls).
 func TestFetchPages_ReleaseSemaphoreSlot(t *testing.T) {
+	t.Parallel()
 	mock := &semCountingCE{}
 	client := NewClientWithAPI(mock, "us-east-1")
 
@@ -136,6 +139,7 @@ func heldSlotCtx(t *testing.T) context.Context {
 // regression test: with the cap saturated, the SP coverage, SP utilization and
 // on-demand fetchers must block on Acquire instead of reaching the CE SDK.
 func TestFetchSPAndOnDemandPages_RespectSharedSemaphore(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name  string
 		call  func(c *Client, ctx context.Context) error
@@ -171,6 +175,7 @@ func TestFetchSPAndOnDemandPages_RespectSharedSemaphore(t *testing.T) {
 // TestFetchSPAndOnDemandPages_ReleaseSemaphoreSlot checks the slot is returned
 // after each successful call.
 func TestFetchSPAndOnDemandPages_ReleaseSemaphoreSlot(t *testing.T) {
+	t.Parallel()
 	mock := &semCountingCE{}
 	client := NewClientWithAPI(mock, "us-east-1")
 	sem := semaphore.NewWeighted(1)

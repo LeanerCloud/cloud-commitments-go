@@ -44,6 +44,7 @@ func (m *mockUtilizationCE) GetReservationUtilization(ctx context.Context, param
 //     recover the EC2-only aggregate even though the mock doesn't
 //     actually filter server-side.
 func TestGetRIUtilization_ScopesToEC2AndRegion(t *testing.T) {
+	t.Parallel()
 	mock := &mockUtilizationCE{
 		utilizationOutput: &costexplorer.GetReservationUtilizationOutput{
 			UtilizationsByTime: []types.UtilizationByTime{
@@ -104,6 +105,7 @@ func TestGetRIUtilization_ScopesToEC2AndRegion(t *testing.T) {
 // specific region) still scopes to EC2 via SERVICE alone, rather than
 // erroring or building a Filter with an empty REGION value.
 func TestGetRIUtilization_EmptyRegionOmitsRegionFilter(t *testing.T) {
+	t.Parallel()
 	mock := &mockUtilizationCE{utilizationOutput: &costexplorer.GetReservationUtilizationOutput{}}
 	client := NewClientWithAPI(mock, "us-east-1")
 
@@ -118,6 +120,7 @@ func TestGetRIUtilization_EmptyRegionOmitsRegionFilter(t *testing.T) {
 }
 
 func TestGetRIUtilization_ContextCanceled(t *testing.T) {
+	t.Parallel()
 	mock := &mockUtilizationCE{
 		utilizationOutput: &costexplorer.GetReservationUtilizationOutput{},
 	}
@@ -137,6 +140,7 @@ func TestGetRIUtilization_ContextCanceled(t *testing.T) {
 // to be logged and summed as 0, silently skewing the utilization percent.
 // It must now fail the whole call, naming the field.
 func TestGetRIUtilization_MalformedHoursFailsLoud(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		set   func(*types.ReservationAggregates)
@@ -169,6 +173,7 @@ func TestGetRIUtilization_MalformedHoursFailsLoud(t *testing.T) {
 // all three hours omitted is skipped (no usage signal); any partial row is an
 // error because a missing field would read as 0 hours.
 func TestAggregateUtilizationDetail_PartialHours(t *testing.T) {
+	t.Parallel()
 	s := aws.String
 	for _, tc := range []struct {
 		name    string
@@ -224,6 +229,7 @@ func (m *pagedUtilizationCE) GetReservationUtilization(context.Context, *costexp
 }
 
 func TestGetRIUtilization_MalformedRowOnPageTwoReportsPage2(t *testing.T) {
+	t.Parallel()
 	row := func(purchased string) types.UtilizationByTime {
 		return types.UtilizationByTime{Groups: []types.ReservationUtilizationGroup{{
 			Key: aws.String("ri-1"),

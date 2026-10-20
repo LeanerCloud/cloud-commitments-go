@@ -108,6 +108,7 @@ func oneSPCovPage(covered, onDemand, pct string, nextToken *string) *costexplore
 // pagination, empty response, nil Coverage block, zero-coverage vs missing
 // data, and unparseable/negative number error paths.
 func TestGetSPCoverageSummary(t *testing.T) {
+	t.Parallel()
 	// lookbackDays=30 => windowHours=720.
 	const lookback = 30
 	const windowHours = float64(lookback * 24)
@@ -322,6 +323,7 @@ func TestGetSPCoverageSummary(t *testing.T) {
 // (SAVINGS_PLANS_TYPE is utilization-only and would draw a
 // ValidationException), so with no region there is nothing to filter on.
 func TestGetSPCoverageSummary_NoRegionMeansNilFilter(t *testing.T) {
+	t.Parallel()
 	mock := &mockSPCE{}
 	client := NewClientWithAPI(mock, "us-east-1")
 	_, err := client.GetSPCoverageSummary(context.Background(), "", 30)
@@ -348,6 +350,7 @@ func TestGetSPCoverageSummary_NoRegionMeansNilFilter(t *testing.T) {
 // with covered=360 and OnDemandCost=540 (the UNCOVERED spend), CE reports
 // 40%, and covered/onDemand (the old bug) would yield 66.67%.
 func TestGetSPCoverageSummary_PctMatchesCEReportedPct(t *testing.T) {
+	t.Parallel()
 	const ceReportedPct = "40.00"
 	mock := &mockSPCE{
 		coveragePages: []*costexplorer.GetSavingsPlansCoverageOutput{
@@ -368,6 +371,7 @@ func TestGetSPCoverageSummary_PctMatchesCEReportedPct(t *testing.T) {
 // with a diagnostic error at maxSPCoveragePages instead of spinning forever
 // on an API that keeps returning tokens (mirrors the issue #692 guard).
 func TestGetSPCoverageSummary_PaginationCap(t *testing.T) {
+	t.Parallel()
 	mock := &mockSPCE{coverageAlwaysToken: true}
 	client := NewClientWithAPI(mock, "us-east-1")
 	_, err := client.GetSPCoverageSummary(context.Background(), "", 30)
@@ -381,6 +385,7 @@ func TestGetSPCoverageSummary_PaginationCap(t *testing.T) {
 // NO SAVINGS_PLANS_TYPE dimension, which the coverage API's Filter contract
 // does not support and would reject with a ValidationException.
 func TestGetSPCoverageSummary_RegionOnlyFilter(t *testing.T) {
+	t.Parallel()
 	mock := &mockSPCE{}
 	client := NewClientWithAPI(mock, "us-east-1")
 	_, err := client.GetSPCoverageSummary(context.Background(), "eu-west-2", 30)
@@ -400,6 +405,7 @@ func TestGetSPCoverageSummary_RegionOnlyFilter(t *testing.T) {
 // TestGetSPCoverageSummary_InvalidLookback verifies that lookbackDays <= 0 is
 // an explicit error (fail loud; the caller supplies the default window).
 func TestGetSPCoverageSummary_InvalidLookback(t *testing.T) {
+	t.Parallel()
 	client := NewClientWithAPI(&mockSPCE{}, "us-east-1")
 	for _, days := range []int{0, -1, -30} {
 		_, err := client.GetSPCoverageSummary(context.Background(), "", days)
@@ -412,6 +418,7 @@ func TestGetSPCoverageSummary_InvalidLookback(t *testing.T) {
 // (feedback_ctx_cancel_terminal). The context is canceled before the call, so
 // the ctx.Err() guard fires on the FIRST loop iteration, before any CE call.
 func TestGetSPCoverageSummary_CtxCancelTerminal(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // pre-cancel: ctx.Err() is non-nil on the first loop check
 
@@ -442,6 +449,7 @@ func TestGetSPCoverageSummary_CtxCancelTerminal(t *testing.T) {
 // TestGetSPUtilization covers the happy path, nil Total/Utilization, unparseable
 // fields, negative values, API errors, and invalid lookback.
 func TestGetSPUtilization(t *testing.T) {
+	t.Parallel()
 	// lookbackDays=30 => windowHours=720.
 	const lookback = 30
 	const windowHours = float64(lookback * 24)
@@ -555,6 +563,7 @@ func TestGetSPUtilization(t *testing.T) {
 // ("COMPUTE_SP") which CE silently matches nothing on, for every plan type
 // the SDK defines.
 func TestGetSPUtilization_FilterPerPlanType(t *testing.T) {
+	t.Parallel()
 	for _, planType := range allSPPlanTypes {
 		t.Run(string(planType), func(t *testing.T) {
 			mock := &mockSPCE{}
@@ -579,6 +588,7 @@ func TestGetSPUtilization_FilterPerPlanType(t *testing.T) {
 // produces an And expression combining the SAVINGS_PLANS_TYPE and REGION
 // dimensions.
 func TestGetSPUtilization_RegionFilterANDed(t *testing.T) {
+	t.Parallel()
 	mock := &mockSPCE{}
 	client := NewClientWithAPI(mock, "us-east-1")
 	_, err := client.GetSPUtilization(context.Background(), types.SupportedSavingsPlansTypeComputeSp, "us-west-2", 30)
@@ -610,6 +620,7 @@ func TestGetSPUtilization_RegionFilterANDed(t *testing.T) {
 // plan-type values are rejected at the boundary with an explicit error and
 // no CE call is made.
 func TestGetSPUtilization_InvalidPlanType(t *testing.T) {
+	t.Parallel()
 	for _, planType := range []types.SupportedSavingsPlansType{"", "NOT_A_PLAN_TYPE"} {
 		t.Run(string(planType), func(t *testing.T) {
 			mock := &mockSPCE{}
@@ -624,6 +635,7 @@ func TestGetSPUtilization_InvalidPlanType(t *testing.T) {
 // TestGetSPUtilization_InvalidLookback verifies that lookbackDays <= 0 is an
 // explicit error (fail loud; the caller supplies the default window).
 func TestGetSPUtilization_InvalidLookback(t *testing.T) {
+	t.Parallel()
 	client := NewClientWithAPI(&mockSPCE{}, "us-east-1")
 	for _, days := range []int{0, -1} {
 		_, err := client.GetSPUtilization(context.Background(), types.SupportedSavingsPlansTypeComputeSp, "", days)
@@ -634,6 +646,7 @@ func TestGetSPUtilization_InvalidLookback(t *testing.T) {
 // TestParseSPFloat covers the strict float parsing contract: valid values pass,
 // unparseable strings error, NaN/Inf error, and negative values error.
 func TestParseSPFloat(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		input   string

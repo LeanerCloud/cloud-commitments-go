@@ -30,6 +30,7 @@ func newWrappedThrottleError() error {
 }
 
 func TestNewRateLimiter(t *testing.T) {
+	t.Parallel()
 	limiter := NewRateLimiter()
 
 	assert.NotNil(t, limiter)
@@ -40,6 +41,7 @@ func TestNewRateLimiter(t *testing.T) {
 }
 
 func TestNewRateLimiterWithOptions(t *testing.T) {
+	t.Parallel()
 	baseDelay := 2 * time.Second
 	maxDelay := 60 * time.Second
 	maxRetries := 10
@@ -98,6 +100,7 @@ func TestWait_MaxDelayRespected(t *testing.T) {
 }
 
 func TestWait_ContextCancellation(t *testing.T) {
+	t.Parallel()
 	limiter := NewRateLimiterWithOptions(5*time.Second, 30*time.Second, 5)
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -114,6 +117,7 @@ func TestWait_ContextCancellation(t *testing.T) {
 }
 
 func TestWait_ContextTimeout(t *testing.T) {
+	t.Parallel()
 	limiter := NewRateLimiterWithOptions(5*time.Second, 30*time.Second, 5)
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
@@ -131,6 +135,7 @@ func TestWait_ContextTimeout(t *testing.T) {
 // an already-canceled context even on the first attempt (retryCount == 0),
 // where no backoff delay applies.
 func TestWait_FirstAttemptHonorsCanceledContext(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		ctx  func() context.Context
@@ -164,6 +169,7 @@ func TestWait_FirstAttemptHonorsCanceledContext(t *testing.T) {
 // (so concurrency.Acquire is a no-op), a pre-canceled context must stop at the
 // rate limiter and never reach Cost Explorer.
 func TestFetchRIPageWithRetry_PreCanceledContextSkipsCostExplorer(t *testing.T) {
+	t.Parallel()
 	mockAPI := &mockCostExplorerAPI{
 		riRecommendations: &costexplorer.GetReservationPurchaseRecommendationOutput{},
 	}
@@ -180,6 +186,7 @@ func TestFetchRIPageWithRetry_PreCanceledContextSkipsCostExplorer(t *testing.T) 
 }
 
 func TestShouldRetry_NoError(t *testing.T) {
+	t.Parallel()
 	limiter := NewRateLimiter()
 
 	shouldRetry := limiter.ShouldRetry(nil)
@@ -189,6 +196,7 @@ func TestShouldRetry_NoError(t *testing.T) {
 }
 
 func TestShouldRetry_NonThrottleError(t *testing.T) {
+	t.Parallel()
 	limiter := NewRateLimiter()
 	err := errors.New("some non-throttle error")
 
@@ -199,6 +207,7 @@ func TestShouldRetry_NonThrottleError(t *testing.T) {
 }
 
 func TestShouldRetry_ThrottleError(t *testing.T) {
+	t.Parallel()
 	limiter := NewRateLimiter()
 	err := newThrottleError()
 
@@ -209,6 +218,7 @@ func TestShouldRetry_ThrottleError(t *testing.T) {
 }
 
 func TestShouldRetry_WrappedThrottleError(t *testing.T) {
+	t.Parallel()
 	limiter := NewRateLimiter()
 	err := newWrappedThrottleError()
 
@@ -219,6 +229,7 @@ func TestShouldRetry_WrappedThrottleError(t *testing.T) {
 }
 
 func TestShouldRetry_MaxRetriesExceeded(t *testing.T) {
+	t.Parallel()
 	limiter := NewRateLimiterWithOptions(100*time.Millisecond, 30*time.Second, 3)
 	err := newThrottleError()
 
@@ -236,6 +247,7 @@ func TestShouldRetry_MaxRetriesExceeded(t *testing.T) {
 }
 
 func TestShouldRetry_ResetsOnSuccess(t *testing.T) {
+	t.Parallel()
 	limiter := NewRateLimiter()
 	err := newThrottleError()
 
@@ -251,6 +263,7 @@ func TestShouldRetry_ResetsOnSuccess(t *testing.T) {
 }
 
 func TestReset(t *testing.T) {
+	t.Parallel()
 	limiter := NewRateLimiter()
 	err := newThrottleError()
 
@@ -266,6 +279,7 @@ func TestReset(t *testing.T) {
 }
 
 func TestGetRetryCount(t *testing.T) {
+	t.Parallel()
 	limiter := NewRateLimiter()
 	err := newThrottleError()
 
@@ -282,6 +296,7 @@ func TestGetRetryCount(t *testing.T) {
 }
 
 func TestRateLimiter_FullRetryFlow(t *testing.T) {
+	t.Parallel()
 	limiter := NewRateLimiterWithOptions(10*time.Millisecond, 100*time.Millisecond, 3)
 	ctx := context.Background()
 	throttleErr := newThrottleError()
@@ -313,6 +328,7 @@ func TestRateLimiter_FullRetryFlow(t *testing.T) {
 }
 
 func TestRateLimiter_ExhaustsRetries(t *testing.T) {
+	t.Parallel()
 	limiter := NewRateLimiterWithOptions(10*time.Millisecond, 100*time.Millisecond, 2)
 	ctx := context.Background()
 	throttleErr := newThrottleError()
@@ -346,6 +362,7 @@ func TestRateLimiter_ExhaustsRetries(t *testing.T) {
 // it calls the pure function directly and never sleeps, so OS scheduling cannot cause
 // spurious failures (replaces the former wall-clock-based TestWait_JitterRange).
 func TestComputeJitter(t *testing.T) {
+	t.Parallel()
 	const iterations = 10_000
 	delay := 100 * time.Millisecond
 	maxJitter := time.Duration(float64(delay) * 0.2) // 20 ms

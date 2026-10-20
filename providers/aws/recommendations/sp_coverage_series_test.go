@@ -20,6 +20,7 @@ func covDay(date, spend string) types.SavingsPlansCoverage {
 }
 
 func TestGetSPCoveredSeries(t *testing.T) {
+	t.Parallel()
 	page1 := &costexplorer.GetSavingsPlansCoverageOutput{
 		SavingsPlansCoverages: []types.SavingsPlansCoverage{
 			covDay("2026-01-02", "240"), // 240/24 = 10 OD$/hr
@@ -51,6 +52,7 @@ func TestGetSPCoveredSeries(t *testing.T) {
 // dropping it (which would pull Fargate/Lambda into EC2 demand and over-buy)
 // fails here.
 func TestGetSPCoveredSeries_Filter(t *testing.T) {
+	t.Parallel()
 	mock := &mockSPCE{}
 	_, err := NewClientWithAPI(mock, "us-east-1").GetSPCoveredSeries(context.Background(), "eu-west-2", 30)
 	require.NoError(t, err)
@@ -69,12 +71,14 @@ func TestGetSPCoveredSeries_Filter(t *testing.T) {
 }
 
 func TestGetSPCoveredSeries_EmptyIsNotAnError(t *testing.T) {
+	t.Parallel()
 	got, err := NewClientWithAPI(&mockSPCE{}, "us-east-1").GetSPCoveredSeries(context.Background(), "us-east-1", 30)
 	require.NoError(t, err)
 	assert.Empty(t, got, "an account without SPs has no covered usage")
 }
 
 func TestGetSPCoveredSeries_FailLoud(t *testing.T) {
+	t.Parallel()
 	undated := types.SavingsPlansCoverage{Coverage: &types.SavingsPlansCoverageData{SpendCoveredBySavingsPlans: aws.String("1")}}
 	noMetric := covDay("2026-01-01", "")
 	noMetric.Coverage = &types.SavingsPlansCoverageData{}
@@ -98,6 +102,7 @@ func TestGetSPCoveredSeries_FailLoud(t *testing.T) {
 }
 
 func TestGetSPCoveredSeries_InvalidArgs(t *testing.T) {
+	t.Parallel()
 	c := NewClientWithAPI(&mockSPCE{}, "us-east-1")
 	_, err := c.GetSPCoveredSeries(context.Background(), "", 30)
 	require.Error(t, err)
@@ -106,6 +111,7 @@ func TestGetSPCoveredSeries_InvalidArgs(t *testing.T) {
 }
 
 func TestSPUtilization_OnDemandEquivalentAndRatio(t *testing.T) {
+	t.Parallel()
 	// Window totals over 30 days (720h): used 3024 => 4.2/hr, on-demand
 	// equivalent 6000 => 8.3333/hr; k = 0.504.
 	out := &costexplorer.GetSavingsPlansUtilizationOutput{Total: &types.SavingsPlansUtilizationAggregates{
@@ -123,6 +129,7 @@ func TestSPUtilization_OnDemandEquivalentAndRatio(t *testing.T) {
 }
 
 func TestCommitmentToOnDemandRatio_Errors(t *testing.T) {
+	t.Parallel()
 	f := func(v float64) *float64 { return &v }
 	_, e0 := SPUtilizationSummary{}.CommitmentToOnDemandRatio()
 	assert.ErrorIs(t, e0, ErrNoSPUtilization)

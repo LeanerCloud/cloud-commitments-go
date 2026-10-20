@@ -38,6 +38,7 @@ func replTestRepro() (PoolCoverageMap, []common.Recommendation, []common.Commitm
 }
 
 func TestExpiryReplacements_Regression(t *testing.T) {
+	t.Parallel()
 	t.Run("repro: own recent replacements are credited, nothing is bought", func(t *testing.T) {
 		cov, recs, commits := replTestRepro()
 		sized, _, _, _ := ApplyFamilyNUSizingRDSWithExpiry(recs, cov, 80, commits, 30)
@@ -200,6 +201,7 @@ func replBought(w replWorld, covered float64) int {
 }
 
 func TestExpiryReplacements_ZeroLookbackMatchesMergedFormula(t *testing.T) {
+	t.Parallel()
 	rng := rand.New(rand.NewSource(341))
 	for seed := 0; seed < 3000; seed++ {
 		w := replGenWorld(rng)
@@ -227,6 +229,7 @@ func TestExpiryReplacements_ZeroLookbackMatchesMergedFormula(t *testing.T) {
 }
 
 func TestExpiryReplacements_Properties(t *testing.T) {
+	t.Parallel()
 	rng := rand.New(rand.NewSource(2132))
 	creditedWorlds := 0
 	for seed := 0; seed < 3000; seed++ {

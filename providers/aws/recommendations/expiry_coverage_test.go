@@ -12,6 +12,7 @@ import (
 )
 
 func TestExpiringCoverageMissingDemandPreservesInput(t *testing.T) {
+	t.Parallel()
 	key := poolKey("us-east-1", "m5.large")
 	for _, tc := range []struct {
 		name     string
@@ -52,6 +53,7 @@ func TestExpiringCoverageMissingDemandPreservesInput(t *testing.T) {
 }
 
 func TestExpiringCoverageGuardsAndSelection(t *testing.T) {
+	t.Parallel()
 	soon := time.Now().Add(15 * 24 * time.Hour)
 	for _, tc := range []struct {
 		name         string
@@ -103,6 +105,7 @@ func TestExpiringCoverageGuardsAndSelection(t *testing.T) {
 }
 
 func TestExpiringCoverageKeepsPoolBoundaries(t *testing.T) {
+	t.Parallel()
 	var nilDatabase *common.DatabaseDetails
 	for _, tc := range []struct {
 		name         string
@@ -151,6 +154,7 @@ func TestExpiringCoverageKeepsPoolBoundaries(t *testing.T) {
 }
 
 func TestExpiringCoverageLegacyIgnoresInvalidDemandContributions(t *testing.T) {
+	t.Parallel()
 	recs := make([]common.Recommendation, 0, 6)
 	for _, avg := range []float64{30, 60, 0, -1, math.NaN(), math.Inf(1)} {
 		recs = append(recs, common.Recommendation{Service: common.ServiceEC2, Region: "us-east-1", ResourceType: "m5.large", AverageInstancesUsedPerHour: avg, ExistingCoveragePct: 60})

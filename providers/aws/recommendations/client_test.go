@@ -75,6 +75,7 @@ func (m *mockCostExplorerAPI) GetCostAndUsage(_ context.Context, _ *costexplorer
 }
 
 func TestNewClient(t *testing.T) {
+	t.Parallel()
 	cfg := aws.Config{
 		Region: "us-west-2",
 	}
@@ -88,6 +89,7 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestNewClientWithAPI(t *testing.T) {
+	t.Parallel()
 	mockAPI := &mockCostExplorerAPI{}
 	region := "eu-west-1"
 
@@ -100,6 +102,7 @@ func TestNewClientWithAPI(t *testing.T) {
 }
 
 func TestGetRecommendations_EC2_Success(t *testing.T) {
+	t.Parallel()
 	mockAPI := &mockCostExplorerAPI{
 		riRecommendations: &costexplorer.GetReservationPurchaseRecommendationOutput{
 			Recommendations: []types.ReservationPurchaseRecommendation{
@@ -145,6 +148,7 @@ func TestGetRecommendations_EC2_Success(t *testing.T) {
 }
 
 func TestGetRecommendations_RDS_Success(t *testing.T) {
+	t.Parallel()
 	mockAPI := &mockCostExplorerAPI{
 		riRecommendations: &costexplorer.GetReservationPurchaseRecommendationOutput{
 			Recommendations: []types.ReservationPurchaseRecommendation{
@@ -192,6 +196,7 @@ func TestGetRecommendations_RDS_Success(t *testing.T) {
 }
 
 func TestGetRecommendations_ElastiCache_Success(t *testing.T) {
+	t.Parallel()
 	mockAPI := &mockCostExplorerAPI{
 		riRecommendations: &costexplorer.GetReservationPurchaseRecommendationOutput{
 			Recommendations: []types.ReservationPurchaseRecommendation{
@@ -237,6 +242,7 @@ func TestGetRecommendations_ElastiCache_Success(t *testing.T) {
 }
 
 func TestGetRecommendations_SavingsPlans_Success(t *testing.T) {
+	t.Parallel()
 	mockAPI := &mockCostExplorerAPI{
 		spRecommendations: &costexplorer.GetSavingsPlansPurchaseRecommendationOutput{
 			SavingsPlansPurchaseRecommendation: &types.SavingsPlansPurchaseRecommendation{
@@ -280,6 +286,7 @@ func TestGetRecommendations_SavingsPlans_Success(t *testing.T) {
 }
 
 func TestGetRecommendations_Error(t *testing.T) {
+	t.Parallel()
 	mockAPI := &mockCostExplorerAPI{
 		riError: newThrottleError(),
 	}
@@ -304,6 +311,7 @@ func TestGetRecommendations_Error(t *testing.T) {
 }
 
 func TestGetRecommendations_NilParams(t *testing.T) {
+	t.Parallel()
 	client := NewClientWithAPI(&mockCostExplorerAPI{}, "us-east-1")
 
 	recs, err := client.GetRecommendations(context.Background(), nil)
@@ -313,6 +321,7 @@ func TestGetRecommendations_NilParams(t *testing.T) {
 }
 
 func TestRateLimiter_NewOperationHasIndependentRetryState(t *testing.T) {
+	t.Parallel()
 	policy := NewRateLimiterWithOptions(time.Millisecond, 10*time.Millisecond, 2)
 	first := policy.newOperation()
 	second := policy.newOperation()
@@ -324,6 +333,7 @@ func TestRateLimiter_NewOperationHasIndependentRetryState(t *testing.T) {
 }
 
 func TestGetRecommendations_EmptyResult(t *testing.T) {
+	t.Parallel()
 	mockAPI := &mockCostExplorerAPI{
 		riRecommendations: &costexplorer.GetReservationPurchaseRecommendationOutput{
 			Recommendations: []types.ReservationPurchaseRecommendation{},
@@ -346,6 +356,7 @@ func TestGetRecommendations_EmptyResult(t *testing.T) {
 }
 
 func TestGetRecommendationsForService(t *testing.T) {
+	t.Parallel()
 	mockAPI := &mockCostExplorerAPI{
 		riRecommendations: &costexplorer.GetReservationPurchaseRecommendationOutput{
 			Recommendations: []types.ReservationPurchaseRecommendation{
@@ -410,6 +421,7 @@ func TestGetRecommendationsForService(t *testing.T) {
 // were requested, so a future regression that quietly drops a combo
 // fails this test even if the parser tags the surviving recs correctly.
 func TestGetRecommendationsForService_QueriesEveryCombo(t *testing.T) {
+	t.Parallel()
 	mockAPI := &mockCostExplorerAPI{
 		riRecommendations: &costexplorer.GetReservationPurchaseRecommendationOutput{
 			Recommendations: []types.ReservationPurchaseRecommendation{},
@@ -453,6 +465,7 @@ func TestGetRecommendationsForService_QueriesEveryCombo(t *testing.T) {
 // (b) at most one Cost Explorer call was attempted (the loop bails on
 // the first iteration's error rather than fan-out-then-aggregate).
 func TestGetRecommendationsForService_ContextCancelShortCircuits(t *testing.T) {
+	t.Parallel()
 	mockAPI := &mockCostExplorerAPI{
 		riError: context.Canceled,
 	}
@@ -469,6 +482,7 @@ func TestGetRecommendationsForService_ContextCancelShortCircuits(t *testing.T) {
 }
 
 func TestGetAllRecommendations(t *testing.T) {
+	t.Parallel()
 	// GetAllRecommendations will call the API 5 times for different services
 	// Our mock returns EC2 details for all calls, so only EC2 will parse successfully
 	// The other services will fail parsing because the instance details don't match
@@ -510,6 +524,7 @@ func TestGetAllRecommendations(t *testing.T) {
 }
 
 func TestGetAllRecommendations_SomeServicesFail(t *testing.T) {
+	t.Parallel()
 	// Use a simpler approach - just provide valid recommendations
 	// GetAllRecommendations continues on errors, so we just verify it doesn't fail completely
 	mockAPI := &mockCostExplorerAPI{
@@ -548,6 +563,7 @@ func TestGetAllRecommendations_SomeServicesFail(t *testing.T) {
 }
 
 func TestGetRecommendations_ContextCancellation(t *testing.T) {
+	t.Parallel()
 	mockAPI := &mockCostExplorerAPI{
 		riError: newThrottleError(),
 	}
@@ -591,6 +607,7 @@ func TestGetRecommendations_ContextCancellation(t *testing.T) {
 // Mirrors providers/azure/recommendations_test.go's
 // TestRecommendationsClientAdapter_GetRecommendations_PropagatesContextCancellation.
 func TestGetAllRecommendations_PropagatesContextCancellation(t *testing.T) {
+	t.Parallel()
 	mockAPI := &mockCostExplorerAPI{
 		riError: newThrottleError(),
 	}
@@ -617,6 +634,7 @@ func TestGetAllRecommendations_PropagatesContextCancellation(t *testing.T) {
 // reach the merged output.  Without the 6th goroutine the SP mock branch is
 // never called and all SP rows are silently absent from the result.
 func TestGetAllRecommendations_IncludesSavingsPlans(t *testing.T) {
+	t.Parallel()
 	mockAPI := &mockCostExplorerAPI{
 		// RI services return an EC2 row so we can assert at least one EC2 rec
 		// is present alongside the SP row (cross-service non-regression).
@@ -772,6 +790,7 @@ func riDetail(n int) types.ReservationPurchaseRecommendation {
 // TestGetRecommendations_RI_Paginates asserts that GetRecommendations accumulates
 // items across all pages (issue #692 regression test).
 func TestGetRecommendations_RI_Paginates(t *testing.T) {
+	t.Parallel()
 	mock := &multiPageRIMock{
 		pages: []*costexplorer.GetReservationPurchaseRecommendationOutput{
 			{
@@ -809,6 +828,7 @@ func TestGetRecommendations_RI_Paginates(t *testing.T) {
 // NextPageToken is treated as terminal (no extra call). Parity with PR #690
 // CR category-A fix.
 func TestGetRecommendations_RI_EmptyTokenTerminates(t *testing.T) {
+	t.Parallel()
 	mock := &multiPageRIMock{
 		pages: []*costexplorer.GetReservationPurchaseRecommendationOutput{
 			{
@@ -890,6 +910,7 @@ func (m *alwaysNextPageRIMock) GetCostAndUsage(
 // TestGetRecommendations_RI_PaginationCapError asserts that exceeding
 // maxRecommendationPages returns a diagnostic error (issue #692).
 func TestGetRecommendations_RI_PaginationCapError(t *testing.T) {
+	t.Parallel()
 	mock := &alwaysNextPageRIMock{}
 	client := NewClientWithAPI(mock, "us-east-1")
 	params := common.RecommendationParams{
@@ -918,6 +939,7 @@ func TestGetRecommendations_RI_PaginationCapError(t *testing.T) {
 // Pre-fix mergeServiceResults returned only []common.Recommendation and dropped
 // every error to a WARN log; this test asserts the new (recs, error) contract.
 func TestMergeServiceResults_AllFailIsError(t *testing.T) {
+	t.Parallel()
 	throttle := newThrottleError()
 
 	// All services failed -> error, nil recs.
@@ -965,6 +987,7 @@ func TestMergeServiceResults_AllFailIsError(t *testing.T) {
 // intentionally discriminating: it would fail if recLookbackPeriod were
 // ignored and the hardcoded "7d" default were sent instead.
 func TestSetRecLookbackPeriod_ReachesGetReservationPurchaseRecommendation(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		period   string
 		wantEnum types.LookbackPeriodInDays
@@ -996,6 +1019,7 @@ func TestSetRecLookbackPeriod_ReachesGetReservationPurchaseRecommendation(t *tes
 // Convertible, so EC2 requests must say so and other services must not carry
 // an EC2 specification (go#375).
 func TestGetRecommendations_EC2OfferingClassSpecification(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		service common.ServiceType
 		want    bool
@@ -1029,6 +1053,7 @@ func TestGetRecommendations_EC2OfferingClassSpecification(t *testing.T) {
 
 // GetAllRecommendations must query MemoryDB alongside the other RI services.
 func TestGetAllRecommendations_QueriesMemoryDB(t *testing.T) {
+	t.Parallel()
 	mockAPI := &mockCostExplorerAPI{
 		riRecommendations: &costexplorer.GetReservationPurchaseRecommendationOutput{},
 		spRecommendations: &costexplorer.GetSavingsPlansPurchaseRecommendationOutput{},

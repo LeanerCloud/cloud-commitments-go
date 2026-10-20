@@ -47,6 +47,7 @@ func rateParams(pt types.SupportedSavingsPlansType) SPCommitmentRateParams {
 }
 
 func TestGetSPCommitmentRate_FixtureCrossCheck(t *testing.T) {
+	t.Parallel()
 	// OD 1.00/hr over 720h = 720; CE says 300 stays on-demand with the SP, so
 	// covered_od = 420 = SPCost 294 + savings 126: r = 0.7 at full utilization.
 	// The 18% savings-vs-all-OD decoy would give 0.82 (the rejected formula).
@@ -68,6 +69,7 @@ func TestGetSPCommitmentRate_FixtureCrossCheck(t *testing.T) {
 }
 
 func TestGetSPCommitmentRate_UtilizationScalesUsedSpend(t *testing.T) {
+	t.Parallel()
 	d := rateDetail("acct-a", "US East (N. Virginia)", "294", "126", "80")
 	r, err := rateClient(d).GetSPCommitmentRate(context.Background(), rateParams(types.SupportedSavingsPlansTypeEc2InstanceSp))
 	if err != nil || math.Abs(r-0.56) > 1e-12 {
@@ -76,6 +78,7 @@ func TestGetSPCommitmentRate_UtilizationScalesUsedSpend(t *testing.T) {
 }
 
 func TestGetSPCommitmentRate_RatioOfSumsNotMeanOfRatios(t *testing.T) {
+	t.Parallel()
 	// r1 = 0.5 (covered 20), r2 = 0.8 (covered 100): mean 0.65, ratio of sums
 	// (10+80)/120 = 0.75.
 	a := rateDetail("acct-a", "US East (N. Virginia)", "10", "10", "100")
@@ -87,6 +90,7 @@ func TestGetSPCommitmentRate_RatioOfSumsNotMeanOfRatios(t *testing.T) {
 }
 
 func TestGetSPCommitmentRate_FiltersAccountAndRegion(t *testing.T) {
+	t.Parallel()
 	wrongAcct := rateDetail("acct-b", "US East (N. Virginia)", "10", "90", "100")
 	wrongRegion := rateDetail("acct-a", "EU (Ireland)", "10", "90", "100")
 	right := rateDetail("acct-a", "US East (N. Virginia)", "70", "30", "100")
@@ -97,6 +101,7 @@ func TestGetSPCommitmentRate_FiltersAccountAndRegion(t *testing.T) {
 }
 
 func TestGetSPCommitmentRate_ComputeSPIgnoresRegion(t *testing.T) {
+	t.Parallel()
 	d := rateDetail("acct-a", "", "60", "40", "100")
 	r, err := rateClient(d).GetSPCommitmentRate(context.Background(), rateParams(types.SupportedSavingsPlansTypeComputeSp))
 	if err != nil || math.Abs(r-0.6) > 1e-12 {
@@ -105,6 +110,7 @@ func TestGetSPCommitmentRate_ComputeSPIgnoresRegion(t *testing.T) {
 }
 
 func TestGetSPCommitmentRate_TypedAbsence(t *testing.T) {
+	t.Parallel()
 	missing := func(mut func(*types.SavingsPlansPurchaseRecommendationDetail)) types.SavingsPlansPurchaseRecommendationDetail {
 		d := rateDetail("acct-a", "US East (N. Virginia)", "70", "30", "100")
 		mut(&d)
@@ -129,6 +135,7 @@ func TestGetSPCommitmentRate_TypedAbsence(t *testing.T) {
 }
 
 func TestGetSPCommitmentRate_InvalidFieldsAreErrors(t *testing.T) {
+	t.Parallel()
 	for name, d := range map[string]types.SavingsPlansPurchaseRecommendationDetail{
 		"unparseable": rateDetail("acct-a", "US East (N. Virginia)", "abc", "30", "100"),
 		"NaN":         rateDetail("acct-a", "US East (N. Virginia)", "NaN", "30", "100"),
@@ -145,6 +152,7 @@ func TestGetSPCommitmentRate_InvalidFieldsAreErrors(t *testing.T) {
 }
 
 func TestGetSPCommitmentRate_BadParams(t *testing.T) {
+	t.Parallel()
 	c := rateClient()
 	for name, mut := range map[string]func(*SPCommitmentRateParams){
 		"plan type": func(p *SPCommitmentRateParams) { p.PlanType = "SAGEMAKER_SP" },
@@ -216,6 +224,7 @@ func TestGetSPCommitmentRate_SDKPageCompleteness(t *testing.T) {
 }
 
 func TestGetSPCommitmentRate_NilOutput(t *testing.T) {
+	t.Parallel()
 	c := NewClientWithAPI(&mockCostExplorerAPI{}, "us-east-1")
 	rate, err := c.GetSPCommitmentRate(context.Background(), rateParams(types.SupportedSavingsPlansTypeEc2InstanceSp))
 	if !errors.Is(err, ErrNoSPCommitmentRate) || rate != 0 {

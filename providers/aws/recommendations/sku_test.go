@@ -63,6 +63,7 @@ func knownInstanceTypes() []ec2types.InstanceTypeInfo {
 
 // TestExtractInstanceTypeSKUEntry verifies field extraction from InstanceTypeInfo.
 func TestExtractInstanceTypeSKUEntry(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		info      ec2types.InstanceTypeInfo
@@ -134,6 +135,7 @@ func TestExtractInstanceTypeSKUEntry(t *testing.T) {
 // TestFetchInstanceTypeCatalogue_PopulatesMap verifies the paginator walk
 // produces a correctly-keyed map.
 func TestFetchInstanceTypeCatalogue_PopulatesMap(t *testing.T) {
+	t.Parallel()
 	pager := newStubPager(knownInstanceTypes()...)
 	m := fetchInstanceTypeCatalogue(context.Background(), pager)
 
@@ -153,6 +155,7 @@ func TestFetchInstanceTypeCatalogue_PopulatesMap(t *testing.T) {
 
 // TestFetchInstanceTypeCatalogue_PageError returns nil on page fetch failure.
 func TestFetchInstanceTypeCatalogue_PageError(t *testing.T) {
+	t.Parallel()
 	errPager := &errorOnFirstPagePager{}
 	m := fetchInstanceTypeCatalogue(context.Background(), errPager)
 	assert.Nil(t, m, "catalog must be nil on page fetch error")
@@ -160,6 +163,7 @@ func TestFetchInstanceTypeCatalogue_PageError(t *testing.T) {
 
 // TestFetchInstanceTypeCatalogue_ContextCanceled returns nil when ctx is canceled.
 func TestFetchInstanceTypeCatalogue_ContextCanceled(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // already canceled
 
@@ -174,6 +178,7 @@ func TestFetchInstanceTypeCatalogue_ContextCanceled(t *testing.T) {
 // run issues at most one DescribeInstanceTypes fan-out regardless of how many
 // EC2 recs are returned (the N+1 invariant, issue #218 acceptance criterion).
 func TestInstanceTypeLookup_CachedOnce(t *testing.T) {
+	t.Parallel()
 	pager := newStubPager(knownInstanceTypes()...)
 	var pagerCreations int32
 
@@ -196,6 +201,7 @@ func TestInstanceTypeLookup_CachedOnce(t *testing.T) {
 // TestParseEC2Details_VCPUAndMemoryPopulated asserts that parseEC2Details
 // enriches ComputeDetails.VCPU and MemoryGB from the catalog.
 func TestParseEC2Details_VCPUAndMemoryPopulated(t *testing.T) {
+	t.Parallel()
 	pager := newStubPager(knownInstanceTypes()...)
 	client := NewClientWithAPI(&mockCostExplorerAPI{}, "us-east-1")
 	client.SetInstanceTypePagerFactory(func() InstanceTypePager { return pager })
@@ -223,6 +229,7 @@ func TestParseEC2Details_VCPUAndMemoryPopulated(t *testing.T) {
 
 // TestParseEC2Details_CatalogueMiss leaves VCPU/MemoryGB at zero gracefully.
 func TestParseEC2Details_CatalogueMiss(t *testing.T) {
+	t.Parallel()
 	pager := newStubPager(knownInstanceTypes()...) // does not contain c5.large
 	client := NewClientWithAPI(&mockCostExplorerAPI{}, "us-east-1")
 	client.SetInstanceTypePagerFactory(func() InstanceTypePager { return pager })
@@ -250,6 +257,7 @@ func TestParseEC2Details_CatalogueMiss(t *testing.T) {
 // TestParseEC2Details_NoCatalogueConfigured leaves VCPU/MemoryGB at zero
 // gracefully when no pager factory is set (legacy test path).
 func TestParseEC2Details_NoCatalogueConfigured(t *testing.T) {
+	t.Parallel()
 	client := &Client{} // no factory
 
 	details := &cetypes.ReservationPurchaseRecommendationDetail{

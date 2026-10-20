@@ -80,6 +80,7 @@ func newOnDemandClient(m *mockOnDemandCE) *Client {
 }
 
 func TestGetOnDemandSeriesForAccount_RejectsMissingScopeBeforeIO(t *testing.T) {
+	t.Parallel()
 	for _, args := range []struct {
 		account, region string
 		days            int
@@ -92,6 +93,7 @@ func TestGetOnDemandSeriesForAccount_RejectsMissingScopeBeforeIO(t *testing.T) {
 }
 
 func TestGetOnDemandSeriesForAccount_ValidatesPeriods(t *testing.T) {
+	t.Parallel()
 	end := time.Now().UTC().Truncate(24 * time.Hour)
 	for _, mode := range []string{"valid", "duplicate", "outside", "end"} {
 		t.Run(mode, func(t *testing.T) {
@@ -158,6 +160,7 @@ func generate30DayPage(startDate time.Time, totalPerDay float64) []*costexplorer
 // $240/day each return 30 dated points of $10/hr ($240/24h) with strictly
 // increasing unique UTC days and a fresh (most recent CE day) tail.
 func TestGetOnDemandSeries_HappyPath(t *testing.T) {
+	t.Parallel()
 	start := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -30)
 	mock := &mockOnDemandCE{pages: generate30DayPage(start, 240.0)}
 	client := newOnDemandClient(mock)
@@ -182,6 +185,7 @@ func TestGetOnDemandSeries_HappyPath(t *testing.T) {
 // chronological (oldest-to-newest) order by Date regardless of the order CE
 // returned them in.
 func TestGetOnDemandSeries_OldestFirst(t *testing.T) {
+	t.Parallel()
 	// Provide 3 days with distinct costs so order is detectable.
 	pages := []*costexplorer.GetCostAndUsageOutput{{
 		ResultsByTime: []types.ResultByTime{
@@ -209,6 +213,7 @@ func TestGetOnDemandSeries_OldestFirst(t *testing.T) {
 // TestGetOnDemandSeries_Paginated verifies that two pages are fetched and
 // their results merged into a single date-sorted series.
 func TestGetOnDemandSeries_Paginated(t *testing.T) {
+	t.Parallel()
 	pages := []*costexplorer.GetCostAndUsageOutput{
 		{
 			ResultsByTime: []types.ResultByTime{
@@ -246,6 +251,7 @@ func TestGetOnDemandSeries_Paginated(t *testing.T) {
 // TestGetOnDemandSeries_EmptyResultErrors verifies a hard error when CE
 // returns zero daily entries (no on-demand spend or CE not yet available).
 func TestGetOnDemandSeries_EmptyResultErrors(t *testing.T) {
+	t.Parallel()
 	mock := &mockOnDemandCE{pages: []*costexplorer.GetCostAndUsageOutput{{}}}
 	client := newOnDemandClient(mock)
 
@@ -258,6 +264,7 @@ func TestGetOnDemandSeries_EmptyResultErrors(t *testing.T) {
 // TestGetOnDemandSeries_APIErrorPropagated verifies that a CE API error is
 // returned to the caller without swallowing.
 func TestGetOnDemandSeries_APIErrorPropagated(t *testing.T) {
+	t.Parallel()
 	sentinel := errors.New("CE rate limit")
 	mock := &mockOnDemandCE{
 		pages:  []*costexplorer.GetCostAndUsageOutput{{}},
@@ -274,6 +281,7 @@ func TestGetOnDemandSeries_APIErrorPropagated(t *testing.T) {
 // TestGetOnDemandSeries_ParseErrorFails verifies that a non-numeric Amount
 // from CE triggers a fail-loud error (feedback_strict_int_parse).
 func TestGetOnDemandSeries_ParseErrorFails(t *testing.T) {
+	t.Parallel()
 	pages := []*costexplorer.GetCostAndUsageOutput{{
 		ResultsByTime: []types.ResultByTime{{
 			TimePeriod: &types.DateInterval{Start: aws.String("2026-01-01")},
@@ -293,6 +301,7 @@ func TestGetOnDemandSeries_ParseErrorFails(t *testing.T) {
 // amount (which strconv.ParseFloat accepts with a nil error) fails loud rather
 // than poisoning the daily series that seeds the ladder baseline.
 func TestGetOnDemandSeries_NonFiniteAmountFails(t *testing.T) {
+	t.Parallel()
 	for _, bad := range []string{"NaN", "Inf", "-Inf"} {
 		t.Run(bad, func(t *testing.T) {
 			pages := []*costexplorer.GetCostAndUsageOutput{{
@@ -313,6 +322,7 @@ func TestGetOnDemandSeries_NonFiniteAmountFails(t *testing.T) {
 // date fails loud instead of being skipped or misdated
 // (feedback_no_silent_fallbacks).
 func TestGetOnDemandSeries_BadDateFails(t *testing.T) {
+	t.Parallel()
 	pages := []*costexplorer.GetCostAndUsageOutput{{
 		ResultsByTime: []types.ResultByTime{
 			dailyResult("not-a-date", 24.0),
@@ -331,6 +341,7 @@ func TestGetOnDemandSeries_BadDateFails(t *testing.T) {
 // correct granularity, metric, and three-clause AND filter
 // (feedback_verify_api_filter_contracts).
 func TestGetOnDemandSeries_CorrectFilterParams(t *testing.T) {
+	t.Parallel()
 	start := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -7)
 	mock := &mockOnDemandCE{pages: generate30DayPage(start, 24.0)}
 	client := newOnDemandClient(mock)
@@ -384,6 +395,7 @@ func TestGetOnDemandSeries_CorrectFilterParams(t *testing.T) {
 // TestGetOnDemandSeries_ContextCancelled verifies that a canceled context is
 // propagated before the first CE call (ctx-cancel-is-terminal rule).
 func TestGetOnDemandSeries_ContextCancelled(t *testing.T) {
+	t.Parallel()
 	mock := &mockOnDemandCE{pages: generate30DayPage(time.Now(), 24.0)}
 	client := newOnDemandClient(mock)
 
@@ -402,6 +414,7 @@ func TestGetOnDemandSeries_ContextCancelled(t *testing.T) {
 // silently writing 0 would corrupt the baseline
 // (feedback_no_silent_fallbacks).
 func TestGetOnDemandSeries_MissingMetricKeyFails(t *testing.T) {
+	t.Parallel()
 	pages := []*costexplorer.GetCostAndUsageOutput{{
 		ResultsByTime: []types.ResultByTime{
 			dailyResult("2026-01-01", 24.0),
@@ -424,6 +437,7 @@ func TestGetOnDemandSeries_MissingMetricKeyFails(t *testing.T) {
 // an undatable row dropped from the series leaves a gap that can still pass
 // downstream minimum-length checks and produce an incorrect baseline.
 func TestGetOnDemandSeries_MissingPeriodStartFails(t *testing.T) {
+	t.Parallel()
 	pages := []*costexplorer.GetCostAndUsageOutput{{
 		ResultsByTime: []types.ResultByTime{
 			dailyResult("2026-01-01", 24.0),
@@ -451,6 +465,7 @@ func TestGetOnDemandSeries_MissingPeriodStartFails(t *testing.T) {
 // genuinely zero on-demand spend all window has nothing to ladder, so
 // erroring is correct there too.
 func TestGetOnDemandSeries_AllZeroSeriesFails(t *testing.T) {
+	t.Parallel()
 	pages := []*costexplorer.GetCostAndUsageOutput{{
 		ResultsByTime: []types.ResultByTime{
 			dailyResult("2026-01-01", 0),
@@ -471,6 +486,7 @@ func TestGetOnDemandSeries_AllZeroSeriesFails(t *testing.T) {
 // (Amount:"0") interleaved with non-zero days are accepted and keep their
 // calendar dates: only the ALL-zero case is rejected.
 func TestGetOnDemandSeries_MixedZeroDaysOK(t *testing.T) {
+	t.Parallel()
 	pages := []*costexplorer.GetCostAndUsageOutput{{
 		ResultsByTime: []types.ResultByTime{
 			dailyResult("2026-01-01", 24.0),

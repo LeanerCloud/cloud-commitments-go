@@ -45,6 +45,7 @@ func (m *mockCoverageCE) GetReservationCoverage(ctx context.Context, params *cos
 // Coverage is org-wide (no account dimension) — matches the AWS console
 // reservations-coverage report shape.
 func TestGetRICoverageMap_GroupsByInstanceType(t *testing.T) {
+	t.Parallel()
 	mock := &mockCoverageCE{
 		coverageOutput: &costexplorer.GetReservationCoverageOutput{
 			CoveragesByTime: []types.CoverageByTime{
@@ -117,6 +118,7 @@ func TestGetRICoverageMap_GroupsByInstanceType(t *testing.T) {
 // TestGetRICoverageMap_LookbackDefault confirms that a non-positive lookback
 // substitutes the 30-day default (matches GetRIUtilization's behavior).
 func TestGetRICoverageMap_LookbackDefault(t *testing.T) {
+	t.Parallel()
 	mock := &mockCoverageCE{coverageOutput: &costexplorer.GetReservationCoverageOutput{}}
 	client := NewClientWithAPI(mock, "us-east-1")
 
@@ -133,6 +135,7 @@ func TestGetRICoverageMap_LookbackDefault(t *testing.T) {
 // and End strings and verifies end-start == N days so a regression in the
 // window math (e.g. reverting to a hardcoded 30) causes a test failure.
 func TestGetRICoverageMap_LookbackWindowWidth(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name         string
 		lookbackDays int
@@ -181,6 +184,7 @@ func TestGetRICoverageMap_LookbackWindowWidth(t *testing.T) {
 // linked account in the org sees the same coverage % for the same pool
 // (matches AWS console aggregation).
 func TestApplyCoverageMapToRecommendations(t *testing.T) {
+	t.Parallel()
 	exact := big.NewRat(50, 1)
 	recs := []common.Recommendation{
 		{Region: "us-east-1", ResourceType: "db.r6g.large", Account: "acct-a", ExistingCoveragePct: 50},
@@ -387,6 +391,7 @@ func TestApplyCoverageMapToRecommendations(t *testing.T) {
 // producer (per-engine fetcher) and consumer (apply helper) would write
 // or read differently and miss the lookup entirely.
 func TestNormaliseRDSEngine(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		// CE-side strings (human readable, mixed case, spaces).
 		"Aurora MySQL":      "auroramysql",
@@ -432,6 +437,7 @@ func TestNormaliseRDSEngine(t *testing.T) {
 // rather than returning a partial/empty result silently
 // (feedback_ctx_cancel_terminal).
 func TestFetchCoveragePaged_CtxCancelReturnsError(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel before the call
 
@@ -459,6 +465,7 @@ func TestFetchCoveragePaged_CtxCancelReturnsError(t *testing.T) {
 // the parser stores "single-az" / "multi-az"; both forms must collapse to
 // the same lookup key.
 func TestNormaliseDeployment(t *testing.T) {
+	t.Parallel()
 	cases := map[string]string{
 		"Single-AZ":                    "singleaz",
 		"single-az":                    "singleaz",
@@ -478,6 +485,7 @@ func TestNormaliseDeployment(t *testing.T) {
 // is absent from it, so the rec keeps Known=false and must be dropped by
 // target-coverage sizing instead of being sized as 0% covered (Count 5 -> 80).
 func TestApplyCoverageMap_UnmatchedPool_DroppedByTargetCoverage(t *testing.T) {
+	t.Parallel()
 	recs := []common.Recommendation{{
 		Service: common.ServiceEC2, Region: "us-east-1", ResourceType: "m5.large",
 		CommitmentType: common.CommitmentReservedInstance, Count: 5, RecommendedCount: 5,
@@ -531,6 +539,7 @@ func coverageOutputFor(instanceType, pct string) *costexplorer.GetReservationCov
 // The EC2 fetch must issue exactly one EC2-filtered CE call per region and
 // return only EC2 pools.
 func TestGetEC2RICoverageMap_QueriesOnlyEC2(t *testing.T) {
+	t.Parallel()
 	mock := &serviceRoutedCoverageCE{byService: map[string]*costexplorer.GetReservationCoverageOutput{
 		ec2CoverageService:          coverageOutputFor("m5.large", "80.0"),
 		"Amazon ElastiCache":        coverageOutputFor("cache.m5.large", "0.0"),
@@ -556,6 +565,7 @@ func TestGetEC2RICoverageMap_QueriesOnlyEC2(t *testing.T) {
 }
 
 func TestGetEC2RICoverageMap_ErrorPropagates(t *testing.T) {
+	t.Parallel()
 	mock := &mockCoverageCE{coverageError: assert.AnError}
 	client := NewClientWithAPI(mock, "us-east-1")
 	got, err := client.GetEC2RICoverageMap(context.Background(), 30, []string{"us-east-1"})

@@ -33,6 +33,7 @@ func expiryPrecisionFixture() ([]common.Recommendation, []common.Commitment, Poo
 }
 
 func TestExpiringCoverageExactSizing(t *testing.T) {
+	t.Parallel()
 	for _, api := range []string{"legacy", "coverage"} {
 		for _, tc := range []struct {
 			name     string
@@ -81,6 +82,7 @@ func TestExpiringCoverageExactSizing(t *testing.T) {
 }
 
 func TestExpiringCoverageExactFractionRoundsUp(t *testing.T) {
+	t.Parallel()
 	recs, commits, coverage := expiryPrecisionFixture()
 	demand := math.Nextafter(30, math.Inf(1))
 	coverage[poolKey("us-east-1", "m5.large")] = PoolCoverage{Pct: 60, AvgInstancesPerHour: demand}
@@ -105,6 +107,7 @@ func TestExpiringCoverageExactFractionRoundsUp(t *testing.T) {
 }
 
 func TestExpiringCoverageExactRepeatedAndReplaced(t *testing.T) {
+	t.Parallel()
 	for _, api := range []string{"legacy", "coverage"} {
 		t.Run(api, func(t *testing.T) {
 			recs, commits, coverage := expiryPrecisionFixture()
@@ -158,6 +161,7 @@ func TestExpiringCoverageExactRepeatedAndReplaced(t *testing.T) {
 }
 
 func TestExpiringCoverageExactNonfiniteReplacement(t *testing.T) {
+	t.Parallel()
 	for _, pct := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
 		recs, commits, coverage := expiryPrecisionFixture()
 		for i := range recs {

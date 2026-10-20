@@ -14,6 +14,7 @@ import (
 // Values recorded from a live EC2_INSTANCE_SP / ONE_YEAR / PARTIAL_UPFRONT
 // CE response (m5, eu-west-2): hourly 2.760, upfront 12089.
 func TestParseSavingsPlanDetail_RecurringMonthlyCost(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name, term, payment, hourly, upfront string
 		want                                 float64
@@ -37,6 +38,7 @@ func TestParseSavingsPlanDetail_RecurringMonthlyCost(t *testing.T) {
 }
 
 func TestParseSavingsPlanDetail_RecurringMonthlyCostErrors(t *testing.T) {
+	t.Parallel()
 	detail := &types.SavingsPlansPurchaseRecommendationDetail{
 		HourlyCommitmentToPurchase: aws.String("1.0"),
 		UpfrontCost:                aws.String("99999"),

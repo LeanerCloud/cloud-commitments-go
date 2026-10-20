@@ -60,6 +60,7 @@ func findRec(t *testing.T, recs []common.Recommendation, instType string) *commo
 }
 
 func TestRederiveFamilyCoverage_UnchangedCountsReproduceSizing(t *testing.T) {
+	t.Parallel()
 	cov, recs := sizedFixture(t)
 	got := RederiveFamilyCoverage(recs, cov)
 	require.Len(t, got, len(recs))
@@ -69,6 +70,7 @@ func TestRederiveFamilyCoverage_UnchangedCountsReproduceSizing(t *testing.T) {
 }
 
 func TestRederiveFamilyCoverage_CappedFamilyLowersCoverageOthersUntouched(t *testing.T) {
+	t.Parallel()
 	cov, recs := sizedFixture(t)
 	capped := make([]common.Recommendation, len(recs))
 	copy(capped, recs)
@@ -91,6 +93,7 @@ func TestRederiveFamilyCoverage_CappedFamilyLowersCoverageOthersUntouched(t *tes
 }
 
 func TestRederiveFamilyCoverage_DroppedRecNoLongerContributes(t *testing.T) {
+	t.Parallel()
 	cov, recs := sizedFixture(t)
 	var kept []common.Recommendation
 	for _, r := range recs {
@@ -105,6 +108,7 @@ func TestRederiveFamilyCoverage_DroppedRecNoLongerContributes(t *testing.T) {
 }
 
 func TestRederiveFamilyCoverage_MixedServiceAndSQLServerUntouched(t *testing.T) {
+	t.Parallel()
 	cov, recs := sizedFixture(t)
 	for i := range recs {
 		recs[i].Count = 1
@@ -116,6 +120,7 @@ func TestRederiveFamilyCoverage_MixedServiceAndSQLServerUntouched(t *testing.T) 
 }
 
 func TestRederiveFamilyCoverage_UnsizedFamilyUntouched(t *testing.T) {
+	t.Parallel()
 	cov, recs := rederiveFixture()
 	recs[0].ProjectedCoverage = 7
 	recs[0].Count = 2
@@ -124,6 +129,7 @@ func TestRederiveFamilyCoverage_UnsizedFamilyUntouched(t *testing.T) {
 }
 
 func TestFamilyProjectedCoverage_CapsAt100(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, 100.0, familyProjectedCoverage(60, 50, 100), "60% + 50% caps at exactly 100")
 	assert.Equal(t, 90.0, familyProjectedCoverage(60, 30, 100))
 
@@ -133,6 +139,7 @@ func TestFamilyProjectedCoverage_CapsAt100(t *testing.T) {
 }
 
 func TestRederiveFamilyCoverage_CapsAt100(t *testing.T) {
+	t.Parallel()
 	cov, recs := sizedFixture(t)
 	for i := range recs {
 		recs[i].Count *= 100 // count override well past the family demand

@@ -10,6 +10,7 @@ import (
 )
 
 func TestGetServiceStringForCostExplorer(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		service  common.ServiceType
@@ -86,6 +87,7 @@ func TestGetServiceStringForCostExplorer(t *testing.T) {
 }
 
 func TestConvertPaymentOption(t *testing.T) {
+	t.Parallel()
 	// convertPaymentOption is the legacy wrapper used by client.go (RI path,
 	// owned by #865/#1075); it silently returns the empty ("") PaymentOption
 	// for unrecognized values, which Cost Explorer then rejects with a
@@ -130,6 +132,7 @@ func TestConvertPaymentOption(t *testing.T) {
 // this erroring variant so a typo or new/renamed option is caught before the
 // wrong recs are queried.
 func TestConvertPaymentOptionE_FailLoud(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		option      string
@@ -163,6 +166,7 @@ func TestConvertPaymentOptionE_FailLoud(t *testing.T) {
 // convertTermInYearsE must error on unrecognized terms rather than silently
 // returning the empty ("") TermInYears (which CE then rejects).
 func TestConvertTermInYearsE_FailLoud(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		term        string
@@ -197,6 +201,7 @@ func TestConvertTermInYearsE_FailLoud(t *testing.T) {
 // convertLookbackPeriodE must error on unrecognized periods rather than
 // silently returning the empty ("") LookbackPeriodInDays (which CE then rejects).
 func TestConvertLookbackPeriodE_FailLoud(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		period      string
@@ -230,6 +235,7 @@ func TestConvertLookbackPeriodE_FailLoud(t *testing.T) {
 }
 
 func TestConvertTermInYears(t *testing.T) {
+	t.Parallel()
 	// convertTermInYears is the legacy wrapper used by client.go (RI path);
 	// it silently returns the empty ("") TermInYears for unrecognized values,
 	// which Cost Explorer then rejects with a validation error. This test
@@ -271,6 +277,7 @@ func TestConvertTermInYears(t *testing.T) {
 }
 
 func TestConvertLookbackPeriod(t *testing.T) {
+	t.Parallel()
 	// convertLookbackPeriod is the legacy wrapper used by client.go (RI path);
 	// it silently returns the empty ("") LookbackPeriodInDays for unrecognized
 	// values, which Cost Explorer then rejects with a validation error. This
@@ -322,6 +329,7 @@ func TestConvertLookbackPeriod(t *testing.T) {
 }
 
 func TestConvertSavingsPlansPaymentOption(t *testing.T) {
+	t.Parallel()
 	// SP wrappers now return (value, error); valid options must succeed.
 	result, err := convertSavingsPlansPaymentOption("all-upfront")
 	assert.NoError(t, err)
@@ -337,6 +345,7 @@ func TestConvertSavingsPlansPaymentOption(t *testing.T) {
 }
 
 func TestConvertSavingsPlansTermInYears(t *testing.T) {
+	t.Parallel()
 	result, err := convertSavingsPlansTermInYears("3yr")
 	assert.NoError(t, err)
 	assert.Equal(t, types.TermInYearsThreeYears, result)
@@ -351,6 +360,7 @@ func TestConvertSavingsPlansTermInYears(t *testing.T) {
 }
 
 func TestConvertSavingsPlansLookbackPeriod(t *testing.T) {
+	t.Parallel()
 	result, err := convertSavingsPlansLookbackPeriod("7d")
 	assert.NoError(t, err)
 	assert.Equal(t, types.LookbackPeriodInDaysSevenDays, result)
@@ -365,6 +375,7 @@ func TestConvertSavingsPlansLookbackPeriod(t *testing.T) {
 }
 
 func TestNormalizeRegionName(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		region   string

@@ -61,6 +61,7 @@ func counts(recs []common.Recommendation) []int {
 }
 
 func TestPoolExpiryReplacementInsideLookback(t *testing.T) {
+	t.Parallel()
 	_, _, _, _, baseline := runLookback(t, nil, defaultOpts(), nil)
 
 	before, after, adjusted, missing, sized := runLookback(t,
@@ -82,6 +83,7 @@ func TestPoolExpiryReplacementInsideLookback(t *testing.T) {
 }
 
 func TestPoolExpiryReplacementBeforeLookback(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name string
 		ago  int
@@ -96,6 +98,7 @@ func TestPoolExpiryReplacementBeforeLookback(t *testing.T) {
 }
 
 func TestPoolExpiryPartialAndOverReplacement(t *testing.T) {
+	t.Parallel()
 	// demand 30/h, coverage 60%: each expiring RI is 100/30 points.
 	before, after, adjusted, _, _ := runLookback(t,
 		[]common.Commitment{expiringRI(4), replacementRI(1, 5)}, defaultOpts(), nil)
@@ -109,6 +112,7 @@ func TestPoolExpiryPartialAndOverReplacement(t *testing.T) {
 }
 
 func TestPoolExpiryReplacementStates(t *testing.T) {
+	t.Parallel()
 	start, end := daysFromNow(-5), daysFromNow(300)
 	for _, tc := range []struct {
 		name     string
@@ -134,6 +138,7 @@ func TestPoolExpiryReplacementStates(t *testing.T) {
 }
 
 func TestPoolExpiryReplacementPoolMatching(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name     string
 		mod      func(*common.Commitment)
@@ -158,6 +163,7 @@ func TestPoolExpiryReplacementPoolMatching(t *testing.T) {
 }
 
 func TestPoolExpiryNoExpiringCommitments(t *testing.T) {
+	t.Parallel()
 	before, after, adjusted, missing, _ := runLookback(t,
 		[]common.Commitment{replacementRI(3, 5)}, defaultOpts(), nil)
 	assert.Zero(t, adjusted)
@@ -166,6 +172,7 @@ func TestPoolExpiryNoExpiringCommitments(t *testing.T) {
 }
 
 func TestPoolExpiryMissingDemand(t *testing.T) {
+	t.Parallel()
 	noDemand := func(cov PoolCoverageMap) {
 		for k, v := range cov {
 			v.AvgInstancesPerHour = 0
@@ -184,6 +191,7 @@ func TestPoolExpiryMissingDemand(t *testing.T) {
 }
 
 func TestPoolExpirySkippedRecsKeepExactState(t *testing.T) {
+	t.Parallel()
 	recs, _, coverage := expiryPrecisionFixture()
 	ApplyCoverageMapToRecommendations(recs, coverage)
 	seeded := make([]*big.Rat, len(recs))
@@ -201,6 +209,7 @@ func TestPoolExpirySkippedRecsKeepExactState(t *testing.T) {
 }
 
 func TestPoolExpiryZeroOptionsMatchLegacyCoverageAPI(t *testing.T) {
+	t.Parallel()
 	commits := []common.Commitment{expiringRI(2), replacementRI(2, 5)}
 	recsA, _, coverage := expiryPrecisionFixture()
 	recsB, _, _ := expiryPrecisionFixture()

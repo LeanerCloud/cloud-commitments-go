@@ -30,6 +30,7 @@ func coverageGroup(instance, deployment, pct string, hours *string) types.Reserv
 }
 
 func TestGetRICoverageMap_AggregatesBucketsSDK(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name                     string
 		paged, reverse, failLast bool
@@ -144,6 +145,7 @@ func TestGetRICoverageMap_AggregatesBucketsSDK(t *testing.T) {
 }
 
 func TestGetRICoverageMap_ZeroWeightBuckets(t *testing.T) {
+	t.Parallel()
 	for _, hours := range []*string{nil, aws.String("0")} {
 		for _, reverse := range []bool{false, true} {
 			groups := []types.ReservationCoverageGroup{
@@ -170,6 +172,7 @@ func TestGetRICoverageMap_ZeroWeightBuckets(t *testing.T) {
 // Issue go#308: an unparsable, non-finite or negative value must remove the
 // whole pool from the map, never leave it as a known 0%.
 func TestGetRICoverageMap_InvalidTotalRunningHoursDropsPool(t *testing.T) {
+	t.Parallel()
 	for _, hours := range []string{"invalid", "NaN", "Inf", "-720"} {
 		for _, reverse := range []bool{false, true} {
 			groups := []types.ReservationCoverageGroup{
@@ -190,6 +193,7 @@ func TestGetRICoverageMap_InvalidTotalRunningHoursDropsPool(t *testing.T) {
 }
 
 func TestGetRICoverageMap_BadPercentageInOnePeriodDropsWholePool(t *testing.T) {
+	t.Parallel()
 	periods := []types.CoverageByTime{
 		{Groups: []types.ReservationCoverageGroup{coverageGroup("m5.large", "", "50", aws.String("720")), coverageGroup("m5.xlarge", "", "20", aws.String("720"))}},
 		{Groups: []types.ReservationCoverageGroup{coverageGroup("m5.large", "", "abc", aws.String("720"))}},
@@ -205,6 +209,7 @@ func TestGetRICoverageMap_BadPercentageInOnePeriodDropsWholePool(t *testing.T) {
 }
 
 func TestPoolCoverageFromGroup_Parse(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name    string
 		pct     *string
