@@ -28,6 +28,7 @@ func (r *optRecordingMemoryDB) PurchaseReservedNodesOffering(ctx context.Context
 }
 
 func TestPurchaseCommitment_EmptyToken(t *testing.T) {
+	t.Parallel()
 	call := func(t *testing.T, token string, apiErr error, emptyResp bool) (int, common.PurchaseResult, error) {
 		m := &MockMemoryDBClient{}
 		rec := common.Recommendation{

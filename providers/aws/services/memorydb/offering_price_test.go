@@ -37,6 +37,7 @@ const (
 // The SDK offering type has no currency field and no UsagePrice, so the usage
 // cases are not applicable; USD is assumed outside cn- regions.
 func TestGetOfferingDetails_Pricing(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []priceCase{
 		{name: "3yr term", term: "3yr", duration: threeYear, usage: 0, charges: []float64{0.05}, currency: "USD", region: "", err: "", hourly: 0.05, hours: 26280},
 		{name: "two hourly charges are summed", term: "1yr", duration: oneYear, usage: 0, charges: []float64{0.03, 0.02}, currency: "USD", region: "", err: "", hourly: 0.05, hours: 8760},
