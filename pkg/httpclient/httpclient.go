@@ -99,7 +99,7 @@ func localNAT64Embedded(ip netip.Addr) []netip.Addr {
 // Teredo (2001::/32, deprecated) is deliberately NOT decoded (#238; pinned by
 // TestBlockMetadata_TeredoStaysAllowed). An address carries the relay's IPv4
 // and the client's obfuscated IPv4 (XOR 0xffff). The obfuscated client IPv4 is
-// where a relay sends the tunnelled packets, as IPv6 inside UDP; it is not
+// where a relay sends the tunneled packets, as IPv6 inside UDP; it is not
 // reachable as a metadata endpoint, because nothing here opens a TCP
 // connection to it. A field that decodes to a metadata address is therefore
 // not a path to that endpoint.
