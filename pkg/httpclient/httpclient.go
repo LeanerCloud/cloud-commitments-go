@@ -64,6 +64,46 @@ var embeddedIPv4Prefixes = []struct {
 	{netip.MustParsePrefix("::/96"), 12},
 }
 
+// localNAT64 is the RFC 8215 local-use NAT64 prefix. Unlike the well-known
+// 64:ff9b::/96 (which RFC 6052 section 3.1 forbids from carrying non-global
+// IPv4), a network-specific prefix may embed any IPv4 address, including
+// metadata ones, and the operator chooses the prefix length (/48 to /96). The
+// IPv4 address is therefore decoded under every RFC 6052 layout and the dial is
+// refused if any decoding is blocked (#238).
+var localNAT64 = netip.MustParsePrefix("64:ff9b:1::/48")
+
+// rfc6052Layouts lists, per NAT64 prefix length (/48, /56, /64, /96), the byte
+// offsets of the four IPv4 octets in the 16-byte form. Byte 8 is the reserved
+// "u" octet and is skipped by RFC 6052.
+var rfc6052Layouts = [][4]int{
+	{6, 7, 9, 10},
+	{7, 9, 10, 11},
+	{9, 10, 11, 12},
+	{12, 13, 14, 15},
+}
+
+// localNAT64Embedded returns the IPv4 address ip would translate to under each
+// RFC 6052 layout, or nil when ip is outside localNAT64.
+func localNAT64Embedded(ip netip.Addr) []netip.Addr {
+	if !localNAT64.Contains(ip) {
+		return nil
+	}
+	b := ip.As16()
+	out := make([]netip.Addr, 0, len(rfc6052Layouts))
+	for _, l := range rfc6052Layouts {
+		out = append(out, netip.AddrFrom4([4]byte{b[l[0]], b[l[1]], b[l[2]], b[l[3]]}))
+	}
+	return out
+}
+
+// Teredo (2001::/32, deprecated) is deliberately NOT decoded (#238; pinned by
+// TestBlockMetadata_TeredoStaysAllowed). An address carries the relay's IPv4
+// and the client's obfuscated IPv4 (XOR 0xffff). The obfuscated client IPv4 is
+// where a relay sends the tunneled packets, as IPv6 inside UDP; it is not
+// reachable as a metadata endpoint, because nothing here opens a TCP
+// connection to it. A field that decodes to a metadata address is therefore
+// not a path to that endpoint.
+
 // embeddedIPv4 returns the IPv4 address ip carries, if any.
 func embeddedIPv4(ip netip.Addr) (netip.Addr, bool) {
 	b := ip.As16()
@@ -104,6 +144,11 @@ func blockMetadata(_, address string, _ syscall.RawConn) error {
 	}
 	if v4, ok := embeddedIPv4(ip); ok && isMetadata(v4) {
 		return fmt.Errorf("connection to metadata endpoint %s (embedded in %s) is blocked", v4, ip)
+	}
+	for _, v4 := range localNAT64Embedded(ip) {
+		if isMetadata(v4) {
+			return fmt.Errorf("connection to metadata endpoint %s (embedded in %s) is blocked", v4, ip)
+		}
 	}
 	return nil
 }

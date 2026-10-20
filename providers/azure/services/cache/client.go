@@ -4,7 +4,6 @@ package cache
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -479,8 +478,9 @@ func (c *Client) createRedisCachesPager() (RedisCachesPager, error) {
 }
 
 // collectSKUsFromCaches collects SKUs from existing Redis caches.
-// Returns (nil, err) on context cancellation so callers can propagate the error
-// instead of silently using a partial result set.
+// Returns (nil, err) on context cancellation or when the page cap is reached
+// so callers can propagate the error instead of silently using a partial
+// result set.
 func (c *Client) collectSKUsFromCaches(ctx context.Context, pager RedisCachesPager) (map[string]bool, error) {
 	skuSet := make(map[string]bool)
 
@@ -489,8 +489,7 @@ func (c *Client) collectSKUsFromCaches(ctx context.Context, pager RedisCachesPag
 			return nil, fmt.Errorf("cache: GetValidResourceTypes context canceled after %d pages: %w", pageIdx, err)
 		}
 		if pageIdx >= maxCachesPages {
-			log.Printf("WARNING: cache: GetValidResourceTypes pagination cap (%d pages) reached", maxCachesPages)
-			break
+			return nil, fmt.Errorf("cache: GetValidResourceTypes pagination cap (%d pages) reached", maxCachesPages)
 		}
 		page, err := slot.NextPage(ctx, pager)
 		if err != nil {
