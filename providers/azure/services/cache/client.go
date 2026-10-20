@@ -581,7 +581,7 @@ func (c *Client) getRedisPricing(ctx context.Context, sku, region string, termYe
 		return nil, err
 	}
 	return &RedisPricing{
-		HourlyRate:       selected.RetailPrice / (8760 * float64(termYears)),
+		HourlyRate:       selected.RetailPrice / (common.HoursPerYear * float64(termYears)),
 		ReservationPrice: selected.RetailPrice,
 		Currency:         selected.CurrencyCode,
 	}, nil

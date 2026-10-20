@@ -605,7 +605,7 @@ func (c *Client) getSQLPricing(ctx context.Context, sku, region string, termYear
 	}
 
 	return &SQLPricing{
-		HourlyRate:       reservation.RetailPrice / (8760.0 * float64(termYears)),
+		HourlyRate:       reservation.RetailPrice / (common.HoursPerYear * float64(termYears)),
 		ReservationPrice: reservation.RetailPrice,
 		Currency:         reservation.CurrencyCode,
 	}, nil

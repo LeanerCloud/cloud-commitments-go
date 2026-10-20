@@ -578,7 +578,7 @@ func (c *Client) getCosmosPricing(ctx context.Context, sku, region string, termY
 	}
 
 	return &CosmosPricing{
-		HourlyRate:       selected.RetailPrice / (8760.0 * float64(termYears)),
+		HourlyRate:       selected.RetailPrice / (common.HoursPerYear * float64(termYears)),
 		ReservationPrice: selected.RetailPrice,
 		Currency:         selected.CurrencyCode,
 	}, nil
