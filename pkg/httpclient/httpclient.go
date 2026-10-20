@@ -64,6 +64,16 @@ var embeddedIPv4Prefixes = []struct {
 	{netip.MustParsePrefix("::/96"), 12},
 }
 
+// Two IPv6 ranges that look similar are deliberately NOT in the list above
+// (#238; pinned by TestBlockMetadata_UnlistedEmbeddingRangesStayAllowed):
+//   - 64:ff9b:1::/48 (RFC 8215 local-use NAT64) has an operator-chosen
+//     translation layout, so the IPv4 offset cannot be assumed; no default
+//     gateway forwards it to a fixed embedded address.
+//   - 2001::/32 (Teredo, deprecated) carries the relay's IPv4 address and the
+//     client's obfuscated address, never the destination IPv4.
+//
+// If a deployment is shown to translate either range to an embedded
+// destination, add it here with its offset and move the test case to blocked.
 // embeddedIPv4 returns the IPv4 address ip carries, if any.
 func embeddedIPv4(ip netip.Addr) (netip.Addr, bool) {
 	b := ip.As16()

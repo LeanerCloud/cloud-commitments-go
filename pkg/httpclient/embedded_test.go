@@ -66,6 +66,26 @@ func TestBlockMetadata_EmbeddedAndUnspecified(t *testing.T) {
 	}
 }
 
+// 64:ff9b:1::/48 (local-use NAT64) and 2001::/32 (Teredo) are intentionally
+// not decoded as embedded IPv4 (see embeddedIPv4Prefixes). Pin that so adding
+// either range to the embedding list is a deliberate, test-visible change.
+func TestBlockMetadata_UnlistedEmbeddingRangesStayAllowed(t *testing.T) {
+	t.Parallel()
+	for _, addr := range []string{
+		"[64:ff9b:1::a9fe:a9fe]:80",
+		"[64:ff9b:1:0:0:0:a9fe:a9fe]:80",
+		"[2001:0:4136:e378:8000:63bf:5601:5601]:80", // Teredo-shaped
+		"[2001::a9fe:a9fe]:80",
+	} {
+		t.Run(addr, func(t *testing.T) {
+			t.Parallel()
+			if err := blockMetadata("tcp", addr, nil); err != nil {
+				t.Fatalf("%s must stay allowed: %v", addr, err)
+			}
+		})
+	}
+}
+
 // The guard runs for every dial, so a redirect to an embedded form or an
 // unspecified address is refused as well.
 func TestNew_BlocksEmbeddedFormsViaRedirect(t *testing.T) {
