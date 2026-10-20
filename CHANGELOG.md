@@ -133,6 +133,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **`scripts/setup-git-secrets.sh`:** the database DSN detector now fires on `user:password@host` (the old pattern ended at `@`, which `git-secrets`' word-match scan rejected before a hostname), and also covers `postgresql`, `mariadb`, driver-suffixed schemes and empty usernames (#125).
 - **`common.HoursPerMonth`:** exported 730-hour average month (`HoursPerYear / 12`) next to `HoursPerYear`; the remaining bare 730 and 8760 literals in the aws and gcp providers use the shared constants (#109).
 - **`gcp`:** region-lookup permission errors are now classified by type only (googleapi 403 or gRPC `PermissionDenied`) through the shared `IsPermissionError`. gRPC `PermissionDenied` is now skipped with a warning like a 403, and an untyped error whose text merely contains "403" and "permission" now propagates instead of being skipped (#6).
 - **BREAKING `gcp`: stored contexts removed (#6).** `computeengine.NewClient`

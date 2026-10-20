@@ -143,14 +143,14 @@ run_case "secret appended to an unrelated registration line stays caught" 1 \
     "$(sed "s/# GCP API Key\$/# GCP API Key ${KEY}/" "$REPO_ROOT/scripts/setup-git-secrets.sh")"
 cp "$REPO_ROOT/scripts/setup-git-secrets.sh" scripts/setup-git-secrets.sh
 
-# A secret appended to the END of one of the three self-matching lines
-# THEMSELVES must also still be caught. An entry anchored on the path and
+# A secret appended to the END of the self-matching Azure line
+# ITSELF must also still be caught. An entry anchored on the path and
 # pattern but missing a trailing $ would stop matching at the end of the
 # pattern it names and let anything appended after it through, which is a
 # narrower version of the same hole the entry above closes.
 run_case "secret appended to a self-matching line itself stays caught" 1 \
     scripts/setup-git-secrets.sh \
-    "$(sed "s/# PostgreSQL\$/# PostgreSQL ${KEY}/" "$REPO_ROOT/scripts/setup-git-secrets.sh")"
+    "$(sed "s/# Azure Connection String\$/# Azure Connection String ${KEY}/" "$REPO_ROOT/scripts/setup-git-secrets.sh")"
 cp "$REPO_ROOT/scripts/setup-git-secrets.sh" scripts/setup-git-secrets.sh
 
 # Must scan clean (exit 0): what the tree contains, and what the allowlist
@@ -179,6 +179,38 @@ if [ -n "$unanchored" ]; then
 else
     pass=$((pass + 1))
 fi
+
+# DSN detector coverage (#125). Schemes are split across adjacent literals so
+# this file does not trip the detectors it exercises.
+PW="hunter2hunter2"
+PG="postgre""s://"
+PGSQL="postgre""sql://"
+MY="mysq""l://"
+MONGO="mongo""db+srv://"
+run_case "DSN with URL-encoded credentials" 1 q1.env \
+    'DB='"${PG}"'app:p%40ss%3Aw0rd@db.internal:5432/app'
+run_case "DSN with an IPv6 host" 1 q2.env \
+    'DB='"${PG}"'app:'"${PW}"'@[::1]:5432/app'
+run_case "DSN with a global IPv6 host" 1 q3.env \
+    'DB='"${MY}"'app:'"${PW}"'@[2001:db8::1]:3306/app'
+run_case "MongoDB SRV DSN with URL-encoded credentials" 1 q4.env \
+    'DB='"${MONGO}"'app:p%40ss@cluster0.example.net/app'
+run_case "postgresql scheme spelling" 1 q5.env \
+    'DB='"${PGSQL}"'app:'"${PW}"'@db.internal/app'
+run_case "postgresql with a driver suffix" 1 q6.env \
+    'DB=postgre''sql+psycopg2://app:'"${PW}"'@db.internal/app'
+run_case "mysql with a driver suffix" 1 q7.env \
+    'DB=mysq''l+pymysql://app:'"${PW}"'@db.internal/app'
+run_case "mariadb scheme" 1 q8.env \
+    'DB=maria''db://app:'"${PW}"'@db.internal/app'
+run_case "DSN with an empty username" 1 q9.env \
+    'DB='"${PG}"':'"${PW}"'@db.internal/app'
+run_case "DSN without credentials" 0 q10.env \
+    'DB='"${PG}"'db.internal:5432/app'
+run_case "DSN with an IPv6 host and no credentials" 0 q11.env \
+    'DB='"${PGSQL}"'[::1]:5432/app'
+run_case "DSN with a username and no password" 0 q12.env \
+    'DB='"${PGSQL}"'app@db.internal:5432/app'
 
 # Placeholder-shaped account IDs next to a real-shaped key must be caught.
 ACCT="1234""56789012"
