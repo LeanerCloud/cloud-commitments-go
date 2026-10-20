@@ -42,7 +42,7 @@ func TestGetOfferingDetails_Pricing(t *testing.T) {
 		{name: "3yr term", term: "3yr", duration: threeYear, usage: 0, charges: []float64{0.05}, currency: "USD", region: "", err: "", hourly: 0.05, hours: 26280},
 		{name: "usage only, no charges", term: "1yr", duration: oneYear, usage: 0.05, charges: nil, currency: "USD", region: "", err: "", hourly: 0.05, hours: 8760},
 		{name: "two hourly charges are summed", term: "1yr", duration: oneYear, usage: 0, charges: []float64{0.03, 0.02}, currency: "USD", region: "", err: "", hourly: 0.05, hours: 8760},
-		{name: "3yr offering vs 1yr request", term: "1yr", duration: threeYear, usage: 0, charges: []float64{0.05}, currency: "USD", region: "", err: "does not match", hourly: 0, hours: 0},
+		{name: "3yr offering vs 1yr request", term: "1yr", duration: threeYear, usage: 0, charges: []float64{0.05}, currency: "USD", region: "", err: "API filter mismatch", hourly: 0, hours: 0},
 		{name: "usage and charge both nonzero", term: "1yr", duration: oneYear, usage: 0.05, charges: []float64{0.05}, currency: "USD", region: "", err: "refusing to guess", hourly: 0, hours: 0},
 		{name: "cn region has no assumable currency", term: "1yr", duration: oneYear, region: "cn-north-1", err: "not billed in USD"},
 	} {

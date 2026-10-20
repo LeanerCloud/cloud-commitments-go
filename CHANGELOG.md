@@ -216,6 +216,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Fixed
 
 - Bump Go to 1.26.10 to pick up the fix for GO-2026-6809 (crypto/x509), which `govulncheck` now reports against 1.26.9.
+- AWS ElastiCache purchases refuse a recommendation with no engine instead of
+  sending an empty `ProductDescription` filter, send the engine lowercased as
+  ElastiCache reports it, and verify the chosen offering's node type, duration
+  and engine before buying it (#53).
 - **`ReshapeBuffer` rejects nil payment caps** instead of mapping them to
   `math.MaxFloat64`: `MaxPaymentPerExchangeUSD` and `MaxPaymentDailyUSD`
   are now required, so an omitted cap can no longer mean unlimited spend on
