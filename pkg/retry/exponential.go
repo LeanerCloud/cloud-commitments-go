@@ -25,6 +25,8 @@ import (
 
 // Config bundles the exponential-backoff knobs.
 type Config struct {
+	// OnAttempt, if non-nil, is invoked once per attempt — see OnAttemptFn.
+	OnAttempt OnAttemptFn
 	// MaxAttempts is the total number of attempts (NOT retries). 1 = no
 	// retry, 5 = first attempt + 4 retries.
 	MaxAttempts int
@@ -46,8 +48,6 @@ type Config struct {
 	// under concurrent retries). math/rand/v2 is sufficient for backoff
 	// jitter; cryptographic randomness is not needed.
 	Jitter bool
-	// OnAttempt, if non-nil, is invoked once per attempt — see OnAttemptFn.
-	OnAttempt OnAttemptFn
 }
 
 // OnAttemptFn is called BEFORE each attempt (after any backoff

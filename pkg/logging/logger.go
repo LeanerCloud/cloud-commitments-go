@@ -35,10 +35,10 @@ const (
 // performed by every Debug/Info/Warn/Error call are race-free under the
 // concurrent fan-out, which logs from many goroutines.
 type Logger struct {
-	level    atomic.Int32
 	logger   *log.Logger
-	prefix   string
 	metadata map[string]interface{}
+	prefix   string
+	level    atomic.Int32
 }
 
 // getLevel returns the logger's current level, read atomically.

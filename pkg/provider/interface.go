@@ -75,24 +75,6 @@ type Credentials interface {
 //
 //nolint:revive // exported far beyond this repo (consumer-mcp references provider.ProviderConfig 100+ times); renaming to Config would break every consumer
 type ProviderConfig struct {
-	Name string
-
-	// Deprecated: Profile is overloaded with provider-specific semantics
-	// (AWS: named profile, Azure: subscription ID, GCP: project ID). Prefer
-	// the typed AWSProfile/AzureSubscriptionID/GCPProjectID fields below;
-	// when both are set, the typed field wins.
-	Profile string
-
-	// Typed per-provider identity fields. When set, these take precedence
-	// over Profile. Each provider only reads its own field and ignores the
-	// others, so a single ProviderConfig can be reused across providers.
-	AWSProfile          string // AWS named profile from ~/.aws/credentials or ~/.aws/config
-	AzureSubscriptionID string // Azure subscription ID (UUID)
-	GCPProjectID        string // GCP project ID (e.g. "my-project")
-
-	Region         string
-	CredentialPath string
-	Endpoint       string // For custom endpoints
 
 	// Optional pre-resolved credentials. The AWS slot is typed because this
 	// module already depends on the AWS SDK core (see go.mod and the exchange
@@ -112,4 +94,23 @@ type ProviderConfig struct {
 	// going through the registry. Use this to inject a pre-built, pre-authenticated
 	// provider when the typed credential slots above aren't expressive enough.
 	ProviderOverride Provider
+	Name             string
+
+	// Deprecated: Profile is overloaded with provider-specific semantics
+	// (AWS: named profile, Azure: subscription ID, GCP: project ID). Prefer
+	// the typed AWSProfile/AzureSubscriptionID/GCPProjectID fields below;
+	// when both are set, the typed field wins.
+	Profile string
+
+	// Typed per-provider identity fields. When set, these take precedence
+	// over Profile. Each provider only reads its own field and ignores the
+	// others, so a single ProviderConfig can be reused across providers.
+	AWSProfile          string // AWS named profile from ~/.aws/credentials or ~/.aws/config
+	AzureSubscriptionID string // Azure subscription ID (UUID)
+	GCPProjectID        string // GCP project ID (e.g. "my-project")
+
+	Region         string
+	CredentialPath string
+	Endpoint       string // For custom endpoints
+
 }

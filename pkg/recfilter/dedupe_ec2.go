@@ -18,8 +18,8 @@ const (
 
 // scopeState is the normalized scope of an EC2 commitment or recommendation.
 type scopeState struct {
-	kind scopeKind
 	az   string
+	kind scopeKind
 }
 
 func newScopeState(rawScope, az string) scopeState {

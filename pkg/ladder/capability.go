@@ -85,7 +85,7 @@ type LadderCapability interface {
 // pkg/exchange float64 anyway). Convert via ratFromFloat where exact math
 // is needed; NaN/Inf/non-positive values are rejected wherever these caps
 // are validated.
-type BufferReshapeConfig struct {
+type BufferReshapeConfig struct { //nolint:govet // fieldalignment: file owned by open PR #441
 	// MaxPaymentPerExchangeUSD caps the payment for a single exchange. nil
 	// means no per-exchange cap is applied.
 	MaxPaymentPerExchangeUSD *float64

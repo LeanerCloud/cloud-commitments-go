@@ -25,13 +25,12 @@ import (
 //
 //nolint:revive // stutters, but cloud-commitments-platform references this type through pkg's pinned go.mod pseudo-version (not workspace-resolved under GOWORK=off); renaming here without a coordinated go.mod bump would break that build mode
 type ExchangeQuoteSummary struct {
-	IsValidExchange         bool
+	PaymentDueUSD           *big.Rat `json:"-"` // internal use only, not serializable
 	ValidationFailureReason string
 	CurrencyCode            string
 
-	PaymentDueRaw    string   // as returned by AWS (string)
-	PaymentDueUSD    *big.Rat `json:"-"`                         // internal use only, not serializable
-	PaymentDueUSDStr string   `json:"payment_due_usd,omitempty"` // parsed decimal for JSON consumers
+	PaymentDueRaw    string // as returned by AWS (string)
+	PaymentDueUSDStr string `json:"payment_due_usd,omitempty"` // parsed decimal for JSON consumers
 
 	OutputReservedInstancesExp string // formatted date string (YYYY-MM-DD), empty if not set
 
@@ -42,6 +41,7 @@ type ExchangeQuoteSummary struct {
 	TargetHourlyPriceRaw      string
 	TargetRemainingUpfrontRaw string
 	TargetRemainingTotalRaw   string
+	IsValidExchange           bool
 }
 
 // ParseDecimalRat parses AWS decimal strings like "123.45" or "-0.018000" into big.Rat.
@@ -73,18 +73,19 @@ type TargetConfig struct {
 type ExchangeQuoteRequest struct {
 	Region          string
 	ExpectedAccount string // optional safety check
-	ReservedIDs     []string
-
-	// Targets is the preferred path for multi-target exchanges. When
-	// non-empty, TargetOfferingID / TargetCount are ignored.
-	Targets []TargetConfig
 
 	// TargetOfferingID + TargetCount are the legacy single-target
 	// fields, retained so pre-existing callers (HTTP handlers, sanity
 	// tests, serialized PurchasePlans) don't need a flag-day change.
 	// New code should populate Targets instead.
 	TargetOfferingID string
-	TargetCount      int32
+	ReservedIDs      []string
+
+	// Targets is the preferred path for multi-target exchanges. When
+	// non-empty, TargetOfferingID / TargetCount are ignored.
+	Targets []TargetConfig
+
+	TargetCount int32
 
 	// DryRun here uses the AWS API DryRun parameter (permission check).
 	// The quote call itself never performs an exchange.
@@ -95,17 +96,6 @@ type ExchangeQuoteRequest struct {
 //
 //nolint:revive // stutters, but ci_cd_sanity_tests references this type through pkg's pinned go.mod pseudo-version (not workspace-resolved under GOWORK=off); renaming here without a coordinated go.mod bump would break that build mode
 type ExchangeExecuteRequest struct {
-	Region          string
-	ExpectedAccount string // optional safety check
-	ReservedIDs     []string
-
-	// Targets is the preferred path for multi-target exchanges. When
-	// non-empty, TargetOfferingID / TargetCount are ignored.
-	Targets []TargetConfig
-
-	// Legacy single-target alias. Prefer Targets for new code.
-	TargetOfferingID string
-	TargetCount      int32
 
 	// Guardrail: require PaymentDue <= MaxPaymentDueUSD to execute.
 	// AWS returns a single aggregated PaymentDue across all targets,
@@ -113,6 +103,18 @@ type ExchangeExecuteRequest struct {
 	// total cap rather than a per-target cap.
 	// If nil, execution is refused.
 	MaxPaymentDueUSD *big.Rat
+	Region           string
+	ExpectedAccount  string // optional safety check
+
+	// Legacy single-target alias. Prefer Targets for new code.
+	TargetOfferingID string
+	ReservedIDs      []string
+
+	// Targets is the preferred path for multi-target exchanges. When
+	// non-empty, TargetOfferingID / TargetCount are ignored.
+	Targets []TargetConfig
+
+	TargetCount int32
 }
 
 // targetConfigs returns the ec2types slice to pass to the EC2 API.

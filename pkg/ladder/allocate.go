@@ -63,7 +63,7 @@ func minAllocatableGap() *big.Rat {
 // logs identify the source of each decision.
 //
 // Now must be set by the caller; Allocate never calls time.Now internally.
-type AllocationInput struct {
+type AllocationInput struct { //nolint:govet // fieldalignment: file owned by open PR #441
 	Now             time.Time
 	LayerStates     map[LayerType]LayerState
 	Layers          []LayerSpec
