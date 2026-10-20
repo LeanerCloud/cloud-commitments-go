@@ -46,13 +46,13 @@ func AssertConsumptionUnitVariants(t *testing.T, recs []common.Recommendation, p
 	t.Helper()
 	require.Len(t, recs, 4, "two recommendations expand to four variants")
 	cases := []struct {
+		term                  string
 		upfront, monthly      common.Recommendation
 		onDemand, total, days float64
 		unit, months          float64
-		term                  string
 	}{
-		{recs[0], recs[1], fixture1yOnDemand, fixture1yTotal, fixtureLegacyWinDy, price1y, 12, "1yr"},
-		{recs[2], recs[3], fixture3yOnDemand, fixture3yTotal, fixtureModernWinDy, price3y, 36, "3yr"},
+		{"1yr", recs[0], recs[1], fixture1yOnDemand, fixture1yTotal, fixtureLegacyWinDy, price1y, 12},
+		{"3yr", recs[2], recs[3], fixture3yOnDemand, fixture3yTotal, fixtureModernWinDy, price3y, 36},
 	}
 	for i := range cases {
 		c := &cases[i]

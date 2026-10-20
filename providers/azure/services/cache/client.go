@@ -70,12 +70,14 @@ type RedisCachesPager interface {
 // Client handles Azure Cache for Redis Reserved Capacity.
 type Client struct {
 	cred                 azcore.TokenCredential
-	subscriptionID       string
-	region               string
 	httpClient           HTTPClient
 	recommendationsPager RecommendationsPager
 	reservationsPager    ReservationsDetailsPager
 	redisCachesPager     RedisCachesPager
+
+	skuCacheMap    map[string]redisSKUEntry
+	subscriptionID string
+	region         string
 
 	// Lazy SKU catalog cache. armredis exposes no per-region "list all
 	// possible SKUs" surface, so we derive shard counts from the existing
@@ -85,7 +87,6 @@ type Client struct {
 	// skuCacheMap nil and converters fall back to Shards=0 with a WARN
 	// log — the conversion itself does NOT fail.
 	skuCacheOnce sync.Once
-	skuCacheMap  map[string]redisSKUEntry
 }
 
 // NewClient creates a new Azure Cache client.
@@ -541,9 +542,9 @@ func (c *Client) getCommonSKUs() []string {
 
 // RedisPricing contains pricing information for Redis Cache.
 type RedisPricing struct {
+	Currency         string
 	HourlyRate       float64
 	ReservationPrice float64
-	Currency         string
 }
 
 func (c *Client) getRedisPricing(ctx context.Context, sku, region string, termYears int) (*RedisPricing, error) {

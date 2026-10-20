@@ -33,24 +33,6 @@ import (
 // reservation recommendation services, normalised across both Legacy
 // and Modern API response shapes.
 type ExtractedFields struct {
-	Region           string
-	ResourceType     string
-	Count            int
-	OnDemandCost     float64
-	CommitmentCost   float64
-	EstimatedSavings float64
-	Term             string
-	// LookBackDays is the lookback window the cost fields were computed over;
-	// set only by ExtractConsumption (0 from plain Extract).
-	LookBackDays int
-	// Scope is populated from the API response ("Shared" or a subscription ID)
-	// but is not yet threaded into the purchase body. All service clients
-	// currently send armreservations.AppliedScopeTypeShared, which is correct because
-	// the recommendation filter in recommendations.go already asserts
-	// "properties/scope eq 'Shared'" — only Shared-scope recommendations are
-	// ever requested. This field is retained for future wiring if single-
-	// subscription scoped recommendations are ever requested.
-	Scope string
 	// RecurringMonthlyCost is the covered/effective cost over Azure's lookback
 	// window, set by plain Extract only (from TotalCostWithReservedInstances, or
 	// OnDemandCost - NetSavings when that is absent; nil, never a fabricated 0,
@@ -58,6 +40,24 @@ type ExtractedFields struct {
 	// ExpandConsumptionVariants sets it per payment variant (0 for upfront,
 	// Count x reservation price / term months for monthly).
 	RecurringMonthlyCost *float64
+	Region               string
+	ResourceType         string
+	Term                 string
+	// Scope is populated from the API response ("Shared" or a subscription ID)
+	// but is not yet threaded into the purchase body. All service clients
+	// currently send armreservations.AppliedScopeTypeShared, which is correct because
+	// the recommendation filter in recommendations.go already asserts
+	// "properties/scope eq 'Shared'" — only Shared-scope recommendations are
+	// ever requested. This field is retained for future wiring if single-
+	// subscription scoped recommendations are ever requested.
+	Scope            string
+	Count            int
+	OnDemandCost     float64
+	CommitmentCost   float64
+	EstimatedSavings float64
+	// LookBackDays is the lookback window the cost fields were computed over;
+	// set only by ExtractConsumption (0 from plain Extract).
+	LookBackDays int
 }
 
 // float64Ptr returns a pointer to the given float64 value. Used to

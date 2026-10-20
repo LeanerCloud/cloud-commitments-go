@@ -62,7 +62,7 @@ type HTTPClient interface {
 }
 
 // Client handles Azure Savings Plans.
-type Client struct {
+type Client struct { //nolint:govet // fieldalignment: file owned by open PR #491
 	cred           azcore.TokenCredential
 	subscriptionID string
 	region         string

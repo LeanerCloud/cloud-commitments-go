@@ -14,13 +14,14 @@ import (
 // the lookup for one SKU fail while the others succeed. The rows are
 // hand-built (synthetic prices, not a live Azure quote).
 type PricingHTTP struct {
-	Items     []map[string]any
-	FailMatch string
 	// Err, when set, is returned from every request (a transport failure).
 	Err error
 
-	mu    sync.Mutex
-	calls int
+	FailMatch string
+	Items     []map[string]any
+	calls     int
+
+	mu sync.Mutex
 }
 
 // Do implements the HTTPClient interface the service clients accept.

@@ -32,15 +32,15 @@ var newSubscriptionRecommendationsClientFn = func(cred azcore.TokenCredential, s
 // client so fan-out logs and error messages can identify which subscription
 // a failure came from.
 type subscriptionClient struct {
-	subscriptionID string
 	client         provider.RecommendationsClient
+	subscriptionID string
 }
 
 // SubscriptionFailure records one subscription that could not be queried
 // during an org-wide fan-out.
 type SubscriptionFailure struct {
-	SubscriptionID string
 	Err            error
+	SubscriptionID string
 }
 
 // ErrSubscriptionNotAccessible is the cause recorded for a subscription named
@@ -93,6 +93,8 @@ func AsPartialResult(err error) *PartialResultError {
 // Failing the whole sweep on one transient subscription error would be worse
 // than a partial result, which is why the successful data is still returned.
 type PartialSubscriptionFailureError struct {
+	// Failed carries every subscription that errored, with its cause.
+	Failed []SubscriptionFailure
 	// Attempted is how many subscriptions the sweep was supposed to cover:
 	// the ones actually queried plus any named by AccountFilter that the
 	// principal cannot see (those are never queried, but they were asked
@@ -102,8 +104,6 @@ type PartialSubscriptionFailureError struct {
 	// Succeeded is how many returned a result. Always < Attempted and > 0:
 	// an all-failed sweep is a plain error, not a partial one.
 	Succeeded int
-	// Failed carries every subscription that errored, with its cause.
-	Failed []SubscriptionFailure
 }
 
 func (e *PartialSubscriptionFailureError) Error() string {

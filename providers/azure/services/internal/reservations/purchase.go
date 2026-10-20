@@ -445,7 +445,8 @@ func doCalculatePrice(ctx context.Context, httpClient HTTPClient, calcURL string
 // the list-reservation-orders endpoint. Only the fields needed for the
 // idempotency-token lookup are decoded.
 type reservationOrdersListResponse struct {
-	Value []struct {
+	NextLink string `json:"nextLink"`
+	Value    []struct {
 		// Name is the reservation order GUID; this is what Azure mints as
 		// reservationOrderId during calculatePrice and what DoPurchaseTwoStep
 		// returns on success.
@@ -468,7 +469,6 @@ type reservationOrdersListResponse struct {
 			DisplayName string `json:"displayName"`
 		} `json:"properties"`
 	} `json:"value"`
-	NextLink string `json:"nextLink"`
 }
 
 // orderDisposition says what an existing reservation order that carries the

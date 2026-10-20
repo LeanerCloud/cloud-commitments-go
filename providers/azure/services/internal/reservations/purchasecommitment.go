@@ -15,10 +15,10 @@ import (
 // PurchaseParams holds what differs between the Azure service clients when
 // they build a reservation purchase body.
 type PurchaseParams struct {
-	// ReservedResourceType is the properties.reservedResourceType value.
-	ReservedResourceType string
 	// DisplayName returns properties.displayName for the recommendation.
 	DisplayName func(common.Recommendation) string
+	// ReservedResourceType is the properties.reservedResourceType value.
+	ReservedResourceType string
 }
 
 // BuildPurchaseBody parses rec.Term, builds the calculatePrice/purchase body
