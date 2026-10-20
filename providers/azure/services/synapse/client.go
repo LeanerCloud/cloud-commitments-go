@@ -326,7 +326,15 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	bodyBytes, err := reservations.BuildPurchaseBody(reservations.PurchaseParams{
 		ReservedResourceType: string(armreservations.ReservedResourceTypeSQLDataWarehouse),
 		DisplayName: func(r common.Recommendation) string {
-			return fmt.Sprintf("Synapse SQL Pool Reservation - %s", r.ResourceType)
+			return reservations.BuildDisplayName(reservations.DisplayNameFields{
+				Service:      "synapse",
+				Region:       c.region,
+				ResourceType: r.ResourceType,
+				Count:        r.Count,
+				Term:         r.Term,
+				Payment:      r.PaymentOption,
+				Now:          time.Now(),
+			})
 		},
 	}, rec, opts, c.region, c.subscriptionID, billingPlan)
 	if err != nil {

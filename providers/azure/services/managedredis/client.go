@@ -321,7 +321,15 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	bodyBytes, err := reservations.BuildPurchaseBody(reservations.PurchaseParams{
 		ReservedResourceType: string(armreservations.ReservedResourceTypeRedisCache),
 		DisplayName: func(r common.Recommendation) string {
-			return fmt.Sprintf("Azure Cache for Redis Reservation - %s", r.ResourceType)
+			return reservations.BuildDisplayName(reservations.DisplayNameFields{
+				Service:      "redis",
+				Region:       c.region,
+				ResourceType: r.ResourceType,
+				Count:        r.Count,
+				Term:         r.Term,
+				Payment:      r.PaymentOption,
+				Now:          time.Now(),
+			})
 		},
 	}, rec, opts, c.region, c.subscriptionID, billingPlan)
 	if err != nil {

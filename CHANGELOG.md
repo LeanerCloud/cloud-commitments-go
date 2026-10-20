@@ -126,6 +126,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **`azure`:** managedredis and synapse reservations now get the same generated display name as the other services (`redis-<region>-<sku>-<n>x-<term>-<payment>-...` and `synapse-...`) instead of the fixed `Azure Cache for Redis Reservation - <sku>` / `Synapse SQL Pool Reservation - <sku>`. This also removes the stray space before the idempotency marker on managedredis. Idempotency lookup keys on the tag or the marker suffix, not the base name (#538).
 - **BREAKING `gcp`: Cloud SQL and Memorystore no longer return CUD
   recommendations (#294).** They came from the project-scoped
   `PerformanceRecommender`s, which give per-instance tuning advice, and were

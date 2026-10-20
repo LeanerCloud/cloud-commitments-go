@@ -34,7 +34,6 @@ const (
 	methodPost     = "POST"
 	tokenBodyTmpl  = `{"location":"eastus","properties":{"appliedScopeType":"Shared","billingPlan":"Monthly","billingScopeId":"/subscriptions/sub","displayName":"%s","quantity":2,"renew":false,"reservedResourceType":"%s","term":"P1Y"},"sku":{"name":"GP_Gen5_8"},"tags":{"cudly-idempotency-token":"` + goldenToken + `","purchase-automation":"cudly-cli"}}`
 	noNameBodyTmpl = `{"location":"eastus","properties":{"appliedScopeType":"Shared","billingPlan":"Monthly","billingScopeId":"/subscriptions/sub","quantity":2,"renew":false,"reservedResourceType":"%s","term":"P1Y"},"sku":{"name":"GP_Gen5_8"},"tags":{"purchase-automation":"cudly-cli"}}`
-	plainBodyTmpl  = `{"location":"eastus","properties":{"appliedScopeType":"Shared","billingPlan":"Monthly","billingScopeId":"/subscriptions/sub","displayName":"%s","quantity":2,"renew":false,"reservedResourceType":"%s","term":"P1Y"},"sku":{"name":"GP_Gen5_8"},"tags":{"purchase-automation":"cudly-cli"}}`
 )
 
 type goldenCase struct {
@@ -43,10 +42,9 @@ type goldenCase struct {
 	build        func(cred *reservationstest.CountingCred, h *reservationstest.Capture) purchaser
 	// tokenName is the exact displayName when IdempotencyToken is set.
 	tokenName string
-	// plainName is the exact displayName with no token; plainRE is used instead
-	// when the name embeds the wall clock and a random suffix.
-	plainName string
-	plainRE   *regexp.Regexp
+	// plainRE matches the displayName with no token, which embeds the wall
+	// clock and a random suffix.
+	plainRE *regexp.Regexp
 	// preflight lists requests that precede the idempotency flow (compute's
 	// provider registration check).
 	preflight []string
@@ -56,25 +54,25 @@ func goldenCases() []goldenCase {
 	return []goldenCase{
 		{"cache", "RedisCache", func(c *reservationstest.CountingCred, h *reservationstest.Capture) purchaser {
 			return cache.NewClientWithHTTP(c, "sub", "eastus", h)
-		}, "redis-eastus-GP_Gen5_8-2x-1yr-monthly-" + goldenMarker, "", regexp.MustCompile(`^redis-eastus-GP_Gen5_8-2x-1yr-monthly-\d{8}T\d{6}-[0-9a-f]{8}$`), nil},
+		}, "redis-eastus-GP_Gen5_8-2x-1yr-monthly-" + goldenMarker, regexp.MustCompile(`^redis-eastus-GP_Gen5_8-2x-1yr-monthly-\d{8}T\d{6}-[0-9a-f]{8}$`), nil},
 		{"compute", "VirtualMachines", func(c *reservationstest.CountingCred, h *reservationstest.Capture) purchaser {
 			return compute.NewClientWithHTTP(c, "sub", "eastus", h)
-		}, "vm-eastus-GP_Gen5_8-2x-1yr-monthly-" + goldenMarker, "", regexp.MustCompile(`^vm-eastus-GP_Gen5_8-2x-1yr-monthly-\d{8}T\d{6}-[0-9a-f]{8}$`), []string{methodGet + " " + urlProvider}},
+		}, "vm-eastus-GP_Gen5_8-2x-1yr-monthly-" + goldenMarker, regexp.MustCompile(`^vm-eastus-GP_Gen5_8-2x-1yr-monthly-\d{8}T\d{6}-[0-9a-f]{8}$`), []string{methodGet + " " + urlProvider}},
 		{"cosmosdb", "CosmosDb", func(c *reservationstest.CountingCred, h *reservationstest.Capture) purchaser {
 			return cosmosdb.NewClientWithHTTP(c, "sub", "eastus", h)
-		}, "cosmos-eastus-GP_Gen5_8-2x-1yr-monthly-" + goldenMarker, "", regexp.MustCompile(`^cosmos-eastus-GP_Gen5_8-2x-1yr-monthly-\d{8}T\d{6}-[0-9a-f]{8}$`), nil},
+		}, "cosmos-eastus-GP_Gen5_8-2x-1yr-monthly-" + goldenMarker, regexp.MustCompile(`^cosmos-eastus-GP_Gen5_8-2x-1yr-monthly-\d{8}T\d{6}-[0-9a-f]{8}$`), nil},
 		{"database", "SqlDatabases", func(c *reservationstest.CountingCred, h *reservationstest.Capture) purchaser {
 			return database.NewClientWithHTTP(c, "sub", "eastus", h)
-		}, "sql-eastus-GP_Gen5_8-2x-1yr-monthly-" + goldenMarker, "", regexp.MustCompile(`^sql-eastus-GP_Gen5_8-2x-1yr-monthly-\d{8}T\d{6}-[0-9a-f]{8}$`), nil},
+		}, "sql-eastus-GP_Gen5_8-2x-1yr-monthly-" + goldenMarker, regexp.MustCompile(`^sql-eastus-GP_Gen5_8-2x-1yr-monthly-\d{8}T\d{6}-[0-9a-f]{8}$`), nil},
 		{"managedredis", "RedisCache", func(c *reservationstest.CountingCred, h *reservationstest.Capture) purchaser {
 			return managedredis.NewClientWithHTTP(c, "sub", "eastus", h)
-		}, "Azure Cache for Redis Reservation -" + goldenMarker, "Azure Cache for Redis Reservation - GP_Gen5_8", nil, nil},
+		}, "redis-eastus-GP_Gen5_8-2x-1yr-monthly-" + goldenMarker, regexp.MustCompile(`^redis-eastus-GP_Gen5_8-2x-1yr-monthly-\d{8}T\d{6}-[0-9a-f]{8}$`), nil},
 		{"search", "SearchService", func(c *reservationstest.CountingCred, h *reservationstest.Capture) purchaser {
 			return search.NewClientWithHTTP(c, "sub", "eastus", h)
-		}, "search-eastus-GP_Gen5_8-2x-1yr-monthly-" + goldenMarker, "", regexp.MustCompile(`^search-eastus-GP_Gen5_8-2x-1yr-monthly-\d{8}T\d{6}-[0-9a-f]{8}$`), nil},
+		}, "search-eastus-GP_Gen5_8-2x-1yr-monthly-" + goldenMarker, regexp.MustCompile(`^search-eastus-GP_Gen5_8-2x-1yr-monthly-\d{8}T\d{6}-[0-9a-f]{8}$`), nil},
 		{"synapse", "SqlDataWarehouse", func(c *reservationstest.CountingCred, h *reservationstest.Capture) purchaser {
 			return synapse.NewClientWithHTTP(c, "sub", "eastus", h)
-		}, "Synapse SQL Pool Reservation - GP_Gen5_8-" + goldenMarker, "Synapse SQL Pool Reservation - GP_Gen5_8", nil, nil},
+		}, "synapse-eastus-GP_Gen5_8-2x-1yr-monthly-" + goldenMarker, regexp.MustCompile(`^synapse-eastus-GP_Gen5_8-2x-1yr-monthly-\d{8}T\d{6}-[0-9a-f]{8}$`), nil},
 	}
 }
 
@@ -126,22 +124,17 @@ func TestPurchaseGoldenWithoutToken(t *testing.T) {
 				wantTokens = 2
 			}
 			require.Equal(t, wantTokens, cred.Calls)
-			if gc.plainRE == nil {
-				require.Equal(t, fmt.Sprintf(plainBodyTmpl, gc.plainName, gc.resourceType), string(h.BodyBytes))
-			} else {
-				// Display name embeds the wall clock and a random suffix: pin the
-				// rest of the body exactly and the name by pattern.
-				stripped, err := h.BodyWithoutDisplayName()
-				require.NoError(t, err)
-				require.Equal(t, fmt.Sprintf(noNameBodyTmpl, gc.resourceType), string(stripped))
-				var body struct {
-					Properties struct {
-						DisplayName string `json:"displayName"`
-					} `json:"properties"`
-				}
-				require.NoError(t, json.Unmarshal(h.BodyBytes, &body))
-				require.Regexp(t, gc.plainRE, body.Properties.DisplayName)
+			// Pin the rest of the body exactly and the name by pattern.
+			stripped, err := h.BodyWithoutDisplayName()
+			require.NoError(t, err)
+			require.Equal(t, fmt.Sprintf(noNameBodyTmpl, gc.resourceType), string(stripped))
+			var body struct {
+				Properties struct {
+					DisplayName string `json:"displayName"`
+				} `json:"properties"`
 			}
+			require.NoError(t, json.Unmarshal(h.BodyBytes, &body))
+			require.Regexp(t, gc.plainRE, body.Properties.DisplayName)
 			seq := append(append([]string{}, gc.preflight...), methodPost+" "+urlCalculate, methodPost+" "+urlPurchase)
 			require.Equal(t, seq, h.Sequence())
 			require.Equal(t, string(h.BodyBytes), string(h.Requests[len(h.Requests)-1].Body))
