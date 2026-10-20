@@ -93,9 +93,7 @@ func (m *MockResourceManagerService) ListProjects(ctx context.Context) ([]*cloud
 // the sentinel to short-circuit further pages, and (c) leaves *out
 // untouched on pages with no ACTIVE projects so the walk continues.
 //
-// This pins the pagination contract documented in the function godoc
-// (related issue: 11_gcp_provider.md LOW "Missing Test Coverage for
-// getDefaultProject Pagination").
+// This pins the pagination contract documented in the function godoc.
 func TestFindActiveProjectInPage(t *testing.T) {
 	t.Parallel()
 	t.Run("page with one ACTIVE project — sets out and short-circuits", func(t *testing.T) {
