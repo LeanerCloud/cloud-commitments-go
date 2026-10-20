@@ -425,38 +425,20 @@ func (c *Client) triggerCapacityProviderRegistration(ctx context.Context, bearer
 // in the portal AND a re-driven purchase can find it via tag lookup before
 // buying a duplicate (issue #721).
 func (c *Client) buildReservationBody(rec common.Recommendation, billingPlan armreservations.ReservationBillingPlan, source, idempotencyToken string) ([]byte, error) {
-	termYears, err := reservations.ParseTermYears(rec.Term)
-	if err != nil {
-		return nil, err
-	}
-	term, termEnumErr := reservations.ReservationTermForYears(termYears)
-	if termEnumErr != nil {
-		return nil, termEnumErr
-	}
-	requestBody := map[string]interface{}{
-		"sku":      map[string]string{"name": rec.ResourceType},
-		"location": c.region,
-		"properties": map[string]interface{}{
-			"reservedResourceType": string(armreservations.ReservedResourceTypeVirtualMachines),
-			"billingScopeId":       fmt.Sprintf("/subscriptions/%s", c.subscriptionID),
-			"billingPlan":          string(billingPlan),
-			"term":                 string(term),
-			"quantity":             rec.Count,
-			"displayName": reservations.BuildDisplayName(reservations.DisplayNameFields{
+	return reservations.BuildPurchaseBody(reservations.PurchaseParams{
+		ReservedResourceType: string(armreservations.ReservedResourceTypeVirtualMachines),
+		DisplayName: func(r common.Recommendation) string {
+			return reservations.BuildDisplayName(reservations.DisplayNameFields{
 				Service:      "vm",
 				Region:       c.region,
-				ResourceType: rec.ResourceType,
-				Count:        rec.Count,
-				Term:         rec.Term,
-				Payment:      rec.PaymentOption,
+				ResourceType: r.ResourceType,
+				Count:        r.Count,
+				Term:         r.Term,
+				Payment:      r.PaymentOption,
 				Now:          time.Now(),
-			}),
-			"appliedScopeType": string(armreservations.AppliedScopeTypeShared),
-			"renew":            false,
+			})
 		},
-	}
-	reservations.ApplyPurchaseTags(requestBody, source, idempotencyToken)
-	return json.Marshal(requestBody)
+	}, rec, common.PurchaseOptions{Source: source, IdempotencyToken: idempotencyToken}, c.region, c.subscriptionID, billingPlan)
 }
 
 // PurchaseCommitment purchases a VM Reserved Instance using the two-step
@@ -517,15 +499,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	// Ensure Microsoft.Capacity provider is registered (cached after first call).
 	c.ensureCapacityProviderRegistered(ctx)
 
-	token, err := c.cred.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{"https://management.azure.com/.default"},
-	})
-	if err != nil {
-		result.Error = fmt.Errorf("failed to get access token: %w", err)
-		return result, result.Error
-	}
-
-	reservationOrderID, existing, err := reservations.DoIdempotentPurchaseTwoStep(ctx, c.httpClient, reservations.CalculatePriceURL(), bodyBytes, token.Token, opts.IdempotencyToken)
+	reservationOrderID, existing, err := reservations.Submit(ctx, c.cred, c.httpClient, bodyBytes, opts)
 	if err != nil {
 		result.Error = err
 		return result, result.Error
