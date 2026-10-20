@@ -15,6 +15,7 @@ import (
 //     "null"; the helper folds that to a nil RawMessage so callers can
 //     treat absent and null identically).
 func TestMarshalServiceDetails_NilAndPointers(t *testing.T) {
+	t.Parallel()
 	b, err := MarshalServiceDetails(nil)
 	require.NoError(t, err)
 	assert.Nil(t, b, "nil interface must produce nil RawMessage")
@@ -35,6 +36,7 @@ func TestMarshalServiceDetails_NilAndPointers(t *testing.T) {
 		{"zero_pointer", &ComputeDetails{InstanceType: "m5.large", Platform: "Windows"}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			b, err := MarshalServiceDetails(tc.in)
 			require.NoError(t, err)
 			var fields map[string]any
@@ -58,6 +60,7 @@ func TestMarshalServiceDetails_NilAndPointers(t *testing.T) {
 // guard for issue #453: a Windows EC2 rec must come back out as Windows,
 // not silently default to Linux/UNIX.
 func TestDecodeServiceDetailsFor_RoundTrip(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		service string
@@ -156,6 +159,7 @@ func TestDecodeServiceDetailsFor_RoundTrip(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			blob, err := MarshalServiceDetails(tc.in)
 			require.NoError(t, err)
 			require.NotEmpty(t, blob)
@@ -173,7 +177,9 @@ func TestDecodeServiceDetailsFor_RoundTrip(t *testing.T) {
 // yields a zero-valued typed pointer (so the cloud client's type-
 // assertion succeeds and buildOfferingFilters can substitute defaults).
 func TestDecodeServiceDetailsFor_LegacyEmpty(t *testing.T) {
+	t.Parallel()
 	t.Run("compute_missing_commitment_type", func(t *testing.T) {
+		t.Parallel()
 		out, err := DecodeServiceDetailsFor(string(ServiceCompute), json.RawMessage(`{"instance_type":"n2-standard-4"}`))
 		require.NoError(t, err)
 		cd, ok := out.(*ComputeDetails)
@@ -191,11 +197,13 @@ func TestDecodeServiceDetailsFor_LegacyEmpty(t *testing.T) {
 		string(ServiceRedshift),
 	} {
 		t.Run(svc+"_nil_raw", func(t *testing.T) {
+			t.Parallel()
 			out, err := DecodeServiceDetailsFor(svc, nil)
 			require.NoError(t, err)
 			assert.NotNil(t, out, "empty raw on a known service must yield a typed zero pointer")
 		})
 		t.Run(svc+"_explicit_null", func(t *testing.T) {
+			t.Parallel()
 			out, err := DecodeServiceDetailsFor(svc, json.RawMessage(`null`))
 			require.NoError(t, err)
 			assert.NotNil(t, out, "explicit JSON null must be treated like an empty payload")
@@ -207,6 +215,7 @@ func TestDecodeServiceDetailsFor_LegacyEmpty(t *testing.T) {
 // service slug returns (nil, nil) rather than erroring — callers can
 // then fall through to their existing nil-Details paths.
 func TestDecodeServiceDetailsFor_UnknownService(t *testing.T) {
+	t.Parallel()
 	out, err := DecodeServiceDetailsFor("not-a-real-service", nil)
 	require.NoError(t, err)
 	assert.Nil(t, out)
@@ -220,6 +229,7 @@ func TestDecodeServiceDetailsFor_UnknownService(t *testing.T) {
 // surfaces as an error rather than silently producing a zero-valued
 // Details (which is how #453 hid for a release).
 func TestDecodeServiceDetailsFor_MalformedJSON(t *testing.T) {
+	t.Parallel()
 	_, err := DecodeServiceDetailsFor(string(ServiceEC2), json.RawMessage(`{not json}`))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unmarshal")
@@ -230,6 +240,7 @@ func TestDecodeServiceDetailsFor_MalformedJSON(t *testing.T) {
 // purchase_execution row persisted under the dash form before PR #94
 // still resolves correctly when re-executed.
 func TestDecodeServiceDetailsFor_LegacyDashFormSP(t *testing.T) {
+	t.Parallel()
 	in := &SavingsPlanDetails{PlanType: "Compute", HourlyCommitment: 1.0}
 	blob, err := MarshalServiceDetails(in)
 	require.NoError(t, err)
