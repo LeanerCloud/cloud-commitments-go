@@ -495,7 +495,7 @@ func analyzeRI(ri RIInfo, utilMap map[string]float64, threshold float64) *Reshap
 		}
 	}
 
-	targetSize, targetCount := findBestFit(normalizedUsed)
+	targetSize, targetCount := findBestFit(normalizedUsed, normalizedPurchased)
 	if targetSize == "" {
 		return nil
 	}
@@ -704,32 +704,32 @@ func pricingGatePasses(src RIInfo, off OfferingOption, hasSrc bool) bool {
 	return passesDollarUnitsCheck(srcNF, src.MonthlyCost, src.CurrencyCode, off)
 }
 
-// findBestFit finds the instance size and count that best fits normalizedUsed units.
-// Strategy: find the largest single-instance size that doesn't exceed normalizedUsed,
-// then round up to that size. This gives a practical 1-instance recommendation.
-// If no size is small enough for a single instance, use the smallest size with min count.
-func findBestFit(normalizedUsed float64) (size string, count int32) {
+// findBestFit finds the instance size and count that covers normalizedUsed units
+// without exceeding normalizedPurchased, the units the source RI owns.
+// Strategy: take the largest size whose factor fits in normalizedUsed and round the
+// count up to cover the usage; if that over-allocates past normalizedPurchased, try
+// the next smaller size. Returns ("", 0) when nothing fits, so the caller skips the RI.
+func findBestFit(normalizedUsed, normalizedPurchased float64) (size string, count int32) {
 	if normalizedUsed <= 0 {
 		return "", 0
 	}
 
-	// Find the largest size where normFactor <= normalizedUsed (fits in 1 instance)
-	bestIdx := -1
-	for i, s := range sizeOrder {
+	for i := len(sizeOrder) - 1; i >= 0; i-- {
+		s := sizeOrder[i]
 		nf := normalizationFactors[s]
-		if nf > 0 && nf <= normalizedUsed {
-			bestIdx = i
+		if nf <= 0 || nf > normalizedUsed {
+			continue
+		}
+		needed := math.Ceil(normalizedUsed / nf)
+		if needed*nf <= normalizedPurchased {
+			return s, int32(needed)
 		}
 	}
 
-	if bestIdx >= 0 {
-		s := sizeOrder[bestIdx]
-		nf := normalizationFactors[s]
-		needed := int32(math.Ceil(normalizedUsed / nf))
-		return s, needed
-	}
-
-	// normalizedUsed is smaller than the smallest size — use the smallest
+	// normalizedUsed is smaller than the smallest size — use the smallest if owned.
 	s := sizeOrder[0]
+	if normalizationFactors[s] > normalizedPurchased {
+		return "", 0
+	}
 	return s, 1
 }
