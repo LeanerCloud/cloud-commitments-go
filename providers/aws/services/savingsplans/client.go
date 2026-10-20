@@ -733,7 +733,7 @@ func calculateHoursInTerm(term string) (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return float64(months/12) * 365 * 24, nil
+	return float64(months/12) * common.HoursPerYear, nil
 }
 
 // calculatePaymentBreakdown calculates upfront and recurring costs based on payment option.

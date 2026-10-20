@@ -1163,7 +1163,7 @@ func machineTypeFromResourcePath(resource string) (string, bool) {
 
 // savingsWindow is the period EstimatedSavings is reported over: a 730-hour
 // month (8760 / 12), the month length used across the providers.
-const savingsWindow = 730 * time.Hour
+const savingsWindow = common.HoursPerMonth * time.Hour
 
 // savingsCurrency is the only currency EstimatedSavings can be reported in:
 // downstream consumers treat it as USD.
