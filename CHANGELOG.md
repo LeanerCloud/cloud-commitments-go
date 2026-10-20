@@ -336,6 +336,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   Allowlisting now lives in `.gitallowed` as literal entries and the PEM
   detector covers PKCS#8 keys (#1972)
 
+### Removed
+
+- **BREAKING:** `common.Matches` (`pkg/common`) is removed. It compared only
+  Provider, Region, Service, ResourceType and engine and had no callers in
+  this repo, the CLI, the MCP server or the platform; use `pkg/recfilter`
+  for dedupe. (#123)
+
 ## [0.9.0] - 2026-03-06
 
 ### Added

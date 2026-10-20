@@ -40,7 +40,7 @@ func TestNormalizeEngineName_CaseInsensitiveRecognizedAliases(t *testing.T) {
 // stored in the ServiceDetails interface is NOT caught by the
 // `details == nil` check (the interface itself is non-nil once it carries a
 // type), so it reaches the type switch and the field read panics without the
-// per-case guard. Matches() calls EngineFromDetails on every
+// per-case guard. recfilter dedupe calls EngineFromDetails on every
 // recommendation/commitment pair, so a panic here takes down coverage
 // matching for the whole run rather than skipping one row.
 func TestEngineFromDetails(t *testing.T) {
