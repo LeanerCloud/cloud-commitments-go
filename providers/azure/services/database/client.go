@@ -20,6 +20,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/httpclient"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/pricing"
 	azrecs "github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/recommendations"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/slot"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
 )
 
@@ -220,7 +221,7 @@ func (c *Client) GetRecommendations(ctx context.Context, _ *common.Recommendatio
 		if pageIdx >= maxRecsPages {
 			return nil, fmt.Errorf("database: GetRecommendations pagination cap (%d pages) reached", maxRecsPages)
 		}
-		page, err := pager.NextPage(ctx)
+		page, err := slot.NextPage(ctx, pager)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get SQL recommendations: %w", err)
 		}
@@ -291,7 +292,7 @@ func (c *Client) collectSQLReservations(ctx context.Context, pager ReservationsD
 		if pageIdx >= maxReservationsPages {
 			return nil, fmt.Errorf("database: GetExistingCommitments pagination cap (%d pages) reached", maxReservationsPages)
 		}
-		page, err := pager.NextPage(ctx)
+		page, err := slot.NextPage(ctx, pager)
 		if err != nil {
 			return nil, fmt.Errorf("database: list reservations: %w", err)
 		}
@@ -476,8 +477,10 @@ func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 
-	capabilities, err := capClient.ListByLocation(ctx, c.region, &armsql.CapabilitiesClientListByLocationOptions{
-		Include: nil,
+	capabilities, err := slot.Do(ctx, func() (armsql.CapabilitiesClientListByLocationResponse, error) {
+		return capClient.ListByLocation(ctx, c.region, &armsql.CapabilitiesClientListByLocationOptions{
+			Include: nil,
+		})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list SQL capabilities: %w", err)
@@ -695,7 +698,9 @@ func (c *Client) fetchSKUCatalogue(ctx context.Context) map[string]sqlSKUEntry {
 		logging.Warnf("azure database: SKU catalog capabilities client create failed for region %s: %v — Details.EngineVersion left empty", c.region, err)
 		return nil
 	}
-	resp, err := capClient.ListByLocation(ctx, c.region, &armsql.CapabilitiesClientListByLocationOptions{Include: nil})
+	resp, err := slot.Do(ctx, func() (armsql.CapabilitiesClientListByLocationResponse, error) {
+		return capClient.ListByLocation(ctx, c.region, &armsql.CapabilitiesClientListByLocationOptions{Include: nil})
+	})
 	if err != nil {
 		logging.Warnf("azure database: SKU catalog ListByLocation failed for region %s: %v — Details.EngineVersion left empty", c.region, err)
 		return nil
@@ -857,7 +862,7 @@ func (c *Client) walkManagedInstances(ctx context.Context) (zoneRedundant, nonZo
 			logging.Warnf("azure database: managed instances pagination cap (%d pages) reached; AZConfig/Deployment signal unavailable", maxSQLListPages)
 			return zoneRedundant, nonZoneRedundant, total, false
 		}
-		page, err := pager.NextPage(ctx)
+		page, err := slot.NextPage(ctx, pager)
 		if err != nil {
 			if ctx.Err() != nil {
 				return zoneRedundant, nonZoneRedundant, total, false
@@ -921,7 +926,7 @@ func (c *Client) hasRegularServers(ctx context.Context) (found, complete bool) {
 			logging.Warnf("azure database: servers pagination cap (%d pages) reached; Deployment signal unavailable", maxSQLListPages)
 			return false, false
 		}
-		page, err := pager.NextPage(ctx)
+		page, err := slot.NextPage(ctx, pager)
 		if err != nil {
 			if ctx.Err() != nil {
 				return false, false
