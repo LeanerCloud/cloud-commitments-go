@@ -342,6 +342,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   Provider, Region, Service, ResourceType and engine and had no callers in
   this repo, the CLI, the MCP server or the platform; use `pkg/recfilter`
   for dedupe. (#123)
+- **BREAKING:** the `pkg/errors` package is removed (no importers). Removed
+  exported symbols: `NotFoundError`, `ValidationError`, `AuthenticationError`,
+  `AuthorizationError`, `ConflictError`, `RateLimitError`, `ServiceError`,
+  their `New*`/`Is*` helpers (`NewNotFoundError`, `NewNotFoundErrorWithMessage`,
+  `IsNotFoundError`, `NewValidationError`, `IsValidationError`,
+  `NewAuthenticationError`, `IsAuthenticationError`, `NewAuthorizationError`,
+  `IsAuthorizationError`, `NewConflictError`, `IsConflictError`,
+  `NewRateLimitError`, `IsRateLimitError`, `NewServiceError`, `IsServiceError`)
+  and the sentinels `ErrNotFound`, `ErrUnauthorized`, `ErrForbidden`,
+  `ErrInvalidInput`, `ErrConflict`, `ErrInternalError`. (#123)
 
 ## [0.9.0] - 2026-03-06
 
