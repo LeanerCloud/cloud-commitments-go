@@ -3,7 +3,6 @@ package opensearch
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -19,6 +18,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/retry"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/offeringprice"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchaseguard"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/reservationexpiry"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/reservationstate"
 )
@@ -291,43 +291,19 @@ func (c *Client) findReservationByName(ctx context.Context, name string) (reserv
 	return "", false, fmt.Errorf("pagination cap reached after %d pages for OpenSearch reservation idempotency lookup", maxReservationPages)
 }
 
-// idempotencyGuard short-circuits a re-drive (issue #641): when token is set, it
-// reports (existingID, true, nil) if a reservation with reservationName already
-// exists, ("", false, nil) for a first-time purchase, or a fail-loud error on
-// lookup failure. With an empty token it is a no-op.
+// idempotencyGuard short-circuits a re-drive (issue #641); see purchaseguard.Guard.
 func (c *Client) idempotencyGuard(ctx context.Context, token, reservationName string) (existingID string, found bool, err error) {
-	if token == "" {
-		return "", false, nil
-	}
-	existingID, found, lookupErr := c.findReservationByName(ctx, reservationName)
-	if lookupErr != nil {
-		return "", false, fmt.Errorf("idempotency lookup failed before OpenSearch RI purchase (refusing to purchase to avoid a possible double-buy): %w", lookupErr)
-	}
-	if found {
-		log.Printf("OpenSearch RI for idempotency token %s already exists (%s); skipping purchase (issue #641 re-drive)", common.MaskToken(token), existingID)
-		return existingID, true, nil
-	}
-	return "", false, nil
+	return purchaseguard.Guard(ctx, token, "OpenSearch RI", func(ctx context.Context) (string, bool, error) {
+		return c.findReservationByName(ctx, reservationName)
+	})
 }
 
-// recoverAlreadyExists handles the native server-side dedupe backstop (issue
-// #641): if the by-name guard missed the existing reservation but OpenSearch
-// rejected the duplicate name with ResourceAlreadyExistsException, it re-Describes
-// by name and returns (existingID, true) so the re-drive recovers it.
+// recoverAlreadyExists adopts the existing reservation when AWS rejects a
+// duplicate ID (issue #641); see purchaseguard.Recover.
 func (c *Client) recoverAlreadyExists(ctx context.Context, token, reservationName string, purchaseErr error) (string, bool) {
-	if token == "" {
-		return "", false
-	}
-	var already *types.ResourceAlreadyExistsException
-	if !errors.As(purchaseErr, &already) {
-		return "", false
-	}
-	existingID, found, lookupErr := c.findReservationByName(ctx, reservationName)
-	if lookupErr == nil && found {
-		log.Printf("OpenSearch RI %s already existed at purchase time; treating as idempotent re-drive (issue #641)", existingID)
-		return existingID, true
-	}
-	return "", false
+	return purchaseguard.Recover[*types.ResourceAlreadyExistsException](ctx, token, "OpenSearch RI", purchaseErr, func(ctx context.Context) (string, bool, error) {
+		return c.findReservationByName(ctx, reservationName)
+	})
 }
 
 // resolveAccountID fetches the caller's AWS account ID via STS and caches it.

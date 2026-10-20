@@ -52,6 +52,12 @@ func benefitRow(term string, mutate func(string) string) string {
 	return row
 }
 
+func TestHoursPerMonthIs730(t *testing.T) {
+	t.Parallel()
+	assert.InDelta(t, 730.0, float64(hoursPerMonth), 0)
+	assert.InDelta(t, 8760.0, float64(hoursPerMonth)*12, 0)
+}
+
 func newTestClient(h HTTPClient) *Client { return NewClientWithHTTP(fakeCred{}, "sub-1", "", h) }
 
 func TestGetRecommendations_MapsRow(t *testing.T) {

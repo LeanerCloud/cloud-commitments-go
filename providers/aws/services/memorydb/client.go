@@ -16,6 +16,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/offeringprice"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchaseguard"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/reservationexpiry"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/reservationstate"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/tagging"
@@ -235,43 +236,19 @@ func (c *Client) findReservationByID(ctx context.Context, reservationID string) 
 	return "", false, nil
 }
 
-// idempotencyGuard short-circuits a re-drive (issue #641): when token is set, it
-// reports (existingID, true, nil) if a reserved node already exists under
-// reservationID, ("", false, nil) for a first-time purchase, or a fail-loud
-// error on lookup failure. With an empty token it is a no-op.
+// idempotencyGuard short-circuits a re-drive (issue #641); see purchaseguard.Guard.
 func (c *Client) idempotencyGuard(ctx context.Context, token, reservationID string) (existingID string, found bool, err error) {
-	if token == "" {
-		return "", false, nil
-	}
-	existingID, found, lookupErr := c.findReservationByID(ctx, reservationID)
-	if lookupErr != nil {
-		return "", false, fmt.Errorf("idempotency lookup failed before MemoryDB purchase (refusing to purchase to avoid a possible double-buy): %w", lookupErr)
-	}
-	if found {
-		log.Printf("MemoryDB reservation for idempotency token %s already exists (%s); skipping purchase (issue #641 re-drive)", common.MaskToken(token), existingID)
-		return existingID, true, nil
-	}
-	return "", false, nil
+	return purchaseguard.Guard(ctx, token, "MemoryDB reservation", func(ctx context.Context) (string, bool, error) {
+		return c.findReservationByID(ctx, reservationID)
+	})
 }
 
-// recoverAlreadyExists handles the native server-side dedupe backstop (issue
-// #641): if the by-ID guard missed the existing reservation but AWS rejected the
-// duplicate ID with ReservedNodeAlreadyExistsFault, it re-Describes by ID and
-// returns (existingID, true) so the re-drive recovers it instead of erroring.
+// recoverAlreadyExists adopts the existing reservation when AWS rejects a
+// duplicate ID (issue #641); see purchaseguard.Recover.
 func (c *Client) recoverAlreadyExists(ctx context.Context, token, reservationID string, purchaseErr error) (string, bool) {
-	if token == "" {
-		return "", false
-	}
-	var already *types.ReservedNodeAlreadyExistsFault
-	if !errors.As(purchaseErr, &already) {
-		return "", false
-	}
-	existingID, found, lookupErr := c.findReservationByID(ctx, reservationID)
-	if lookupErr == nil && found {
-		log.Printf("MemoryDB reservation %s already existed at purchase time; treating as idempotent re-drive (issue #641)", existingID)
-		return existingID, true
-	}
-	return "", false
+	return purchaseguard.Recover[*types.ReservedNodeAlreadyExistsFault](ctx, token, "MemoryDB reservation", purchaseErr, func(ctx context.Context) (string, bool, error) {
+		return c.findReservationByID(ctx, reservationID)
+	})
 }
 
 // ReservedNodeEngine is the engine recorded on MemoryDB reserved nodes and
