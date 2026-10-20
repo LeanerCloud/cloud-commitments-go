@@ -28,6 +28,7 @@ func (r *optRecordingElastiCache) PurchaseReservedCacheNodesOffering(ctx context
 }
 
 func TestPurchaseCommitment_EmptyToken(t *testing.T) {
+	t.Parallel()
 	call := func(t *testing.T, token string, apiErr error, emptyResp bool) (int, common.PurchaseResult, error) {
 		m := &MockElastiCacheClient{}
 		rec := common.Recommendation{

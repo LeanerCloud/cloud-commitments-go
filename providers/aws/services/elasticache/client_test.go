@@ -49,6 +49,7 @@ func (m *MockElastiCacheClient) DescribeReservedCacheNodes(ctx context.Context, 
 }
 
 func TestClient_ReservationStatesPreventDuplicatePurchases(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		state *string
@@ -138,6 +139,7 @@ func TestClient_ReservationStatesPreventDuplicatePurchases(t *testing.T) {
 }
 
 func TestNewClient(t *testing.T) {
+	t.Parallel()
 	cfg := aws.Config{
 		Region: "us-east-1",
 	}
@@ -150,16 +152,19 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestClient_GetServiceType(t *testing.T) {
+	t.Parallel()
 	client := &Client{region: "us-east-1"}
 	assert.Equal(t, common.ServiceCache, client.GetServiceType())
 }
 
 func TestClient_GetRegion(t *testing.T) {
+	t.Parallel()
 	client := &Client{region: "eu-west-1"}
 	assert.Equal(t, "eu-west-1", client.GetRegion())
 }
 
 func TestClient_GetRecommendations(t *testing.T) {
+	t.Parallel()
 	client := &Client{region: "us-east-1"}
 	recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{})
 	assert.NoError(t, err)
@@ -167,6 +172,7 @@ func TestClient_GetRecommendations(t *testing.T) {
 }
 
 func TestClient_GetExistingCommitments(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		setupMocks  func(*MockElastiCacheClient)
@@ -271,6 +277,7 @@ func TestClient_GetExistingCommitments(t *testing.T) {
 }
 
 func TestClient_GetValidResourceTypes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		setupMocks    func(*MockElastiCacheClient)
@@ -329,6 +336,7 @@ func TestClient_GetValidResourceTypes(t *testing.T) {
 }
 
 func TestClient_ValidateOffering(t *testing.T) {
+	t.Parallel()
 	mockEC := &MockElastiCacheClient{}
 	client := &Client{
 		client: mockEC,
@@ -365,6 +373,7 @@ func TestClient_ValidateOffering(t *testing.T) {
 }
 
 func TestClient_PurchaseCommitment(t *testing.T) {
+	t.Parallel()
 	mockEC := &MockElastiCacheClient{}
 	client := &Client{
 		client: mockEC,
@@ -420,6 +429,7 @@ func TestClient_PurchaseCommitment(t *testing.T) {
 }
 
 func TestClient_GetOfferingDetails(t *testing.T) {
+	t.Parallel()
 	mockEC := &MockElastiCacheClient{}
 	client := &Client{
 		client: mockEC,
@@ -463,6 +473,7 @@ func TestClient_GetOfferingDetails(t *testing.T) {
 }
 
 func TestClient_GetDurationString(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	tests := []struct {
@@ -501,6 +512,7 @@ func TestClient_GetDurationString(t *testing.T) {
 }
 
 func TestClient_ConvertPaymentOption(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	tests := []struct {
@@ -557,6 +569,7 @@ func expectECOffering(m *MockElastiCacheClient) {
 }
 
 func TestClient_PurchaseCommitment_Idempotent_GuardShortCircuits(t *testing.T) {
+	t.Parallel()
 	mockEC := &MockElastiCacheClient{}
 	client := &Client{client: mockEC, region: "eu-west-1"}
 	token := common.DeriveIdempotencyToken("exec-1", 0)
@@ -578,6 +591,7 @@ func TestClient_PurchaseCommitment_Idempotent_GuardShortCircuits(t *testing.T) {
 }
 
 func TestClient_PurchaseCommitment_Idempotent_NotFoundProceeds(t *testing.T) {
+	t.Parallel()
 	mockEC := &MockElastiCacheClient{}
 	client := &Client{client: mockEC, region: "eu-west-1"}
 	token := common.DeriveIdempotencyToken("exec-2", 0)
@@ -601,6 +615,7 @@ func TestClient_PurchaseCommitment_Idempotent_NotFoundProceeds(t *testing.T) {
 }
 
 func TestClient_PurchaseCommitment_Idempotent_AlreadyExistsRecovers(t *testing.T) {
+	t.Parallel()
 	mockEC := &MockElastiCacheClient{}
 	client := &Client{client: mockEC, region: "eu-west-1"}
 	token := common.DeriveIdempotencyToken("exec-3", 0)
@@ -624,6 +639,7 @@ func TestClient_PurchaseCommitment_Idempotent_AlreadyExistsRecovers(t *testing.T
 }
 
 func TestClient_PurchaseCommitment_Idempotent_FailLoudOnLookupError(t *testing.T) {
+	t.Parallel()
 	mockEC := &MockElastiCacheClient{}
 	client := &Client{client: mockEC, region: "eu-west-1"}
 	token := common.DeriveIdempotencyToken("exec-4", 0)
@@ -645,6 +661,7 @@ func TestClient_PurchaseCommitment_Idempotent_FailLoudOnLookupError(t *testing.T
 // ReservedCacheNodeId carrying the service code, region, SKU, count, and
 // term. The token-based path is exercised by the Idempotent_* tests above.
 func TestClient_PurchaseCommitment_NoToken_RichReservationName(t *testing.T) {
+	t.Parallel()
 	mockEC := &MockElastiCacheClient{}
 	client := &Client{client: mockEC, region: "us-east-1"}
 
@@ -677,6 +694,7 @@ func TestClient_PurchaseCommitment_NoToken_RichReservationName(t *testing.T) {
 }
 
 func TestCreatePurchaseTags_IncludesPurchaseAutomation(t *testing.T) {
+	t.Parallel()
 	c := &Client{}
 	rec := common.Recommendation{ResourceType: "cache.m5.large", Region: "us-east-1"}
 	tags := c.createPurchaseTags(rec, common.PurchaseSourceWeb)
@@ -691,6 +709,7 @@ func TestCreatePurchaseTags_IncludesPurchaseAutomation(t *testing.T) {
 }
 
 func TestCreatePurchaseTags_OmitsPurchaseAutomationWhenSourceEmpty(t *testing.T) {
+	t.Parallel()
 	c := &Client{}
 	rec := common.Recommendation{ResourceType: "cache.m5.large", Region: "us-east-1"}
 	tags := c.createPurchaseTags(rec, "")
@@ -703,6 +722,7 @@ func TestCreatePurchaseTags_OmitsPurchaseAutomationWhenSourceEmpty(t *testing.T)
 // "pagination cap reached" error after maxOfferingPages empty pages and does NOT
 // make a (maxOfferingPages+1)th call (issue #688).
 func TestFindOfferingID_PaginationCapFires(t *testing.T) {
+	t.Parallel()
 	mockEC := &MockElastiCacheClient{}
 	t.Cleanup(func() { mockEC.AssertExpectations(t) })
 	client := &Client{client: mockEC, region: "us-east-1"}
@@ -734,6 +754,7 @@ func TestFindOfferingID_PaginationCapFires(t *testing.T) {
 // offering whose OfferingType does not match the requested payment option
 // (issue #688).
 func TestFindOfferingID_WrongVariantRejected(t *testing.T) {
+	t.Parallel()
 	mockEC := &MockElastiCacheClient{}
 	t.Cleanup(func() { mockEC.AssertExpectations(t) })
 	client := &Client{client: mockEC, region: "us-east-1"}
@@ -767,6 +788,7 @@ func TestFindOfferingID_WrongVariantRejected(t *testing.T) {
 // TestFindOfferingID_HappyPath asserts that findOfferingID returns the correct
 // offering ID when a matching offering is returned on the first page (issue #688).
 func TestFindOfferingID_HappyPath(t *testing.T) {
+	t.Parallel()
 	mockEC := &MockElastiCacheClient{}
 	t.Cleanup(func() { mockEC.AssertExpectations(t) })
 	client := &Client{client: mockEC, region: "us-east-1"}
@@ -801,6 +823,7 @@ func TestFindOfferingID_HappyPath(t *testing.T) {
 // rather than silently matching (and buying) a 1-year offering. A "0" term is
 // what a 0/NULL Term DB row produces on the scheduler purchase path.
 func TestFindOfferingID_InvalidTerm_ErrorsBeforeAPICall(t *testing.T) {
+	t.Parallel()
 	mockEC := &MockElastiCacheClient{}
 	t.Cleanup(func() { mockEC.AssertExpectations(t) })
 	client := &Client{client: mockEC, region: "us-east-1"}
@@ -824,6 +847,7 @@ func TestFindOfferingID_InvalidTerm_ErrorsBeforeAPICall(t *testing.T) {
 // context.Canceled immediately when the context is already canceled before the
 // first pagination iteration, without calling the AWS API (issue #515).
 func TestFindOfferingID_CtxCancelledBeforePage(t *testing.T) {
+	t.Parallel()
 	mockEC := &MockElastiCacheClient{}
 	t.Cleanup(func() { mockEC.AssertExpectations(t) })
 	client := &Client{client: mockEC, region: "us-east-1"}
@@ -849,6 +873,7 @@ func TestFindOfferingID_CtxCancelledBeforePage(t *testing.T) {
 // Marker is a pointer to an empty string (rather than nil) is treated as the
 // terminal page and does not cause an extra API call (issue #515).
 func TestFindOfferingID_EmptyStringTokenEndsPagination(t *testing.T) {
+	t.Parallel()
 	mockEC := &MockElastiCacheClient{}
 	t.Cleanup(func() { mockEC.AssertExpectations(t) })
 	client := &Client{client: mockEC, region: "us-east-1"}
@@ -879,6 +904,7 @@ func TestFindOfferingID_EmptyStringTokenEndsPagination(t *testing.T) {
 // engine as the recommendation, or the dedupe key never matches and a node
 // bought minutes ago is recommended and bought again.
 func TestClient_GetExistingCommitments_DedupesMatchingRecommendation(t *testing.T) {
+	t.Parallel()
 	mockClient := &MockElastiCacheClient{}
 	t.Cleanup(func() { mockClient.AssertExpectations(t) })
 	mockClient.On("DescribeReservedCacheNodes", mock.Anything, mock.Anything).
@@ -935,6 +961,7 @@ func TestClient_GetExistingCommitments_WarnsOnMissingEngine(t *testing.T) {
 // Issue #211: a duplicate-ID rejection whose recovery lookup finds nothing is a
 // failure, not an adoption.
 func TestClient_PurchaseCommitment_Idempotent_RejectedNotFlagged(t *testing.T) {
+	t.Parallel()
 	mockEC := &MockElastiCacheClient{}
 	client := &Client{client: mockEC, region: "eu-west-1"}
 	token := common.DeriveIdempotencyToken("exec-211", 0)
