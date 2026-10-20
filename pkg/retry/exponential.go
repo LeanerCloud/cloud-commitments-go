@@ -36,7 +36,9 @@ type Config struct {
 	// PerAttemptTimeout, if > 0, wraps each op invocation in a
 	// context.WithTimeout derived from the outer ctx, so a single hung
 	// attempt fails fast and the retry budget continues, while outer
-	// cancellation or deadline still cancels it. Zero disables.
+	// cancellation or deadline still cancels it. It only cancels the
+	// context passed to op; op must honor that ctx for an attempt to fail
+	// fast. Zero disables.
 	PerAttemptTimeout time.Duration
 	// Jitter, if true, adds ±25% noise to each backoff (the result is still
 	// capped at MaxDelay) via math/rand/v2
@@ -98,8 +100,9 @@ func (c Config) Validate() error {
 // The per-attempt context (if PerAttemptTimeout > 0) is bounded
 // separately from the outer deadline so a slow attempt fails fast and
 // the outer retry budget continues, but it is still canceled when ctx
-// is. Errors marked with errors.Is(err, ErrPermanent)
-// short-circuit retries.
+// is. That timeout only cancels the context passed to op, so op must
+// honor ctx for a slow attempt to fail fast. Errors marked with
+// errors.Is(err, ErrPermanent) short-circuit retries.
 //
 // Returned error: nil on success, ctx.Err() if the outer context is
 // canceled mid-backoff, the unwrapped op error if it short-circuits
@@ -163,6 +166,10 @@ func backoffFor(attempt int, cfg Config) time.Duration {
 	// overflow at huge attempt counts; capped immediately by MaxDelay.
 	delay := cfg.BaseDelay
 	for i := 0; i < shift; i++ {
+		if delay >= cfg.MaxDelay-delay { // doubling would reach or overflow MaxDelay
+			delay = cfg.MaxDelay
+			break
+		}
 		delay *= 2
 		if delay >= cfg.MaxDelay {
 			delay = cfg.MaxDelay
@@ -178,9 +185,15 @@ func backoffFor(attempt int, cfg Config) time.Duration {
 		// crypto/rand would add cost for zero security benefit.
 		// #nosec G404 -- math/rand/v2 is intentional for jitter.
 		factor := 0.75 + rand.Float64()*0.5
-		delay = time.Duration(float64(delay) * factor)
+		// Compare in float64 before converting: converting a value above
+		// MaxInt64 overflows Duration to a negative delay.
+		jittered := float64(delay) * factor
+		if jittered >= float64(cfg.MaxDelay) {
+			return cfg.MaxDelay
+		}
+		delay = time.Duration(jittered)
 	}
-	// Clamp last so upward jitter cannot push the delay past MaxDelay.
+	// Clamp last so the result never exceeds MaxDelay.
 	if delay > cfg.MaxDelay {
 		delay = cfg.MaxDelay
 	}

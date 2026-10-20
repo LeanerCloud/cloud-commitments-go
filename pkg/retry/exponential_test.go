@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -209,6 +210,20 @@ func TestBackoffFor_JitterNeverExceedsMaxDelay(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		for _, attempt := range []int{2, 3, 4, 5, 20} {
 			assert.LessOrEqual(t, backoffFor(attempt, cfg), cfg.MaxDelay, "attempt %d", attempt)
+		}
+	}
+}
+
+// With MaxDelay near MaxInt64, +25% jitter (and doubling) must not overflow
+// time.Duration into a negative delay.
+func TestBackoffFor_HugeMaxDelayNoOverflow(t *testing.T) {
+	t.Parallel()
+	cfg := Config{MaxAttempts: 100, BaseDelay: time.Second, MaxDelay: time.Duration(math.MaxInt64), Jitter: true}
+	for i := 0; i < 1000; i++ {
+		for _, attempt := range []int{2, 30, 40, 64, 70, 100} {
+			d := backoffFor(attempt, cfg)
+			assert.GreaterOrEqual(t, d, time.Duration(0), "attempt %d", attempt)
+			assert.LessOrEqual(t, d, cfg.MaxDelay, "attempt %d", attempt)
 		}
 	}
 }
