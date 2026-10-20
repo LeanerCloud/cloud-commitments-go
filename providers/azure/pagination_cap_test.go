@@ -174,6 +174,7 @@ func advisorPage(n int) armadvisor.RecommendationsClientListResponse {
 }
 
 func TestCollectAdvisorRecommendations_PageCap(t *testing.T) {
+	t.Parallel()
 	adapter := &RecommendationsClientAdapter{subscriptionID: "test-subscription"}
 	params := common.RecommendationParams{}
 

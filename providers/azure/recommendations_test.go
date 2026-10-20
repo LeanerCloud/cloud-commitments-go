@@ -24,6 +24,7 @@ func (m *mockAzureTokenCredential) GetToken(ctx context.Context, options policy.
 }
 
 func TestShouldIncludeService(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		params   common.RecommendationParams
@@ -83,6 +84,7 @@ func TestShouldIncludeService(t *testing.T) {
 }
 
 func TestContains(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		s        string
@@ -136,6 +138,7 @@ func TestContains(t *testing.T) {
 }
 
 func TestExtractRegionFromResourceID(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		resourceID string
@@ -187,6 +190,7 @@ func TestExtractRegionFromResourceID(t *testing.T) {
 }
 
 func TestRecommendationsClientAdapter_Fields(t *testing.T) {
+	t.Parallel()
 	// Test that adapter can be created with expected fields
 	adapter := &RecommendationsClientAdapter{
 		subscriptionID: "test-subscription",
@@ -269,6 +273,7 @@ func TestRecommendationsClientAdapter_GetAllRecommendations(t *testing.T) {
 }
 
 func TestRecommendationsClientAdapter_GetRecommendations_NilParams(t *testing.T) {
+	t.Parallel()
 	adapter := &RecommendationsClientAdapter{}
 
 	recs, err := adapter.GetRecommendations(context.Background(), nil)
@@ -278,6 +283,7 @@ func TestRecommendationsClientAdapter_GetRecommendations_NilParams(t *testing.T)
 }
 
 func TestGetRecommendations_UsesInjectedAdvisor(t *testing.T) {
+	t.Parallel()
 	want := common.Recommendation{Provider: common.ProviderAzure, Service: common.ServiceCompute}
 	called := false
 	adapter := &RecommendationsClientAdapter{
@@ -301,6 +307,7 @@ func TestGetRecommendations_UsesInjectedAdvisor(t *testing.T) {
 // when a different service is requested. This ensures the SP goroutine added to the
 // fan-out in GetRecommendations is exercised on every scheduler collection run.
 func TestGetRecommendations_SavingsPlansServiceIncluded(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		params   common.RecommendationParams
@@ -342,6 +349,7 @@ func TestGetRecommendations_SavingsPlansServiceIncluded(t *testing.T) {
 // see "all services finished cleanly" even when the deadline expired
 // mid-fan-out (because every goroutine returned nil from its closure).
 func TestRecommendationsClientAdapter_GetRecommendations_PropagatesContextCancellation(t *testing.T) {
+	t.Parallel()
 	adapter := &RecommendationsClientAdapter{
 		cred:           &mockAzureTokenCredential{},
 		subscriptionID: "test-subscription",
@@ -363,6 +371,7 @@ func TestRecommendationsClientAdapter_GetRecommendations_PropagatesContextCancel
 }
 
 func TestConvertAdvisorRecommendation_NilProperties(t *testing.T) {
+	t.Parallel()
 	adapter := &RecommendationsClientAdapter{
 		subscriptionID: "test-subscription",
 	}
@@ -376,6 +385,7 @@ func TestConvertAdvisorRecommendation_NilProperties(t *testing.T) {
 }
 
 func TestConvertAdvisorRecommendation_UnknownService(t *testing.T) {
+	t.Parallel()
 	adapter := &RecommendationsClientAdapter{
 		subscriptionID: "test-subscription",
 	}
@@ -402,6 +412,7 @@ func strPtr(s string) *string {
 // argument order used in GetRecommendations so a reordering of the serviceResult
 // literals will be caught immediately.
 func TestMergeServiceResults_OrderIsStable(t *testing.T) {
+	t.Parallel()
 	mkRec := func(svc common.ServiceType, marker string) common.Recommendation {
 		return common.Recommendation{Service: svc, Provider: common.ProviderAzure, ResourceType: marker}
 	}
@@ -449,6 +460,7 @@ func TestMergeServiceResults_OrderIsStable(t *testing.T) {
 // either as an attempted service would keep the guard from firing on a real
 // total credential failure.
 func TestMergeServiceResults_AllAttemptedFailed(t *testing.T) {
+	t.Parallel()
 	authErr := errors.New("DefaultAzureCredential: federated token expired")
 
 	recs, err := mergeServiceResults(
@@ -474,6 +486,7 @@ func TestMergeServiceResults_AllAttemptedFailed(t *testing.T) {
 // TestMergeServiceResults_AllAttemptedFailed), so the scenario here models
 // a service-filter run where only compute is requested and it fails.
 func TestMergeServiceResults_SkippedServicesDoNotMaskTotalFailure(t *testing.T) {
+	t.Parallel()
 	throttleErr := errors.New("429 too many requests")
 
 	_, err := mergeServiceResults(
@@ -493,6 +506,7 @@ func TestMergeServiceResults_SkippedServicesDoNotMaskTotalFailure(t *testing.T) 
 // partial-failure behavior: one service succeeding is enough for the merge
 // to return its recommendations with a nil error.
 func TestMergeServiceResults_PartialFailureStillSucceeds(t *testing.T) {
+	t.Parallel()
 	svcErr := errors.New("reservation API unavailable")
 	computeRec := common.Recommendation{Service: common.ServiceCompute, Provider: common.ProviderAzure}
 
@@ -519,6 +533,7 @@ func TestMergeServiceResults_PartialFailureStillSucceeds(t *testing.T) {
 // attempted=false for both; the merge must still fail loud rather than
 // counting either stub's unconditional success and returning (empty, nil).
 func TestMergeServiceResults_StubsDoNotMaskTotalFailure(t *testing.T) {
+	t.Parallel()
 	authErr := errors.New("DefaultAzureCredential: federated token expired")
 
 	recs, err := mergeServiceResults(

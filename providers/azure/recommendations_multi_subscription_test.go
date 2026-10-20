@@ -79,6 +79,7 @@ func twoTestAccounts() []common.Account {
 }
 
 func TestNewMultiSubscriptionRecommendationsClient_EmptyAccounts(t *testing.T) {
+	t.Parallel()
 	client, err := NewMultiSubscriptionRecommendationsClient(&mockAzureTokenCredential{}, nil)
 	require.Error(t, err)
 	assert.Nil(t, client)
@@ -106,6 +107,7 @@ func TestNewMultiSubscriptionRecommendationsClient_BuildsClientsPerAccount(t *te
 }
 
 func TestNewMultiSubscriptionRecommendationsClient_ClientConstructionFailurePropagates(t *testing.T) {
+	t.Parallel()
 	orig := newSubscriptionRecommendationsClientFn
 	t.Cleanup(func() { newSubscriptionRecommendationsClientFn = orig })
 	newSubscriptionRecommendationsClientFn = func(_ azcore.TokenCredential, subscriptionID string) (provider.RecommendationsClient, error) {
@@ -237,6 +239,7 @@ func TestMultiSubscriptionRecommendationsClient_PartialFailureKeepsSuccessfulRes
 // must not panic on Failed[0] -- an error type that crashes when logged fails
 // at exactly the moment the operator needs its message.
 func TestPartialSubscriptionFailureError_ErrorWithNoFailures(t *testing.T) {
+	t.Parallel()
 	var zero PartialSubscriptionFailureError
 
 	require.NotPanics(t, func() { _ = fmt.Sprintf("%v", &zero) },
@@ -263,6 +266,7 @@ func TestMultiSubscriptionRecommendationsClient_GetRecommendations_AllFail(t *te
 }
 
 func TestMultiSubscriptionRecommendationsClient_GetRecommendations_NilParams(t *testing.T) {
+	t.Parallel()
 	client := &MultiSubscriptionRecommendationsClient{}
 	recs, err := client.GetRecommendations(context.Background(), nil)
 	require.EqualError(t, err, "params cannot be nil")

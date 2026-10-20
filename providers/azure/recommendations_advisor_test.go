@@ -46,6 +46,7 @@ func reservationExt(over map[string]*string) map[string]*string {
 const subscriptionScope = "Microsoft.Subscriptions/subscriptions"
 
 func TestConvertAdvisor_DerivesFieldsFromPayload(t *testing.T) {
+	t.Parallel()
 	a := &RecommendationsClientAdapter{subscriptionID: "sub"}
 
 	ri := a.convertAdvisorRecommendation(context.Background(), advisorRec(subscriptionScope, reservationExt(nil)))
@@ -70,6 +71,7 @@ func TestConvertAdvisor_DerivesFieldsFromPayload(t *testing.T) {
 }
 
 func TestConvertAdvisor_NonPurchaseRecommendationsAreIgnored(t *testing.T) {
+	t.Parallel()
 	a := &RecommendationsClientAdapter{subscriptionID: "sub"}
 	// Resize/shutdown: resource-scoped, no reservedResourceType.
 	ctx, skips := azrecs.WithSkipLog(context.Background())
@@ -81,6 +83,7 @@ func TestConvertAdvisor_NonPurchaseRecommendationsAreIgnored(t *testing.T) {
 }
 
 func TestConvertAdvisor_UnknownOrMissingValuesAreSkippedLoudly(t *testing.T) {
+	t.Parallel()
 	a := &RecommendationsClientAdapter{subscriptionID: "sub"}
 	for name, over := range map[string]map[string]*string{
 		"unknown term":     {"term": strPtr("P5Y")},
@@ -102,6 +105,7 @@ func TestConvertAdvisor_UnknownOrMissingValuesAreSkippedLoudly(t *testing.T) {
 }
 
 func TestAppendAdvisorPageRecs_VariantsKeepCostUnknown(t *testing.T) {
+	t.Parallel()
 	a := &RecommendationsClientAdapter{subscriptionID: "sub"}
 	page := armadvisor.RecommendationsClientListResponse{ResourceRecommendationBaseListResult: armadvisor.ResourceRecommendationBaseListResult{
 		Value: []*armadvisor.ResourceRecommendationBase{advisorRec(subscriptionScope, reservationExt(nil))},
@@ -171,6 +175,7 @@ func TestGetRecommendations_CollectsSynapseForDataWarehouse(t *testing.T) {
 }
 
 func TestConvertAdvisor_UnmappedReservedResourceTypeIsIgnoredNotSkipped(t *testing.T) {
+	t.Parallel()
 	a := &RecommendationsClientAdapter{subscriptionID: "sub"}
 	ctx, skips := azrecs.WithSkipLog(context.Background())
 	got := a.convertAdvisorRecommendation(ctx, advisorRec(subscriptionScope, reservationExt(map[string]*string{"reservedResourceType": strPtr("CosmosDb")})))
@@ -179,6 +184,7 @@ func TestConvertAdvisor_UnmappedReservedResourceTypeIsIgnoredNotSkipped(t *testi
 }
 
 func TestConvertAdvisor_RejectsBadSavingsAmounts(t *testing.T) {
+	t.Parallel()
 	a := &RecommendationsClientAdapter{subscriptionID: "sub"}
 	for name, v := range map[string]*string{
 		"nil": nil, "thousands separator": strPtr("1,234.00"), "empty": strPtr(""),
