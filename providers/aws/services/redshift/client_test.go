@@ -46,6 +46,7 @@ func (m *MockRedshiftClient) DescribeReservedNodes(ctx context.Context, params *
 }
 
 func TestClient_ReservationStatesPreventDuplicatePurchases(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name  string
 		state *string
@@ -141,6 +142,7 @@ func TestClient_ReservationStatesPreventDuplicatePurchases(t *testing.T) {
 }
 
 func TestNewClient(t *testing.T) {
+	t.Parallel()
 	cfg := aws.Config{
 		Region: "us-east-1",
 	}
@@ -153,16 +155,19 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestClient_GetServiceType(t *testing.T) {
+	t.Parallel()
 	client := &Client{region: "us-east-1"}
 	assert.Equal(t, common.ServiceDataWarehouse, client.GetServiceType())
 }
 
 func TestClient_GetRegion(t *testing.T) {
+	t.Parallel()
 	client := &Client{region: "eu-west-1"}
 	assert.Equal(t, "eu-west-1", client.GetRegion())
 }
 
 func TestClient_GetRecommendations(t *testing.T) {
+	t.Parallel()
 	client := &Client{region: "us-east-1"}
 	recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{})
 	assert.NoError(t, err)
@@ -170,6 +175,7 @@ func TestClient_GetRecommendations(t *testing.T) {
 }
 
 func TestClient_GetExistingCommitments(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		setupMocks  func(*MockRedshiftClient)
@@ -272,6 +278,7 @@ func TestClient_GetExistingCommitments(t *testing.T) {
 }
 
 func TestClient_GetValidResourceTypes(t *testing.T) {
+	t.Parallel()
 	mockRS := new(MockRedshiftClient)
 	client := &Client{
 		client: mockRS,
@@ -301,6 +308,7 @@ func TestClient_GetValidResourceTypes(t *testing.T) {
 }
 
 func TestClient_ValidateOffering(t *testing.T) {
+	t.Parallel()
 	mockRS := &MockRedshiftClient{}
 	client := &Client{
 		client: mockRS,
@@ -342,6 +350,7 @@ func TestClient_ValidateOffering(t *testing.T) {
 }
 
 func TestClient_PurchaseCommitment(t *testing.T) {
+	t.Parallel()
 	mockRS := &MockRedshiftClient{}
 	client := &Client{
 		client: mockRS,
@@ -396,6 +405,7 @@ func TestClient_PurchaseCommitment(t *testing.T) {
 }
 
 func TestClient_MatchesDuration(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	tests := []struct {
@@ -419,6 +429,7 @@ func TestClient_MatchesDuration(t *testing.T) {
 }
 
 func TestRequiredMonthsForTerm(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		term      string
@@ -455,6 +466,7 @@ func TestRequiredMonthsForTerm(t *testing.T) {
 }
 
 func TestClient_MatchesOfferingType(t *testing.T) {
+	t.Parallel()
 	client := &Client{}
 
 	// Redshift uses "Regular" and "Upgradable" offering types; this is a
@@ -480,6 +492,7 @@ func TestClient_MatchesOfferingType(t *testing.T) {
 }
 
 func TestClient_SetRedshiftAPI(t *testing.T) {
+	t.Parallel()
 	client := &Client{region: "us-east-1"}
 	mockRS := &MockRedshiftClient{}
 
@@ -489,6 +502,7 @@ func TestClient_SetRedshiftAPI(t *testing.T) {
 }
 
 func TestClient_GetExistingCommitments_Pagination(t *testing.T) {
+	t.Parallel()
 	mockRS := &MockRedshiftClient{}
 	client := &Client{
 		client: mockRS,
@@ -539,6 +553,7 @@ func TestClient_GetExistingCommitments_Pagination(t *testing.T) {
 }
 
 func TestClient_PurchaseCommitment_FindOfferingError(t *testing.T) {
+	t.Parallel()
 	mockRS := &MockRedshiftClient{}
 	client := &Client{
 		client: mockRS,
@@ -568,6 +583,7 @@ func TestClient_PurchaseCommitment_FindOfferingError(t *testing.T) {
 }
 
 func TestClient_PurchaseCommitment_PurchaseAPIError(t *testing.T) {
+	t.Parallel()
 	mockRS := &MockRedshiftClient{}
 	client := &Client{
 		client: mockRS,
@@ -612,6 +628,7 @@ func TestClient_PurchaseCommitment_PurchaseAPIError(t *testing.T) {
 }
 
 func TestClient_PurchaseCommitment_EmptyResponse(t *testing.T) {
+	t.Parallel()
 	mockRS := &MockRedshiftClient{}
 	client := &Client{
 		client: mockRS,
@@ -658,6 +675,7 @@ func TestClient_PurchaseCommitment_EmptyResponse(t *testing.T) {
 }
 
 func TestClient_GetOfferingDetails_Success(t *testing.T) {
+	t.Parallel()
 	mockRS := &MockRedshiftClient{}
 	client := &Client{
 		client: mockRS,
@@ -727,6 +745,7 @@ func TestClient_GetOfferingDetails_Success(t *testing.T) {
 }
 
 func TestClient_GetOfferingDetails_NotFound(t *testing.T) {
+	t.Parallel()
 	mockRS := &MockRedshiftClient{}
 	client := &Client{
 		client: mockRS,
@@ -759,6 +778,7 @@ func TestClient_GetOfferingDetails_NotFound(t *testing.T) {
 }
 
 func TestClient_GetOfferingDetails_APIError(t *testing.T) {
+	t.Parallel()
 	mockRS := &MockRedshiftClient{}
 	client := &Client{
 		client: mockRS,
@@ -787,6 +807,7 @@ func TestClient_GetOfferingDetails_APIError(t *testing.T) {
 }
 
 func TestClient_GetOfferingDetails_EmptyResponseAfterFind(t *testing.T) {
+	t.Parallel()
 	mockRS := &MockRedshiftClient{}
 	client := &Client{
 		client: mockRS,
@@ -834,6 +855,7 @@ func TestClient_GetOfferingDetails_EmptyResponseAfterFind(t *testing.T) {
 }
 
 func TestClient_GetOfferingDetails_EmptyOfferingsAfterFind(t *testing.T) {
+	t.Parallel()
 	mockRS := &MockRedshiftClient{}
 	client := &Client{
 		client: mockRS,
@@ -883,6 +905,7 @@ func TestClient_GetOfferingDetails_EmptyOfferingsAfterFind(t *testing.T) {
 }
 
 func TestClient_FindOfferingID_NoMatchingNodeType(t *testing.T) {
+	t.Parallel()
 	mockRS := &MockRedshiftClient{}
 	client := &Client{
 		client: mockRS,
@@ -917,6 +940,7 @@ func TestClient_FindOfferingID_NoMatchingNodeType(t *testing.T) {
 }
 
 func TestClient_FindOfferingID_NoMatchingDuration(t *testing.T) {
+	t.Parallel()
 	mockRS := &MockRedshiftClient{}
 	client := &Client{
 		client: mockRS,
@@ -951,6 +975,7 @@ func TestClient_FindOfferingID_NoMatchingDuration(t *testing.T) {
 }
 
 func TestClient_FindOfferingID_UnknownOfferingType(t *testing.T) {
+	t.Parallel()
 	mockRS := &MockRedshiftClient{}
 	client := &Client{
 		client: mockRS,
@@ -1019,6 +1044,7 @@ func expectRSOffering(m *MockRedshiftClient) {
 // "pagination cap reached" error after maxOfferingPages empty pages and does NOT
 // make a (maxOfferingPages+1)th call (issue #688).
 func TestFindOfferingID_PaginationCapFires(t *testing.T) {
+	t.Parallel()
 	mockRS := &MockRedshiftClient{}
 	t.Cleanup(func() { mockRS.AssertExpectations(t) })
 	client := &Client{client: mockRS, region: "us-east-1"}
@@ -1047,6 +1073,7 @@ func TestFindOfferingID_PaginationCapFires(t *testing.T) {
 // with a "no offerings found" error rather than returning the wrong variant's
 // ID (issue #688).
 func TestFindOfferingID_WrongVariantRejected(t *testing.T) {
+	t.Parallel()
 	mockRS := &MockRedshiftClient{}
 	t.Cleanup(func() { mockRS.AssertExpectations(t) })
 	client := &Client{client: mockRS, region: "us-east-1"}
@@ -1074,6 +1101,7 @@ func TestFindOfferingID_WrongVariantRejected(t *testing.T) {
 // TestFindOfferingID_HappyPath asserts that findOfferingID returns the correct
 // offering ID when a matching offering is returned on the first page (issue #688).
 func TestFindOfferingID_HappyPath(t *testing.T) {
+	t.Parallel()
 	mockRS := &MockRedshiftClient{}
 	t.Cleanup(func() { mockRS.AssertExpectations(t) })
 	client := &Client{client: mockRS, region: "us-east-1"}
@@ -1140,6 +1168,7 @@ func rsOffering(id string, fixedPrice float64, recurringHourly float64) types.Re
 // would FAIL pre-fix (it would return the all-upfront offering for a no-upfront
 // request) and passes after.
 func TestFindOfferingID_PaymentOptionMustMatch(t *testing.T) {
+	t.Parallel()
 	// Price shapes: all-upfront (upfront only), no-upfront (recurring only),
 	// partial-upfront (both).
 	allUpfront := rsOffering("off-all", 1000.0, 0)
@@ -1211,6 +1240,7 @@ func TestFindOfferingID_PaymentOptionMustMatch(t *testing.T) {
 
 // TestMatchesPaymentOption directly exercises the price-shape classifier (08-H2).
 func TestMatchesPaymentOption(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		fixedPrice    float64
@@ -1238,6 +1268,7 @@ func TestMatchesPaymentOption(t *testing.T) {
 // TestDerivePaymentOption exercises the payment-option derivation used by
 // GetOfferingDetails to surface the actual terms (08-H2).
 func TestDerivePaymentOption(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "all-upfront", derivePaymentOption(rsOffering("x", 1000, 0)))
 	assert.Equal(t, "no-upfront", derivePaymentOption(rsOffering("x", 0, 0.1)))
 	assert.Equal(t, "partial-upfront", derivePaymentOption(rsOffering("x", 500, 0.05)))
@@ -1250,6 +1281,7 @@ func TestDerivePaymentOption(t *testing.T) {
 // than silently matching (and buying) a 1-year offering. A "0" term is what a
 // 0/NULL Term DB row produces on the scheduler purchase path.
 func TestFindOfferingID_InvalidTerm_ErrorsBeforeAPICall(t *testing.T) {
+	t.Parallel()
 	mockRS := &MockRedshiftClient{}
 	t.Cleanup(func() { mockRS.AssertExpectations(t) })
 	client := &Client{client: mockRS, region: "us-east-1"}
@@ -1272,6 +1304,7 @@ func TestFindOfferingID_InvalidTerm_ErrorsBeforeAPICall(t *testing.T) {
 // context.Canceled immediately when the context is already canceled before the
 // first pagination iteration, without calling the AWS API (issue #515).
 func TestFindOfferingID_CtxCancelledBeforePage(t *testing.T) {
+	t.Parallel()
 	mockRS := &MockRedshiftClient{}
 	t.Cleanup(func() { mockRS.AssertExpectations(t) })
 	client := &Client{client: mockRS, region: "us-east-1"}
@@ -1292,6 +1325,7 @@ func TestFindOfferingID_CtxCancelledBeforePage(t *testing.T) {
 // Marker is a pointer to an empty string (rather than nil) is treated as the
 // terminal page and does not cause an extra API call (issue #515).
 func TestFindOfferingID_EmptyStringTokenEndsPagination(t *testing.T) {
+	t.Parallel()
 	mockRS := &MockRedshiftClient{}
 	t.Cleanup(func() { mockRS.AssertExpectations(t) })
 	client := &Client{client: mockRS, region: "us-east-1"}
@@ -1316,6 +1350,7 @@ func TestFindOfferingID_EmptyStringTokenEndsPagination(t *testing.T) {
 // Redshift spells an in-flight payment "pending-payment" (issue #142). Such a
 // node is already owned and must be returned to duplicate detection.
 func TestClient_PendingPaymentNodeIsOwned(t *testing.T) {
+	t.Parallel()
 	pending := types.ReservedNode{
 		ReservedNodeId: aws.String("rn-pending"),
 		NodeType:       aws.String("ra3.xlplus"),
@@ -1337,6 +1372,7 @@ func TestClient_PendingPaymentNodeIsOwned(t *testing.T) {
 
 // Issue #211: a failed purchase after a clean lookup is not an adoption.
 func TestClient_PurchaseCommitment_Idempotent_PurchaseFailureNotFlagged(t *testing.T) {
+	t.Parallel()
 	mockRS := &MockRedshiftClient{}
 	client := &Client{client: mockRS, region: "eu-west-1"}
 	token := common.DeriveIdempotencyToken("exec-211", 0)

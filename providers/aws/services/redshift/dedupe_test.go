@@ -71,6 +71,7 @@ func newDedupe(pages ...[]types.ReservedNode) (*Client, *MockRedshiftClient) {
 }
 
 func TestDedupe_Found(t *testing.T) {
+	t.Parallel()
 	inWindow := dedupeReqAt.Add(time.Minute)
 	for _, tc := range []struct {
 		name string
@@ -98,6 +99,7 @@ func TestDedupe_Found(t *testing.T) {
 }
 
 func TestDedupe_NotFoundPurchases(t *testing.T) {
+	t.Parallel()
 	inWindow := dedupeReqAt.Add(time.Minute)
 	for _, tc := range []struct {
 		name string
@@ -121,6 +123,7 @@ func TestDedupe_NotFoundPurchases(t *testing.T) {
 }
 
 func TestDedupe_AmbiguousRefuses(t *testing.T) {
+	t.Parallel()
 	c, m := newDedupe([]types.ReservedNode{dnode("rn-a", "active", dedupeReqAt), dnode("rn-b", "pending-payment", dedupeReqAt)})
 	result, err := c.PurchaseCommitment(context.Background(), rsIdemRec(), dedupeOpts())
 	require.Error(t, err)
@@ -133,6 +136,7 @@ func TestDedupe_AmbiguousRefuses(t *testing.T) {
 }
 
 func TestDedupe_LookupErrorRefuses(t *testing.T) {
+	t.Parallel()
 	m := &MockRedshiftClient{}
 	expectRSOffering(m)
 	expectBuy(m)
@@ -147,6 +151,7 @@ func TestDedupe_LookupErrorRefuses(t *testing.T) {
 }
 
 func TestDedupe_PageCap(t *testing.T) {
+	t.Parallel()
 	other := []types.ReservedNode{dnode("rn-x", "active", dedupeReqAt, func(n *types.ReservedNode) { n.ReservedNodeOfferingId = aws.String("other") })}
 	t.Run("cap refuses", func(t *testing.T) {
 		pages := make([][]types.ReservedNode, maxReservedNodePages+1)
@@ -171,6 +176,7 @@ func TestDedupe_PageCap(t *testing.T) {
 }
 
 func TestDedupe_TokenWithoutRequestedAtRefuses(t *testing.T) {
+	t.Parallel()
 	c, m := newDedupe()
 	opts := dedupeOpts()
 	opts.RequestedAt = time.Time{}
@@ -182,6 +188,7 @@ func TestDedupe_TokenWithoutRequestedAtRefuses(t *testing.T) {
 }
 
 func TestDedupe_EmptyTokenDoesNoLookup(t *testing.T) {
+	t.Parallel()
 	c, m := newDedupe()
 	result, err := c.PurchaseCommitment(context.Background(), rsIdemRec(), common.PurchaseOptions{Source: common.PurchaseSourceCLI})
 	require.NoError(t, err)
@@ -191,6 +198,7 @@ func TestDedupe_EmptyTokenDoesNoLookup(t *testing.T) {
 }
 
 func TestDedupe_CanceledContextRefusesBeforeScan(t *testing.T) {
+	t.Parallel()
 	c, m := newDedupe()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -231,6 +239,7 @@ func buyEmpty(m *MockRedshiftClient) {
 }
 
 func TestDedupe_RecoverAfterUnknownOutcome(t *testing.T) {
+	t.Parallel()
 	one := dnode("rn-bought", "payment-pending", dedupeReqAt.Add(time.Second))
 	two := dnode("rn-bought2", "active", dedupeReqAt.Add(time.Second))
 	for _, tc := range []struct {
@@ -265,6 +274,7 @@ func TestDedupe_RecoverAfterUnknownOutcome(t *testing.T) {
 }
 
 func TestDedupe_RecoverLookupErrorKeepsOriginalError(t *testing.T) {
+	t.Parallel()
 	c, m := recoverMock(buyFails(unknownOutcome()))
 	m.ExpectedCalls = m.ExpectedCalls[:len(m.ExpectedCalls)-1]
 	m.On("DescribeReservedNodes", mock.Anything, mock.Anything).Return((*redshift.DescribeReservedNodesOutput)(nil), errors.New("throttled"))
@@ -274,6 +284,7 @@ func TestDedupe_RecoverLookupErrorKeepsOriginalError(t *testing.T) {
 }
 
 func TestDedupe_Clean4xxDoesNoRecoveryLookup(t *testing.T) {
+	t.Parallel()
 	c, m := recoverMock(buyFails(clean4xx()), dnode("rn-bought", "active", dedupeReqAt))
 	result, err := c.PurchaseCommitment(context.Background(), rsIdemRec(), dedupeOpts())
 	require.Error(t, err)
@@ -283,6 +294,7 @@ func TestDedupe_Clean4xxDoesNoRecoveryLookup(t *testing.T) {
 }
 
 func TestDedupe_RecoverLookupIsDetachedAndBounded(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	m := &MockRedshiftClient{}
