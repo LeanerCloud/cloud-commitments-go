@@ -167,10 +167,17 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		return result, result.Error
 	}
 
+	limit, err := upfrontLimit(rec, offering)
+	if err != nil {
+		result.Error = err
+		return result, result.Error
+	}
+
 	// Create the purchase request
 	input := &ec2.PurchaseReservedInstancesOfferingInput{
 		ReservedInstancesOfferingId: offering.ReservedInstancesOfferingId,
 		InstanceCount:               aws.Int32(int32(rec.Count)), // #nosec G115 -- Count from CE recommendation; AWS RI purchase limits keep this far below math.MaxInt32
+		LimitPrice:                  limit,
 	}
 
 	// Execute the purchase. A single attempt: the API has no ClientToken, so an
@@ -215,6 +222,34 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	}
 
 	return result, nil
+}
+
+// upfrontLimit checks the resolved offering's total upfront against the
+// approved recommendation's upfront and returns the server-side LimitPrice that
+// caps the order at the same ceiling. It returns nil, nil when the
+// recommendation has no positive upfront to cap (no-upfront options, or a
+// missing figure). An offering that exceeds the ceiling, or that is priced in a
+// currency LimitPrice cannot express, is refused.
+func upfrontLimit(rec common.Recommendation, offering *types.ReservedInstancesOffering) (*types.ReservedInstanceLimitPrice, error) {
+	approved := rec.CommitmentCost
+	if approved <= 0 {
+		return nil, nil
+	}
+	id := aws.ToString(offering.ReservedInstancesOfferingId)
+	if offering.FixedPrice == nil {
+		return nil, fmt.Errorf("EC2 offering %s has no FixedPrice; cannot compare it with the approved upfront %.2f", id, approved)
+	}
+	if cc := offering.CurrencyCode; cc != "" && cc != types.CurrencyCodeValuesUsd {
+		return nil, fmt.Errorf("EC2 offering %s is priced in %s; the approved upfront cap supports USD only", id, cc)
+	}
+	total := fixedPriceCents(*offering.FixedPrice) * float64(rec.Count) / 100
+	if err := offeringprice.CheckUpfront("EC2", total, approved); err != nil {
+		return nil, fmt.Errorf("EC2 offering %s: %w", id, err)
+	}
+	return &types.ReservedInstanceLimitPrice{
+		Amount:       aws.Float64(math.Round(offeringprice.UpfrontCeiling(approved)*100) / 100),
+		CurrencyCode: types.CurrencyCodeValuesUsd,
+	}, nil
 }
 
 // findRIByIdempotencyToken looks for an active or payment-pending Reserved
