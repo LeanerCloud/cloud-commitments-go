@@ -622,14 +622,23 @@ func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation
 	return err
 }
 
-// GetOfferingDetails retrieves offering details. All prices are per ONE
-// reservation (callers multiply by rec.Count): UpfrontCost is FixedPrice,
-// RecurringCost is the hourly rate, TotalCost is upfront plus hourly over the
-// term. The offering class does not change any price field.
-// Uses the convertible class (empty = convertible default) since the
-// details-fetch path has no GlobalConfig context.
+// GetOfferingDetails prices the convertible offering (the PurchaseCommitment
+// default when PurchaseOptions.OfferingClass is empty). Callers that purchase
+// a standard RI must use GetOfferingDetailsForClass: the classes are distinct
+// offerings with different prices.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
-	match, err := c.findOffering(ctx, rec, "", "")
+	return c.GetOfferingDetailsForClass(ctx, rec, "")
+}
+
+// GetOfferingDetailsForClass retrieves the details of the offering the
+// purchase would buy for offeringClass, resolved exactly as PurchaseCommitment
+// resolves PurchaseOptions.OfferingClass: "" and "convertible" select the
+// convertible offering, "standard" the standard one, anything else errors.
+// All prices are per ONE reservation (callers multiply by rec.Count):
+// UpfrontCost is FixedPrice, RecurringCost is the hourly rate, TotalCost is
+// upfront plus hourly over the term.
+func (c *Client) GetOfferingDetailsForClass(ctx context.Context, rec common.Recommendation, offeringClass string) (*common.OfferingDetails, error) {
+	match, err := c.findOffering(ctx, rec, "", offeringClass)
 	if err != nil {
 		return nil, err
 	}
