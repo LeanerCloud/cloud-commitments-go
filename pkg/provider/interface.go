@@ -112,9 +112,9 @@ type Config struct {
 	ProviderOverride Provider
 }
 
-// ProviderConfig is the former name of Config.
-//
-// Deprecated: use Config.
+// ProviderConfig is the former name of Config, kept so external consumers keep
+// compiling. Use Config. The "Deprecated:" marker is added once the provider
+// modules, which still pin a pkg version without Config, have migrated.
 //
 //nolint:revive // kept for external consumers; remove once none reference it
 type ProviderConfig = Config
