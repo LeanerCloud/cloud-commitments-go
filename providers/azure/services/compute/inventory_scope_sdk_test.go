@@ -93,6 +93,7 @@ func sdkReservationChild(child sdkChild, purchaseDate, expiryDate time.Time) str
 // other subscription (so one Shared quantity is never credited twice). A
 // Shared reservation whose purchaser cannot be identified still fails closed.
 func TestGetExistingCommitmentsSDKSharedVMAttribution(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	cases := []struct {
 		name         string
@@ -147,6 +148,7 @@ func TestGetExistingCommitmentsSDKSharedVMAttribution(t *testing.T) {
 }
 
 func TestGetExistingCommitmentsSDKScopeBoundary(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	cases := []struct {
 		name         string
@@ -192,6 +194,7 @@ func TestGetExistingCommitmentsSDKScopeBoundary(t *testing.T) {
 }
 
 func TestGetExistingCommitmentsSDKSplitSingleAndTerminal(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	first := sdkReservationChild(sdkChild{
 		id: "child-a", resourceType: "VirtualMachines", scopeType: `"Single"`, scopes: `["/subscriptions/sub-a"]`,
@@ -228,6 +231,7 @@ func TestGetExistingCommitmentsSDKSplitSingleAndTerminal(t *testing.T) {
 }
 
 func TestGetExistingCommitmentsSDKPageFailureFailsClosed(t *testing.T) {
+	t.Parallel()
 	client := sdkInventoryClient(t, "sub-a", inventorySDKTransport{reservationStatus: http.StatusInternalServerError})
 	inventory, err := client.GetExistingCommitments(context.Background())
 	require.ErrorContains(t, err, "list reservations")
@@ -242,6 +246,7 @@ func TestGetExistingCommitmentsSDKPageFailureFailsClosed(t *testing.T) {
 }
 
 func TestGetExistingCommitmentsSDKExpiryTodayFailsClosed(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	child := sdkChild{
 		id: "expiry-today", resourceType: "VirtualMachines", scopeType: `"Single"`, scopes: `["/subscriptions/sub-a"]`,
@@ -270,6 +275,7 @@ func TestGetExistingCommitmentsSDKExpiryTodayFailsClosed(t *testing.T) {
 }
 
 func TestGetExistingCommitmentsSDKExpiryDateControls(t *testing.T) {
+	t.Parallel()
 	now := time.Now().UTC()
 	cases := []struct {
 		name         string

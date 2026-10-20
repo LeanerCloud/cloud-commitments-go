@@ -141,6 +141,7 @@ func assertQuote(t *testing.T, q *common.OfferingDetails, price float64, currenc
 }
 
 func TestGetOfferingDetails_ReservationOnlySynthetic(t *testing.T) {
+	t.Parallel()
 	for _, years := range []int{1, 3} {
 		for _, payment := range []string{"upfront", "monthly"} {
 			t.Run(fmt.Sprintf("%dyr/%s", years, payment), func(t *testing.T) {
@@ -158,6 +159,7 @@ func TestGetOfferingDetails_ReservationOnlySynthetic(t *testing.T) {
 }
 
 func TestGetOfferingDetails_RequestsReservationCatalogSynthetic(t *testing.T) {
+	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		assert.Contains(t, req.URL.Query().Get("$filter"), "priceType eq 'Reservation'")
 		assert.NoError(t, json.NewEncoder(w).Encode(struct {
@@ -178,6 +180,7 @@ func TestGetOfferingDetails_RequestsReservationCatalogSynthetic(t *testing.T) {
 }
 
 func TestGetOfferingDetails_ValidReservationShapesSynthetic(t *testing.T) {
+	t.Parallel()
 	cases := map[string]func(*retailRow){
 		"ordinary":                   func(*retailRow) {},
 		"slash hour":                 func(r *retailRow) { r.Unit = "1/Hour" },
@@ -198,6 +201,7 @@ func TestGetOfferingDetails_ValidReservationShapesSynthetic(t *testing.T) {
 }
 
 func TestGetOfferingDetails_UnrelatedMalformedPricesSynthetic(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"other SKU reservation", "Windows Spot consumption"} {
 		t.Run(kind, func(t *testing.T) {
 			decoy := reservationRow()
@@ -217,6 +221,7 @@ func TestGetOfferingDetails_UnrelatedMalformedPricesSynthetic(t *testing.T) {
 }
 
 func TestGetOfferingDetails_SelectedReservationValidationSynthetic(t *testing.T) {
+	t.Parallel()
 	cases := map[string]func(*retailRow){
 		"missing currency":  func(r *retailRow) { r.Currency = "" },
 		"missing unit":      func(r *retailRow) { r.Unit = "" },
@@ -237,6 +242,7 @@ func TestGetOfferingDetails_SelectedReservationValidationSynthetic(t *testing.T)
 }
 
 func TestGetOfferingDetails_ReservationIdentitySynthetic(t *testing.T) {
+	t.Parallel()
 	cases := map[string]func(*retailRow){
 		"wrong ARM SKU":                     func(r *retailRow) { r.ARM = "Standard_D20s_v3" },
 		"wrong region":                      func(r *retailRow) { r.Region = "westus" },
@@ -285,6 +291,7 @@ func TestGetOfferingDetails_ReservationIdentitySynthetic(t *testing.T) {
 }
 
 func TestGetOfferingDetails_ReservationAmbiguitySynthetic(t *testing.T) {
+	t.Parallel()
 	cases := map[string]func(*retailRow){
 		"price":                 func(r *retailRow) { r.Price, r.UnitPrice = 2400, 2400 },
 		"currency":              func(r *retailRow) { r.Currency = "EUR" },
@@ -310,6 +317,7 @@ func TestGetOfferingDetails_ReservationAmbiguitySynthetic(t *testing.T) {
 }
 
 func TestGetOfferingDetails_EquivalentReservationMetadataSynthetic(t *testing.T) {
+	t.Parallel()
 	for _, conflictingPrice := range []bool{false, true} {
 		t.Run(fmt.Sprintf("conflictingPrice=%t", conflictingPrice), func(t *testing.T) {
 			r := reservationRow()

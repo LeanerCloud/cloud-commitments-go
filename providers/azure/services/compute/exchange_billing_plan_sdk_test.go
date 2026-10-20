@@ -120,6 +120,7 @@ func calculateAndExecute(t *testing.T, targets []compute.ExchangeTarget) (calcul
 // every exchange sent before the field existed -- Upfront -- so existing
 // callers are unaffected.
 func TestExchangeSDK_UnsetBillingPlanKeepsUpfrontWireBody(t *testing.T) {
+	t.Parallel()
 	calculate, exchange := calculateAndExecute(t, []compute.ExchangeTarget{validTarget()})
 
 	const wantCalculate = `{"properties":{"reservationsToExchange":[` +
@@ -137,6 +138,7 @@ func TestExchangeSDK_UnsetBillingPlanKeepsUpfrontWireBody(t *testing.T) {
 // session is the one Azure commits; nothing on the execute leg can turn it
 // back into Upfront.
 func TestExchangeSDK_MonthlyBillingPlanReachesWire(t *testing.T) {
+	t.Parallel()
 	monthly := validTarget()
 	monthly.BillingPlan = armreservations.ReservationBillingPlanMonthly
 	upfront := validTarget()
@@ -153,6 +155,7 @@ func TestExchangeSDK_MonthlyBillingPlanReachesWire(t *testing.T) {
 // Issue #89: an unrecognized billing plan is a validation error raised
 // before any HTTP request, never a silent Upfront purchase.
 func TestExchangeSDK_InvalidBillingPlanRejectedBeforeHTTP(t *testing.T) {
+	t.Parallel()
 	for _, plan := range []armreservations.ReservationBillingPlan{"monthly", "UPFRONT", "Annual", " Monthly"} {
 		t.Run(string(plan), func(t *testing.T) {
 			client, transport := sdkExchangeClient(t)

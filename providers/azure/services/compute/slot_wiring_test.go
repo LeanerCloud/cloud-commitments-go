@@ -48,6 +48,7 @@ func (h checkingHTTP) Do(*http.Request) (*http.Response, error) {
 }
 
 func TestSlotWiring_HoldsSlot(t *testing.T) {
+	t.Parallel()
 	cases := map[string]func(c *Client, p *slottest.Probe, ctx context.Context){
 		"GetRecommendations pager": func(c *Client, p *slottest.Probe, ctx context.Context) {
 			c.SetRecommendationsPager(&checkingRecsPager{check: p.Check})

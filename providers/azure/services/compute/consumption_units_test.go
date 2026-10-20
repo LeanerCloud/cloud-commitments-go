@@ -19,6 +19,7 @@ import (
 // commitment of Count x the term-total reservation retail price (synthetic
 // rows, not live quotes), for a 1y legacy and a 3y modern recommendation.
 func TestGetRecommendations_ConsumptionUnits(t *testing.T) {
+	t.Parallel()
 	client := NewClientWithHTTP(nil, "sub", "eastus", &mocks.PricingHTTP{Items: []map[string]any{
 		mocks.ReservationRow("Virtual Machines", "Virtual Machines Das v4 Series", "eastus", "Standard_D2as_v4", "D2as v4", "D2as v4", "1 Year", 494),
 		mocks.ReservationRow("Virtual Machines", "Virtual Machines Das v4 Series", "eastus", "Standard_D2as_v4", "D2as v4", "D2as v4", "3 Years", 949),
@@ -38,6 +39,7 @@ func TestGetRecommendations_ConsumptionUnits(t *testing.T) {
 // failure modes (each skipped while the others still return) and that one
 // retail lookup serves every recommendation sharing (sku, region, term).
 func TestGetRecommendations_ConsumptionSkipsAndDedupes(t *testing.T) {
+	t.Parallel()
 	http := &mocks.PricingHTTP{Items: []map[string]any{
 		mocks.ReservationRow("Virtual Machines", "Virtual Machines Das v4 Series", "eastus", "Standard_D2as_v4", "D2as v4", "D2as v4", "1 Year", 494),
 	}}
@@ -67,6 +69,7 @@ func TestGetRecommendations_ConsumptionSkipsAndDedupes(t *testing.T) {
 
 // A retail API failure must fail the collection, not return a partial list.
 func TestGetRecommendations_ConsumptionPriceFetchFailureFailsCollection(t *testing.T) {
+	t.Parallel()
 	good := mocks.BuildLegacyReservationRecommendation(mocks.WithSKU("Standard_D2as_v4"), mocks.WithQuantity(12), mocks.WithCosts(191, 116, 75))
 	for name, http := range map[string]*mocks.PricingHTTP{
 		"HTTP 500":  {FailMatch: "Standard_D2as_v4"},

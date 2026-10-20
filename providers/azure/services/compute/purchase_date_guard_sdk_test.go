@@ -14,6 +14,7 @@ import (
 
 // SDK-decode fixtures (real JSON decode, real clock), not live Azure evidence.
 func TestPurchaseDateGuardSDKDateOnlyPurchase(t *testing.T) {
+	t.Parallel()
 	built := time.Now().UTC()
 	today := built.Truncate(24 * time.Hour)
 	longAfter := today.AddDate(1, 0, 0)
@@ -57,6 +58,7 @@ func TestPurchaseDateGuardSDKDateOnlyPurchase(t *testing.T) {
 }
 
 func TestPurchaseDateGuardSDKPartialOverlapScalesCosts(t *testing.T) {
+	t.Parallel()
 	today := time.Now().UTC().Truncate(24 * time.Hour)
 	child := sdkReservationChild(sdkChild{
 		id: "child-a", resourceType: "VirtualMachines", scopeType: `"Single"`, scopes: `["/subscriptions/sub-a"]`,
