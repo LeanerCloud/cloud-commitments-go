@@ -10,6 +10,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 )
 
@@ -36,7 +37,6 @@ const (
 type Logger struct {
 	level    atomic.Int32
 	logger   *log.Logger
-	output   io.Writer
 	prefix   string
 	metadata map[string]interface{}
 }
@@ -98,7 +98,6 @@ func New(cfg Config) *Logger {
 
 	l := &Logger{
 		logger:   log.New(output, cfg.Prefix, flags),
-		output:   output,
 		prefix:   cfg.Prefix,
 		metadata: make(map[string]interface{}),
 	}
@@ -125,7 +124,6 @@ func GetLevel() Level {
 func (l *Logger) With(key string, value interface{}) *Logger {
 	newLogger := &Logger{
 		logger:   l.logger,
-		output:   l.output,
 		prefix:   l.prefix,
 		metadata: make(map[string]interface{}),
 	}
@@ -269,9 +267,16 @@ func GetDefaultLogger() *Logger {
 // The default logger binds os.Stderr at init() time, so reassigning the
 // os.Stderr variable does not redirect it; this is the supported seam for
 // capturing default-logger output in tests.
+//
+// The destination lives only in the embedded *log.Logger, whose Writer and
+// SetOutput are mutex-guarded, so With and concurrent log calls never race
+// the swap. setOutputMu makes the read-previous-then-set pair atomic.
 func SetOutput(w io.Writer) io.Writer {
-	prev := defaultLogger.output
-	defaultLogger.output = w
+	setOutputMu.Lock()
+	defer setOutputMu.Unlock()
+	prev := defaultLogger.logger.Writer()
 	defaultLogger.logger.SetOutput(w)
 	return prev
 }
+
+var setOutputMu sync.Mutex

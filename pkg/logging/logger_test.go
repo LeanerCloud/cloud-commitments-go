@@ -344,3 +344,34 @@ func TestSetLevel_NoDataRace(t *testing.T) {
 
 	wg.Wait()
 }
+
+// SetOutput used to write a mirror field that With reads; run under -race
+// this must stay clean (issue #123). Serial: it swaps the global writer.
+func TestSetOutput_ConcurrentWithIsRaceFree(t *testing.T) {
+	prev := SetOutput(io.Discard)
+	t.Cleanup(func() { SetOutput(prev) })
+
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 200; j++ {
+				SetOutput(io.Discard)
+			}
+		}()
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 200; j++ {
+				GetDefaultLogger().With("k", "v").Info("msg")
+			}
+		}()
+	}
+	wg.Wait()
+
+	var buf bytes.Buffer
+	got := SetOutput(&buf)
+	assert.Equal(t, io.Discard, got, "SetOutput must return the previous writer")
+	GetDefaultLogger().Info("hello")
+	assert.Contains(t, buf.String(), "hello")
+}
