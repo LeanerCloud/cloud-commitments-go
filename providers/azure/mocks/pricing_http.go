@@ -20,8 +20,7 @@ type PricingHTTP struct {
 	FailMatch string
 	Items     []map[string]any
 	calls     int
-
-	mu sync.Mutex
+	mu        sync.Mutex
 }
 
 // Do implements the HTTPClient interface the service clients accept.

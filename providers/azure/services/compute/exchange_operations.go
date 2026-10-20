@@ -33,7 +33,6 @@ import (
 // CompatibleOffering describes one candidate target SKU that Azure priced as
 // an exchange destination for the source reservations.
 type CompatibleOffering struct {
-
 	// BillingCurrencyTotal is the net amount the customer would pay in their
 	// billing currency for this offering. Nil when Azure did not report an
 	// amount (never coerced to 0 -- absent is not the same as free).

@@ -95,12 +95,14 @@ func AsPartialResult(err error) *PartialResultError {
 type PartialSubscriptionFailureError struct {
 	// Failed carries every subscription that errored, with its cause.
 	Failed []SubscriptionFailure
+
 	// Attempted is how many subscriptions the sweep was supposed to cover:
 	// the ones actually queried plus any named by AccountFilter that the
 	// principal cannot see (those are never queried, but they were asked
 	// for, so leaving them out of the denominator would under-report the
 	// gap this error exists to surface).
 	Attempted int
+
 	// Succeeded is how many returned a result. Always < Attempted and > 0:
 	// an all-failed sweep is a plain error, not a partial one.
 	Succeeded int

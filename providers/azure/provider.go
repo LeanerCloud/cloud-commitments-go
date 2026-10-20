@@ -99,15 +99,8 @@ type Provider struct {
 	credErr             error
 	subscriptionsClient SubscriptionsClient
 	credProvider        CredentialProvider
-
-	accountsSF singleflight.Group
-
-	// cache subsystem implementation (getOrFetchAccounts, fetchAccounts,
-	// cloneAccounts, InvalidateAccountsCache) lives in accounts_cache.go.
-	subscriptionID string
-	region         string // Default region for operations
-	cachedAccounts []common.Account
-	accountsGen    uint64
+	subscriptionID      string
+	region              string // Default region for operations
 
 	// accountsMu guards cachedAccounts. GetAccounts, GetServiceClient, and
 	// GetRecommendationsClient all resolve the subscription list on the hot
@@ -127,8 +120,15 @@ type Provider struct {
 	// singleflight call and gates the cache write, so an ARM fetch that
 	// started before an invalidation can neither publish its stale snapshot
 	// nor be joined by a caller that arrived after it.
-	accountsMu sync.RWMutex
-	credOnce   sync.Once
+	accountsSF     singleflight.Group
+	cachedAccounts []common.Account
+	accountsGen    uint64
+	accountsMu     sync.RWMutex
+
+	credOnce sync.Once
+
+	// cache subsystem implementation (getOrFetchAccounts, fetchAccounts,
+	// cloneAccounts, InvalidateAccountsCache) lives in accounts_cache.go.
 }
 
 // NewAzureProvider creates a new Azure provider instance.

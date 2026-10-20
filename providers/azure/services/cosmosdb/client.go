@@ -72,10 +72,8 @@ type Client struct {
 	recommendationsPager RecommendationsPager
 	reservationsPager    ReservationsDetailsPager
 	cosmosAccountsPager  CosmosAccountsPager
-
-	subscriptionID string
-	region         string
-	apiType        string
+	subscriptionID       string
+	region               string
 
 	// Lazy account-API-type cache. Cosmos DB has no per-SKU APIType (the
 	// API type lives on the account, not the reservation SKU which is
@@ -84,6 +82,7 @@ type Client struct {
 	// dominant APIType the converter can apply to recommendations.
 	// "Dominant" = the only API type observed if there's exactly one,
 	// else empty (meaning: subscription is multi-API, can't infer).
+	apiType     string
 	apiTypeOnce sync.Once
 }
 

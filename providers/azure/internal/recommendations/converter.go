@@ -40,9 +40,11 @@ type ExtractedFields struct {
 	// ExpandConsumptionVariants sets it per payment variant (0 for upfront,
 	// Count x reservation price / term months for monthly).
 	RecurringMonthlyCost *float64
-	Region               string
-	ResourceType         string
-	Term                 string
+
+	Region       string
+	ResourceType string
+	Term         string
+
 	// Scope is populated from the API response ("Shared" or a subscription ID)
 	// but is not yet threaded into the purchase body. All service clients
 	// currently send armreservations.AppliedScopeTypeShared, which is correct because
@@ -50,11 +52,13 @@ type ExtractedFields struct {
 	// "properties/scope eq 'Shared'" — only Shared-scope recommendations are
 	// ever requested. This field is retained for future wiring if single-
 	// subscription scoped recommendations are ever requested.
-	Scope            string
+	Scope string
+
 	Count            int
 	OnDemandCost     float64
 	CommitmentCost   float64
 	EstimatedSavings float64
+
 	// LookBackDays is the lookback window the cost fields were computed over;
 	// set only by ExtractConsumption (0 from plain Extract).
 	LookBackDays int

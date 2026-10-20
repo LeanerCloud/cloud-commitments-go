@@ -28,7 +28,6 @@ import (
 // ExchangeableReservation represents an Azure VM reservation that is
 // eligible for exchange.
 type ExchangeableReservation struct {
-
 	// ExpiryDate is when the reservation expires. Zero if not set by Azure.
 	ExpiryDate time.Time `json:"expiry_date,omitempty"`
 

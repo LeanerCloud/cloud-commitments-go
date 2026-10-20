@@ -85,7 +85,14 @@ type SQLManagedInstancesPager interface {
 
 // Client handles Azure SQL Database Reserved Capacity.
 type Client struct {
-	serverInfoRetryAfter  time.Time
+	// Lazy server-info cache. Populated by fetchServerInfo, which walks the
+	// managed-instances and servers pagers. Both azConfig and deployment are
+	// derived in a single pass so the injected test pager is consumed once.
+	// Only a complete walk is cached (serverInfoLoaded); a failed or
+	// canceled walk is retried, but not before serverInfoRetryAfter so a
+	// persistently failing subscription is not re-walked per recommendation.
+	serverInfoRetryAfter time.Time
+
 	cred                  azcore.TokenCredential
 	httpClient            HTTPClient
 	recommendationsPager  RecommendationsPager
@@ -94,10 +101,22 @@ type Client struct {
 	serversPager          SQLServersPager
 	managedInstancesPager SQLManagedInstancesPager
 
+	// Lazy SKU catalog cache. Populated once on the first
+	// recommendation conversion in this client's GetRecommendations
+	// call — single ListByLocation per region instead of N+1 per rec.
+	// A failed fetch leaves skuCacheMap nil; converters then fall back
+	// to empty EngineVersion with a one-time WARN log.
 	skuCacheMap map[string]sqlSKUEntry
 
-	subscriptionID       string
-	region               string
+	subscriptionID string
+	region         string
+
+	// Lazy server-info cache. Populated by fetchServerInfo, which walks the
+	// managed-instances and servers pagers. Both azConfig and deployment are
+	// derived in a single pass so the injected test pager is consumed once.
+	// Only a complete walk is cached (serverInfoLoaded); a failed or
+	// canceled walk is retried, but not before serverInfoRetryAfter so a
+	// persistently failing subscription is not re-walked per recommendation.
 	azConfig             string
 	deployment           string
 	serverInfoRetryDelay time.Duration

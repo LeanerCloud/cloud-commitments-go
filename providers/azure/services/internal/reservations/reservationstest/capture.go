@@ -20,12 +20,15 @@ import (
 type Capture struct {
 	// FailWhen, when set, is consulted after the request is recorded. A
 	// non-nil return is returned from Do as the transport error.
-	FailWhen  func(*Request) error
+	FailWhen func(*Request) error
+
 	BodyBytes []byte
+
 	// Requests lists every request received, in order.
 	Requests []Request
-	Calls    int
-	mu       sync.Mutex
+
+	Calls int
+	mu    sync.Mutex
 }
 
 // Request is one recorded HTTP request.
@@ -99,7 +102,8 @@ func (c *Capture) BodyWithoutDisplayName() ([]byte, error) {
 // fail on demand.
 type CountingCred struct {
 	// Err, when non-nil, is returned from every GetToken call.
-	Err   error
+	Err error
+
 	Calls int
 	mu    sync.Mutex
 }

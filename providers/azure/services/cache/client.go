@@ -75,7 +75,15 @@ type Client struct {
 	reservationsPager    ReservationsDetailsPager
 	redisCachesPager     RedisCachesPager
 
-	skuCacheMap    map[string]redisSKUEntry
+	// Lazy SKU catalog cache. armredis exposes no per-region "list all
+	// possible SKUs" surface, so we derive shard counts from the existing
+	// caches in the subscription (NewListBySubscriptionPager). Fetched
+	// ONCE per client lifetime; subsequent converter calls in the same
+	// GetRecommendations run hit the in-memory map. A failed fetch leaves
+	// skuCacheMap nil and converters fall back to Shards=0 with a WARN
+	// log — the conversion itself does NOT fail.
+	skuCacheMap map[string]redisSKUEntry
+
 	subscriptionID string
 	region         string
 

@@ -94,6 +94,7 @@ type Client struct {
 	recommendationsPager RecommendationsPager
 	resourceSKUsPager    ResourceSKUsPager
 
+	// Microsoft.Capacity provider registration check (cached per client lifetime)
 	capacityProviderErr error
 
 	// Optional injected pager for ListExchangeableReservations. When nil
@@ -109,6 +110,14 @@ type Client struct {
 	// SetInventoryFactories to run hermetically without Azure credentials.
 	inventoryFactories *InventoryFactories
 
+	// Lazy SKU catalog cache. armcompute.ResourceSKUsClient.NewListPager
+	// returns every SKU available to the subscription with its
+	// Capabilities (vCPUs, MemoryGB). Fetched ONCE per client lifetime;
+	// subsequent converter calls in the same GetRecommendations run hit
+	// the in-memory map. A failed fetch leaves skuCacheMap nil and
+	// converters fall back to VCPU=0/MemoryGB=0 with a WARN log — the
+	// conversion itself does NOT fail (graceful-degradation contract,
+	// matches cache/cosmosdb/database from PR #81).
 	skuCacheMap map[string]vmSKUEntry
 
 	// Optional injected LRO callers for CalculateExchange and
@@ -124,8 +133,9 @@ type Client struct {
 	// fake HTTP transport so the production LRO wrappers and the SDK's own
 	// request serialization run without reaching Azure.
 	exchangeClientOptions *arm.ClientOptions
-	subscriptionID        string
-	region                string
+
+	subscriptionID string
+	region         string
 
 	// Microsoft.Capacity provider registration check (cached per client lifetime)
 	capacityProviderOnce sync.Once

@@ -17,6 +17,7 @@ import (
 type PurchaseParams struct {
 	// DisplayName returns properties.displayName for the recommendation.
 	DisplayName func(common.Recommendation) string
+
 	// ReservedResourceType is the properties.reservedResourceType value.
 	ReservedResourceType string
 }

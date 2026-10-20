@@ -305,6 +305,7 @@ type serviceResult struct {
 	err  error
 	name string
 	recs []common.Recommendation
+
 	// attempted records whether the service call was actually launched
 	// (i.e. not skipped by the params service filter). Skipped services
 	// carry nil recs and nil err, which is indistinguishable from a

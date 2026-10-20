@@ -52,7 +52,6 @@ func SanitizeDisplayName(s string) string {
 // deterministic assertions. Production callers leave randSource nil (the
 // builder then uses crypto/rand) and pass time.Now().
 type DisplayNameFields struct {
-
 	// Now is the timestamp baseline. Tests inject a fixed value for
 	// determinism; production callers should pass time.Now(). A zero
 	// time.Time is replaced with time.Now() by the builder so the
