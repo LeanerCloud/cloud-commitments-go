@@ -22,6 +22,7 @@ func TestRdsInstanceNUFromType(t *testing.T) {
 		"db.t4g.micro":    0.5,
 		"db.r6g.16xlarge": 128,
 		"db.r6g.24xlarge": 192,
+		"db.r6g.6xlarge":  48,
 		"db.r6g.unknown":  0, // fallback
 		"not-an-rds-type": 0, // too few dots
 		"":                0,

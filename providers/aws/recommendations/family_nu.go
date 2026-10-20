@@ -8,36 +8,6 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
-// rdsInstanceNU maps an RDS instance size suffix to the normalized-units
-// value AWS uses for RDS RI size-flexibility within an instance family.
-// Reference:
-// https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_WorkingWithReservedDBInstances.html#USER_WorkingWithReservedDBInstances.SizeFlexible
-//
-// Used by ApplyFamilyNUSizingRDS to translate AWS-rec-API's family-NU-
-// bundled buy recommendations into the family target NU need under
-// --target-coverage. Sizes not in this map evaluate to 0 NU. Recs
-// with an empty family prefix (unknown size suffix) are routed to
-// nonRDS by partitionRDSRecsByFamily and handled by the per-pool path.
-// Recs with a known family prefix but an unrecognized size suffix reach
-// sizeRDSFamilyRecs with 0 NU; if the whole family sums to zero
-// (currentNU <= 0) they are recorded in drops.NoNUSignal and dropped.
-var rdsInstanceNU = map[string]float64{
-	"nano":     0.25,
-	"micro":    0.5,
-	"small":    1,
-	"medium":   2,
-	"large":    4,
-	"xlarge":   8,
-	"2xlarge":  16,
-	"4xlarge":  32,
-	"8xlarge":  64,
-	"10xlarge": 80,
-	"12xlarge": 96,
-	"16xlarge": 128,
-	"24xlarge": 192,
-	"32xlarge": 256,
-}
-
 // RDSInstanceNUFromType is the exported counterpart of rdsInstanceNUFromType
 // for callers outside this package that need the NU value for an RDS
 // instance type (e.g. CSV writers displaying per-row family-NU
@@ -56,27 +26,18 @@ func RDSFamilyFromType(instanceType string) string {
 }
 
 // rdsInstanceNUFromType returns the NU value for an instance type like
-// "db.r7g.2xlarge", parsing out the size suffix ("2xlarge" → 16). Returns
-// 0 when the size isn't recognized. When a whole family's rec-NU sums to
-// zero inside sizeRDSFamilyRecs (currentNU <= 0), those recs are recorded
-// in drops.NoNUSignal and dropped rather than falling back to per-pool sizing.
+// "db.r7g.2xlarge" (16), or 0 when the size isn't recognized. When a whole
+// family's rec-NU sums to zero inside sizeRDSFamilyRecs (currentNU <= 0), those
+// recs are recorded in drops.NoNUSignal and dropped rather than falling back to
+// per-pool sizing. The table lives in pkg/common so recfilter shares it.
 func rdsInstanceNUFromType(instanceType string) float64 {
-	parts := strings.Split(instanceType, ".")
-	if len(parts) < 3 {
-		return 0
-	}
-	return rdsInstanceNU[parts[len(parts)-1]]
+	return common.RDSInstanceNU(instanceType)
 }
 
 // rdsFamilyFromType returns the family prefix for an instance type, e.g.
-// "db.r7g.2xlarge" → "db.r7g". Empty string when the type doesn't carry
-// a recognizable size suffix.
+// "db.r7g.2xlarge" gives "db.r7g", or "" without a size suffix.
 func rdsFamilyFromType(instanceType string) string {
-	parts := strings.Split(instanceType, ".")
-	if len(parts) < 3 {
-		return ""
-	}
-	return strings.Join(parts[:len(parts)-1], ".")
+	return common.RDSFamily(instanceType)
 }
 
 // rdsFamilyKey returns the lookup key for an RDS family's aggregated
@@ -119,7 +80,7 @@ type FamilyCoverage struct {
 // single rec at one size.
 //
 // Skips non-RDS entries (their keys are 2-part, not 4-part), entries
-// whose instance size isn't in rdsInstanceNU, and engines that are not
+// whose instance size isn't in common.RDSInstanceNU, and engines that are not
 // size-flexible (rdsSizeFlexible).
 func AggregateRDSFamilyCoverage(coverage PoolCoverageMap) map[string]FamilyCoverage {
 	out := make(map[string]FamilyCoverage)
