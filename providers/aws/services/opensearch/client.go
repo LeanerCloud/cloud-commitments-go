@@ -88,7 +88,13 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 	commitments := make([]common.Commitment, 0)
 	var nextToken *string
 
-	for {
+	for page := 0; ; page++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if page >= maxListPages {
+			return nil, fmt.Errorf("pagination cap reached after %d pages for OpenSearch reserved instances (issue #561)", maxListPages)
+		}
 		input := &opensearch.DescribeReservedInstancesInput{
 			NextToken:  nextToken,
 			MaxResults: 100,
@@ -392,6 +398,12 @@ func (c *Client) tagReservedInstance(ctx context.Context, riID string, rec commo
 // payment option, and duration must be matched client-side. The cap is therefore
 // the primary guard against indefinite pagination on sparse offerings.
 const maxOfferingPages = 5
+
+// maxListPages bounds the full-list scans (existing commitments and the
+// valid-resource-types sweep). At 100 per page this is far above any real
+// account; hitting it means a token cycle or runaway API, so the scan fails
+// loud instead of looping or returning a partial list (issue #561).
+const maxListPages = 50
 
 // findOfferingID finds the appropriate Reserved Instance offering ID.
 // The OpenSearch API does not support server-side filters on the offerings list,
