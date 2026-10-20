@@ -45,6 +45,7 @@ func TestMaxParallelismFromEnv(t *testing.T) {
 // CLI tools and unit tests skip the semaphore entirely without per-call
 // branching.
 func TestSharedSemaphore_NoSemaphoreOnContext(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	assert.Nil(t, SharedSemaphore(ctx))
 	require.NoError(t, Acquire(ctx))
@@ -55,6 +56,7 @@ func TestSharedSemaphore_NoSemaphoreOnContext(t *testing.T) {
 // the input ctx unchanged when sem is nil — defensive against accidental
 // nil passes.
 func TestSharedSemaphore_WithNilSemaphore(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	assert.Equal(t, ctx, WithSharedSemaphore(ctx, nil))
 }
@@ -64,6 +66,7 @@ func TestSharedSemaphore_WithNilSemaphore(t *testing.T) {
 // never see more than 3 in-flight concurrently. Asserts peak concurrency
 // observed via atomics.
 func TestSharedSemaphore_BoundsConcurrency(t *testing.T) {
+	t.Parallel()
 	const cap = 3
 	const goroutines = 20
 	sem := semaphore.NewWeighted(cap)
@@ -123,6 +126,7 @@ func TestSharedSemaphore_BoundsConcurrency(t *testing.T) {
 // Without this, a canceled refresh would leak a goroutine parked
 // indefinitely on Acquire.
 func TestSharedSemaphore_AcquireRespectsCancellation(t *testing.T) {
+	t.Parallel()
 	sem := semaphore.NewWeighted(1)
 	// Pre-occupy the only slot so the second Acquire must wait.
 	require.NoError(t, sem.Acquire(context.Background(), 1))
