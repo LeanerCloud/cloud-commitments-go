@@ -23,7 +23,6 @@ const awsReservationNameMaxLen = 60
 // deterministic assertions. Production callers leave randSource nil (the
 // builder then uses crypto/rand) and pass time.Now().
 type ReservationNameFields struct {
-
 	// Now is the timestamp baseline. Must be non-zero for production calls.
 	// Tests inject a fixed value for determinism.
 	Now time.Time

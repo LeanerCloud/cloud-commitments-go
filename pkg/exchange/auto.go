@@ -20,11 +20,13 @@ import (
 type ExchangeRecord struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
+
 	// LadderRunID links this exchange record to the ladder run that created it.
 	// Nil for standalone ri_exchange_reshape task records.
 	// The database column ri_exchange_history.ladder_run_id was added in
 	// migration 000080 and is the authoritative source for origin scoping.
-	LadderRunID        *string
+	LadderRunID *string
+
 	CompletedAt        *time.Time
 	ExpiresAt          *time.Time
 	ID                 string
@@ -120,14 +122,14 @@ type RunAutoExchangeParams struct {
 	AccountID    string
 	Region       string
 	DashboardURL string
-
-	RIs         []RIInfo
-	Utilization []UtilizationInfo
+	RIs          []RIInfo
+	Utilization  []UtilizationInfo
 
 	// OfferedInstanceTypes is the region's offered EC2 instance types. Empty keeps
 	// the legacy size ladder; otherwise reshape targets are limited to it.
 	OfferedInstanceTypes []string
-	Config               RIExchangeConfig
+
+	Config RIExchangeConfig
 
 	// DryRun skips all state mutations (cancellations, record saves, exchange
 	// executions). Outcomes are returned with Simulated=true. No store write
@@ -169,11 +171,13 @@ type ExchangeOutcome struct {
 	Error              string
 	UtilizationPct     float64
 	TargetCount        int32
+
 	// OutcomeUnknown is true when the accept response was lost, so the exchange
 	// may have executed. It must be reconciled before any retry. The outcome
 	// stays in AutoExchangeResult.Failed (readers of Failed still see it) and
 	// halts the run (no further exchanges are attempted).
 	OutcomeUnknown bool
+
 	// Simulated is true when RunAutoExchangeParams.DryRun was set. The outcome
 	// was analyzed and quoted but no record was saved and no exchange was executed.
 	Simulated bool

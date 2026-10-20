@@ -44,6 +44,7 @@ type Config struct {
 type HTTPError struct {
 	Message    string
 	StatusCode int
+
 	// RetryAfter is the parsed Retry-After header, zero when absent or not a
 	// number of seconds. The client never retries on its own.
 	RetryAfter time.Duration
@@ -64,10 +65,13 @@ func (e *HTTPError) Error() string {
 // Client (or a pointer to it) is stored.
 type Client struct {
 	hc *http.Client
+
 	// setAuth adds the credential to one outgoing request.
 	setAuth func(*http.Request)
+
 	// redact masks the credential in a vendor-supplied message.
-	redact  func(string) string
+	redact func(string) string
+
 	baseURL string
 	orgID   string
 }

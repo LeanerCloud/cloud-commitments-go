@@ -16,12 +16,15 @@ type RIInfo struct {
 	ID            string
 	InstanceType  string
 	OfferingClass string // must be "convertible" — standard RIs cannot be exchanged
+
 	// CurrencyCode is the ISO-4217 currency the prices are denominated
 	// in (typically "USD"). Used by the cross-family check to refuse
 	// comparisons across currencies. Empty matches the same "skip"
 	// semantics as MonthlyCost == 0.
-	CurrencyCode        string
+	CurrencyCode string
+
 	NormalizationFactor float64 // AWS normalization factor for the instance size
+
 	// MonthlyCost is the effective per-instance per-month price (amortized
 	// upfront + recurring charges, AWS-canonical 730 hours per month).
 	// Used by the local passesDollarUnitsCheck pre-filter that gates
@@ -30,6 +33,7 @@ type RIInfo struct {
 	// pre-filter treats zero as "skip the check" so existing behavior
 	// is preserved.
 	MonthlyCost float64
+
 	// TermSeconds is the RI commitment term in seconds (31_536_000 for
 	// 1y, 94_608_000 for 3y) — the same unit the AWS SDK uses on the
 	// ReservedInstance.Duration field and the unit ec2.ConvertibleRI.Duration
@@ -39,7 +43,8 @@ type RIInfo struct {
 	// existing exchange anchor is the 1y term). Zero means "unknown" —
 	// the term filter is skipped for that rec to preserve today's
 	// behavior for older callers that don't populate it.
-	TermSeconds   int64
+	TermSeconds int64
+
 	InstanceCount int32
 }
 
@@ -65,15 +70,19 @@ type OfferingOption struct {
 	// signal. Zero means "not supplied" — the score component is omitted
 	// rather than coerced to 0 (which would falsely rank this offering
 	// last on the savings axis).
-	SavingsAbs   *float64 `json:"savings_abs,omitempty"`
-	InstanceType string   `json:"instance_type"`
-	OfferingID   string   `json:"offering_id"`
+	SavingsAbs *float64 `json:"savings_abs,omitempty"`
+
+	InstanceType string `json:"instance_type"`
+	OfferingID   string `json:"offering_id"`
+
 	// CurrencyCode is the ISO-4217 currency the EffectiveMonthlyCost is
 	// denominated in (typically "USD"). The pre-filter requires source
 	// and target currencies to match; empty on either side falls back to
 	// "skip the currency guard" so today's USD-only fixtures stay green.
-	CurrencyCode         string  `json:"currency_code,omitempty"`
+	CurrencyCode string `json:"currency_code,omitempty"`
+
 	EffectiveMonthlyCost float64 `json:"effective_monthly_cost"`
+
 	// NormalizationFactor is the AWS normalization factor for the
 	// offering's instance size — needed by the local
 	// passesDollarUnitsCheck pre-filter that gates which cross-family
@@ -81,6 +90,7 @@ type OfferingOption struct {
 	// alternative cannot be safely compared and the pre-filter
 	// excludes it.
 	NormalizationFactor float64 `json:"normalization_factor,omitempty"`
+
 	// TermSeconds is the offering's commitment term in seconds
 	// (31_536_000 for 1y, 94_608_000 for 3y) — same unit as
 	// RIInfo.TermSeconds and the AWS SDK's ReservedInstance.Duration.
@@ -90,6 +100,7 @@ type OfferingOption struct {
 	// on either side falls back to "skip the term guard" for callers
 	// or fixtures that don't populate it.
 	TermSeconds int64 `json:"term_seconds,omitempty"`
+
 	// RecommendationCount is the number of instances AWS Cost Explorer
 	// included in the recommendation. Used together with SavingsAbs to
 	// derive a confidence signal (large fleet + large savings = high
