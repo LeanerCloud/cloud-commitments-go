@@ -9,6 +9,7 @@ import (
 )
 
 func TestAssessProductSupport_DocumentedTypes(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		provider common.ProviderType
 		typ      string
@@ -24,6 +25,7 @@ func TestAssessProductSupport_DocumentedTypes(t *testing.T) {
 }
 
 func TestAssessProductSupport_UnknownByDefault(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		provider common.ProviderType
 		typ      string
@@ -45,6 +47,7 @@ func TestAssessProductSupport_UnknownByDefault(t *testing.T) {
 }
 
 func TestSupportTable_EveryRowIsCited(t *testing.T) {
+	t.Parallel()
 	seen := map[string]bool{}
 	for _, r := range supportTable {
 		key := string(r.provider) + "|" + r.commitmentType

@@ -147,6 +147,7 @@ func TestClientLineItemsRejectsIncompletePages(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			requests := 0
 			c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				requests++
@@ -165,6 +166,7 @@ func TestClientLineItemsSecondPageFailure(t *testing.T) {
 	t.Parallel()
 	for _, failure := range []string{"HTTP", "total", "duplicate", "size", "previous", "decode"} {
 		t.Run(failure, func(t *testing.T) {
+			t.Parallel()
 			c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 				w.Header().Set("X-Pagination", paginationJSON(101, 2, page))
@@ -225,6 +227,7 @@ func TestClientLineItemsPaginationGuards(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			requests := 0
 			c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				requests++
