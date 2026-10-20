@@ -712,7 +712,7 @@ func TestRunAutoExchange_IdleRI_Skipped(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Len(t, result.Skipped, 1)
-	assert.Contains(t, result.Skipped[0].Reason, "idle")
+	assert.Contains(t, result.Skipped[0].Reason, "completely unused")
 }
 
 func TestRunAutoExchange_MetalWithoutFactor_SkippedWithReason(t *testing.T) {
@@ -727,7 +727,7 @@ func TestRunAutoExchange_MetalWithoutFactor_SkippedWithReason(t *testing.T) {
 
 	require.Len(t, result.Skipped, 1)
 	assert.Contains(t, result.Skipped[0].Reason, "No normalization factor known")
-	assert.NotContains(t, result.Skipped[0].Reason, "idle")
+	assert.NotContains(t, result.Skipped[0].Reason, "completely unused")
 	assert.Empty(t, result.Pending)
 	assert.Empty(t, result.Completed)
 	assert.Equal(t, 0, client.executeCalls)
@@ -1230,4 +1230,39 @@ type quoteCountingClient struct {
 func (c *quoteCountingClient) GetQuote(ctx context.Context, r ExchangeQuoteRequest) (*ExchangeQuoteSummary, error) {
 	c.quotes++
 	return c.mockExchangeClient.GetQuote(ctx, r)
+}
+
+func TestRunAutoExchange_OfferedInstanceTypes_LimitsLookupTargets(t *testing.T) {
+	t.Parallel()
+	store := &mockExchangeStore{dailySpend: "0"}
+	client := &mockExchangeClient{quoteResult: defaultQuote()}
+	params := defaultParams(store, client)
+	params.RIs = []RIInfo{{ID: "ri-001", InstanceType: "m5.12xlarge", InstanceCount: 1, OfferingClass: "convertible"}}
+	params.OfferedInstanceTypes = []string{"m5.large", "m5.xlarge", "m5.2xlarge", "m5.4xlarge", "m5.8xlarge", "m5.12xlarge"}
+	var looked []string
+	params.LookupOffering = func(_ context.Context, p LookupOfferingParams) (string, error) {
+		looked = append(looked, p.InstanceType)
+		return "offering-123", nil
+	}
+
+	result, err := RunAutoExchange(context.Background(), params)
+	require.NoError(t, err)
+
+	assert.Len(t, result.Pending, 1)
+	assert.Equal(t, []string{"m5.4xlarge"}, looked)
+}
+
+func TestRunAutoExchange_FamilyNotOffered_SkippedWithReason(t *testing.T) {
+	t.Parallel()
+	store := &mockExchangeStore{dailySpend: "0"}
+	client := &quoteCountingClient{mockExchangeClient: mockExchangeClient{quoteResult: defaultQuote()}}
+	params := defaultParams(store, client)
+	params.OfferedInstanceTypes = []string{"c5.large", "c5.xlarge"}
+
+	result, err := RunAutoExchange(context.Background(), params)
+	require.NoError(t, err)
+
+	require.Len(t, result.Skipped, 1)
+	assert.Contains(t, result.Skipped[0].Reason, "instance family not offered in region")
+	assert.Equal(t, 0, client.quotes)
 }

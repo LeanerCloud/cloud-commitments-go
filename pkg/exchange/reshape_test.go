@@ -236,7 +236,7 @@ func TestFindBestFit_CapsAtOwnedCapacity(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			size, count := findBestFit(tt.used, tt.purchased)
+			size, count := findBestFit(tt.used, tt.purchased, legacySizeLadder)
 			assert.Equal(t, tt.wantSize, size)
 			assert.Equal(t, tt.wantCount, count)
 		})

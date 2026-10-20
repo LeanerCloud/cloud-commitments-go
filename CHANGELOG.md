@@ -32,6 +32,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **`exchange.WithOfferedInstanceTypes` / `RunAutoExchangeParams.OfferedInstanceTypes`:**
+  restrict RI reshape targets to the instance types the region offers.
+  `AnalyzeReshaping` and `AnalyzeReshapingWithRecs` take it as a variadic
+  `ReshapeOption`; an empty list keeps the previous size ladder, and a family
+  missing from a non-empty list gets a recommendation with the reason
+  "instance family not offered in region". Auto exchange now reports the
+  recommendation's own reason for every skipped RI without a target (#563).
 - **`RecommendationParams.RIAccountScope`:** selects the Cost Explorer account
   scope (`linked` default, or `payer`) for Reserved Instance recommendations,
   mirroring `SPAccountScope`. Empty keeps the previous linked behaviour; an
