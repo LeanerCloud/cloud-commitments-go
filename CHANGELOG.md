@@ -133,6 +133,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **`httpclient`:** dials to the RFC 8215 local-use NAT64 prefix `64:ff9b:1::/48` are refused when any RFC 6052 layout (/48, /56, /64, /96) embeds a metadata IPv4 address; Teredo `2001::/32` stays allowed (#238).
 - **`common.HoursPerMonth`:** exported 730-hour average month (`HoursPerYear / 12`) next to `HoursPerYear`; the remaining bare 730 and 8760 literals in the aws and gcp providers use the shared constants (#109).
 - **`gcp`:** region-lookup permission errors are now classified by type only (googleapi 403 or gRPC `PermissionDenied`) through the shared `IsPermissionError`. gRPC `PermissionDenied` is now skipped with a warning like a 403, and an untyped error whose text merely contains "403" and "permission" now propagates instead of being skipped (#6).
 - **BREAKING `gcp`: stored contexts removed (#6).** `computeengine.NewClient`
