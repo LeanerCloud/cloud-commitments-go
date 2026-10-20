@@ -7,6 +7,7 @@ import (
 )
 
 func TestParseTermMonths(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name      string
 		term      string
@@ -40,6 +41,7 @@ func TestParseTermMonths(t *testing.T) {
 }
 
 func TestDurationSeconds(t *testing.T) {
+	t.Parallel()
 	one, err := DurationSeconds("1yr", "Test")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(OneYearSeconds), one)
@@ -53,6 +55,7 @@ func TestDurationSeconds(t *testing.T) {
 }
 
 func TestDurationSecondsString(t *testing.T) {
+	t.Parallel()
 	one, err := DurationSecondsString("1", "Test")
 	assert.NoError(t, err)
 	assert.Equal(t, "31536000", one)
@@ -66,6 +69,7 @@ func TestDurationSecondsString(t *testing.T) {
 }
 
 func TestDurationYearString(t *testing.T) {
+	t.Parallel()
 	one, err := DurationYearString("1yr", "Test")
 	assert.NoError(t, err)
 	assert.Equal(t, "1yr", one)

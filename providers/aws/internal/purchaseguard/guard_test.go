@@ -48,6 +48,7 @@ func (f *finder) find(context.Context) (string, bool, error) {
 }
 
 func TestGuard_EmptyTokenSkipsLookup(t *testing.T) {
+	t.Parallel()
 	f := &finder{id: "x", found: true}
 	id, found, err := Guard(context.Background(), "", "RDS RI", f.find)
 	require.NoError(t, err)
@@ -57,6 +58,7 @@ func TestGuard_EmptyTokenSkipsLookup(t *testing.T) {
 }
 
 func TestGuard_LookupErrorFailsLoud(t *testing.T) {
+	t.Parallel()
 	cause := errors.New("describe boom")
 	f := &finder{err: cause}
 	id, found, err := Guard(context.Background(), token, "ElastiCache reservation", f.find)
@@ -91,6 +93,7 @@ func TestGuard_NotFound(t *testing.T) {
 }
 
 func TestRecover_EmptyTokenSkipsLookup(t *testing.T) {
+	t.Parallel()
 	f := &finder{id: "x", found: true}
 	id, ok := Recover[*fakeFault](context.Background(), "", "RDS RI", &fakeFault{}, f.find)
 	assert.False(t, ok)
@@ -99,6 +102,7 @@ func TestRecover_EmptyTokenSkipsLookup(t *testing.T) {
 }
 
 func TestRecover_NonMatchingErrorSkipsLookup(t *testing.T) {
+	t.Parallel()
 	f := &finder{id: "x", found: true}
 	for _, e := range []error{&otherFault{}, errors.New("plain"), nil} {
 		id, ok := Recover[*fakeFault](context.Background(), token, "RDS RI", e, f.find)

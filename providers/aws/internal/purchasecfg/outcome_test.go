@@ -23,6 +23,7 @@ func respErr(status int, code string) error {
 }
 
 func TestClassifyPurchaseError(t *testing.T) {
+	t.Parallel()
 	op := func(err error) error {
 		return &smithy.OperationError{ServiceID: "EC2", OperationName: "Purchase", Err: err}
 	}
@@ -71,6 +72,7 @@ func TestClassifyPurchaseError(t *testing.T) {
 }
 
 func TestClassifyPurchaseError_Idempotent(t *testing.T) {
+	t.Parallel()
 	once := ClassifyPurchaseError(errors.New("boom"))
 	assert.Same(t, once, ClassifyPurchaseError(once))
 }

@@ -9,6 +9,7 @@ import (
 )
 
 func TestPurchasePairs_BaseFields(t *testing.T) {
+	t.Parallel()
 	rec := common.Recommendation{ResourceType: "db.m5.large", Region: "eu-west-1"}
 	pairs := PurchasePairs(rec, "Reserved Instance Purchase", "ResourceType", "")
 
@@ -28,6 +29,7 @@ func TestPurchasePairs_BaseFields(t *testing.T) {
 }
 
 func TestPurchasePairs_AppendsPurchaseAutomationWhenSourceSet(t *testing.T) {
+	t.Parallel()
 	rec := common.Recommendation{ResourceType: "cache.t3.medium", Region: "us-east-1"}
 	pairs := PurchasePairs(rec, "Reserved Cache Node Purchase", "NodeType", common.PurchaseSourceWeb)
 
@@ -45,6 +47,7 @@ func TestPurchasePairs_AppendsPurchaseAutomationWhenSourceSet(t *testing.T) {
 }
 
 func TestPurchasePairs_HonoursPerServiceKeyName(t *testing.T) {
+	t.Parallel()
 	// Each call must use the key name the caller supplied — no hardcoding.
 	rec := common.Recommendation{ResourceType: "r6gd.xlarge"}
 	rds := PurchasePairs(rec, "p", "ResourceType", "")

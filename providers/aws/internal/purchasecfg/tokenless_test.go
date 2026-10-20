@@ -11,6 +11,7 @@ import (
 type opts struct{ n int }
 
 func TestTokenlessHelpers(t *testing.T) {
+	t.Parallel()
 	set := func(o *opts) { o.n = 1 }
 	assert.Len(t, SingleAttemptIf("", set), 1)
 	assert.Nil(t, SingleAttemptIf("tok", set))

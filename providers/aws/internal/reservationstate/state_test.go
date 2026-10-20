@@ -8,6 +8,7 @@ import (
 )
 
 func TestIsOwned(t *testing.T) {
+	t.Parallel()
 	for _, state := range []common.CommitmentState{
 		common.CommitmentStateActive, common.CommitmentStatePaymentPending,
 		common.CommitmentStateQueued, "exchanging", "future-provider-state", "",

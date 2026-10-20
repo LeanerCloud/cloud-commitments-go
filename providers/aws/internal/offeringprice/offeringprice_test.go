@@ -10,6 +10,7 @@ import (
 )
 
 func TestPrice(t *testing.T) {
+	t.Parallel()
 	one, three := int64(purchasecfg.OneYearSeconds), int64(purchasecfg.ThreeYearSeconds)
 	for _, tc := range []struct {
 		name         string
@@ -44,6 +45,7 @@ func TestPrice(t *testing.T) {
 }
 
 func TestCurrency(t *testing.T) {
+	t.Parallel()
 	_, err := Currency("S", "")
 	require.Error(t, err)
 	c, err := Currency("S", "EUR")

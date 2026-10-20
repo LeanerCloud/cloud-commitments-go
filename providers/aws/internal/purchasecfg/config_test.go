@@ -11,6 +11,7 @@ import (
 )
 
 func TestNewConfig_SetsRetryMaxAttempts(t *testing.T) {
+	t.Parallel()
 	t.Helper()
 	base := aws.Config{
 		Region:           "us-east-1",
@@ -24,6 +25,7 @@ func TestNewConfig_SetsRetryMaxAttempts(t *testing.T) {
 }
 
 func TestNewConfig_SetsHTTPTimeout(t *testing.T) {
+	t.Parallel()
 	t.Helper()
 	base := aws.Config{Region: "us-east-1"}
 
@@ -37,6 +39,7 @@ func TestNewConfig_SetsHTTPTimeout(t *testing.T) {
 }
 
 func TestNewConfig_DoesNotMutateBase(t *testing.T) {
+	t.Parallel()
 	t.Helper()
 	base := aws.Config{
 		Region:           "eu-west-1",
@@ -57,6 +60,7 @@ func TestNewConfig_DoesNotMutateBase(t *testing.T) {
 // NewConfig must not silently drop custom transports, TLS settings, or
 // instrumentation hooks by replacing the whole client unconditionally.
 func TestNewConfig_PreservesCustomTransport(t *testing.T) {
+	t.Parallel()
 	t.Helper()
 	customTransport := &http.Transport{MaxIdleConns: 42}
 	base := aws.Config{
@@ -76,6 +80,7 @@ func TestNewConfig_PreservesCustomTransport(t *testing.T) {
 }
 
 func TestNewConfig_PreservesRegion(t *testing.T) {
+	t.Parallel()
 	t.Helper()
 	base := aws.Config{Region: "ap-southeast-1"}
 
@@ -88,6 +93,7 @@ func TestNewConfig_PreservesRegion(t *testing.T) {
 // and HTTPTimeout=15s, the worst-case total for purchase-path API calls is
 // 2*15s=30s, well under the 300s Lambda function timeout.
 func TestNewConfig_WallClockBound(t *testing.T) {
+	t.Parallel()
 	t.Helper()
 	worstCaseWallClock := time.Duration(MaxAttempts) * HTTPTimeout
 	lambdaTimeout := 300 * time.Second
