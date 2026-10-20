@@ -206,6 +206,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Azure savings plan recommendations use a 730 hour month** (was 730.5),
+  matching `common.HoursPerMonth` and the 8760 hour year; monthly recurring
+  cost, on-demand cost and savings shift by about 0.07% (#583).
+
 - **`exchange.AnalyzeReshaping`:** no longer proposes a same-capacity reshape
   (1x m5.24xlarge to 2x m5.12xlarge); it frees no units and AWS needs an
   equal-or-greater exchange value, so such RIs now get no recommendation and
