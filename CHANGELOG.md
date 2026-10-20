@@ -352,6 +352,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   `NewRateLimitError`, `IsRateLimitError`, `NewServiceError`, `IsServiceError`)
   and the sentinels `ErrNotFound`, `ErrUnauthorized`, `ErrForbidden`,
   `ErrInvalidInput`, `ErrConflict`, `ErrInternalError`. (#123)
+- **BREAKING:** the `pkg/config` package is removed (no importers). Removed
+  exported symbols: `Load`, `DefaultScorerConfig`, `Config`, `AWSConfig`,
+  `AzureConfig`, `GCPConfig` and `ServerConfig`. The `pkg` module no longer
+  depends on `github.com/spf13/pflag`. (#123)
 
 ## [0.9.0] - 2026-03-06
 
