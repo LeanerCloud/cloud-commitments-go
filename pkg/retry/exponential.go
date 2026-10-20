@@ -31,13 +31,17 @@ type Config struct {
 	// BaseDelay is the delay before the SECOND attempt; subsequent
 	// delays double until MaxDelay caps them.
 	BaseDelay time.Duration
-	// MaxDelay caps the per-iteration backoff after exponential growth.
+	// MaxDelay caps the per-iteration backoff, including any jitter.
 	MaxDelay time.Duration
 	// PerAttemptTimeout, if > 0, wraps each op invocation in a
-	// context.WithTimeout independent of the outer ctx so a single hung
-	// attempt fails fast and the retry budget continues. Zero disables.
+	// context.WithTimeout derived from the outer ctx, so a single hung
+	// attempt fails fast and the retry budget continues, while outer
+	// cancellation or deadline still cancels it. It only cancels the
+	// context passed to op; op must honor that ctx for an attempt to fail
+	// fast. Zero disables.
 	PerAttemptTimeout time.Duration
-	// Jitter, if true, adds ±25% noise to each backoff via math/rand/v2
+	// Jitter, if true, adds ±25% noise to each backoff (the result is still
+	// capped at MaxDelay) via math/rand/v2
 	// (lock-free per-goroutine source, no global RNG mutex contention
 	// under concurrent retries). math/rand/v2 is sufficient for backoff
 	// jitter; cryptographic randomness is not needed.
@@ -93,10 +97,12 @@ func (c Config) Validate() error {
 }
 
 // Do runs op until it returns nil or the attempt budget is exhausted.
-// The per-attempt context (if PerAttemptTimeout > 0) is independent
-// of ctx so a slow attempt fails fast and the outer retry budget
-// continues. Errors marked with errors.Is(err, ErrPermanent)
-// short-circuit retries.
+// The per-attempt context (if PerAttemptTimeout > 0) is bounded
+// separately from the outer deadline so a slow attempt fails fast and
+// the outer retry budget continues, but it is still canceled when ctx
+// is. That timeout only cancels the context passed to op, so op must
+// honor ctx for a slow attempt to fail fast. Errors marked with
+// errors.Is(err, ErrPermanent) short-circuit retries.
 //
 // Returned error: nil on success, ctx.Err() if the outer context is
 // canceled mid-backoff, the unwrapped op error if it short-circuits
@@ -148,9 +154,9 @@ func runAttempt(ctx context.Context, cfg Config, attempt int, op func(ctx contex
 }
 
 // backoffFor returns the delay before attempt N (N >= 2). The base
-// shape is BaseDelay * 2^(attempt-2) capped at MaxDelay; if Jitter is
-// enabled, ±25% noise is layered on top. Attempt 2 uses BaseDelay
-// directly (2^0 = 1).
+// shape is BaseDelay * 2^(attempt-2); if Jitter is enabled, ±25% noise
+// is layered on top. The result never exceeds MaxDelay. Attempt 2 uses
+// BaseDelay directly (2^0 = 1).
 func backoffFor(attempt int, cfg Config) time.Duration {
 	shift := attempt - 2
 	if shift < 0 {
@@ -160,6 +166,10 @@ func backoffFor(attempt int, cfg Config) time.Duration {
 	// overflow at huge attempt counts; capped immediately by MaxDelay.
 	delay := cfg.BaseDelay
 	for i := 0; i < shift; i++ {
+		if delay >= cfg.MaxDelay-delay { // doubling would reach or overflow MaxDelay
+			delay = cfg.MaxDelay
+			break
+		}
 		delay *= 2
 		if delay >= cfg.MaxDelay {
 			delay = cfg.MaxDelay
@@ -175,7 +185,17 @@ func backoffFor(attempt int, cfg Config) time.Duration {
 		// crypto/rand would add cost for zero security benefit.
 		// #nosec G404 -- math/rand/v2 is intentional for jitter.
 		factor := 0.75 + rand.Float64()*0.5
-		delay = time.Duration(float64(delay) * factor)
+		// Compare in float64 before converting: converting a value above
+		// MaxInt64 overflows Duration to a negative delay.
+		jittered := float64(delay) * factor
+		if jittered >= float64(cfg.MaxDelay) {
+			return cfg.MaxDelay
+		}
+		delay = time.Duration(jittered)
+	}
+	// Clamp last so the result never exceeds MaxDelay.
+	if delay > cfg.MaxDelay {
+		delay = cfg.MaxDelay
 	}
 	return delay
 }
