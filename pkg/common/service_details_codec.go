@@ -156,6 +156,8 @@ func newDetailsForService(service string) (ServiceDetails, bool) {
 	// value without changing call sites. MemoryDB reuses CacheDetails (the
 	// AWS recommendation parser stamps it on every MemoryDB rec, so the
 	// persisted payload must decode); its client ignores Details.
+	case string(ServiceNoSQL):
+		return &NoSQLDetails{}, true
 	case string(ServiceOpenSearch), string(ServiceSearch):
 		return &SearchDetails{}, true
 	case string(ServiceRedshift), string(ServiceDataWarehouse):
