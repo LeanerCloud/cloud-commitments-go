@@ -190,7 +190,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **Duplicate guard counts an existing RDS reservation against other sizes of
   the same family** (#323): an AWS RDS reservation now pays for recommendations
   of any size in the same instance family, engine, region and deployment, by
-  normalized units, instead of matching only the exact instance class.
+  normalized units, instead of matching only the exact instance class. Only
+  MySQL, MariaDB, PostgreSQL and Aurora (and explicitly marked Oracle BYOL) are
+  size-flexible; SQL Server, Oracle License Included, Db2 and unknown engines
+  still match the exact class.
 
 - **MemoryDB reserved-node and offering listings are page-capped and
   cancellable** (#556): `GetExistingCommitments` and `GetValidResourceTypes`

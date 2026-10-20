@@ -216,7 +216,7 @@ func buildExistingCommitmentsMap(commitments []common.Commitment, logf Logf) map
 		}
 		normalizedDeployment := common.NormalizeDeploymentName(c.Deployment)
 		resourceType, nodeUnits := c.ResourceType, 1
-		if family, units, ok := rdsFlexKey(c.Provider, c.Service, c.ResourceType); ok {
+		if family, units, ok := rdsFlexKey(c.Provider, c.Service, normalizedEngine, c.ResourceType); ok {
 			resourceType, nodeUnits = family, units
 		}
 		key := dedupeKey(resourceType, c.Region, normalizedEngine, normalizedDeployment)
@@ -266,7 +266,7 @@ func adjustSingleRecommendation(rec common.Recommendation, existingMap map[strin
 	deployment := common.NormalizeDeploymentName(common.DeploymentFromDetails(rec.Details))
 	resourceType := rec.ResourceType
 	covers := []elastiCacheCover{{engine, 1, 1}}
-	if family, units, ok := rdsFlexKey(rec.Provider, rec.Service, rec.ResourceType); ok {
+	if family, units, ok := rdsFlexKey(rec.Provider, rec.Service, engine, rec.ResourceType); ok {
 		// A size-flexible budget holds units: one node of this size spends units of them.
 		resourceType, covers = family, []elastiCacheCover{{engine, 1, units}}
 	}

@@ -1,6 +1,7 @@
 package recfilter
 
 import (
+	"cmp"
 	"context"
 	"testing"
 	"time"
@@ -19,34 +20,46 @@ func TestRDSSizeFlexDedupe(t *testing.T) {
 		count      int
 		service    common.ServiceType
 		rec        string
-		recEngine  string
+		recEngine  string // empty: same as the commitment
 		recDeploy  string
 		recRegion  string
 		recCount   int
 		want       int
+		engine     string // empty: mysql
 	}{
-		{"large covers two mediums", "db.r6g.large", "single-az", 1, common.ServiceRelationalDB, "db.r6g.medium", "mysql", "single-az", "us-east-1", 2, 0},
-		{"large covers one of three mediums", "db.r6g.large", "single-az", 1, common.ServiceRDS, "db.r6g.medium", "mysql", "single-az", "us-east-1", 3, 1},
-		{"two mediums cover half a large: no credit", "db.r6g.medium", "single-az", 1, common.ServiceRDS, "db.r6g.large", "mysql", "single-az", "us-east-1", 1, 1},
-		{"two mediums cover a large", "db.r6g.medium", "single-az", 2, common.ServiceRDS, "db.r6g.large", "mysql", "single-az", "us-east-1", 1, 0},
-		{"xlarge covers larger count of large", "db.r6g.xlarge", "single-az", 2, common.ServiceRDS, "db.r6g.large", "mysql", "single-az", "us-east-1", 4, 0},
-		{"other family", "db.r6g.large", "single-az", 1, common.ServiceRDS, "db.m6g.medium", "mysql", "single-az", "us-east-1", 1, 1},
-		{"other engine", "db.r6g.large", "single-az", 1, common.ServiceRDS, "db.r6g.medium", "postgres", "single-az", "us-east-1", 1, 1},
-		{"other region", "db.r6g.large", "single-az", 1, common.ServiceRDS, "db.r6g.medium", "mysql", "single-az", "us-west-2", 1, 1},
-		{"other deployment", "db.r6g.large", "single-az", 1, common.ServiceRDS, "db.r6g.medium", "mysql", "multi-az", "us-east-1", 1, 1},
-		{"unknown size stays exact", "db.r6g.metal", "single-az", 1, common.ServiceRDS, "db.r6g.medium", "mysql", "single-az", "us-east-1", 1, 1},
-		{"exact class still matches", "db.r6g.metal", "single-az", 1, common.ServiceRDS, "db.r6g.metal", "mysql", "single-az", "us-east-1", 1, 0},
+		{"large covers two mediums", "db.r6g.large", "single-az", 1, common.ServiceRelationalDB, "db.r6g.medium", "mysql", "single-az", "us-east-1", 2, 0, ""},
+		{"large covers one of three mediums", "db.r6g.large", "single-az", 1, common.ServiceRDS, "db.r6g.medium", "mysql", "single-az", "us-east-1", 3, 1, ""},
+		{"two mediums cover half a large: no credit", "db.r6g.medium", "single-az", 1, common.ServiceRDS, "db.r6g.large", "mysql", "single-az", "us-east-1", 1, 1, ""},
+		{"two mediums cover a large", "db.r6g.medium", "single-az", 2, common.ServiceRDS, "db.r6g.large", "mysql", "single-az", "us-east-1", 1, 0, ""},
+		{"xlarge covers larger count of large", "db.r6g.xlarge", "single-az", 2, common.ServiceRDS, "db.r6g.large", "mysql", "single-az", "us-east-1", 4, 0, ""},
+		{"other family", "db.r6g.large", "single-az", 1, common.ServiceRDS, "db.m6g.medium", "mysql", "single-az", "us-east-1", 1, 1, ""},
+		{"other engine", "db.r6g.large", "single-az", 1, common.ServiceRDS, "db.r6g.medium", "postgres", "single-az", "us-east-1", 1, 1, ""},
+		{"other region", "db.r6g.large", "single-az", 1, common.ServiceRDS, "db.r6g.medium", "mysql", "single-az", "us-west-2", 1, 1, ""},
+		{"other deployment", "db.r6g.large", "single-az", 1, common.ServiceRDS, "db.r6g.medium", "mysql", "multi-az", "us-east-1", 1, 1, ""},
+		{"unknown size stays exact", "db.r6g.metal", "single-az", 1, common.ServiceRDS, "db.r6g.medium", "mysql", "single-az", "us-east-1", 1, 1, ""},
+		{"exact class still matches", "db.r6g.metal", "single-az", 1, common.ServiceRDS, "db.r6g.metal", "mysql", "single-az", "us-east-1", 1, 0, ""},
+		{"postgres family flex", "db.r6g.large", "single-az", 1, common.ServiceRDS, "db.r6g.medium", "", "single-az", "us-east-1", 2, 0, "postgres"},
+		{"aurora mysql flex", "db.r6g.large", "", 1, common.ServiceRDS, "db.r6g.medium", "", "", "us-east-1", 2, 0, "Aurora MySQL"},
+		{"sqlserver license included exact", "db.m6i.large", "single-az", 1, common.ServiceRDS, "db.m6i.medium", "", "single-az", "us-east-1", 2, 2, "sqlserver-se (li)"},
+		{"sqlserver exact", "db.m6i.large", "single-az", 1, common.ServiceRDS, "db.m6i.medium", "", "single-az", "us-east-1", 2, 2, "sqlserver-se"},
+		{"oracle license included exact", "db.m6i.large", "single-az", 1, common.ServiceRDS, "db.m6i.medium", "", "single-az", "us-east-1", 2, 2, "oracle-se2 (li)"},
+		{"oracle unmarked exact", "db.m6i.large", "single-az", 1, common.ServiceRDS, "db.m6i.medium", "", "single-az", "us-east-1", 2, 2, "oracle-se2"},
+		{"db2 exact", "db.m6i.large", "single-az", 1, common.ServiceRDS, "db.m6i.medium", "", "single-az", "us-east-1", 2, 2, "db2-se"},
+		{"unknown engine exact", "db.m6i.large", "single-az", 1, common.ServiceRDS, "db.m6i.medium", "", "single-az", "us-east-1", 2, 2, "somedb"},
+		{"sqlserver same class still dedupes", "db.m6i.large", "single-az", 1, common.ServiceRDS, "db.m6i.large", "", "single-az", "us-east-1", 1, 0, "sqlserver-se"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
+			commitEngine := cmp.Or(tt.engine, "mysql")
+			recEngine := cmp.Or(tt.recEngine, commitEngine)
 			client := &fakeServiceClient{commitments: []common.Commitment{{
 				Provider: common.ProviderAWS, Service: tt.service, ResourceType: tt.commitment,
-				Region: "us-east-1", Engine: "mysql", Deployment: tt.deployment, Count: tt.count,
+				Region: "us-east-1", Engine: commitEngine, Deployment: tt.deployment, Count: tt.count,
 				State: common.CommitmentStateActive, StartDate: time.Now(),
 			}}}
 			rec := common.Recommendation{
 				Provider: common.ProviderAWS, Service: common.ServiceRDS, ResourceType: tt.rec, Region: tt.recRegion, Count: tt.recCount,
-				Details: &common.DatabaseDetails{Engine: tt.recEngine, AZConfig: tt.recDeploy},
+				Details: &common.DatabaseDetails{Engine: recEngine, AZConfig: tt.recDeploy},
 			}
 			passed, filtered, err := NewDuplicateChecker(0).AdjustRecommendationsForExisting(context.Background(), []common.Recommendation{rec}, client)
 			require.NoError(t, err)
