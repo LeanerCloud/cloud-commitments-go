@@ -9,6 +9,7 @@ import (
 )
 
 func TestDedupeCommitmentsByID_CollapsesRepeatedID(t *testing.T) {
+	t.Parallel()
 	commitments := []common.Commitment{
 		{CommitmentID: "res-1", ResourceType: "day-1"},
 		{CommitmentID: "res-1", ResourceType: "day-2"},
@@ -24,6 +25,7 @@ func TestDedupeCommitmentsByID_CollapsesRepeatedID(t *testing.T) {
 }
 
 func TestDedupeCommitmentsByID_KeepsDistinctIDs(t *testing.T) {
+	t.Parallel()
 	commitments := []common.Commitment{
 		{CommitmentID: "res-1"},
 		{CommitmentID: "res-2"},
@@ -46,6 +48,7 @@ func TestDedupeCommitmentsByID_KeepsDistinctIDs(t *testing.T) {
 // empty CommitmentID (no unique identity to dedupe on) are all kept, rather
 // than being collapsed onto each other via an empty-string collision.
 func TestDedupeCommitmentsByID_KeepsEmptyIDs(t *testing.T) {
+	t.Parallel()
 	commitments := []common.Commitment{
 		{CommitmentID: "", ResourceType: "a"},
 		{CommitmentID: "", ResourceType: "b"},
@@ -57,6 +60,7 @@ func TestDedupeCommitmentsByID_KeepsEmptyIDs(t *testing.T) {
 }
 
 func TestDedupeCommitmentsByID_Empty(t *testing.T) {
+	t.Parallel()
 	got := DedupeCommitmentsByID(nil)
 	assert.Empty(t, got)
 }

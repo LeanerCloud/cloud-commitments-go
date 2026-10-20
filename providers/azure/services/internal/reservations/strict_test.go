@@ -38,6 +38,7 @@ func strictFixture(rt string) *armreservations.ReservationResponse {
 // The reservedResourceType match is case-insensitive: the API enum is
 // documented in PascalCase but the match must not hinge on casing.
 func TestCommitmentFromReservation_TypeMatchIgnoresCase(t *testing.T) {
+	t.Parallel()
 	r := strictFixture("virtualmachines")
 	c := CommitmentFromReservation(r, "sub-a", common.ServiceCompute, armreservations.ReservedResourceTypeVirtualMachines, time.Now())
 	require.NotNil(t, c)
@@ -46,6 +47,7 @@ func TestCommitmentFromReservation_TypeMatchIgnoresCase(t *testing.T) {
 }
 
 func TestStrictCommitment_ErrorTextUsesLabels(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	_, err := StrictCommitment(nil, "sub-a", common.ServiceCompute, armreservations.ReservedResourceTypeVirtualMachines, testLabels, now)
 	require.EqualError(t, err, `svc: cannot classify reservation (no id) in subscription "sub-a": missing properties or reservedResourceType`)
@@ -71,6 +73,7 @@ func TestStrictCommitment_ErrorTextUsesLabels(t *testing.T) {
 // Issue #293: a Shared reservation is owned by the subscription named in its
 // billingScopeId, the subscription CUDly purchases under.
 func TestStrictCommitment_SharedScopeAttributedToBillingSubscription(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	shared := armreservations.AppliedScopeTypeShared
 	r := strictFixture("VirtualMachines")

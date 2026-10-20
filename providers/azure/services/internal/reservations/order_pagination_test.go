@@ -33,6 +33,7 @@ func (c *pageHTTPClient) Do(req *http.Request) (*http.Response, error) {
 }
 
 func TestFindReservationOrderByIdempotencyToken_NextLinkCycleErrors(t *testing.T) {
+	t.Parallel()
 	const a, b = "https://example.test/a", "https://example.test/b"
 	c := &pageHTTPClient{maxCalls: 500}
 	// First page is the real list URL, which links to a; a<->b then cycles.
@@ -55,6 +56,7 @@ func TestFindReservationOrderByIdempotencyToken_NextLinkCycleErrors(t *testing.T
 }
 
 func TestFindReservationOrderByIdempotencyToken_EndlessDistinctNextLinkHitsCap(t *testing.T) {
+	t.Parallel()
 	c := &pageHTTPClient{maxCalls: 500, next: func(_ string, call int) string {
 		return fmt.Sprintf("https://example.test/page-%d", call)
 	}}
@@ -66,6 +68,7 @@ func TestFindReservationOrderByIdempotencyToken_EndlessDistinctNextLinkHitsCap(t
 }
 
 func TestFindReservationOrderByIdempotencyToken_TwoPageWalkFindsOrder(t *testing.T) {
+	t.Parallel()
 	calls := 0
 	c := clientFunc(func(req *http.Request) (*http.Response, error) {
 		calls++

@@ -52,6 +52,7 @@ func vmDisplayName(now time.Time, randBytes []byte) string {
 // rebuilds the display name with a new timestamp and random suffix, so the
 // match cannot depend on those segments.
 func TestDoIdempotentPurchaseTwoStep_UntaggedOrderMatchedByDisplayName(t *testing.T) {
+	t.Parallel()
 	const token = "4f1c2b0e9d8a7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b"
 	firstAttempt := buildTaggedDisplayName(t,
 		vmDisplayName(time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC), []byte{0xaa, 0xbb, 0xcc, 0xdd}), token)
@@ -100,6 +101,7 @@ func TestDoIdempotentPurchaseTwoStep_UntaggedOrderMatchedByDisplayName(t *testin
 // guards the opposite direction: an untagged order carrying a different
 // token's marker must not be adopted.
 func TestFindReservationOrderByIdempotencyToken_DisplayNameOfOtherTokenDoesNotMatch(t *testing.T) {
+	t.Parallel()
 	other := buildTaggedDisplayName(t, vmDisplayName(time.Now(), nil), "other-token")
 	listBody := `{"value":[{"name":"order-other","properties":{"provisioningState":"Succeeded","displayName":"` + other + `"}}]}`
 
@@ -119,6 +121,7 @@ func TestFindReservationOrderByIdempotencyToken_DisplayNameOfOtherTokenDoesNotMa
 // the leading identifying segments, and ends with the same marker for the
 // same token however the rest of the name was built.
 func TestApplyPurchaseTags_DisplayNameMarker(t *testing.T) {
+	t.Parallel()
 	const token = "tok-290"
 	marker := idempotencyDisplayNameMarker(token)
 
@@ -148,6 +151,7 @@ func TestApplyPurchaseTags_DisplayNameMarker(t *testing.T) {
 // TestApplyPurchaseTags_NoTokenLeavesDisplayNameAlone keeps the untokened
 // paths (CLI legacy, source-only) byte-identical to before issue #290.
 func TestApplyPurchaseTags_NoTokenLeavesDisplayNameAlone(t *testing.T) {
+	t.Parallel()
 	name := vmDisplayName(time.Now(), []byte{1, 2, 3, 4})
 	assert.Equal(t, name, buildTaggedDisplayName(t, name, ""))
 }
@@ -157,6 +161,7 @@ func TestApplyPurchaseTags_NoTokenLeavesDisplayNameAlone(t *testing.T) {
 // rune: the cut must back off to the rune start so the name stays valid
 // UTF-8 (JSON encoding would otherwise widen it past the byte limit).
 func TestWithIdempotencyMarker_TruncatesAtRuneBoundary(t *testing.T) {
+	t.Parallel()
 	const token = "tok-290"
 	marker := idempotencyDisplayNameMarker(token)
 	room := azureDisplayNameMaxLen - len(marker) - 1
@@ -172,6 +177,7 @@ func TestWithIdempotencyMarker_TruncatesAtRuneBoundary(t *testing.T) {
 }
 
 func TestTruncateToRuneBoundary(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "abc", truncateToRuneBoundary("abc", 5))
 	assert.Equal(t, "ab", truncateToRuneBoundary("abc", 2))
 	assert.Equal(t, "a", truncateToRuneBoundary("aé", 2))
