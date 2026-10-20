@@ -491,7 +491,9 @@ func analyzeRI(ri RIInfo, utilMap map[string]float64, threshold float64) *Reshap
 	}
 
 	targetInstanceType := family + "." + targetSize
-	if targetInstanceType == ri.InstanceType && targetCount == ri.InstanceCount {
+	// A same-capacity reshape (1x m5.24xlarge to 2x m5.12xlarge) frees no
+	// units, so it is not worth a quote and AWS needs an equal-or-greater value.
+	if float64(targetCount)*common.EC2NormalizationFactor(targetSize) >= normalizedPurchased {
 		return nil
 	}
 

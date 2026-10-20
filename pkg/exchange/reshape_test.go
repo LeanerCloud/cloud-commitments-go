@@ -60,7 +60,7 @@ func TestAnalyzeReshaping(t *testing.T) {
 			wantCount: 0,
 		},
 		{
-			name: "RI at 90% suggests slight downsize",
+			name: "RI at 90% with only an equal-capacity reshape gives no rec",
 			ris: []RIInfo{
 				{ID: "ri-4", InstanceType: "m5.2xlarge", InstanceCount: 1, OfferingClass: "convertible"},
 			},
@@ -68,14 +68,8 @@ func TestAnalyzeReshaping(t *testing.T) {
 				{RIID: "ri-4", UtilizationPercent: 90},
 			},
 			threshold: 95,
-			wantCount: 1,
-			checkFirst: func(t *testing.T, rec ReshapeRecommendation) {
-				// 2xlarge = 16, 90% = 14.4 normalized units
-				// xlarge = 8, ceil(14.4/8) = 2 → 2x xlarge = 16 units
-				// That's same total as current (1x 2xlarge = 16), but different shape
-				assert.Equal(t, "m5.xlarge", rec.TargetInstanceType)
-				assert.Equal(t, int32(2), rec.TargetCount)
-			},
+			// 14.4 used of 16: the best fit is 2x xlarge = 16 units, the same capacity.
+			wantCount: 0,
 		},
 		{
 			name: "RI at 0% utilization — recommend expiry or reallocation",
@@ -322,4 +316,18 @@ func TestAnalyzeReshaping_LargeSizesHaveNormalizationFactors(t *testing.T) {
 	// must never target 32xlarge or above.
 	_, size := parseInstanceType(recs[1].TargetInstanceType)
 	assert.LessOrEqual(t, common.EC2NormalizationFactor(size), common.EC2NormalizationFactor("24xlarge"))
+}
+
+func TestAnalyzeReshaping_EqualCapacityReshapeSkipped(t *testing.T) {
+	t.Parallel()
+	// 1x m5.24xlarge (192) at 51% (97.9 used): the best fit is 2x m5.12xlarge = 192 units.
+	ris := []RIInfo{{ID: "ri-1", InstanceType: "m5.24xlarge", InstanceCount: 1, OfferingClass: "convertible"}}
+	assert.Empty(t, AnalyzeReshaping(ris, []UtilizationInfo{{RIID: "ri-1", UtilizationPercent: 51}}, 95))
+
+	// A strict shrink is still recommended.
+	ris = []RIInfo{{ID: "ri-1", InstanceType: "m5.24xlarge", InstanceCount: 1, OfferingClass: "convertible"}}
+	recs := AnalyzeReshaping(ris, []UtilizationInfo{{RIID: "ri-1", UtilizationPercent: 40}}, 95)
+	require.Len(t, recs, 1)
+	assert.Equal(t, "m5.9xlarge", recs[0].TargetInstanceType)
+	assert.Equal(t, int32(2), recs[0].TargetCount)
 }

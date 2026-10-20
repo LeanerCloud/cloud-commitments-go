@@ -1205,3 +1205,29 @@ func TestRunAutoExchange_48xlargeRI_IsAnalyzedAndQuoted(t *testing.T) {
 	assert.Len(t, result.Pending, 1)
 	assert.Equal(t, []string{"m6i.24xlarge"}, looked)
 }
+
+func TestRunAutoExchange_EqualCapacityReshape_NeverQuoted(t *testing.T) {
+	t.Parallel()
+	store := &mockExchangeStore{dailySpend: "0"}
+	client := &quoteCountingClient{mockExchangeClient: mockExchangeClient{quoteResult: defaultQuote()}}
+	params := defaultParams(store, client)
+	params.RIs = []RIInfo{{ID: "ri-001", InstanceType: "m5.24xlarge", InstanceCount: 1, OfferingClass: "convertible"}}
+	params.Utilization = []UtilizationInfo{{RIID: "ri-001", UtilizationPercent: 51}}
+
+	result, err := RunAutoExchange(context.Background(), params)
+	require.NoError(t, err)
+
+	assert.Empty(t, result.Pending)
+	assert.Empty(t, result.Completed)
+	assert.Equal(t, 0, client.quotes)
+}
+
+type quoteCountingClient struct {
+	mockExchangeClient
+	quotes int
+}
+
+func (c *quoteCountingClient) GetQuote(ctx context.Context, r ExchangeQuoteRequest) (*ExchangeQuoteSummary, error) {
+	c.quotes++
+	return c.mockExchangeClient.GetQuote(ctx, r)
+}

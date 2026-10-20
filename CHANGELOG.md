@@ -198,6 +198,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **`exchange.AnalyzeReshaping`:** no longer proposes a same-capacity reshape
+  (1x m5.24xlarge to 2x m5.12xlarge); it frees no units and AWS needs an
+  equal-or-greater exchange value, so such RIs now get no recommendation and
+  no quote (#563).
 - **`common.EC2NormalizationFactor`:** knows the 32xlarge, 48xlarge, 56xlarge,
   96xlarge and 112xlarge sizes (256 to 896), so RI exchange analysis no longer
   skips RIs of those sizes with "No normalization factor known" (#563).
