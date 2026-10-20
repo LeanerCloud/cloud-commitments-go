@@ -29,6 +29,7 @@ func (inventoryCredential) GetToken(context.Context, policy.TokenRequestOptions)
 }
 
 func TestGetExistingCommitments_SDKPaginationCompleteness(t *testing.T) {
+	t.Parallel()
 	for _, ambiguous := range []bool{false, true} {
 		for _, dedupe := range []bool{false, true} {
 			t.Run(fmt.Sprintf("ambiguous=%t/dedupe=%t", ambiguous, dedupe), func(t *testing.T) {
@@ -124,6 +125,7 @@ func newFixtureSavingsPlanClient(t *testing.T, server *httptest.Server) *armbill
 }
 
 func TestGetExistingCommitments_EffectiveDateTimeCompleteness(t *testing.T) {
+	t.Parallel()
 	const planID = "/providers/Microsoft.BillingBenefits/savingsPlanOrders/o1/savingsPlans/p1"
 	cases := []struct {
 		name    string

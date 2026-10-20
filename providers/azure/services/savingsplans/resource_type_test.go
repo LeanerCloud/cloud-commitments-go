@@ -33,6 +33,7 @@ func resourceTypeFixture(t *testing.T, sku string) *Client {
 }
 
 func TestOwnedPlanSuppressesComputeRecommendation(t *testing.T) {
+	t.Parallel()
 	client := resourceTypeFixture(t, `,"sku":{"name":"Compute_Savings_Plan"}`)
 	hours, cost, saved, commit := int32(168), 100.0, 20.0, 1.5
 	row := &benefitRecommendation{ID: "rec-1", Kind: kindSavingsPlan, Properties: &benefitRecommendationProps{
@@ -50,6 +51,7 @@ func TestOwnedPlanSuppressesComputeRecommendation(t *testing.T) {
 }
 
 func TestGetExistingCommitments_FailsClosedOnBadSKU(t *testing.T) {
+	t.Parallel()
 	for name, sku := range map[string]string{
 		"missing": ``,
 		"empty":   `,"sku":{"name":""}`,
@@ -67,6 +69,7 @@ func TestGetExistingCommitments_FailsClosedOnBadSKU(t *testing.T) {
 }
 
 func TestGetExistingCommitments_SKUMatchIsCaseInsensitive(t *testing.T) {
+	t.Parallel()
 	got, err := resourceTypeFixture(t, `,"sku":{"name":"compute_savings_plan"}`).GetExistingCommitments(context.Background())
 	require.NoError(t, err)
 	require.Len(t, got, 1)

@@ -55,6 +55,7 @@ func benefitRow(term string, mutate func(string) string) string {
 func newTestClient(h HTTPClient) *Client { return NewClientWithHTTP(fakeCred{}, "sub-1", "", h) }
 
 func TestGetRecommendations_MapsRow(t *testing.T) {
+	t.Parallel()
 	h := &routeHTTP{reply: func(*http.Request) (int, string) {
 		return 200, `{"value":[` + benefitRow("P1Y", nil) + `]}`
 	}}
@@ -82,6 +83,7 @@ func TestGetRecommendations_MapsRow(t *testing.T) {
 }
 
 func TestGetRecommendations_EmptyTermRequestsBoth(t *testing.T) {
+	t.Parallel()
 	h := &routeHTTP{reply: func(r *http.Request) (int, string) {
 		term := "P1Y"
 		if strings.Contains(r.URL.RawQuery, "P3Y") || strings.Contains(r.URL.Query().Get("$filter"), "P3Y") {
@@ -98,6 +100,7 @@ func TestGetRecommendations_EmptyTermRequestsBoth(t *testing.T) {
 }
 
 func TestGetRecommendations_EmptyValue(t *testing.T) {
+	t.Parallel()
 	h := &routeHTTP{reply: func(*http.Request) (int, string) { return 200, `{"value":[]}` }}
 	recs, err := newTestClient(h).GetRecommendations(context.Background(), &common.RecommendationParams{Term: "3yr"})
 	require.NoError(t, err)
@@ -105,6 +108,7 @@ func TestGetRecommendations_EmptyValue(t *testing.T) {
 }
 
 func TestGetRecommendations_Pagination(t *testing.T) {
+	t.Parallel()
 	next := "https://management.azure.com/next?page=2"
 	h := &routeHTTP{reply: func(r *http.Request) (int, string) {
 		if r.URL.Query().Get("page") == "2" {
@@ -118,6 +122,7 @@ func TestGetRecommendations_Pagination(t *testing.T) {
 }
 
 func TestGetRecommendations_RejectsForeignNextLink(t *testing.T) {
+	t.Parallel()
 	h := &routeHTTP{reply: func(*http.Request) (int, string) {
 		return 200, `{"value":[],"nextLink":"https://evil.example/steal"}`
 	}}
@@ -127,6 +132,7 @@ func TestGetRecommendations_RejectsForeignNextLink(t *testing.T) {
 }
 
 func TestGetRecommendations_RejectsHTTPNextLink(t *testing.T) {
+	t.Parallel()
 	h := &routeHTTP{reply: func(*http.Request) (int, string) {
 		return 200, `{"value":[],"nextLink":"http://management.azure.com/next"}`
 	}}
@@ -136,6 +142,7 @@ func TestGetRecommendations_RejectsHTTPNextLink(t *testing.T) {
 }
 
 func TestGetRecommendations_Errors(t *testing.T) {
+	t.Parallel()
 	ok := func(*http.Request) (int, string) { return 200, `{"value":[` + benefitRow("P1Y", nil) + `]}` }
 	cases := []struct {
 		name   string
@@ -178,17 +185,20 @@ func TestGetRecommendations_Errors(t *testing.T) {
 }
 
 func TestGetRecommendations_NoCredential(t *testing.T) {
+	t.Parallel()
 	_, err := NewClient(nil, "sub", "").GetRecommendations(context.Background(), &common.RecommendationParams{})
 	require.Error(t, err)
 }
 
 func TestBenefitRecsURL_PathAndQuery(t *testing.T) {
+	t.Parallel()
 	u, err := url.Parse(newTestClient(nil).benefitRecsURL("P3Y", ""))
 	require.NoError(t, err)
 	assert.Equal(t, "/subscriptions/sub-1/providers/Microsoft.CostManagement/benefitRecommendations", u.Path)
 }
 
 func TestGetRecommendations_PageCapIsAnError(t *testing.T) {
+	t.Parallel()
 	h := &routeHTTP{reply: func(*http.Request) (int, string) {
 		return 200, `{"value":[],"nextLink":"https://management.azure.com/loop"}`
 	}}
@@ -198,6 +208,7 @@ func TestGetRecommendations_PageCapIsAnError(t *testing.T) {
 }
 
 func TestGetRecommendations_NonUSDRowIsSkippedAndSurfaced(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name     string
 		currency string
@@ -238,6 +249,7 @@ func TestGetRecommendations_NonUSDRowIsSkippedAndSurfaced(t *testing.T) {
 }
 
 func TestConvertBenefitRecommendation_NonUSDWrapsSentinel(t *testing.T) {
+	t.Parallel()
 	var row benefitRecommendation
 	require.NoError(t, json.Unmarshal([]byte(strings.Replace(benefitRow("P1Y", nil), `"USD"`, `"EUR"`, 1)), &row))
 	rec, err := convertBenefitRecommendation(&row, "sub-1")

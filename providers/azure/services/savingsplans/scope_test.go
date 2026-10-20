@@ -41,6 +41,7 @@ func scoped(subscription, resourceGroup string) *armbillingbenefits.AppliedScope
 }
 
 func TestPlanOwnedBy_BillingAccountScopes(t *testing.T) {
+	t.Parallel()
 	single := toPtr(armbillingbenefits.AppliedScopeTypeSingle)
 	sub := func(s string) *armbillingbenefits.AppliedScopeProperties { return scoped(s, "") }
 	rg := func(s string) *armbillingbenefits.AppliedScopeProperties { return scoped("", s) }
@@ -140,6 +141,7 @@ func TestGetExistingCommitments_AggregateSkipLog(t *testing.T) {
 }
 
 func TestGetExistingCommitments_SDKBillingAccountSingleScope(t *testing.T) {
+	t.Parallel()
 	row := func(id, scope, applied, props string) string {
 		return fmt.Sprintf(`{"id":%q,"name":"Compute","sku":{"name":"Compute_Savings_Plan"},"properties":{"billingScopeId":%q,"appliedScopeType":%q,"appliedScopeProperties":%s,"provisioningState":"Succeeded","effectiveDateTime":%q}}`,
 			id, scope, applied, props, time.Now().UTC().Format(time.RFC3339))

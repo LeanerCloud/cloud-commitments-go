@@ -35,6 +35,7 @@ func (p *checkingListAllPager) NextPage(context.Context) (armbillingbenefits.Sav
 }
 
 func TestSlotWiring_HoldsSlot(t *testing.T) {
+	t.Parallel()
 	cases := map[string]func(c *Client, p *slottest.Probe, ctx context.Context){
 		"GetExistingCommitments": func(c *Client, p *slottest.Probe, ctx context.Context) {
 			c.SetListAllPager(&checkingListAllPager{check: p.Check})

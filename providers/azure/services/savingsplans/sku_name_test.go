@@ -52,6 +52,7 @@ func capturedSKUs(t *testing.T, rec common.Recommendation) (purchase, validate s
 }
 
 func TestSKUName_ComputePlanTypeSendsARMSKU(t *testing.T) {
+	t.Parallel()
 	for _, planType := range []string{"Compute", "Compute_Savings_Plan"} {
 		t.Run(planType, func(t *testing.T) {
 			purchase, validate := capturedSKUs(t, skuRec(planType))
@@ -64,6 +65,7 @@ func TestSKUName_ComputePlanTypeSendsARMSKU(t *testing.T) {
 // A recommendation produced by GetRecommendations from a fixture row must
 // purchase under the same SKU the row named.
 func TestSKUName_RecommendationRoundTrip(t *testing.T) {
+	t.Parallel()
 	h := &routeHTTP{reply: func(*http.Request) (int, string) {
 		return 200, `{"value":[` + benefitRow("P1Y", nil) + `]}`
 	}}
@@ -79,6 +81,7 @@ func TestSKUName_RecommendationRoundTrip(t *testing.T) {
 // A PlanType with no known ARM SKU fails before any Azure call instead of
 // sending a sku.name the API would reject.
 func TestSKUName_UnknownPlanTypeFailsClosed(t *testing.T) {
+	t.Parallel()
 	for _, planType := range []string{"", "MachineLearning", "compute", " Compute", "Compute_Savings_Plan "} {
 		t.Run(planType, func(t *testing.T) {
 			alias := okAlias()
