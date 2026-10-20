@@ -21,6 +21,7 @@ func (p *countingRedisPager) NextPage(_ context.Context) (armredis.ClientListByS
 }
 
 func TestFetchSKUCatalogue_PageCapStopsEndlessPager(t *testing.T) {
+	t.Parallel()
 	pager := &countingRedisPager{limit: 1000}
 	client := NewClient(nil, "test-subscription", "eastus")
 	client.SetRedisCachesPager(pager)
@@ -30,6 +31,7 @@ func TestFetchSKUCatalogue_PageCapStopsEndlessPager(t *testing.T) {
 }
 
 func TestFetchSKUCatalogue_CancelledContextStopsWalk(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	pager := &countingRedisPager{limit: 1000}
@@ -64,6 +66,7 @@ func (p *finalPartialRedisPager) NextPage(_ context.Context) (armredis.ClientLis
 }
 
 func TestFetchSKUCatalogue_ExactlyCapPagesWithPartialLastPageSucceeds(t *testing.T) {
+	t.Parallel()
 	pager := &finalPartialRedisPager{pages: maxCachesPages, perPage: 2}
 	client := NewClient(nil, "test-subscription", "eastus")
 	client.SetRedisCachesPager(pager)
