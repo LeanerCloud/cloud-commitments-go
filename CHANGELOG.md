@@ -202,6 +202,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **exchange:** `RunAutoExchange` now rejects any mode other than `auto` or `manual` (including empty) with an error before any store or exchange call; previously every non-`manual` value auto-executed exchanges.
 - **common:** `BuildReservationName` no longer drops its random uniqueness suffix when a long SKU overflows the 60-char cap (it dropped it first, so long-SKU purchases got deterministic, colliding names). The timestamp and payment segments drop first, then the SKU is truncated; the suffix is always kept (#123).
 - **logging:** `SetOutput` no longer races with `Logger.With` and concurrent log calls: the unsynchronized mirror of the writer is gone and the destination lives only in the mutex-guarded `log.Logger` (#123).
+- **common:** `DecodeServiceDetailsFor` now rejects a non-empty details payload for a service with no typed details instead of silently returning nil details; MemoryDB (whose recommendations carry `CacheDetails`) now decodes as `CacheDetails` (#123).
 - **aws/ec2:** `GetOfferingDetails` always priced the convertible offering and its doc comment wrongly said the class does not change prices. Added `GetOfferingDetailsForClass` to price the class the purchase uses; `GetOfferingDetails` keeps the convertible default (#570).
 - **A Multi-AZ size-flexible RDS reservation now covers Single-AZ demand in the
   duplicate-purchase guard** (#323): it counts as twice the size units of its

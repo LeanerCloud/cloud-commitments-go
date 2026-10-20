@@ -77,23 +77,25 @@ func MarshalServiceDetails(details ServiceDetails) (json.RawMessage, error) {
 //     zero-valued typed pointer (the legacy / pre-#453 fallback). The
 //     downstream service client's type-assertion succeeds; the EC2 client
 //     rejects empty Platform / Tenancy / Scope rather than defaulting them.
-//   - raw is empty AND service maps to no *Details type (services we
-//     don't know about, plus AWS services whose clients don't currently
-//     type-assert Details and accept nil) → returns (nil, nil).
+//   - raw is empty or JSON null AND service maps to no *Details type →
+//     returns (nil, nil) so callers fall through to their existing
+//     nil-details paths.
 //   - raw is non-empty → unmarshals into the typed pointer for the
 //     service. Unmarshal errors surface as errors (don't fall back
 //     silently — that's how #453's mis-purchases hid for a release).
-//   - service is unknown → returns (nil, nil) so callers fall through to
-//     their existing nil-details paths rather than refusing a purchase
-//     on a service we never had a *Details type for in the first place.
+//   - raw is non-empty AND service maps to no *Details type (including an
+//     unknown or misspelled slug) → returns an error naming the service.
+//     Silently dropping the payload would hand the purchase path nil
+//     details and let it proceed on defaults (issue #123, A09-018).
 func DecodeServiceDetailsFor(service string, raw json.RawMessage) (ServiceDetails, error) {
 	target, ok := newDetailsForService(service)
 	if !ok {
-		// Service has no *Details type — nothing to decode. Empty raw
-		// payload is fine; a non-empty payload on a service we don't
-		// recognize is suspicious but tolerated (writers and readers
-		// might be on different versions during a rolling deploy).
-		return nil, nil
+		// Service has no *Details type. An absent payload is fine; a
+		// payload we cannot type must not be silently discarded.
+		if len(raw) == 0 || bytes.Equal(raw, jsonNullBytes) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("service details payload present for service %q, which has no typed details", service)
 	}
 	if len(raw) == 0 || bytes.Equal(raw, jsonNullBytes) {
 		// Legacy row or genuinely absent payload — hand back a zero-
@@ -111,12 +113,9 @@ func DecodeServiceDetailsFor(service string, raw json.RawMessage) (ServiceDetail
 }
 
 // newDetailsForService returns a fresh zero-valued *Details pointer for a
-// given service slug, or (nil, false) when no *Details type applies. The
-// boolean lets callers distinguish "service we don't have a typed Details
-// shape for" (OpenSearch / Redshift / MemoryDB use case today) from
-// "unknown service" — both currently get nil but the semantic intent
-// differs and a future refactor that adds a Details type for one of them
-// will only need to flip the map here.
+// given service slug, or (nil, false) when no *Details type applies
+// (unknown or untyped service); DecodeServiceDetailsFor rejects a payload
+// for such a slug.
 func newDetailsForService(service string) (ServiceDetails, bool) {
 	switch service {
 	// AWS — EC2 / RDS / ElastiCache: the three services whose
@@ -127,7 +126,7 @@ func newDetailsForService(service string) (ServiceDetails, bool) {
 		return &ComputeDetails{}, true
 	case string(ServiceRDS), string(ServiceRelationalDB):
 		return &DatabaseDetails{}, true
-	case string(ServiceElastiCache), string(ServiceCache):
+	case string(ServiceElastiCache), string(ServiceCache), string(ServiceMemoryDB):
 		return &CacheDetails{}, true
 
 	// AWS Savings Plans -- all umbrella + per-plan-type slugs use
@@ -154,10 +153,9 @@ func newDetailsForService(service string) (ServiceDetails, bool) {
 	// findOfferingID (OpenSearch / Redshift / MemoryDB read rec.ResourceType
 	// directly). We still recognize OpenSearch and Redshift here so a
 	// forthcoming refactor that starts asserting can flip the table
-	// value without changing call sites. MemoryDB has no dedicated
-	// *Details type yet, so it's intentionally absent — callers see
-	// (nil, false) and pass a nil Details, which the MemoryDB client
-	// tolerates.
+	// value without changing call sites. MemoryDB reuses CacheDetails (the
+	// AWS recommendation parser stamps it on every MemoryDB rec, so the
+	// persisted payload must decode); its client ignores Details.
 	case string(ServiceOpenSearch), string(ServiceSearch):
 		return &SearchDetails{}, true
 	case string(ServiceRedshift), string(ServiceDataWarehouse):
