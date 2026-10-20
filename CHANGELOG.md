@@ -199,6 +199,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Fixed
 
 - **aws/ec2:** `GetOfferingDetails` always priced the convertible offering and its doc comment wrongly said the class does not change prices. Added `GetOfferingDetailsForClass` to price the class the purchase uses; `GetOfferingDetails` keeps the convertible default (#570).
+- **A Multi-AZ size-flexible RDS reservation now covers Single-AZ demand in the
+  duplicate-purchase guard** (#323): it counts as twice the size units of its
+  family, so a recent Multi-AZ db.r6g.large PostgreSQL reservation suppresses
+  two Single-AZ db.r6g.large recommendations. Single-AZ never covers Multi-AZ,
+  and exact-class engines such as SQL Server keep their key.
 - **The duplicate-purchase guard now treats regional Linux/Unix default-tenancy
   EC2 reservations as size-flexible** (#323): a recent m5.xlarge reservation
   suppresses two m5.large recommendations in the same region, counted in
