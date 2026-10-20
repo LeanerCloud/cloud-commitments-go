@@ -95,6 +95,7 @@ func goldenPurchase(t *testing.T, gc goldenCase, token string) (*reservationstes
 // random and timestamp segments dropped to make room for the token marker,
 // so the whole body is deterministic.
 func TestPurchaseGoldenWithToken(t *testing.T) {
+	t.Parallel()
 	for _, gc := range goldenCases() {
 		t.Run(gc.name, func(t *testing.T) {
 			h, cred := goldenPurchase(t, gc, goldenToken)
@@ -116,6 +117,7 @@ func TestPurchaseGoldenWithToken(t *testing.T) {
 }
 
 func TestPurchaseGoldenWithoutToken(t *testing.T) {
+	t.Parallel()
 	for _, gc := range goldenCases() {
 		t.Run(gc.name, func(t *testing.T) {
 			h, cred := goldenPurchase(t, gc, "")

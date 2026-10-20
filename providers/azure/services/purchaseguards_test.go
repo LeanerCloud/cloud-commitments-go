@@ -86,6 +86,7 @@ func guardCases() []guardCase {
 // Every guard, term and payment error returns before any HTTP or token call,
 // even with an idempotency token set (which would otherwise trigger a lookup).
 func TestPurchaseGuardErrors(t *testing.T) {
+	t.Parallel()
 	for _, gc := range goldenCases() {
 		for _, c := range guardCases() {
 			want := c.wantBy(gc.name)
@@ -109,6 +110,7 @@ func TestPurchaseGuardErrors(t *testing.T) {
 // The lookup failure is returned as the shared guard builds it, with no
 // further wrapping by the client, and nothing is purchased.
 func TestPurchaseLookupFailure(t *testing.T) {
+	t.Parallel()
 	for _, gc := range goldenCases() {
 		t.Run(gc.name, func(t *testing.T) {
 			h := &reservationstest.Capture{FailWhen: func(r *reservationstest.Request) error {
@@ -132,6 +134,7 @@ func TestPurchaseLookupFailure(t *testing.T) {
 // calls GetToken first for provider registration (a failure there is only
 // logged), then again for the purchase.
 func TestPurchaseTokenFailure(t *testing.T) {
+	t.Parallel()
 	for _, gc := range goldenCases() {
 		t.Run(gc.name, func(t *testing.T) {
 			h := &reservationstest.Capture{}
@@ -153,6 +156,7 @@ func TestPurchaseTokenFailure(t *testing.T) {
 // Monthly billing costs nothing upfront (Cost points at zero); upfront leaves
 // Cost nil. A fresh purchase is never flagged as an existing commitment.
 func TestPurchaseCostAndExisting(t *testing.T) {
+	t.Parallel()
 	for _, gc := range goldenCases() {
 		for _, c := range []struct {
 			payment  string
