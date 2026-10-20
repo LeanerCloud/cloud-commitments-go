@@ -4,6 +4,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -209,7 +210,7 @@ func TestAnalyzeReshaping_TargetNeverExceedsOwnedCapacity(t *testing.T) {
 							continue
 						}
 						_, tsz := parseInstanceType(rec.TargetInstanceType)
-						target := normalizationFactors[tsz] * float64(rec.TargetCount)
+						target := common.EC2NormalizationFactor(tsz) * float64(rec.TargetCount)
 						assert.LessOrEqualf(t, target, rec.NormalizedPurchased,
 							"%dx %s @%.0f%% -> %dx %s", count, ri.InstanceType, util, rec.TargetCount, rec.TargetInstanceType)
 					}
