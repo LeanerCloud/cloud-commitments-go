@@ -1,6 +1,9 @@
 // Package exchange provides AWS Convertible Reserved Instance exchange operations.
 // It wraps the EC2 GetReservedInstancesExchangeQuote and AcceptReservedInstancesExchangeQuote
 // APIs with input validation and spend-cap guardrails.
+//
+// Kept in pkg because pkg/insurance and the platform import it at this path;
+// moving it under providers/aws would break both (#13).
 package exchange
 
 import (
