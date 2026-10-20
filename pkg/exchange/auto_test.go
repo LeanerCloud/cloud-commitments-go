@@ -1185,3 +1185,23 @@ func TestRunAutoExchange_CancelPendingFails_DryRunStillRuns(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, store.cancelByOriginLast)
 }
+
+func TestRunAutoExchange_48xlargeRI_IsAnalyzedAndQuoted(t *testing.T) {
+	t.Parallel()
+	store := &mockExchangeStore{dailySpend: "0"}
+	client := &mockExchangeClient{quoteResult: defaultQuote()}
+	params := defaultParams(store, client)
+	params.RIs = []RIInfo{{ID: "ri-001", InstanceType: "m6i.48xlarge", InstanceCount: 1, OfferingClass: "convertible"}}
+	var looked []string
+	params.LookupOffering = func(_ context.Context, p LookupOfferingParams) (string, error) {
+		looked = append(looked, p.InstanceType)
+		return "offering-123", nil
+	}
+
+	result, err := RunAutoExchange(context.Background(), params)
+	require.NoError(t, err)
+
+	assert.Empty(t, result.Skipped)
+	assert.Len(t, result.Pending, 1)
+	assert.Equal(t, []string{"m6i.24xlarge"}, looked)
+}

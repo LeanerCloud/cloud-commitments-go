@@ -6,6 +6,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestAnalyzeReshaping(t *testing.T) {
@@ -301,4 +302,24 @@ func TestAnalyzeReshaping_OverUtilizedHasNoNanoTarget(t *testing.T) {
 	for _, rec := range recs {
 		assert.NotEqual(t, "m5.nano", rec.TargetInstanceType)
 	}
+}
+
+func TestAnalyzeReshaping_LargeSizesHaveNormalizationFactors(t *testing.T) {
+	t.Parallel()
+	ris := []RIInfo{
+		{ID: "ri-32", InstanceType: "m6i.32xlarge", InstanceCount: 1, OfferingClass: "convertible"},
+		{ID: "ri-t3", InstanceType: "t3.2xlarge", InstanceCount: 100, OfferingClass: "convertible"},
+	}
+	utils := []UtilizationInfo{{RIID: "ri-32", UtilizationPercent: 50}, {RIID: "ri-t3", UtilizationPercent: 90}}
+	recs := AnalyzeReshaping(ris, utils, 95)
+	require.Len(t, recs, 2)
+
+	assert.NotContains(t, recs[0].Reason, "No normalization factor known")
+	assert.Equal(t, "m6i.16xlarge", recs[0].TargetInstanceType)
+	assert.Equal(t, int32(1), recs[0].TargetCount)
+
+	// Without a catalog the ladder stops at 24xlarge: 1440 used of 1600 purchased
+	// must never target 32xlarge or above.
+	_, size := parseInstanceType(recs[1].TargetInstanceType)
+	assert.LessOrEqual(t, common.EC2NormalizationFactor(size), common.EC2NormalizationFactor("24xlarge"))
 }

@@ -198,6 +198,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **`common.EC2NormalizationFactor`:** knows the 32xlarge, 48xlarge, 56xlarge,
+  96xlarge and 112xlarge sizes (256 to 896), so RI exchange analysis no longer
+  skips RIs of those sizes with "No normalization factor known" (#563).
 - **exchange:** `RunAutoExchange` now stops and returns the error when cancelling stale pending exchanges fails, instead of logging it and creating new exchanges while a stale pending one may still be approvable.
 - **exchange:** `RunAutoExchange` now rejects any mode other than `auto` or `manual` (including empty) with an error before any store or exchange call; previously every non-`manual` value auto-executed exchanges.
 - **common:** `BuildReservationName` no longer drops its random uniqueness suffix when a long SKU overflows the 60-char cap (it dropped it first, so long-SKU purchases got deterministic, colliding names). The timestamp and payment segments drop first, then the SKU is truncated; the suffix is always kept (#123).
