@@ -13,8 +13,8 @@ import (
 const lineItemsPageSize int64 = 100
 
 type lineItemsPagination struct {
-	Total, TotalPages, Page, FirstPage, LastPage int64
 	NextPage, PreviousPage                       *int64
+	Total, TotalPages, Page, FirstPage, LastPage int64
 }
 
 func decodePagination(header string, requested int64) (lineItemsPagination, error) {
@@ -23,12 +23,12 @@ func decodePagination(header string, requested int64) (lineItemsPagination, erro
 	if err := decodeOne(strings.NewReader(header), &m); err != nil {
 		return p, errors.New("X-Pagination: invalid JSON metadata")
 	}
-	err := readFields(m, jsonField{"total", &p.Total, false}, jsonField{"total_pages", &p.TotalPages, false},
-		jsonField{"page", &p.Page, false}, jsonField{"first_page", &p.FirstPage, false}, jsonField{"last_page", &p.LastPage, false})
+	err := readFields(m, jsonField{out: &p.Total, name: "total", nullable: false}, jsonField{out: &p.TotalPages, name: "total_pages", nullable: false},
+		jsonField{out: &p.Page, name: "page", nullable: false}, jsonField{out: &p.FirstPage, name: "first_page", nullable: false}, jsonField{out: &p.LastPage, name: "last_page", nullable: false})
 	if err != nil {
 		return p, fmt.Errorf("X-Pagination: %w", err)
 	}
-	for _, f := range []jsonField{{"next_page", &p.NextPage, false}, {"previous_page", &p.PreviousPage, false}} {
+	for _, f := range []jsonField{{out: &p.NextPage, name: "next_page", nullable: false}, {out: &p.PreviousPage, name: "previous_page", nullable: false}} {
 		if _, ok := m[f.name]; ok {
 			if err = readFields(m, f); err != nil {
 				return p, fmt.Errorf("X-Pagination: %w", err)

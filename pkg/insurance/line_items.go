@@ -16,30 +16,26 @@ import (
 // ID, PlanID and OfferID keep the vendor's case; compare UUIDs case-insensitively
 // (strings.EqualFold) when joining to comparison line_item_id values.
 type LineItem struct {
-	ID, PlanID, OfferID string
+	Offer               LineItemOffer
+	ContractSpec        LineItemContractSpec
 	AccountID           *string
-	SelectedQuantity    int64
 	SelectedCommitment  *big.Rat
-	IsSelected          bool
+	ID, PlanID, OfferID string
 	ContractTerm        string
 	PaymentOption       PaymentOption
-	ContractSpec        LineItemContractSpec
-	Offer               LineItemOffer
+	SelectedQuantity    int64
+	IsSelected          bool
 }
 
 // LineItemContractSpec preserves the vendor's explicit terms for consistency checks.
 type LineItemContractSpec struct {
-	CommitmentType string         `json:"commitment_type"`
 	Term           *string        `json:"term"`
 	PaymentOption  *PaymentOption `json:"payment_option"`
+	CommitmentType string         `json:"commitment_type"`
 }
 
 // LineItemOffer keeps provider and catalog offering identifiers distinct.
 type LineItemOffer struct {
-	ID                 string
-	ProviderOfferingID string
-	Type               string
-	Provider           common.ProviderType
 	OfferingID         *string
 	Region             *string
 	AZ                 *string
@@ -53,11 +49,15 @@ type LineItemOffer struct {
 	DurationSeconds    *big.Rat
 	OfferingClass      *string
 	PaymentOption      *PaymentOption
+	ID                 string
+	ProviderOfferingID string
+	Type               string
+	Provider           common.ProviderType
 }
 
 type jsonField struct {
-	name     string
 	out      any
+	name     string
 	nullable bool
 }
 
@@ -118,11 +118,11 @@ func decodeLineItem(m map[string]json.RawMessage, planID string) (LineItem, erro
 	var payment string
 	var offer, contract map[string]json.RawMessage
 	err := readFields(m,
-		jsonField{"id", &li.ID, false}, jsonField{"plan_id", &li.PlanID, false}, jsonField{"offer_id", &li.OfferID, false},
-		jsonField{"account_id", &li.AccountID, true}, jsonField{"selected_quantity", &li.SelectedQuantity, false},
-		jsonField{"selected_commitment", &amount, false}, jsonField{"is_selected", &li.IsSelected, false},
-		jsonField{"contract_term", &li.ContractTerm, false}, jsonField{"payment_option", &payment, false},
-		jsonField{"offer", &offer, false}, jsonField{"contract_spec", &contract, false})
+		jsonField{out: &li.ID, name: "id", nullable: false}, jsonField{out: &li.PlanID, name: "plan_id", nullable: false}, jsonField{out: &li.OfferID, name: "offer_id", nullable: false},
+		jsonField{out: &li.AccountID, name: "account_id", nullable: true}, jsonField{out: &li.SelectedQuantity, name: "selected_quantity", nullable: false},
+		jsonField{out: &amount, name: "selected_commitment", nullable: false}, jsonField{out: &li.IsSelected, name: "is_selected", nullable: false},
+		jsonField{out: &li.ContractTerm, name: "contract_term", nullable: false}, jsonField{out: &payment, name: "payment_option", nullable: false},
+		jsonField{out: &offer, name: "offer", nullable: false}, jsonField{out: &contract, name: "contract_spec", nullable: false})
 	if err != nil {
 		return li, err
 	}
@@ -160,13 +160,13 @@ func decodeLineItemTerms(li *LineItem, payment string, contract map[string]json.
 }
 
 func decodeContractSpec(contract map[string]json.RawMessage, spec *LineItemContractSpec) error {
-	if err := readFields(contract, jsonField{"commitment_type", &spec.CommitmentType, false}); err != nil {
+	if err := readFields(contract, jsonField{out: &spec.CommitmentType, name: "commitment_type", nullable: false}); err != nil {
 		return fmt.Errorf("contract_spec: %w", err)
 	}
 	if spec.CommitmentType == "" {
 		return fmt.Errorf("contract_spec.commitment_type: %w", errMissing)
 	}
-	for _, f := range []jsonField{{"term", &spec.Term, true}, {"payment_option", &spec.PaymentOption, true}} {
+	for _, f := range []jsonField{{out: &spec.Term, name: "term", nullable: true}, {out: &spec.PaymentOption, name: "payment_option", nullable: true}} {
 		if _, ok := contract[f.name]; ok {
 			if err := readFields(contract, f); err != nil {
 				return fmt.Errorf("contract_spec: %w", err)
@@ -188,13 +188,13 @@ func decodeLineItemOffer(m map[string]json.RawMessage, offerID string) (LineItem
 	var o LineItemOffer
 	var duration wireNum
 	var provider string
-	err := readFields(m, jsonField{"id", &o.ID, false}, jsonField{"provider", &provider, false},
-		jsonField{"type", &o.Type, false},
-		jsonField{"provider_offering_id", &o.ProviderOfferingID, false}, jsonField{"duration_seconds", &duration, false},
-		jsonField{"offering_id", &o.OfferingID, true}, jsonField{"region", &o.Region, true}, jsonField{"az", &o.AZ, true},
-		jsonField{"instance_type", &o.InstanceType, true}, jsonField{"instance_family", &o.InstanceFamily, true},
-		jsonField{"product_description", &o.ProductDescription, true}, jsonField{"tenancy", &o.Tenancy, true},
-		jsonField{"plan_type", &o.PlanType, true}, jsonField{"is_multi_az", &o.IsMultiAZ, true}, jsonField{"is_flexible", &o.IsFlexible, true})
+	err := readFields(m, jsonField{out: &o.ID, name: "id", nullable: false}, jsonField{out: &provider, name: "provider", nullable: false},
+		jsonField{out: &o.Type, name: "type", nullable: false},
+		jsonField{out: &o.ProviderOfferingID, name: "provider_offering_id", nullable: false}, jsonField{out: &duration, name: "duration_seconds", nullable: false},
+		jsonField{out: &o.OfferingID, name: "offering_id", nullable: true}, jsonField{out: &o.Region, name: "region", nullable: true}, jsonField{out: &o.AZ, name: "az", nullable: true},
+		jsonField{out: &o.InstanceType, name: "instance_type", nullable: true}, jsonField{out: &o.InstanceFamily, name: "instance_family", nullable: true},
+		jsonField{out: &o.ProductDescription, name: "product_description", nullable: true}, jsonField{out: &o.Tenancy, name: "tenancy", nullable: true},
+		jsonField{out: &o.PlanType, name: "plan_type", nullable: true}, jsonField{out: &o.IsMultiAZ, name: "is_multi_az", nullable: true}, jsonField{out: &o.IsFlexible, name: "is_flexible", nullable: true})
 	if err != nil {
 		return o, fmt.Errorf("offer: %w", err)
 	}
@@ -222,7 +222,7 @@ func decodeLineItemOffer(m map[string]json.RawMessage, offerID string) (LineItem
 
 func decodeOfferEnums(m map[string]json.RawMessage, o *LineItemOffer) error {
 	var payment *string
-	for _, f := range []jsonField{{"offering_class", &o.OfferingClass, true}, {"payment_option", &payment, true}} {
+	for _, f := range []jsonField{{out: &o.OfferingClass, name: "offering_class", nullable: true}, {out: &payment, name: "payment_option", nullable: true}} {
 		if _, ok := m[f.name]; ok {
 			if err := readFields(m, f); err != nil {
 				return fmt.Errorf("offer: %w", err)
