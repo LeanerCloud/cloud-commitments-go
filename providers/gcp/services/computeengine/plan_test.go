@@ -14,7 +14,7 @@ import (
 
 func planClient(t *testing.T, recs ...*recommenderpb.Recommendation) (*Client, *MockCommitmentsService) {
 	t.Helper()
-	client, err := NewClient(context.Background(), "test-project", "us-central1")
+	client, err := NewClient("test-project", "us-central1")
 	require.NoError(t, err)
 	client.SetBillingService(&MockBillingService{err: assert.AnError})
 	client.SetRecommenderClient(&MockRecommenderClient{iterator: &MockRecommenderIterator{recommendations: recs}})

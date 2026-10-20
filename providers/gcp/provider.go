@@ -474,7 +474,7 @@ func (p *Provider) GetSupportedServices() []common.ServiceType {
 func (p *Provider) GetServiceClient(ctx context.Context, service common.ServiceType, region string) (provider.ServiceClient, error) {
 	switch service {
 	case common.ServiceCompute:
-		return computeengine.NewClient(ctx, p.projectID, region, p.clientOpts...)
+		return computeengine.NewClient(p.projectID, region, p.clientOpts...)
 	case common.ServiceRelationalDB:
 		return cloudsql.NewClient(ctx, p.projectID, region, p.clientOpts...)
 	case common.ServiceCache:
@@ -489,7 +489,6 @@ func (p *Provider) GetServiceClient(ctx context.Context, service common.ServiceT
 // GetRecommendationsClient creates a recommendations client.
 func (p *Provider) GetRecommendationsClient(ctx context.Context) (provider.RecommendationsClient, error) {
 	return &RecommendationsClientAdapter{
-		ctx:        ctx,
 		projectID:  p.projectID,
 		clientOpts: p.clientOpts,
 	}, nil

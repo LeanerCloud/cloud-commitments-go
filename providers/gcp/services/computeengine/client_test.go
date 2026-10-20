@@ -49,7 +49,7 @@ func TestRootCUDTypeValidationAndFallback(t *testing.T) {
 				fields["type"] = value
 			}
 			input.Content.OperationGroups[0].Operations = append(input.Content.OperationGroups[0].Operations, &recommenderpb.Operation{Action: "test", ResourceType: "compute.googleapis.com/MachineType", Resource: "projects/test-project/zones/us-central1-a/machineTypes/n1-standard-4"})
-			client, err := NewClient(ctx, "test-project", "us-central1")
+			client, err := NewClient("test-project", "us-central1")
 			require.NoError(t, err)
 			client.SetBillingService(&MockBillingService{err: errors.New("fixture pricing unavailable")})
 			client.SetRecommenderClient(&MockRecommenderClient{iterator: &MockRecommenderIterator{recommendations: []*recommenderpb.Recommendation{input}}})
@@ -109,7 +109,7 @@ func TestRootCUDUnsupportedShapesAndAmounts(t *testing.T) {
 				list.Values[0].GetStructValue().Fields["amount"] = map[string]*structpb.Value{"bad amount": structpb.NewStringValue("6Gi"), "fractional": structpb.NewNumberValue(1.5), "zero": structpb.NewNumberValue(0), "overflow": structpb.NewStringValue("9223372036854775808"), "null amount": structpb.NewNullValue()}[name]
 			}
 			ctx := context.Background()
-			client, err := NewClient(ctx, "test-project", "us-central1")
+			client, err := NewClient("test-project", "us-central1")
 			require.NoError(t, err)
 			service := &MockCommitmentsService{operation: &MockOperation{}}
 			client.SetCommitmentsService(service)
@@ -143,7 +143,7 @@ func TestRootCUDCompoundMutations(t *testing.T) {
 						} else {
 							input.Content.OperationGroups[0].Operations = append(input.Content.OperationGroups[0].Operations, modifier)
 						}
-						client, err := NewClient(ctx, "test-project", "us-central1")
+						client, err := NewClient("test-project", "us-central1")
 						require.NoError(t, err)
 						client.SetRecommenderClient(&MockRecommenderClient{iterator: &MockRecommenderIterator{recommendations: []*recommenderpb.Recommendation{input}}})
 						service := &MockCommitmentsService{operation: &MockOperation{}}
@@ -309,8 +309,7 @@ func (m *MockRecommenderClient) Close() error {
 
 func TestNewClient(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-	client, err := NewClient(ctx, "test-project", "us-central1")
+	client, err := NewClient("test-project", "us-central1")
 
 	require.NoError(t, err)
 	require.NotNil(t, client)
@@ -320,8 +319,7 @@ func TestNewClient(t *testing.T) {
 
 func TestComputeEngineClient_GetServiceType(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "project", "region")
+	client, _ := NewClient("project", "region")
 	assert.Equal(t, common.ServiceCompute, client.GetServiceType())
 }
 
@@ -349,11 +347,10 @@ func TestComputeEngineClient_GetRegion(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			client, _ := NewClient(ctx, "project", tt.region)
+			client, _ := NewClient("project", tt.region)
 			assert.Equal(t, tt.expected, client.GetRegion())
 		})
 	}
@@ -379,7 +376,7 @@ func TestComputePricingStructure(t *testing.T) {
 func TestComputeEngineClient_ValidateOffering_NoCredentials(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	rec := common.Recommendation{
 		ResourceType: "n1-standard-1",
@@ -393,7 +390,7 @@ func TestComputeEngineClient_ValidateOffering_NoCredentials(t *testing.T) {
 func TestComputeEngineClient_GetExistingCommitments_WithMock(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	mockService := &MockCommitmentsService{
 		commitments: []*computepb.Commitment{recentCUD()},
@@ -414,7 +411,7 @@ func TestComputeEngineClient_GetExistingCommitments_WithMock(t *testing.T) {
 func TestComputeEngineClient_GetExistingCommitments_Error(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	mockService := &MockCommitmentsService{
 		listErr: errors.New("API error"),
@@ -429,7 +426,7 @@ func TestComputeEngineClient_GetExistingCommitments_Error(t *testing.T) {
 func TestComputeEngineClient_GetExistingCommitments_NilName(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	mockService := &MockCommitmentsService{
 		commitments: []*computepb.Commitment{
@@ -446,7 +443,7 @@ func TestComputeEngineClient_GetExistingCommitments_NilName(t *testing.T) {
 func TestComputeEngineClient_GetValidResourceTypes_WithMock(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	name1, name2 := "n1-standard-1", "n1-standard-2"
 	mockService := &MockMachineTypesService{
@@ -467,7 +464,7 @@ func TestComputeEngineClient_GetValidResourceTypes_WithMock(t *testing.T) {
 func TestComputeEngineClient_GetValidResourceTypes_Error(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	mockService := &MockMachineTypesService{
 		err: errors.New("API error"),
@@ -482,7 +479,7 @@ func TestComputeEngineClient_GetValidResourceTypes_Error(t *testing.T) {
 func TestComputeEngineClient_GetValidResourceTypes_Empty(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	mockService := &MockMachineTypesService{
 		machineTypes: []*computepb.MachineType{},
@@ -497,7 +494,7 @@ func TestComputeEngineClient_GetValidResourceTypes_Empty(t *testing.T) {
 func TestComputeEngineClient_ValidateOffering_Valid(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	name := "n1-standard-1"
 	mockService := &MockMachineTypesService{
@@ -515,7 +512,7 @@ func TestComputeEngineClient_ValidateOffering_Valid(t *testing.T) {
 func TestComputeEngineClient_ValidateOffering_Invalid(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	name := "n1-standard-1"
 	mockService := &MockMachineTypesService{
@@ -534,7 +531,7 @@ func TestComputeEngineClient_ValidateOffering_Invalid(t *testing.T) {
 func TestComputeEngineClient_PurchaseCommitment_WithMock(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	mockService := &MockCommitmentsService{
 		operation: &MockOperation{err: nil},
@@ -567,7 +564,7 @@ func TestComputeEngineClient_PurchaseCommitment_WithMock(t *testing.T) {
 func TestComputeEngineClient_PurchaseCommitment_PointerDetails(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	mockService := &MockCommitmentsService{
 		operation: &MockOperation{err: nil},
@@ -605,7 +602,7 @@ func TestComputeEngineClient_PurchaseCommitment_UpfrontCost(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			client, err := NewClient(context.Background(), "test-project", "us-central1")
+			client, err := NewClient("test-project", "us-central1")
 			require.NoError(t, err)
 			client.SetCommitmentsService(&MockCommitmentsService{insertErr: tt.insertErr, operation: &MockOperation{err: tt.waitErr}})
 			rec := common.Recommendation{ResourceType: "n1-standard-1", Term: "1yr", CommitmentCost: tt.estimate,
@@ -636,7 +633,7 @@ func TestComputeEngineClient_PurchaseCommitment_UpfrontCost(t *testing.T) {
 func TestComputeEngineClient_PurchaseCommitment_NilPointerDetails(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	mockService := &MockCommitmentsService{
 		operation: &MockOperation{err: nil},
@@ -660,7 +657,7 @@ func TestComputeEngineClient_PurchaseCommitment_NilPointerDetails(t *testing.T) 
 func TestComputeEngineClient_PurchaseCommitment_EncodesSourceInDescription(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	mockService := &MockCommitmentsService{operation: &MockOperation{err: nil}}
 	client.SetCommitmentsService(mockService)
@@ -683,7 +680,7 @@ func TestComputeEngineClient_PurchaseCommitment_EncodesSourceInDescription(t *te
 func TestComputeEngineClient_PurchaseCommitment_OmitsTagWhenSourceEmpty(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	mockService := &MockCommitmentsService{operation: &MockOperation{err: nil}}
 	client.SetCommitmentsService(mockService)
@@ -711,7 +708,7 @@ func TestComputeEngineClient_PurchaseCommitment_OmitsTagWhenSourceEmpty(t *testi
 func TestComputeEngineClient_PurchaseCommitment_IdempotentReDrive(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	mockService := &MockCommitmentsService{operation: &MockOperation{err: nil}}
 	client.SetCommitmentsService(mockService)
@@ -758,7 +755,7 @@ func TestComputeEngineClient_PurchaseCommitment_IdempotentReDrive(t *testing.T) 
 func TestComputeEngineClient_PurchaseCommitment_EmptyTokenNoRequestID(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	mockService := &MockCommitmentsService{operation: &MockOperation{err: nil}}
 	client.SetCommitmentsService(mockService)
@@ -826,7 +823,7 @@ func TestComputeEngineClient_PurchaseCommitment_ReDriveAlreadyExists(t *testing.
 			wantErr: "failed to create commitment"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			planner, err := NewClient(context.Background(), "test-project", "us-central1")
+			planner, err := NewClient("test-project", "us-central1")
 			require.NoError(t, err)
 			insertReq, name, err := planner.buildInsertRequest(rec, tt.opts)
 			require.NoError(t, err)
@@ -867,7 +864,7 @@ func TestComputeEngineClient_PurchaseCommitment_ReDriveAlreadyExists(t *testing.
 			}))
 			defer srv.Close()
 
-			client, err := NewClient(context.Background(), "test-project", "us-central1",
+			client, err := NewClient("test-project", "us-central1",
 				option.WithEndpoint(srv.URL), option.WithoutAuthentication())
 			require.NoError(t, err)
 			result, err := client.PurchaseCommitment(context.Background(), rec, tt.opts)
@@ -905,7 +902,7 @@ func TestComputeEngineClient_PurchaseCommitment_ReDriveAlreadyExists(t *testing.
 // apierror, rather than from the Insert call itself.
 func TestComputeEngineClient_PurchaseCommitment_ReDriveAlreadyExistsOnWait(t *testing.T) {
 	t.Parallel()
-	client, err := NewClient(context.Background(), "test-project", "us-central1")
+	client, err := NewClient("test-project", "us-central1")
 	require.NoError(t, err)
 	rec := common.Recommendation{ResourceType: "n1-standard-1", Term: "1yr", Count: 2,
 		Details: common.ComputeDetails{MemoryGB: 8}}
@@ -929,7 +926,7 @@ func TestComputeEngineClient_PurchaseCommitment_ReDriveAlreadyExistsOnWait(t *te
 // A first purchase that succeeds outright is not an adoption, even with a token.
 func TestComputeEngineClient_PurchaseCommitment_FreshPurchaseNotExisting(t *testing.T) {
 	t.Parallel()
-	client, err := NewClient(context.Background(), "test-project", "us-central1")
+	client, err := NewClient("test-project", "us-central1")
 	require.NoError(t, err)
 	client.SetCommitmentsService(&MockCommitmentsService{operation: &MockOperation{}})
 	rec := common.Recommendation{ResourceType: "n1-standard-1", Term: "1yr", Count: 2,
@@ -945,7 +942,7 @@ func TestComputeEngineClient_PurchaseCommitment_FreshPurchaseNotExisting(t *test
 func TestComputeEngineClient_PurchaseCommitment_3Year(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	mockService := &MockCommitmentsService{
 		operation: &MockOperation{err: nil},
@@ -967,7 +964,7 @@ func TestComputeEngineClient_PurchaseCommitment_3Year(t *testing.T) {
 func TestComputeEngineClient_PurchaseCommitment_InsertError(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	mockService := &MockCommitmentsService{
 		insertErr: errors.New("API error"),
@@ -992,7 +989,7 @@ func TestComputeEngineClient_PurchaseCommitment_InsertError(t *testing.T) {
 func TestComputeEngineClient_PurchaseCommitment_WaitError(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	mockService := &MockCommitmentsService{
 		operation: &MockOperation{err: errors.New("operation failed")},
@@ -1017,7 +1014,7 @@ func TestComputeEngineClient_PurchaseCommitment_WaitError(t *testing.T) {
 func TestComputeEngineClient_GetOfferingDetails_WithMock(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 	client.SetBillingService(mockBillingWithCommitment())
 
 	rec := common.Recommendation{
@@ -1041,7 +1038,7 @@ func TestComputeEngineClient_GetOfferingDetails_WithMock(t *testing.T) {
 func TestComputeEngineClient_GetOfferingDetails_NoPricing(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	mockService := &MockBillingService{
 		skus: &cloudbilling.ListSkusResponse{
@@ -1060,7 +1057,7 @@ func TestComputeEngineClient_GetOfferingDetails_NoPricing(t *testing.T) {
 func TestComputeEngineClient_GetRecommendations_WithMock(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	mockIterator := &MockRecommenderIterator{
 		recommendations: []*recommenderpb.Recommendation{
@@ -1113,7 +1110,7 @@ func TestComputeEngineClient_GetRecommendations_WithMock(t *testing.T) {
 func TestComputeEngineClient_GetRecommendations_IteratorError(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	mockIterator := &MockRecommenderIterator{
 		err: errors.New("injected iterator failure"),
@@ -1131,7 +1128,7 @@ func TestComputeEngineClient_GetRecommendations_IteratorError(t *testing.T) {
 func TestComputeEngineClient_GetRecommendations_Empty(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	mockIterator := &MockRecommenderIterator{
 		recommendations: []*recommenderpb.Recommendation{},
@@ -1147,8 +1144,7 @@ func TestComputeEngineClient_GetRecommendations_Empty(t *testing.T) {
 
 func TestComputeEngineClient_SetterMethods(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	// Test SetCommitmentsService
 	mockCommit := &MockCommitmentsService{}
@@ -1174,7 +1170,7 @@ func TestComputeEngineClient_SetterMethods(t *testing.T) {
 func TestComputeEngineClient_ConvertGCPRecommendation(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	gcpRec := &recommenderpb.Recommendation{
 		Name: "test-rec",
@@ -1229,7 +1225,7 @@ func TestComputeEngineClient_GetRecommendations_CtxCancelReturnsError(t *testing
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel before the call
 
-	client, err := NewClient(context.Background(), "test-project", "us-central1")
+	client, err := NewClient("test-project", "us-central1")
 	require.NoError(t, err)
 	client.SetRecommenderClient(&MockRecommenderClient{})
 
@@ -1319,7 +1315,7 @@ func mockBillingWithCommitment() *MockBillingService {
 func TestConverterToInsert_CountNonZero_VCPUAmountSet(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 	client.SetBillingService(mockBillingWithCommitment())
 
 	gcpRec := realisticCUDRecommendation() // 4 vCPU, 6144 MB (from payload)
@@ -1375,7 +1371,7 @@ func TestConverterToInsert_CountNonZero_VCPUAmountSet(t *testing.T) {
 func TestConverterFillsPricingForScorer(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 	billing := mockBillingWithCommitment()
 	for _, sku := range billing.skus.Skus {
 		sku.PricingInfo[0].PricingExpression.TieredRates[0].UnitPrice.CurrencyCode = "EUR"
@@ -1414,7 +1410,7 @@ func TestConverterFillsPricingForScorer(t *testing.T) {
 func TestBuildInsertRequest_RefusesZeroCount(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	rec := common.Recommendation{
 		ResourceType: "n1-standard-4",
@@ -1443,7 +1439,7 @@ func TestBuildInsertRequest_RefusesZeroCount(t *testing.T) {
 func TestGetComputePricing_NoCommitmentSKUReturnsError(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	// Only the on-demand SKUs -- no commitment SKU.
 	client.SetBillingService(&MockBillingService{
@@ -1465,7 +1461,7 @@ func TestGetComputePricing_NoCommitmentSKUReturnsError(t *testing.T) {
 func TestConvertGCPRecommendation_EmptyParamsDefaultsToMonthly(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	gcpRec := &recommenderpb.Recommendation{
 		Name: "test-rec",
@@ -1493,7 +1489,7 @@ func TestConvertGCPRecommendation_EmptyParamsDefaultsToMonthly(t *testing.T) {
 func TestConvertGCPRecommendation_ParamPaymentOptionRespected(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	gcpRec := &recommenderpb.Recommendation{Name: "test-rec"}
 	params := common.RecommendationParams{PaymentOption: "monthly"}
@@ -1514,7 +1510,7 @@ func TestConvertGCPRecommendation_ParamPaymentOptionRespected(t *testing.T) {
 func TestConvertGCPRecommendation_NonMonthlyPaymentOptionForcedToMonthly(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	gcpRec := &recommenderpb.Recommendation{Name: "test-rec"}
 
@@ -1674,7 +1670,7 @@ func TestConvertGCPRecommendationMemoryAmountRepresentations(t *testing.T) {
 func TestBuildInsertRequest_RefusesMissingMemory(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	rec := common.Recommendation{
 		ResourceType: "n1-standard-4",
@@ -1757,7 +1753,7 @@ func TestTermPlan_AcceptsAllDocumentedForms(t *testing.T) {
 func TestConvertGCPRecommendation_PropagatesParamsTerm(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	gcpRec := &recommenderpb.Recommendation{Name: "test-rec"}
 
@@ -1791,7 +1787,7 @@ func TestConvertGCPRecommendation_PropagatesParamsTerm(t *testing.T) {
 func TestConvertGCPRecommendation_RejectsUnknownTerm(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	gcpRec := &recommenderpb.Recommendation{Name: "test-rec"}
 
@@ -1812,7 +1808,7 @@ func TestConvertGCPRecommendation_RejectsUnknownTerm(t *testing.T) {
 func TestGetRecommendations_FiltersNonActiveStates(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	stateActive := recommenderpb.RecommendationStateInfo_ACTIVE
 	stateClaimed := recommenderpb.RecommendationStateInfo_CLAIMED
@@ -1869,7 +1865,7 @@ func TestGetRecommendations_FiltersNonActiveStates(t *testing.T) {
 func TestGetRecommendations_ActiveRecIncluded(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	mockIterator := &MockRecommenderIterator{
 		recommendations: []*recommenderpb.Recommendation{
@@ -2037,7 +2033,7 @@ func TestComputeEngineClient_PurchaseCommitment_TypeMatchesMachineFamily(t *test
 		t.Run(tc.machineType, func(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
-			client, _ := NewClient(ctx, "test-project", "us-central1")
+			client, _ := NewClient("test-project", "us-central1")
 
 			mockService := &MockCommitmentsService{operation: &MockOperation{err: nil}}
 			client.SetCommitmentsService(mockService)
@@ -2076,7 +2072,7 @@ func TestComputeEngineClient_PurchaseCommitment_UnmappableFamilyRefuses(t *testi
 		t.Run(machineType, func(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
-			client, _ := NewClient(ctx, "test-project", "us-central1")
+			client, _ := NewClient("test-project", "us-central1")
 
 			mockService := &MockCommitmentsService{operation: &MockOperation{err: nil}}
 			client.SetCommitmentsService(mockService)
@@ -2112,7 +2108,7 @@ func TestComputeEngineClient_PurchaseCommitment_UnmappableFamilyRefuses(t *testi
 func TestComputeEngineClient_PurchaseCommitment_ResourceTypesUseSDKEnums(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 
 	mockService := &MockCommitmentsService{operation: &MockOperation{err: nil}}
 	client.SetCommitmentsService(mockService)
@@ -2216,7 +2212,7 @@ func TestExtractResourceTypeFromRecommendation_CommitmentOnlyOpsFailLoud(t *test
 func TestPurchaseCommitment_CommitmentOnlyRecommendationRefuses(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, err := NewClient(ctx, "test-project", "us-central1")
+	client, err := NewClient("test-project", "us-central1")
 	require.NoError(t, err)
 
 	converted, err := client.convertGCPRecommendation(ctx, commitmentOnlyCUDRecommendation(), common.RecommendationParams{Term: "1yr"})
@@ -2338,7 +2334,7 @@ func TestConvertGCPRecommendationVCPUOnlyKeepsNilDetails(t *testing.T) {
 func TestGetRecommendationsStringMemoryAmountEndToEnd(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 	client.SetBillingService(&MockBillingService{err: errors.New("catalog not under test")})
 	input := commitmentOnlyCUDRecommendation()
 	input.StateInfo = &recommenderpb.RecommendationStateInfo{State: recommenderpb.RecommendationStateInfo_ACTIVE}
@@ -2381,7 +2377,7 @@ func TestGetRecommendations_SkipsBadAmountRowKeepsOthers(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
-			client, _ := NewClient(ctx, "test-project", "us-central1")
+			client, _ := NewClient("test-project", "us-central1")
 			client.SetRecommenderClient(&MockRecommenderClient{iterator: &MockRecommenderIterator{
 				recommendations: []*recommenderpb.Recommendation{
 					badAmountRecommendation("good-before", "4", "6144"),
@@ -2417,7 +2413,7 @@ func TestGetRecommendations_StructuralErrorsStillAbort(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
-			client, _ := NewClient(ctx, "test-project", "us-central1")
+			client, _ := NewClient("test-project", "us-central1")
 			bad := badAmountRecommendation("bad", "4", "6144")
 			mutate(bad)
 			client.SetRecommenderClient(&MockRecommenderClient{iterator: &MockRecommenderIterator{
@@ -2491,7 +2487,7 @@ func TestGetRecommendationsRejectsCrossResourceAmounts(t *testing.T) {
 	input.StateInfo = &recommenderpb.RecommendationStateInfo{State: recommenderpb.RecommendationStateInfo_ACTIVE}
 	memoryOpOf(input).Resource += "-other"
 
-	client, err := NewClient(context.Background(), "test-project", "us-central1")
+	client, err := NewClient("test-project", "us-central1")
 	require.NoError(t, err)
 	client.SetRecommenderClient(&MockRecommenderClient{iterator: &MockRecommenderIterator{
 		recommendations: []*recommenderpb.Recommendation{input},
@@ -2522,7 +2518,7 @@ func TestPurchaseCommitment_RejectsNonHexIdempotencyToken(t *testing.T) {
 	} {
 		t.Run(token, func(t *testing.T) {
 			t.Parallel()
-			client, _ := NewClient(ctx, "test-project", "us-central1")
+			client, _ := NewClient("test-project", "us-central1")
 			mockSvc := &MockCommitmentsService{operation: &MockOperation{}}
 			client.SetCommitmentsService(mockSvc)
 
@@ -2550,7 +2546,7 @@ func TestPurchaseCommitment_UnformableRequestIDTokenFailsLoud(t *testing.T) {
 	for _, token := range []string{"abc", strings.Repeat("a", 31)} {
 		t.Run(token, func(t *testing.T) {
 			t.Parallel()
-			client, _ := NewClient(ctx, "test-project", "us-central1")
+			client, _ := NewClient("test-project", "us-central1")
 			mockSvc := &MockCommitmentsService{operation: &MockOperation{}}
 			client.SetCommitmentsService(mockSvc)
 
@@ -2565,7 +2561,7 @@ func TestPurchaseCommitment_UnformableRequestIDTokenFailsLoud(t *testing.T) {
 
 func TestBuildInsertRequest_RejectedTokenWrapsSentinel(t *testing.T) {
 	t.Parallel()
-	client, _ := NewClient(context.Background(), "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 	rec := common.Recommendation{
 		ResourceType: "n1-standard-1",
 		Term:         "1yr",

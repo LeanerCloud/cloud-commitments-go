@@ -71,7 +71,7 @@ func TestExtractCostImpact_ZeroCostNeedsNoDuration(t *testing.T) {
 func TestConvertGCPRecommendation_MissingDurationSkipsRecommendation(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 	gcpRec := realisticCUDRecommendation()
 	gcpRec.PrimaryImpact.GetCostProjection().Duration = nil
 
@@ -116,7 +116,7 @@ func TestExtractCostImpact_RequiresUSD(t *testing.T) {
 func TestConvertGCPRecommendation_NonUSDCostSkipsRecommendation(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
+	client, _ := NewClient("test-project", "us-central1")
 	gcpRec := realisticCUDRecommendation()
 	gcpRec.PrimaryImpact.GetCostProjection().Cost.CurrencyCode = "EUR"
 

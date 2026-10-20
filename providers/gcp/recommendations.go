@@ -66,7 +66,6 @@ type regionResult struct {
 
 // RecommendationsClientAdapter aggregates GCP CUD and commitment recommendations across all services.
 type RecommendationsClientAdapter struct {
-	ctx        context.Context
 	projectID  string
 	clientOpts []option.ClientOption
 	// regionsFn replaces the live region lookup; tests only.
@@ -219,7 +218,7 @@ func (r *RecommendationsClientAdapter) collectComputeRecs(ctx context.Context, p
 		return nil, err
 	}
 	defer concurrency.Release(ctx)
-	client, err := computeengine.NewClient(ctx, r.projectID, region, r.clientOpts...)
+	client, err := computeengine.NewClient(r.projectID, region, r.clientOpts...)
 	if err != nil {
 		return nil, err
 	}

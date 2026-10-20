@@ -260,7 +260,6 @@ type RecommenderClient interface {
 
 // Client handles GCP Compute Engine Committed Use Discounts.
 type Client struct {
-	ctx                 context.Context
 	projectID           string
 	region              string
 	clientOpts          []option.ClientOption
@@ -274,9 +273,8 @@ type Client struct {
 }
 
 // NewClient creates a new GCP Compute Engine client.
-func NewClient(ctx context.Context, projectID, region string, opts ...option.ClientOption) (*Client, error) {
+func NewClient(projectID, region string, opts ...option.ClientOption) (*Client, error) {
 	return &Client{
-		ctx:        ctx,
 		projectID:  projectID,
 		region:     region,
 		clientOpts: opts,
