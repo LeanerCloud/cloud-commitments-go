@@ -137,38 +137,52 @@ type OfferDelta struct {
 // OfferEntry mirrors the consumed subset of OfferComparisonEntry: one offer
 // (current or candidate) for a line item.
 type OfferEntry struct {
-	// IsCurrent is true when this entry matches the line item's current
-	// offer and lease.
-	IsCurrent bool
-	OfferID   string
+	// Monthly holds the 730-hour monthly rate financials.
+	Monthly Financials
+
+	Delta OfferDelta
+
 	// SelectedAmount is a count for RI/unit CUD, or $/hour for spend commitments.
 	SelectedAmount *big.Rat
+
+	// ContractTerm is the effective lock-in term (lease lock-in when a lease
+	// is attached). Nullable in the schema.
+	ContractTerm *string
+
+	// PaymentOption is nullable in the schema.
+	PaymentOption *PaymentOption
+
+	// LeaseMenuItemID is the attached Archera lease, nil for none.
+	LeaseMenuItemID *string
+
+	// GuaranteedDisplayName is the offer name when purchased as an Archera
+	// Guaranteed Commitment; nil when the vendor sends none.
+	GuaranteedDisplayName *string
+
+	// Region is nil when the offer does not report one.
+	Region *string
+
+	// DiscountRate is the discount versus on-demand on a 0-1 basis.
+	DiscountRate *big.Rat
+
+	// BreakevenDays is nil when breakeven is undefined.
+	BreakevenDays *big.Rat
+
+	// UpfrontCost is one-time dollars at signing, NOT a rate.
+	UpfrontCost *big.Rat
+
+	OfferID string
+
 	// CommitmentType is the vendor's offer type string. The docs give both
 	// "aws/AmazonEC2"-style and "ri"/"savings_plan"/"cud"-style examples;
 	// treat it as opaque display text.
 	CommitmentType string
-	Provider       common.ProviderType
-	// ContractTerm is the effective lock-in term (lease lock-in when a lease
-	// is attached). Nullable in the schema.
-	ContractTerm *string
-	// PaymentOption is nullable in the schema.
-	PaymentOption *PaymentOption
-	// LeaseMenuItemID is the attached Archera lease, nil for none.
-	LeaseMenuItemID *string
-	// GuaranteedDisplayName is the offer name when purchased as an Archera
-	// Guaranteed Commitment; nil when the vendor sends none.
-	GuaranteedDisplayName *string
-	// Region is nil when the offer does not report one.
-	Region *string
-	// DiscountRate is the discount versus on-demand on a 0-1 basis.
-	DiscountRate *big.Rat
-	// BreakevenDays is nil when breakeven is undefined.
-	BreakevenDays *big.Rat
-	// Monthly holds the 730-hour monthly rate financials.
-	Monthly Financials
-	// UpfrontCost is one-time dollars at signing, NOT a rate.
-	UpfrontCost *big.Rat
-	Delta       OfferDelta
+
+	Provider common.ProviderType
+
+	// IsCurrent is true when this entry matches the line item's current
+	// offer and lease.
+	IsCurrent bool
 }
 
 // LeaseBacked reports whether an Archera lease is attached to this offer. The
@@ -189,23 +203,29 @@ type ComparisonRow struct {
 // Vendor totals pass through verbatim with the premium already inside them.
 // It is a plan hypothetical, not a bindable quote.
 type Comparison struct {
-	OrgID string
-	// PlanID is an Archera plan identifier, not a local recommendation ID.
-	PlanID string
 	// Current is the plan-wide rollup for the line items currently in scope.
 	Current Totals
-	// Hypotheticals holds one rollup per requested (or candidate-derived)
-	// (contract term, payment option) combination.
-	Hypotheticals []Hypothetical
-	// Rows holds per-line current and candidate offers, in vendor order
-	// (by line item ID).
-	Rows []ComparisonRow
-	// Currency is always nil with the current API schemas: no currency field
-	// is documented. Consumers must render it as unknown.
-	Currency *string
+
 	// FetchedAt records when the response was retrieved; there is no
 	// documented TTL, so staleness policy belongs to the consumer.
 	FetchedAt time.Time
+
+	// Currency is always nil with the current API schemas: no currency field
+	// is documented. Consumers must render it as unknown.
+	Currency *string
+
+	OrgID string
+
+	// PlanID is an Archera plan identifier, not a local recommendation ID.
+	PlanID string
+
+	// Hypotheticals holds one rollup per requested (or candidate-derived)
+	// (contract term, payment option) combination.
+	Hypotheticals []Hypothetical
+
+	// Rows holds per-line current and candidate offers, in vendor order
+	// (by line item ID).
+	Rows []ComparisonRow
 }
 
 // PlanStatus mirrors the documented CommitmentPlan.status enum.
@@ -227,21 +247,26 @@ const (
 // render them verbatim with their vendor field names and never convert them
 // (no hourly-to-monthly scaling, no percent conversion of CommitmentCoverage).
 type Plan struct {
-	ID     string
-	Status PlanStatus
-	// IsCalculating is true while Archera recomputes the plan; consumers
-	// show a non-final state instead of treating the figures as current.
-	IsCalculating bool
 	// FeeHourly is the vendor's fee_hourly, unit basis undocumented.
 	FeeHourly *big.Rat
+
 	// SavingsHourly is the vendor's savings_hourly, unit basis undocumented.
 	SavingsHourly *big.Rat
+
 	// CommitmentCoverage is the vendor's commitment_coverage; its scale
 	// (0-1 or percent) is undocumented. It is native commitment coverage,
 	// never insured coverage.
 	CommitmentCoverage *big.Rat
+
 	// MonthlySavings is the vendor's monthly_savings, basis undocumented.
 	MonthlySavings *big.Rat
+
+	ID     string
+	Status PlanStatus
+
+	// IsCalculating is true while Archera recomputes the plan; consumers
+	// show a non-final state instead of treating the figures as current.
+	IsCalculating bool
 }
 
 // ComparisonRequest selects the line items, target terms, and payment options

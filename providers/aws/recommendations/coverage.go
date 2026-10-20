@@ -12,7 +12,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
-	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
 )
 
 // coverageServiceFilters lists the Cost Explorer service-dimension values
@@ -384,23 +383,9 @@ func serviceRegionFilter(service, region string) *types.Expression {
 // held only across the outbound SDK call, matching fetchRIPageWithRetry,
 // so the coverage-enrichment fan-out stays inside the global IO cap.
 func (c *Client) fetchCoveragePage(ctx context.Context, input *costexplorer.GetReservationCoverageInput) (*costexplorer.GetReservationCoverageOutput, error) {
-	rateLimiter := c.rateLimiter.newOperation()
-	for {
-		if waitErr := rateLimiter.Wait(ctx); waitErr != nil {
-			return nil, fmt.Errorf("rate limiter wait failed: %w", waitErr)
-		}
-		if acqErr := concurrency.Acquire(ctx); acqErr != nil {
-			return nil, fmt.Errorf("concurrency acquire failed: %w", acqErr)
-		}
-		result, err := c.costExplorerClient.GetReservationCoverage(ctx, input)
-		concurrency.Release(ctx)
-		if !rateLimiter.ShouldRetry(err) {
-			if err != nil {
-				return nil, fmt.Errorf("failed to get reservation coverage: %w", err)
-			}
-			return result, nil
-		}
-	}
+	return fetchWithRetry(ctx, c.rateLimiter, "failed to get reservation coverage", func() (*costexplorer.GetReservationCoverageOutput, error) {
+		return c.costExplorerClient.GetReservationCoverage(ctx, input)
+	})
 }
 
 // poolCoverageFromGroup pulls the (pct, avg) pair from a CE response

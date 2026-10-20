@@ -102,8 +102,8 @@ type auditParentHandle interface {
 }
 
 type auditParentDir struct {
-	path   string
 	handle auditParentHandle
+	path   string
 }
 
 func (f *auditOSFile) syncParents() error {

@@ -173,11 +173,11 @@ type wireHypotheticalDelta struct {
 // wireHypothetical mirrors HypotheticalTotal.
 type wireHypothetical struct {
 	ContractTerm  *string                     `json:"contract_term"`
-	PaymentOption string                      `json:"payment_option"`
 	Monthly       *wireFinancials             `json:"commitment_financials_monthly_rate"`
-	UpfrontCost   wireNum                     `json:"commitment_upfront_cost"`
 	Delta         *wireHypotheticalDelta      `json:"delta_vs_current"`
 	LineItems     *[]wireHypotheticalLineItem `json:"line_items"`
+	PaymentOption string                      `json:"payment_option"`
+	UpfrontCost   wireNum                     `json:"commitment_upfront_cost"`
 }
 
 func (w wireHypothetical) toHypothetical() (Hypothetical, error) {
@@ -196,9 +196,9 @@ func (w wireHypothetical) toHypothetical() (Hypothetical, error) {
 		return h, fmt.Errorf("delta_vs_current: %w", errMissing)
 	}
 	if err := fillRats(
-		numField{"delta_vs_current.monthly_net_savings", w.Delta.MonthlyNetSavings, &h.DeltaMonthlyNetSavings, true},
-		numField{"delta_vs_current.monthly_commitment_cost", w.Delta.MonthlyCommitmentCost, &h.DeltaMonthlyCommitmentCost, true},
-		numField{"delta_vs_current.upfront_cost", w.Delta.UpfrontCost, &h.DeltaUpfrontCost, true},
+		numField{out: &h.DeltaMonthlyNetSavings, name: "delta_vs_current.monthly_net_savings", in: w.Delta.MonthlyNetSavings, required: true},
+		numField{out: &h.DeltaMonthlyCommitmentCost, name: "delta_vs_current.monthly_commitment_cost", in: w.Delta.MonthlyCommitmentCost, required: true},
+		numField{out: &h.DeltaUpfrontCost, name: "delta_vs_current.upfront_cost", in: w.Delta.UpfrontCost, required: true},
 	); err != nil {
 		return h, err
 	}
@@ -218,23 +218,23 @@ func (w wireHypothetical) toHypothetical() (Hypothetical, error) {
 
 // wireOfferEntry mirrors the consumed subset of OfferComparisonEntry.
 type wireOfferEntry struct {
-	IsCurrent      *bool   `json:"is_current"`
-	OfferID        string  `json:"offer_id"`
-	SelectedAmount wireNum `json:"selected_amount"`
-	Offer          *struct {
+	IsCurrent *bool `json:"is_current"`
+	Offer     *struct {
 		Provider              *string `json:"provider"`
 		Region                *string `json:"region"`
 		GuaranteedDisplayName *string `json:"guaranteed_display_name"`
 	} `json:"offer"`
 	LeaseMenuItemID *string         `json:"lease_menu_item_id"`
-	CommitmentType  string          `json:"commitment_type"`
 	ContractTerm    *string         `json:"contract_term"`
 	PaymentOption   *string         `json:"payment_option"`
+	Monthly         *wireFinancials `json:"commitment_financials_monthly_rate"`
+	Delta           *wireOfferDelta `json:"delta_vs_current"`
+	OfferID         string          `json:"offer_id"`
+	SelectedAmount  wireNum         `json:"selected_amount"`
+	CommitmentType  string          `json:"commitment_type"`
 	DiscountRate    wireNum         `json:"discount_rate"`
 	BreakevenDays   wireNum         `json:"breakeven_days"`
 	UpfrontCost     wireNum         `json:"commitment_upfront_cost"`
-	Monthly         *wireFinancials `json:"commitment_financials_monthly_rate"`
-	Delta           *wireOfferDelta `json:"delta_vs_current"`
 }
 
 // wireOfferDelta mirrors OfferComparisonDelta.
@@ -294,13 +294,13 @@ func (w *wireOfferEntry) toOfferEntry() (OfferEntry, error) {
 		return e, err
 	}
 	if err := fillRats(
-		numField{"discount_rate", w.DiscountRate, &e.DiscountRate, true},
-		numField{"breakeven_days", w.BreakevenDays, &e.BreakevenDays, false},
-		numField{"commitment_upfront_cost", w.UpfrontCost, &e.UpfrontCost, true},
-		numField{"delta_vs_current.monthly_net_savings", w.Delta.MonthlyNetSavings, &e.Delta.MonthlyNetSavings, true},
-		numField{"delta_vs_current.upfront_cost", w.Delta.UpfrontCost, &e.Delta.UpfrontCost, true},
-		numField{"delta_vs_current.discount_rate", w.Delta.DiscountRate, &e.Delta.DiscountRate, true},
-		numField{"delta_vs_current.breakeven_days", w.Delta.BreakevenDays, &e.Delta.BreakevenDays, false},
+		numField{out: &e.DiscountRate, name: "discount_rate", in: w.DiscountRate, required: true},
+		numField{out: &e.BreakevenDays, name: "breakeven_days", in: w.BreakevenDays, required: false},
+		numField{out: &e.UpfrontCost, name: "commitment_upfront_cost", in: w.UpfrontCost, required: true},
+		numField{out: &e.Delta.MonthlyNetSavings, name: "delta_vs_current.monthly_net_savings", in: w.Delta.MonthlyNetSavings, required: true},
+		numField{out: &e.Delta.UpfrontCost, name: "delta_vs_current.upfront_cost", in: w.Delta.UpfrontCost, required: true},
+		numField{out: &e.Delta.DiscountRate, name: "delta_vs_current.discount_rate", in: w.Delta.DiscountRate, required: true},
+		numField{out: &e.Delta.BreakevenDays, name: "delta_vs_current.breakeven_days", in: w.Delta.BreakevenDays, required: false},
 	); err != nil {
 		return e, err
 	}
@@ -309,9 +309,9 @@ func (w *wireOfferEntry) toOfferEntry() (OfferEntry, error) {
 
 // wireRow mirrors LineItemOfferComparisonRow.
 type wireRow struct {
-	LineItemID string            `json:"line_item_id"`
 	Current    *wireOfferEntry   `json:"current"`
 	Candidates *[]wireOfferEntry `json:"candidates"`
+	LineItemID string            `json:"line_item_id"`
 }
 
 func (w wireRow) toRow() (ComparisonRow, error) {
@@ -418,14 +418,14 @@ func DecodePlan(r io.Reader) (*Plan, error) {
 	}
 	p := &Plan{ID: wire.ID, Status: status, IsCalculating: *wire.IsCalculating}
 	for _, f := range []struct {
+		out  **big.Rat
 		name string
 		in   wireNum
-		out  **big.Rat
 	}{
-		{"fee_hourly", wire.FeeHourly, &p.FeeHourly},
-		{"savings_hourly", wire.SavingsHourly, &p.SavingsHourly},
-		{"commitment_coverage", wire.CommitmentCoverage, &p.CommitmentCoverage},
-		{"monthly_savings", wire.MonthlySavings, &p.MonthlySavings},
+		{&p.FeeHourly, "fee_hourly", wire.FeeHourly},
+		{&p.SavingsHourly, "savings_hourly", wire.SavingsHourly},
+		{&p.CommitmentCoverage, "commitment_coverage", wire.CommitmentCoverage},
+		{&p.MonthlySavings, "monthly_savings", wire.MonthlySavings},
 	} {
 		if *f.out, err = requiredRat(f.in); err != nil {
 			return nil, fmt.Errorf("%s: %w", f.name, err)
@@ -546,9 +546,9 @@ func nullableTerm(s *string) (*string, error) {
 // numField is one JSON number to convert into *big.Rat. A required field that
 // is absent or null is an error; an optional one becomes nil (unknown).
 type numField struct {
+	out      **big.Rat
 	name     string
 	in       wireNum
-	out      **big.Rat
 	required bool
 }
 

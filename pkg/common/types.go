@@ -199,6 +199,24 @@ func (c CommitmentType) String() string {
 
 // Recommendation represents a commitment purchase recommendation across any cloud provider.
 type Recommendation struct {
+	// Metadata
+	Timestamp time.Time `json:"timestamp,omitempty" csv:"Timestamp"`
+
+	// Service-specific details (polymorphic)
+	Details ServiceDetails `json:"details,omitempty" csv:"-"`
+
+	// RecurringMonthlyCost is the recurring monthly charge for this commitment
+	// (i.e. the part the user pays every month after any upfront payment).
+	// nil means the provider API did not return a monthly breakdown — the
+	// frontend renders nil as "—" rather than "$0" to avoid misleading users.
+	// Populated by cloud parsers when the API exposes it; left nil otherwise.
+	RecurringMonthlyCost *float64 `json:"recurring_monthly_cost,omitempty" csv:"RecurringMonthlyCost"`
+
+	// ExistingCoveragePercentExact preserves expiry arithmetic until in-process sizing.
+	// Treat it as immutable; clear it when replacing coverage, even with the same percentage.
+	// Serialization drops this state and its exact-arithmetic guarantee.
+	ExistingCoveragePercentExact *big.Rat `json:"-" csv:"-"`
+
 	// Provider identification
 	Provider    ProviderType `json:"provider" csv:"Provider"`
 	Account     string       `json:"account" csv:"Account"`
@@ -210,12 +228,33 @@ type Recommendation struct {
 
 	// Resource details
 	ResourceType string `json:"resource_type" csv:"ResourceType"` // Instance type, node type, VM size, etc.
-	Count        int    `json:"count" csv:"Count"`
 
 	// Commitment details
 	CommitmentType CommitmentType `json:"commitment_type" csv:"CommitmentType"` // RI, SP, CUD, etc.
 	Term           string         `json:"term" csv:"Term"`                      // 1yr, 3yr
 	PaymentOption  string         `json:"payment_option" csv:"PaymentOption"`   // all-upfront, partial, no-upfront, monthly
+
+	// CommitmentCurrency covers CommitmentCost and RecurringMonthlyCost, not savings or baseline.
+	// Empty means unknown; presence requires source-proven amounts and currency for every required payment leg.
+	CommitmentCurrency string `json:"commitment_currency,omitempty" csv:"CommitmentCurrency"`
+
+	// Metadata
+	SourceRecommendation string `json:"source_recommendation,omitempty" csv:"SourceRecommendation"`
+
+	// RawRecommendation holds the original cloud API response bytes for audit/debugging.
+	// omitempty ensures nil is absent from JSON (not written as null).
+	RawRecommendation json.RawMessage `json:"raw_recommendation,omitempty" csv:"-"`
+
+	// UsageHistory is an ordered slice of daily coverage/utilization
+	// percentages (0-100) for the last N days of the lookback window
+	// (oldest-to-newest). Populated by cloud collectors that can source the
+	// signal from the provider API; nil when not yet wired or when the
+	// provider returned no data (frontend renders "—" in that case).
+	// Not written to CSV (no column heading — enrichment-only field).
+	UsageHistory []float64 `json:"usage_history,omitempty" csv:"-"`
+
+	// Resource details
+	Count int `json:"count" csv:"Count"`
 
 	// Cost information. OnDemandCost, EstimatedSavings and SavingsPercentage are
 	// USD: providers skip a recommendation whose source reports an explicit
@@ -225,22 +264,6 @@ type Recommendation struct {
 	CommitmentCost    float64 `json:"commitment_cost" csv:"CommitmentCost"`
 	EstimatedSavings  float64 `json:"estimated_savings" csv:"EstimatedSavings"`
 	SavingsPercentage float64 `json:"savings_percentage" csv:"SavingsPercentage"`
-	// RecurringMonthlyCost is the recurring monthly charge for this commitment
-	// (i.e. the part the user pays every month after any upfront payment).
-	// nil means the provider API did not return a monthly breakdown — the
-	// frontend renders nil as "—" rather than "$0" to avoid misleading users.
-	// Populated by cloud parsers when the API exposes it; left nil otherwise.
-	RecurringMonthlyCost *float64 `json:"recurring_monthly_cost,omitempty" csv:"RecurringMonthlyCost"`
-	// CommitmentCurrency covers CommitmentCost and RecurringMonthlyCost, not savings or baseline.
-	// Empty means unknown; presence requires source-proven amounts and currency for every required payment leg.
-	CommitmentCurrency string `json:"commitment_currency,omitempty" csv:"CommitmentCurrency"`
-
-	// Service-specific details (polymorphic)
-	Details ServiceDetails `json:"details,omitempty" csv:"-"`
-
-	// Metadata
-	SourceRecommendation string    `json:"source_recommendation,omitempty" csv:"SourceRecommendation"`
-	Timestamp            time.Time `json:"timestamp,omitempty" csv:"Timestamp"`
 
 	// Break-even in months (populated by cloud parsers where available; used by scorer filter)
 	BreakEvenMonths float64 `json:"break_even_months,omitempty" csv:"BreakEvenMonths"`
@@ -264,10 +287,10 @@ type Recommendation struct {
 	RecommendedUtilization      float64 `json:"recommended_utilization,omitempty" csv:"RecommendedUtilization"`
 	RecommendedCount            int     `json:"recommended_count,omitempty" csv:"RecommendedCount"`
 	ExistingCoveragePct         float64 `json:"existing_coverage_pct,omitempty" csv:"ExistingCoveragePct"`
-	// ExistingCoveragePercentExact preserves expiry arithmetic until in-process sizing.
-	// Treat it as immutable; clear it when replacing coverage, even with the same percentage.
-	// Serialization drops this state and its exact-arithmetic guarantee.
-	ExistingCoveragePercentExact *big.Rat `json:"-" csv:"-"`
+
+	ProjectedUtilization float64 `json:"projected_utilization,omitempty" csv:"ProjectedUtilization"`
+	ProjectedCoverage    float64 `json:"projected_coverage,omitempty" csv:"ProjectedCoverage"`
+
 	// ExistingCoverageKnown distinguishes "CE returned a value for this
 	// pool" (Known=true, Pct possibly 0.0 meaning the pool has running
 	// instances but no RI coverage yet) from "CE has no data for this
@@ -277,21 +300,7 @@ type Recommendation struct {
 	// CSV writers use this to render "n/a" for unknown vs "0.0" for
 	// genuine zero-coverage pools. RI --target-coverage sizing drops recs
 	// with Known=false and positive average demand (target-coverage-unknown).
-	ExistingCoverageKnown bool    `json:"existing_coverage_known,omitempty" csv:"-"`
-	ProjectedUtilization  float64 `json:"projected_utilization,omitempty" csv:"ProjectedUtilization"`
-	ProjectedCoverage     float64 `json:"projected_coverage,omitempty" csv:"ProjectedCoverage"`
-
-	// RawRecommendation holds the original cloud API response bytes for audit/debugging.
-	// omitempty ensures nil is absent from JSON (not written as null).
-	RawRecommendation json.RawMessage `json:"raw_recommendation,omitempty" csv:"-"`
-
-	// UsageHistory is an ordered slice of daily coverage/utilization
-	// percentages (0-100) for the last N days of the lookback window
-	// (oldest-to-newest). Populated by cloud collectors that can source the
-	// signal from the provider API; nil when not yet wired or when the
-	// provider returned no data (frontend renders "—" in that case).
-	// Not written to CSV (no column heading — enrichment-only field).
-	UsageHistory []float64 `json:"usage_history,omitempty" csv:"-"`
+	ExistingCoverageKnown bool `json:"existing_coverage_known,omitempty" csv:"-"`
 }
 
 // ServiceDetails is an interface for service-specific details.
@@ -355,15 +364,18 @@ func ScaleRecommendationCosts(rec Recommendation, ratio float64) Recommendation 
 
 // PurchaseResult represents the outcome of a commitment purchase.
 type PurchaseResult struct {
-	Recommendation Recommendation `json:"recommendation"`
-	Success        bool           `json:"success"`
-	CommitmentID   string         `json:"commitment_id,omitempty"`
-	Error          error          `json:"error,omitempty"`
+	Timestamp time.Time `json:"timestamp"`
+	Error     error     `json:"error,omitempty"`
+
 	// Cost is the total upfront charge for the whole purchase (unit price x count).
 	// Nil means unknown; a non-nil zero means no upfront charge.
-	Cost      *float64  `json:"cost"`
-	DryRun    bool      `json:"dry_run"`
-	Timestamp time.Time `json:"timestamp"`
+	Cost *float64 `json:"cost"`
+
+	CommitmentID   string         `json:"commitment_id,omitempty"`
+	Recommendation Recommendation `json:"recommendation"`
+	Success        bool           `json:"success"`
+	DryRun         bool           `json:"dry_run"`
+
 	// ExistingCommitment is true when the provider adopted a commitment that
 	// already existed for the same idempotency token (a re-drive of an earlier
 	// attempt) instead of creating a new one. Success stays true and
@@ -399,12 +411,21 @@ const IdempotencyTagKey = "cudly-idempotency-token"
 // creates (as a tag, label, or — where the cloud API permits nothing else —
 // encoded in the commitment description).
 type PurchaseOptions struct {
+	// RequestedAt is the first-dispatch time of this purchase lineage, stable
+	// across re-drives of the same IdempotencyToken. Providers use it to bound
+	// idempotency lookups for services that have no client token (Redshift
+	// reserved nodes). A zero value means unknown; a provider that requires it
+	// must refuse the purchase rather than guess.
+	RequestedAt time.Time
+
 	Source string
+
 	// ReservationID, when set, is used as the provider-side commitment
 	// identifier (e.g. RDS ReservedDBInstanceId) so purchased commitments
 	// carry a descriptive, account/engine/region-aware name instead of a
 	// generic auto-generated one. Providers sanitize it to their ID rules.
 	ReservationID string
+
 	// IdempotencyToken, when non-empty, is a deterministic token (see
 	// DeriveIdempotencyToken) that makes commitment creation idempotent across
 	// re-drives of the same execution (issue #636). Savings Plans pass it as
@@ -414,24 +435,20 @@ type PurchaseOptions struct {
 	// purchase path, which has no owning execution, leaves it empty and keeps
 	// its prior non-idempotent behavior).
 	IdempotencyToken string
+
 	// ExecutionID, when non-empty, is the purchase_executions row UUID that
 	// owns this purchase attempt. Carried so the purchase-execution flow can
 	// emit log lines tagged with the execution ID for correlation with the
 	// CloudWatch / DB execution row (issue #667). The CLI purchase path has
 	// no owning execution and leaves it empty.
 	ExecutionID string
+
 	// OfferingClass is the EC2 Reserved Instance offering class for this
 	// purchase: "convertible" (exchangeable) or "standard" (locked, ~5%
 	// cheaper). Empty means the caller has not set one; the EC2 client
 	// defaults to "convertible" to preserve pre-694 behavior.
 	// Only meaningful for EC2 RI purchases; ignored by other providers.
 	OfferingClass string
-	// RequestedAt is the first-dispatch time of this purchase lineage, stable
-	// across re-drives of the same IdempotencyToken. Providers use it to bound
-	// idempotency lookups for services that have no client token (Redshift
-	// reserved nodes). A zero value means unknown; a provider that requires it
-	// must refuse the purchase rather than guess.
-	RequestedAt time.Time
 }
 
 // NormalizeSource lowercases s and returns it when it matches an allowed
@@ -487,6 +504,8 @@ const (
 // adjustments would silently miss because Recommendation lookup keys
 // are deployment-aware while commitment keys defaulted to empty.
 type Commitment struct {
+	StartDate      time.Time       `json:"start_date"`
+	EndDate        time.Time       `json:"end_date"`
 	Provider       ProviderType    `json:"provider"`
 	Account        string          `json:"account"`
 	CommitmentID   string          `json:"commitment_id"`
@@ -496,16 +515,7 @@ type Commitment struct {
 	ResourceType   string          `json:"resource_type"`
 	Engine         string          `json:"engine,omitempty"`     // Database engine for RDS/ElastiCache (e.g., "mysql", "aurora-postgresql")
 	Deployment     string          `json:"deployment,omitempty"` // RDS Multi-AZ vs Single-AZ; empty for non-RDS
-	Count          int             `json:"count"`
-	StartDate      time.Time       `json:"start_date"`
-	EndDate        time.Time       `json:"end_date"`
 	State          CommitmentState `json:"state"`
-	Cost           float64         `json:"cost"`
-
-	// StartDateIsDay marks StartDate as a UTC calendar date. The zero value
-	// means StartDate is a precise timestamp; true means the real instant
-	// lies in [StartDate, StartDate+24h).
-	StartDateIsDay bool `json:"start_date_is_day,omitempty"`
 
 	// EC2 reserved-instance dimensions. Empty means unknown or a wildcard.
 	// Filled by the EC2 commitment listing from the reserved instance's
@@ -514,6 +524,14 @@ type Commitment struct {
 	Tenancy          string `json:"tenancy,omitempty"`
 	Scope            string `json:"scope,omitempty"`
 	AvailabilityZone string `json:"availability_zone,omitempty"`
+
+	Count int     `json:"count"`
+	Cost  float64 `json:"cost"`
+
+	// StartDateIsDay marks StartDate as a UTC calendar date. The zero value
+	// means StartDate is a precise timestamp; true means the real instant
+	// lies in [StartDate, StartDate+24h).
+	StartDateIsDay bool `json:"start_date_is_day,omitempty"`
 }
 
 // OfferingDetails represents cloud provider offering details.
@@ -530,11 +548,11 @@ type OfferingDetails struct {
 	ResourceType        string  `json:"resource_type"`
 	Term                string  `json:"term"`
 	PaymentOption       string  `json:"payment_option"`
+	Currency            string  `json:"currency"`
 	UpfrontCost         float64 `json:"upfront_cost"`
 	RecurringCost       float64 `json:"recurring_cost"`
 	TotalCost           float64 `json:"total_cost"`
 	EffectiveHourlyRate float64 `json:"effective_hourly_rate"`
-	Currency            string  `json:"currency"`
 }
 
 // RecommendationParams represents parameters for fetching recommendations.
@@ -544,20 +562,25 @@ type RecommendationParams struct {
 	LookbackPeriod string // 7d, 30d, 60d
 	Term           string // 1yr, 3yr
 	PaymentOption  string
-	AccountFilter  []string
-	IncludeRegions []string
-	ExcludeRegions []string
-	// Savings Plans specific filters
-	IncludeSPTypes []string // Compute, EC2Instance, SageMaker, Database
-	ExcludeSPTypes []string
+
 	// SPAccountScope selects the Cost Explorer account scope for Savings Plans
 	// recommendations: "linked" or "payer" (case-insensitive). Empty means
 	// linked. Payer scope only applies to a management account.
 	SPAccountScope string
+
 	// RIAccountScope selects the Cost Explorer account scope for Reserved
 	// Instance recommendations, with the same values as SPAccountScope:
 	// "linked" or "payer" (case-insensitive). Empty means linked.
 	RIAccountScope string
+
+	AccountFilter  []string
+	IncludeRegions []string
+	ExcludeRegions []string
+
+	// Savings Plans specific filters
+	IncludeSPTypes []string // Compute, EC2Instance, SageMaker, Database
+	ExcludeSPTypes []string
+
 	// ExperimentalGCPPlanTerm (GCP Compute Engine only, ignored elsewhere)
 	// takes the CUD term from the recommendation's root Commitment plan
 	// instead of Term. EXPERIMENTAL: the payload shape is unverified against a
@@ -596,9 +619,9 @@ type ComputeDetails struct {
 	Tenancy           string  `json:"tenancy"`                     // default, dedicated, host
 	Scope             string  `json:"scope"`                       // regional, zonal
 	AvailabilityZone  string  `json:"availability_zone,omitempty"` // required for zonal EC2 scope, empty for regional
-	VCPU              int     `json:"vcpu,omitempty"`              // 0 = unknown
-	MemoryGB          float64 `json:"memory_gb,omitempty"`         // 0 = unknown
 	GCPCommitmentType string  `json:"gcp_commitment_type,omitempty"`
+	VCPU              int     `json:"vcpu,omitempty"`      // 0 = unknown
+	MemoryGB          float64 `json:"memory_gb,omitempty"` // 0 = unknown
 }
 
 func (d ComputeDetails) GetServiceType() ServiceType {
@@ -655,8 +678,8 @@ func (d CacheDetails) GetDetailDescription() string {
 // SearchDetails represents search-specific details (OpenSearch, Azure Search).
 type SearchDetails struct {
 	InstanceType    string `json:"instance_type"`
-	MasterNodeCount int    `json:"master_node_count,omitempty"`
 	MasterNodeType  string `json:"master_node_type,omitempty"`
+	MasterNodeCount int    `json:"master_node_count,omitempty"`
 }
 
 func (d SearchDetails) GetServiceType() ServiceType {
@@ -670,8 +693,8 @@ func (d SearchDetails) GetDetailDescription() string {
 // DataWarehouseDetails represents data warehouse-specific details (Redshift, Synapse, BigQuery).
 type DataWarehouseDetails struct {
 	NodeType      string `json:"node_type"`
-	NumberOfNodes int    `json:"number_of_nodes"`
 	ClusterType   string `json:"cluster_type,omitempty"` // single-node, multi-node
+	NumberOfNodes int    `json:"number_of_nodes"`
 }
 
 func (d DataWarehouseDetails) GetServiceType() ServiceType {
@@ -709,13 +732,15 @@ func (d NoSQLDetails) GetDetailDescription() string {
 
 // SavingsPlanDetails represents AWS Savings Plans specific details.
 type SavingsPlanDetails struct {
-	PlanType         string  `json:"plan_type"` // Compute, EC2Instance, SageMaker
-	HourlyCommitment float64 `json:"hourly_commitment"`
+	PlanType string `json:"plan_type"` // Compute, EC2Instance, SageMaker
+
 	// Currency is the ISO 4217 code HourlyCommitment is denominated in. Azure
 	// requires it to match the billing account currency and fails closed when
 	// it is empty or malformed; empty is never treated as USD.
 	Currency string `json:"currency,omitempty"`
+
 	Coverage string `json:"coverage,omitempty"`
+
 	// InstanceFamily is the EC2 instance family recommended by Cost Explorer
 	// (e.g. "m5"). Only populated for EC2Instance Savings Plans; empty for
 	// Compute, SageMaker and Database plans which are family-agnostic. Used at
@@ -723,17 +748,21 @@ type SavingsPlanDetails struct {
 	// so the offering resolves to the correct family rather than the
 	// lexicographically-smallest across all families in the region.
 	InstanceFamily string `json:"instance_family,omitempty"`
+
 	// Region is the AWS region recommended by Cost Explorer for this EC2Instance
 	// Savings Plan (e.g. "us-east-1"). Only populated for EC2Instance plans;
 	// Compute, SageMaker and Database plans are global and carry no region.
 	// Used at purchase time as the region filter for DescribeSavingsPlansOfferings
 	// instead of the client's configured region, which may differ.
 	Region string `json:"region,omitempty"`
+
 	// OfferingID is the exact Savings Plans offering ID returned by Cost Explorer
 	// in SavingsPlansDetails.OfferingId. When non-empty the purchase path uses it
 	// directly and skips DescribeSavingsPlansOfferings entirely, which is the
 	// safest possible resolution. Only populated when CE provides it.
 	OfferingID string `json:"offering_id,omitempty"`
+
+	HourlyCommitment float64 `json:"hourly_commitment"`
 }
 
 func (d SavingsPlanDetails) GetServiceType() ServiceType {
@@ -766,22 +795,32 @@ func (d SavingsPlanDetails) GetDetailDescription() string {
 //	UtilizationPercent  <- derived: (TotalActualHours / PurchasedHours) * 100
 //	SKUName             <- Properties.SKUName (Azure-only; empty string for AWS)
 type RIUtilization struct {
-	ReservedInstanceID string  `json:"reserved_instance_id"`
-	UtilizationPercent float64 `json:"utilization_percent"`
-	PurchasedHours     float64 `json:"purchased_hours"`
-	TotalActualHours   float64 `json:"total_actual_hours"`
-	UnusedHours        float64 `json:"unused_hours"`
+	ReservedInstanceID string `json:"reserved_instance_id"`
+
 	// SKUName is the Azure reservation SKU (e.g. "Standard_D2s_v3"). It is
 	// empty for AWS RIs because Cost Explorer does not return the instance
 	// type on the utilization response. Consumers that need it for Azure
 	// can populate downstream display from this field; AWS consumers can
 	// join on ReservedInstanceID via the EC2 DescribeReservedInstances API.
 	SKUName string `json:"sku_name,omitempty"`
+
+	UtilizationPercent float64 `json:"utilization_percent"`
+	PurchasedHours     float64 `json:"purchased_hours"`
+	TotalActualHours   float64 `json:"total_actual_hours"`
+	UnusedHours        float64 `json:"unused_hours"`
 }
 
 // AuditRecord is one line in the JSON-lines audit log.
 // Status values: "success", "error", "skipped" (dry-run), "skipped_covered" (idempotency).
 type AuditRecord struct {
+	Timestamp time.Time `json:"timestamp"`
+
+	// RecurringMonthlyCost is the recurring charge in USD per month (the part
+	// paid every month after any upfront payment), copied from
+	// Recommendation.RecurringMonthlyCost. nil (omitted) means the provider did
+	// not report it, which is not the same as a known 0 (all-upfront).
+	RecurringMonthlyCost *float64 `json:"recurring_monthly_cost,omitempty"`
+
 	RunID           string         `json:"run_id"`
 	Provider        ProviderType   `json:"provider"`
 	AccountID       string         `json:"account_id"`
@@ -791,23 +830,19 @@ type AuditRecord struct {
 	Service         string         `json:"service"`
 	ResourceType    string         `json:"resource_type"`
 	CommitmentType  CommitmentType `json:"commitment_type"`
-	Term            int            `json:"term_months"`
-	Count           int            `json:"count"`
-	EstimatedCost   float64        `json:"estimated_cost"` // Upfront payment (Recommendation.CommitmentCost); 0 for no-upfront commitments.
-	// RecurringMonthlyCost is the recurring charge in USD per month (the part
-	// paid every month after any upfront payment), copied from
-	// Recommendation.RecurringMonthlyCost. nil (omitted) means the provider did
-	// not report it, which is not the same as a known 0 (all-upfront).
-	RecurringMonthlyCost *float64        `json:"recurring_monthly_cost,omitempty"`
-	EstimatedSavings     float64         `json:"estimated_savings"`
-	CommitmentID         string          `json:"commitment_id"`
-	Status               string          `json:"status"`
-	ErrorMessage         string          `json:"error_message"`
-	Timestamp            time.Time       `json:"timestamp"`
-	DryRun               bool            `json:"dry_run"`
-	RawRecommendation    json.RawMessage `json:"raw_recommendation,omitempty"`
+	CommitmentID    string         `json:"commitment_id"`
+	Status          string         `json:"status"`
+	ErrorMessage    string         `json:"error_message"`
+
 	// Source identifies the CUDly surface (cudly-cli / cudly-web) that
 	// triggered the purchase. Mirrors the value stamped on the commitment
 	// itself via purchase-automation tag/label.
 	Source string `json:"source,omitempty"`
+
+	RawRecommendation json.RawMessage `json:"raw_recommendation,omitempty"`
+	Term              int             `json:"term_months"`
+	Count             int             `json:"count"`
+	EstimatedCost     float64         `json:"estimated_cost"` // Upfront payment (Recommendation.CommitmentCost); 0 for no-upfront commitments.
+	EstimatedSavings  float64         `json:"estimated_savings"`
+	DryRun            bool            `json:"dry_run"`
 }

@@ -13,11 +13,18 @@ import (
 // RIInfo describes a Reserved Instance for reshape analysis.
 // Callers should pre-filter to convertible RIs only.
 type RIInfo struct {
-	ID                  string
-	InstanceType        string
-	InstanceCount       int32
-	OfferingClass       string  // must be "convertible" — standard RIs cannot be exchanged
+	ID            string
+	InstanceType  string
+	OfferingClass string // must be "convertible" — standard RIs cannot be exchanged
+
+	// CurrencyCode is the ISO-4217 currency the prices are denominated
+	// in (typically "USD"). Used by the cross-family check to refuse
+	// comparisons across currencies. Empty matches the same "skip"
+	// semantics as MonthlyCost == 0.
+	CurrencyCode string
+
 	NormalizationFactor float64 // AWS normalization factor for the instance size
+
 	// MonthlyCost is the effective per-instance per-month price (amortized
 	// upfront + recurring charges, AWS-canonical 730 hours per month).
 	// Used by the local passesDollarUnitsCheck pre-filter that gates
@@ -26,11 +33,7 @@ type RIInfo struct {
 	// pre-filter treats zero as "skip the check" so existing behavior
 	// is preserved.
 	MonthlyCost float64
-	// CurrencyCode is the ISO-4217 currency the prices are denominated
-	// in (typically "USD"). Used by the cross-family check to refuse
-	// comparisons across currencies. Empty matches the same "skip"
-	// semantics as MonthlyCost == 0.
-	CurrencyCode string
+
 	// TermSeconds is the RI commitment term in seconds (31_536_000 for
 	// 1y, 94_608_000 for 3y) — the same unit the AWS SDK uses on the
 	// ReservedInstance.Duration field and the unit ec2.ConvertibleRI.Duration
@@ -41,6 +44,8 @@ type RIInfo struct {
 	// the term filter is skipped for that rec to preserve today's
 	// behavior for older callers that don't populate it.
 	TermSeconds int64
+
+	InstanceCount int32
 }
 
 // UtilizationInfo provides utilization data for a specific RI.
@@ -59,9 +64,25 @@ type UtilizationInfo struct {
 // pkg/exchange stays AWS-free and providers/aws/services/ec2 imports
 // the type rather than defining its own.
 type OfferingOption struct {
-	InstanceType         string  `json:"instance_type"`
-	OfferingID           string  `json:"offering_id"`
+	// SavingsAbs is the absolute monthly savings (in CurrencyCode) that
+	// AWS Cost Explorer reported for this recommendation. Used by
+	// compositeScore to estimate savings % and derive a confidence
+	// signal. Zero means "not supplied" — the score component is omitted
+	// rather than coerced to 0 (which would falsely rank this offering
+	// last on the savings axis).
+	SavingsAbs *float64 `json:"savings_abs,omitempty"`
+
+	InstanceType string `json:"instance_type"`
+	OfferingID   string `json:"offering_id"`
+
+	// CurrencyCode is the ISO-4217 currency the EffectiveMonthlyCost is
+	// denominated in (typically "USD"). The pre-filter requires source
+	// and target currencies to match; empty on either side falls back to
+	// "skip the currency guard" so today's USD-only fixtures stay green.
+	CurrencyCode string `json:"currency_code,omitempty"`
+
 	EffectiveMonthlyCost float64 `json:"effective_monthly_cost"`
+
 	// NormalizationFactor is the AWS normalization factor for the
 	// offering's instance size — needed by the local
 	// passesDollarUnitsCheck pre-filter that gates which cross-family
@@ -69,11 +90,7 @@ type OfferingOption struct {
 	// alternative cannot be safely compared and the pre-filter
 	// excludes it.
 	NormalizationFactor float64 `json:"normalization_factor,omitempty"`
-	// CurrencyCode is the ISO-4217 currency the EffectiveMonthlyCost is
-	// denominated in (typically "USD"). The pre-filter requires source
-	// and target currencies to match; empty on either side falls back to
-	// "skip the currency guard" so today's USD-only fixtures stay green.
-	CurrencyCode string `json:"currency_code,omitempty"`
+
 	// TermSeconds is the offering's commitment term in seconds
 	// (31_536_000 for 1y, 94_608_000 for 3y) — same unit as
 	// RIInfo.TermSeconds and the AWS SDK's ReservedInstance.Duration.
@@ -83,13 +100,7 @@ type OfferingOption struct {
 	// on either side falls back to "skip the term guard" for callers
 	// or fixtures that don't populate it.
 	TermSeconds int64 `json:"term_seconds,omitempty"`
-	// SavingsAbs is the absolute monthly savings (in CurrencyCode) that
-	// AWS Cost Explorer reported for this recommendation. Used by
-	// compositeScore to estimate savings % and derive a confidence
-	// signal. Zero means "not supplied" — the score component is omitted
-	// rather than coerced to 0 (which would falsely rank this offering
-	// last on the savings axis).
-	SavingsAbs *float64 `json:"savings_abs,omitempty"`
+
 	// RecommendationCount is the number of instances AWS Cost Explorer
 	// included in the recommendation. Used together with SavingsAbs to
 	// derive a confidence signal (large fleet + large savings = high
@@ -126,14 +137,14 @@ type PurchaseRecLookup func(ctx context.Context, region, currencyCode string) ([
 type ReshapeRecommendation struct {
 	SourceRIID          string           `json:"source_ri_id"`
 	SourceInstanceType  string           `json:"source_instance_type"`
-	SourceCount         int32            `json:"source_count"`
 	TargetInstanceType  string           `json:"target_instance_type"`
-	TargetCount         int32            `json:"target_count"`
+	Reason              string           `json:"reason"`
 	AlternativeTargets  []OfferingOption `json:"alternative_targets,omitempty"`
 	UtilizationPercent  float64          `json:"utilization_percent"`
 	NormalizedUsed      float64          `json:"normalized_used"`
 	NormalizedPurchased float64          `json:"normalized_purchased"`
-	Reason              string           `json:"reason"`
+	SourceCount         int32            `json:"source_count"`
+	TargetCount         int32            `json:"target_count"`
 }
 
 // passesDollarUnitsCheck approximates AWS's exchange-validity rule

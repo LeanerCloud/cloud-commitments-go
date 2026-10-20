@@ -42,11 +42,12 @@ type Config struct {
 // header and a truncated message from the documented error shapes are kept;
 // the raw body is never echoed.
 type HTTPError struct {
+	Message    string
 	StatusCode int
+
 	// RetryAfter is the parsed Retry-After header, zero when absent or not a
 	// number of seconds. The client never retries on its own.
 	RetryAfter time.Duration
-	Message    string
 }
 
 func (e *HTTPError) Error() string {
@@ -63,13 +64,16 @@ func (e *HTTPError) Error() string {
 // field fmt or reflection can read, so no fmt verb prints it wherever the
 // Client (or a pointer to it) is stored.
 type Client struct {
-	baseURL string
-	orgID   string
-	hc      *http.Client
+	hc *http.Client
+
 	// setAuth adds the credential to one outgoing request.
 	setAuth func(*http.Request)
+
 	// redact masks the credential in a vendor-supplied message.
 	redact func(string) string
+
+	baseURL string
+	orgID   string
 }
 
 var _ QuoteClient = (*Client)(nil)
@@ -275,8 +279,8 @@ func sanitizeVendorText(msg string, redact func(string) string) string {
 // the original in the Unwrap chain, so errors.Is/As (errMissing, read-size
 // and transport errors) still work.
 type sanitizedError struct {
-	msg string
 	err error
+	msg string
 }
 
 func (e *sanitizedError) Error() string { return e.msg }

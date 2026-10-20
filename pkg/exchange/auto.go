@@ -18,30 +18,32 @@ import (
 //
 //nolint:revive // stutters, but cloud-commitments-platform references this type through pkg's pinned go.mod pseudo-version (not workspace-resolved under GOWORK=off); renaming here without a coordinated go.mod bump would break that build mode
 type ExchangeRecord struct {
-	ID                 string
-	AccountID          string
-	ExchangeID         string
-	Region             string
-	SourceRIIDs        []string
-	SourceInstanceType string
-	SourceCount        int
-	TargetOfferingID   string
-	TargetInstanceType string
-	TargetCount        int
-	PaymentDue         string
-	Status             string
-	ApprovalToken      string
-	Error              string
-	Mode               string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+
 	// LadderRunID links this exchange record to the ladder run that created it.
 	// Nil for standalone ri_exchange_reshape task records.
 	// The database column ri_exchange_history.ladder_run_id was added in
 	// migration 000080 and is the authoritative source for origin scoping.
 	LadderRunID *string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	CompletedAt *time.Time
-	ExpiresAt   *time.Time
+
+	CompletedAt        *time.Time
+	ExpiresAt          *time.Time
+	ID                 string
+	AccountID          string
+	ExchangeID         string
+	Region             string
+	SourceInstanceType string
+	TargetOfferingID   string
+	TargetInstanceType string
+	PaymentDue         string
+	Status             string
+	ApprovalToken      string
+	Error              string
+	Mode               string
+	SourceRIIDs        []string
+	SourceCount        int
+	TargetCount        int
 }
 
 // RIExchangeStore is the subset of store operations needed by RunAutoExchange.
@@ -106,12 +108,6 @@ type RunAutoExchangeParams struct {
 	Store          RIExchangeStore
 	ExchangeClient ExchangeClientInterface
 	LookupOffering LookupOfferingFunc
-	RIs            []RIInfo
-	Utilization    []UtilizationInfo
-	Config         RIExchangeConfig
-	AccountID      string
-	Region         string
-	DashboardURL   string
 
 	// RIMetadata maps RI ID to its metadata (product description, tenancy, scope, duration).
 	RIMetadata map[string]RIMetadataInfo
@@ -123,15 +119,23 @@ type RunAutoExchangeParams struct {
 	// cancels only standalone (ladder_run_id IS NULL) pendings.
 	LadderRunID *string
 
+	AccountID    string
+	Region       string
+	DashboardURL string
+	RIs          []RIInfo
+	Utilization  []UtilizationInfo
+
+	// OfferedInstanceTypes is the region's offered EC2 instance types. Empty keeps
+	// the legacy size ladder; otherwise reshape targets are limited to it.
+	OfferedInstanceTypes []string
+
+	Config RIExchangeConfig
+
 	// DryRun skips all state mutations (cancellations, record saves, exchange
 	// executions). Outcomes are returned with Simulated=true. No store write
 	// is performed; mock.AssertExpectations will catch any accidental mutation
 	// call in tests (fail-loud gate).
 	DryRun bool
-
-	// OfferedInstanceTypes is the region's offered EC2 instance types. Empty keeps
-	// the legacy size ladder; otherwise reshape targets are limited to it.
-	OfferedInstanceTypes []string
 }
 
 // RIMetadataInfo holds the offering metadata for a specific RI.
@@ -162,16 +166,18 @@ type ExchangeOutcome struct {
 	SourceInstanceType string
 	TargetInstanceType string
 	TargetOfferingID   string
-	TargetCount        int32
 	PaymentDue         string
 	ExchangeID         string
-	UtilizationPct     float64
 	Error              string
+	UtilizationPct     float64
+	TargetCount        int32
+
 	// OutcomeUnknown is true when the accept response was lost, so the exchange
 	// may have executed. It must be reconciled before any retry. The outcome
 	// stays in AutoExchangeResult.Failed (readers of Failed still see it) and
 	// halts the run (no further exchanges are attempted).
 	OutcomeUnknown bool
+
 	// Simulated is true when RunAutoExchangeParams.DryRun was set. The outcome
 	// was analyzed and quoted but no record was saved and no exchange was executed.
 	Simulated bool
