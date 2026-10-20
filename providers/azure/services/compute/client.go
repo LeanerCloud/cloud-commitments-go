@@ -483,12 +483,20 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		return result, result.Error
 	}
 
-	// Validate the payment option and build the request body BEFORE any
-	// side-effecting call. Microsoft.Capacity provider registration below is
-	// a real ARM operation (a GET, and a POST to register when unregistered);
-	// every fallible local parse -- payment option AND term (buildReservationBody
-	// calls reservations.ParseTermYears) -- must be rejected here first so a
-	// doomed purchase never triggers it.
+	// Validate the term and payment option and build the request body BEFORE
+	// any side-effecting call. Microsoft.Capacity provider registration below
+	// is a real ARM operation (a GET, and a POST to register when
+	// unregistered); every fallible local parse must be rejected here first so
+	// a doomed purchase never triggers it.
+	termYears, termErr := reservations.ParseTermYears(rec.Term)
+	if termErr != nil {
+		result.Error = termErr
+		return result, result.Error
+	}
+	if _, termEnumErr := reservations.ReservationTermForYears(termYears); termEnumErr != nil {
+		result.Error = termEnumErr
+		return result, result.Error
+	}
 	billingPlan, err := reservations.BillingPlanForPaymentOption(rec.PaymentOption)
 	if err != nil {
 		result.Error = err

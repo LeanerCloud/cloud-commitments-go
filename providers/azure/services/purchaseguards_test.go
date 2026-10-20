@@ -48,25 +48,13 @@ func guardCases() []guardCase {
 		{"missing source", id, func(o common.PurchaseOptions) common.PurchaseOptions { o.Source = ""; return o }, same(errSource)},
 		{"zero count", func(r common.Recommendation) common.Recommendation { r.Count = 0; return r }, idOpts, same(errCountZero)},
 		{"blank resource type", func(r common.Recommendation) common.Recommendation { r.ResourceType = "  "; return r }, idOpts, same(errResType)},
-		{"bad term", func(r common.Recommendation) common.Recommendation { r.Term = "2yr"; return r }, idOpts,
-			func(s string) string {
-				if s == "compute" {
-					return "failed to marshal request: " + errBadTerm
-				}
-				return errBadTerm
-			}},
+		{"bad term", func(r common.Recommendation) common.Recommendation { r.Term = "2yr"; return r }, idOpts, same(errBadTerm)},
 		{"bad payment option", func(r common.Recommendation) common.Recommendation { r.PaymentOption = "partial-upfront"; return r }, idOpts, same(errBadPayment)},
 		{"empty payment option", func(r common.Recommendation) common.Recommendation { r.PaymentOption = ""; return r }, idOpts, same(errNoPayment)},
 		{"bad term and bad payment option", func(r common.Recommendation) common.Recommendation {
 			r.Term, r.PaymentOption = "2yr", "partial-upfront"
 			return r
-		}, idOpts, func(s string) string {
-			if s == "compute" {
-				// compute resolves the billing plan before the term.
-				return errBadPayment
-			}
-			return errBadTerm
-		}},
+		}, idOpts, same(errBadTerm)},
 	}
 }
 
