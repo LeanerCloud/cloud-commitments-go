@@ -1,8 +1,10 @@
 # gitleaks configuration for the CI "Secret scan (gitleaks)" step.
-# Extends the default ruleset; every allowlist below matches one exact literal.
-# Do NOT add `paths` with condition = "AND" here: in gitleaks 8.30.1 that skips
-# the whole file, so a real secret planted next to a fixture goes undetected.
-# scripts/test-gitleaks-config.sh guards this.
+# Extends the default ruleset; every allowlist below is a regex anchored with
+# ^...$ so it matches only the exact fixture secret, never a longer token that
+# merely contains it. Do NOT add `paths`, `condition`, `stopwords`, `commits`,
+# `targetRules` or `regexTarget`: in gitleaks 8.30.1 `paths` with
+# condition = "AND" skips the whole file, so a real secret planted next to a
+# fixture goes undetected. scripts/test-gitleaks-config.sh enforces this.
 title = "cloud-commitments-go gitleaks config"
 
 [extend]
@@ -10,12 +12,12 @@ useDefault = true
 
 [[allowlists]]
 description = "git-secrets 1.3.0 release commit SHA pinned in pre-commit.yml"
-regexes = ['''ad82d68ee924906a0401dfd48de5057731a9bc84''']
+regexes = ['''^ad82d68ee924906a0401dfd48de5057731a9bc84$''']
 
 [[allowlists]]
 description = "synthetic bearer token fixture in purchaseguard tests"
-regexes = ['''tok-0123456789abcdef''']
+regexes = ['''^tok-0123456789abcdef$''']
 
 [[allowlists]]
 description = "synthetic hex token fixture in the Azure idempotency marker tests"
-regexes = ['''4f1c2b0e9d8a7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b''']
+regexes = ['''^4f1c2b0e9d8a7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d9c8b7a6f5e4d3c2b$''']
