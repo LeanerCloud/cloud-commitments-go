@@ -191,8 +191,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   the same family** (#323): an AWS RDS reservation now pays for recommendations
   of any size in the same instance family, engine, region and deployment, by
   normalized units, instead of matching only the exact instance class. Only
-  MySQL, MariaDB, PostgreSQL and Aurora (and explicitly marked Oracle BYOL) are
-  size-flexible; SQL Server, Oracle License Included, Db2 and unknown engines
+  MySQL, MariaDB, PostgreSQL and Aurora are size-flexible; SQL Server, Oracle
+  (until both paths carry the license model, #342), Db2 and unknown engines
   still match the exact class.
 
 - **MemoryDB reserved-node and offering listings are page-capped and

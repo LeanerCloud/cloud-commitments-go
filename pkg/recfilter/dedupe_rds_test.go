@@ -91,3 +91,39 @@ func TestRDSSizeFlexBudgetSharedAcrossRecs(t *testing.T) {
 	require.Len(t, passed, 1)
 	assert.Equal(t, 1, passed[0].Count)
 }
+
+// An Oracle BYOL reservation keeps the exact-class key on both sides: it still suppresses
+// a recommendation of the same class (as before size-flex), and covers no other size.
+func TestRDSOracleBYOLStaysExactClass(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name, commitEngine, recEngine, recSize string
+		want                                   int
+	}{
+		{"same class byol string", "oracle-se2 (byol)", "oracle-se2 (byol)", "db.m5.large", 0},
+		{"same class normalized", "oracle-se2", "oracle", "db.m5.large", 0},
+		{"byol does not cover other size", "oracle-se2 (byol)", "oracle-se2 (byol)", "db.m5.medium", 1},
+		{"normalized does not cover other size", "oracle-se2", "oracle", "db.m5.medium", 1},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			client := &fakeServiceClient{commitments: []common.Commitment{{
+				Provider: common.ProviderAWS, Service: common.ServiceRelationalDB, ResourceType: "db.m5.large",
+				Region: "us-east-1", Engine: tt.commitEngine, Deployment: "single-az", Count: 1,
+				State: common.CommitmentStateActive, StartDate: time.Now(),
+			}}}
+			rec := common.Recommendation{
+				Provider: common.ProviderAWS, Service: common.ServiceRDS, ResourceType: tt.recSize, Region: "us-east-1", Count: 1,
+				Details: &common.DatabaseDetails{Engine: tt.recEngine, AZConfig: "single-az"},
+			}
+			passed, _, err := NewDuplicateChecker(0).AdjustRecommendationsForExisting(context.Background(), []common.Recommendation{rec}, client)
+			require.NoError(t, err)
+			if tt.want == 0 {
+				assert.Empty(t, passed)
+				return
+			}
+			require.Len(t, passed, 1)
+			assert.Equal(t, tt.want, passed[0].Count)
+		})
+	}
+}

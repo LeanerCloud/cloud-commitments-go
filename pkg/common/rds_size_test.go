@@ -30,7 +30,7 @@ func TestRDSSizeFlexibleEngine(t *testing.T) {
 	for engine, want := range map[string]bool{
 		"mysql": true, "MySQL": true, "mariadb": true, "postgres": true, "postgresql": true,
 		"aurora-mysql": true, "aurora-postgresql": true, "Aurora MySQL": true, "aurora": true,
-		"oracle-se2 (byol)": true, "oracle-ee-byol": true,
+		"oracle-se2 (byol)": false, "oracle-ee-byol": false,
 		"sqlserver-se": false, "sqlserver-se (li)": false, "sql server": false,
 		"oracle": false, "oracle-se2": false, "oracle-se2 (li)": false,
 		"db2-se": false, "somedb": false, "": false,

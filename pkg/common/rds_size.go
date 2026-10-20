@@ -46,18 +46,14 @@ func RDSFamily(instanceType string) string {
 }
 
 // RDSSizeFlexibleEngine reports whether reservations of an engine are size-flexible. It is
-// an allowlist: MySQL, MariaDB, PostgreSQL, Aurora, and Oracle only when the string
-// explicitly marks BYOL (the normalized Oracle name merges BYOL and License Included, so it
-// is not flexible). SQL Server, Oracle License Included, Db2 (the AWS doc lists it both as
-// flexible and as not) and unknown engines are exact-class only, so a reservation is never credited to a size it
+// an allowlist: MySQL, MariaDB, PostgreSQL and Aurora. Oracle is exact-class: BYOL is
+// flexible but License Included is not, and recommendations normalize Oracle without the
+// license, so a flexible key for a commitment would never match its recommendation and
+// would let a duplicate through. Oracle stays exact until both paths carry the license
+// model (#342). SQL Server, Db2 (the AWS doc lists it both as flexible and as not) and
+// unknown engines are exact-class too, so a reservation is never credited to a size it
 // may not cover.
 func RDSSizeFlexibleEngine(engine string) bool {
 	e := strings.ToLower(strings.TrimSpace(engine))
-	switch {
-	case e == "mysql", e == "mariadb", e == "postgres", e == "postgresql", strings.HasPrefix(e, "aurora"):
-		return true
-	case strings.HasPrefix(e, "oracle"):
-		return strings.Contains(e, "byol") || strings.Contains(e, "bring-your-own") || strings.Contains(e, "bring your own")
-	}
-	return false
+	return e == "mysql" || e == "mariadb" || e == "postgres" || e == "postgresql" || strings.HasPrefix(e, "aurora")
 }
