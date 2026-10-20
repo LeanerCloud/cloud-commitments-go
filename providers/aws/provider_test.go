@@ -433,7 +433,6 @@ func TestAWSProvider_ValidateCredentials_WithMock(t *testing.T) {
 }
 
 func TestAWSProvider_GetAccounts_WithMock(t *testing.T) {
-	t.Parallel()
 	t.Run("returns current account only when no org accounts", func(t *testing.T) {
 		p := &Provider{
 			cfg: aws.Config{Region: "us-east-1"},
