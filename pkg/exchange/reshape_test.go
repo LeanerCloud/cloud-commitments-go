@@ -161,7 +161,7 @@ func TestNormalizationFactorForSize(t *testing.T) {
 	assert.Equal(t, 4.0, NormalizationFactorForSize("large"))
 	assert.Equal(t, 8.0, NormalizationFactorForSize("xlarge"))
 	assert.Equal(t, 192.0, NormalizationFactorForSize("24xlarge"))
-	assert.Equal(t, 192.0, NormalizationFactorForSize("metal"))
+	assert.Equal(t, 0.0, NormalizationFactorForSize("metal"), "metal is family-dependent")
 	assert.Equal(t, 0.0, NormalizationFactorForSize("unknown"))
 }
 
@@ -241,4 +241,49 @@ func TestFindBestFit_CapsAtOwnedCapacity(t *testing.T) {
 			assert.Equal(t, tt.wantCount, count)
 		})
 	}
+}
+
+// Issue #552: "metal" is family-dependent, so it is never a table size or a target.
+func TestAnalyzeReshaping_Metal(t *testing.T) {
+	t.Parallel()
+	util := func(id string, u float64) []UtilizationInfo {
+		return []UtilizationInfo{{RIID: id, UtilizationPercent: u}}
+	}
+
+	t.Run("metal source without factor is skipped visibly", func(t *testing.T) {
+		t.Parallel()
+		ri := RIInfo{ID: "r", InstanceType: "i3.metal", InstanceCount: 1, OfferingClass: "convertible"}
+		recs := AnalyzeReshaping([]RIInfo{ri}, util("r", 50), 95)
+		if assert.Len(t, recs, 1) {
+			assert.Empty(t, recs[0].TargetInstanceType)
+			assert.Contains(t, recs[0].Reason, "No normalization factor known for i3.metal")
+		}
+	})
+
+	t.Run("metal source with explicit factor still analyzes", func(t *testing.T) {
+		t.Parallel()
+		// i3.metal = 128 units; 50% used = 64 units = 1x i3.8xlarge.
+		ri := RIInfo{ID: "r", InstanceType: "i3.metal", InstanceCount: 1, OfferingClass: "convertible", NormalizationFactor: 128}
+		recs := AnalyzeReshaping([]RIInfo{ri}, util("r", 50), 95)
+		if assert.Len(t, recs, 1) {
+			assert.Equal(t, "i3.8xlarge", recs[0].TargetInstanceType)
+			assert.Equal(t, int32(1), recs[0].TargetCount)
+		}
+	})
+
+	t.Run("no target is ever metal", func(t *testing.T) {
+		t.Parallel()
+		// Reproduced: 100x t3.2xlarge@95-ish and 2x m5.24xlarge@90% used to pick *.metal.
+		for _, ri := range []RIInfo{
+			{ID: "a", InstanceType: "t3.2xlarge", InstanceCount: 100, OfferingClass: "convertible"},
+			{ID: "b", InstanceType: "m5.24xlarge", InstanceCount: 2, OfferingClass: "convertible"},
+		} {
+			for _, rec := range AnalyzeReshaping([]RIInfo{ri}, util(ri.ID, 90), 95) {
+				assert.NotContains(t, rec.TargetInstanceType, "metal")
+			}
+		}
+		for _, s := range sizeOrder {
+			assert.NotEqual(t, "metal", s)
+		}
+	})
 }

@@ -191,6 +191,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   cancellable** (#556): `GetExistingCommitments` and `GetValidResourceTypes`
   now check the context per page and fail loudly after 50 pages instead of
   looping on a NextToken that never ends.
+- **`exchange`:** reshape no longer treats `metal` as a fixed 192-unit size: it is removed from the size table, so `NormalizationFactorForSize("metal")` returns 0 (unknown), no recommendation targets a `*.metal` type, and a metal RI without a caller-supplied `NormalizationFactor` is reported as skipped with a reason instead of being sized as 192 units or dropped silently (#552).
 - **`exchange`:** reshape recommendations no longer propose a target with more normalized capacity than the source RI owns (3x `m5.xlarge` at 80% used to become 2x `m5.2xlarge`, 32 units against 24 owned); `findBestFit` now steps down to a smaller size when rounding up would exceed the owned units, and skips the RI when nothing fits (#551).
 - **`azure`:** compute `PurchaseCommitment` now checks the term before the payment option and returns the term error unwrapped (no `failed to marshal request:` prefix), like the other six services (#538).
 - **`azure`:** synapse's zero-quantity purchase error now includes the quantity (`..., got 0`), like the other six services (#538).

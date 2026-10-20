@@ -374,6 +374,10 @@ func nfProximityComponent(off OfferingOption, src RIInfo) float64 {
 }
 
 // normalizationFactors maps EC2 instance sizes to their AWS normalization factors.
+// "metal" is deliberately absent: its factor equals the family's largest size
+// (i3.metal 128, m5.metal 192, m5zn.metal 96), and some families have no metal
+// size, so it cannot be a family-independent constant. Callers that know it set
+// RIInfo.NormalizationFactor.
 // See: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ri-modification-instancemove.html
 var normalizationFactors = map[string]float64{
 	"nano":     0.25,
@@ -393,7 +397,6 @@ var normalizationFactors = map[string]float64{
 	"16xlarge": 128,
 	"18xlarge": 144,
 	"24xlarge": 192,
-	"metal":    192,
 }
 
 // sizeOrder lists instance sizes from smallest to largest for iteration.
@@ -401,7 +404,7 @@ var sizeOrder = []string{
 	"nano", "micro", "small", "medium", "large", "xlarge",
 	"2xlarge", "3xlarge", "4xlarge", "6xlarge", "8xlarge",
 	"9xlarge", "10xlarge", "12xlarge", "16xlarge", "18xlarge",
-	"24xlarge", "metal",
+	"24xlarge",
 }
 
 // parseInstanceType splits "m5.xlarge" into ("m5", "xlarge").
@@ -415,7 +418,7 @@ func parseInstanceType(instanceType string) (family, size string) {
 }
 
 // NormalizationFactorForSize returns the normalization factor for a given instance size.
-// Returns 0 if the size is unknown.
+// Returns 0 if the size is unknown, including "metal" (family-dependent).
 func NormalizationFactorForSize(size string) float64 {
 	return normalizationFactors[size]
 }
@@ -472,7 +475,18 @@ func analyzeRI(ri RIInfo, utilMap map[string]float64, threshold float64) *Reshap
 
 	normFactor := resolveNormFactor(ri, size)
 	if normFactor == 0 {
-		return nil
+		// Surface the skip instead of dropping the RI silently (metal sizes
+		// land here unless the caller supplies the real factor).
+		return &ReshapeRecommendation{
+			SourceRIID:         ri.ID,
+			SourceInstanceType: ri.InstanceType,
+			SourceCount:        ri.InstanceCount,
+			UtilizationPercent: util,
+			Reason: fmt.Sprintf(
+				"No normalization factor known for %s (size %q); set the RI's NormalizationFactor to analyze it. No exchange target recommended.",
+				ri.InstanceType, size,
+			),
+		}
 	}
 
 	normalizedPurchased := normFactor * float64(ri.InstanceCount)
