@@ -19,6 +19,8 @@ import (
 	"io"
 	"net/http"
 	"time"
+
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/slot"
 )
 
 // HTTPClient is the minimal surface FetchAll needs. Declared here (rather
@@ -96,7 +98,9 @@ func fetchAll[T any](ctx context.Context, httpClient HTTPClient, initialURL stri
 		}
 		seen[nextURL] = struct{}{}
 
-		page, err := fetchOnePage[T](ctx, httpClient, nextURL, pageIdx, pageTimeout)
+		page, err := slot.Do(ctx, func() (*Page[T], error) {
+			return fetchOnePage[T](ctx, httpClient, nextURL, pageIdx, pageTimeout)
+		})
 		if err != nil {
 			return nil, err
 		}
