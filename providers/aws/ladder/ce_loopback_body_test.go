@@ -58,6 +58,7 @@ func (b *ceSource) Close() error {
 }
 
 func TestCELoopbackBodyOwnership(t *testing.T) {
+	t.Parallel()
 	readErr, closeErr, downstreamErr := errors.New("read"), errors.New("close"), errors.New("transport")
 	for _, mode := range []string{"binary", "get-body", "nil", "no-body", "empty", "unknown", "zero", "read", "close", "both", "scheme", "host", "guard-close", "transport"} {
 		t.Run(mode, func(t *testing.T) {
@@ -287,6 +288,7 @@ func (c ceScheduledClient) Do(req *http.Request) (*http.Response, error) {
 }
 
 func TestCELoopbackPublicBaselineAfterBodyClose(t *testing.T) {
+	t.Parallel()
 	s := &ceSchedule{abort: make(chan struct{}), entered: make(chan struct{}), sdkClosed: make(chan struct{}), wrote: make(chan struct{}), connClosed: make(chan struct{})}
 	ctx, cancel := context.WithCancel(context.Background())
 	done, handlerDone := make(chan struct{}), make(chan struct{})

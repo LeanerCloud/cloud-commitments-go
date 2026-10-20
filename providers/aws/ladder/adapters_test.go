@@ -102,6 +102,7 @@ func newSPLister(api activeSPListAPI) *spListerAdapter {
 // ---------------------------------------------------------------------------
 
 func TestSPLister_HappyPath(t *testing.T) {
+	t.Parallel()
 	sp := makeSPEntry("sp-abc", string(sptypes.SavingsPlanTypeCompute), "1.50", "", sptypes.SavingsPlanStateActive)
 	mock := &mockDescribeSP{
 		pages: []*sdksp.DescribeSavingsPlansOutput{{SavingsPlans: []sptypes.SavingsPlan{sp}}},
@@ -126,6 +127,7 @@ func TestSPLister_HappyPath(t *testing.T) {
 // immediately (otherwise the next run double-purchases); queued stays
 // excluded because a future-dated SP does not cover usage until its start.
 func TestSPLister_StatesFilter(t *testing.T) {
+	t.Parallel()
 	var gotStates [][]sptypes.SavingsPlanState
 	inner := &mockDescribeSP{
 		pages: []*sdksp.DescribeSavingsPlansOutput{{}},
@@ -147,6 +149,7 @@ func TestSPLister_StatesFilter(t *testing.T) {
 // TestSPLister_PaymentPendingIncluded verifies a payment-pending SP is mapped
 // and returned as existing commitment.
 func TestSPLister_PaymentPendingIncluded(t *testing.T) {
+	t.Parallel()
 	sp := makeSPEntry("sp-pending", string(sptypes.SavingsPlanTypeCompute), "3.00", "", sptypes.SavingsPlanStatePaymentPending)
 	mock := &mockDescribeSP{
 		pages: []*sdksp.DescribeSavingsPlansOutput{{SavingsPlans: []sptypes.SavingsPlan{sp}}},
@@ -167,6 +170,7 @@ func TestSPLister_PaymentPendingIncluded(t *testing.T) {
 // ExistingUSDPerHour and under-purchase), while a global Compute SP is
 // always included.
 func TestSPLister_OutOfRegionEC2InstanceExcluded(t *testing.T) {
+	t.Parallel()
 	inRegion := makeSPEntry("sp-ec2-local", string(sptypes.SavingsPlanTypeEc2Instance), "1.00", testRegion, sptypes.SavingsPlanStateActive)
 	outOfRegion := makeSPEntry("sp-ec2-remote", string(sptypes.SavingsPlanTypeEc2Instance), "2.00", "eu-west-1", sptypes.SavingsPlanStateActive)
 	globalCompute := makeSPEntry("sp-compute", string(sptypes.SavingsPlanTypeCompute), "4.00", "", sptypes.SavingsPlanStateActive)
@@ -190,6 +194,7 @@ func TestSPLister_OutOfRegionEC2InstanceExcluded(t *testing.T) {
 // TestSPLister_PaginationExhausted verifies that two pages are fetched and
 // merged (regression against issue #692 pattern: truncation at page 1).
 func TestSPLister_PaginationExhausted(t *testing.T) {
+	t.Parallel()
 	sp1 := makeSPEntry("sp-1", string(sptypes.SavingsPlanTypeCompute), "1.00", "", sptypes.SavingsPlanStateActive)
 	sp2 := makeSPEntry("sp-2", string(sptypes.SavingsPlanTypeEc2Instance), "2.00", testRegion, sptypes.SavingsPlanStateActive)
 	pages := []*sdksp.DescribeSavingsPlansOutput{
@@ -213,6 +218,7 @@ func TestSPLister_PaginationExhausted(t *testing.T) {
 // than any arbitrary cap must still be fully listed (a truncated listing
 // would understate existing commitment). 25 pages > the removed 20-page cap.
 func TestSPLister_DeepPaginationNoCap(t *testing.T) {
+	t.Parallel()
 	const n = 25
 	pages := make([]*sdksp.DescribeSavingsPlansOutput, n)
 	tokens := make([]string, n-1)
@@ -240,6 +246,7 @@ func TestSPLister_DeepPaginationNoCap(t *testing.T) {
 // page cap: a NextToken that repeats indicates API misbehavior and must abort
 // with an error instead of looping forever.
 func TestSPLister_RepeatedTokenFails(t *testing.T) {
+	t.Parallel()
 	pages := []*sdksp.DescribeSavingsPlansOutput{
 		{NextToken: aws.String("tok1")},
 		{NextToken: aws.String("tok1")}, // same token again -> loop
@@ -256,6 +263,7 @@ func TestSPLister_RepeatedTokenFails(t *testing.T) {
 // TestSPLister_InvalidCommitmentFails verifies fail-loud on a non-numeric
 // Commitment string (feedback_strict_int_parse, feedback_no_silent_fallbacks).
 func TestSPLister_InvalidCommitmentFails(t *testing.T) {
+	t.Parallel()
 	sp := makeSPEntry("sp-bad", string(sptypes.SavingsPlanTypeCompute), "not-a-number", "", sptypes.SavingsPlanStateActive)
 	mock := &mockDescribeSP{
 		pages: []*sdksp.DescribeSavingsPlansOutput{{SavingsPlans: []sptypes.SavingsPlan{sp}}},
@@ -272,6 +280,7 @@ func TestSPLister_InvalidCommitmentFails(t *testing.T) {
 // or negative Commitment (which strconv.ParseFloat accepts / passes through)
 // fails loud rather than flowing into the ladder layer-state SP-cost totals.
 func TestSPLister_NonFiniteOrNegativeCommitmentFails(t *testing.T) {
+	t.Parallel()
 	for _, bad := range []string{"NaN", "Inf", "-Inf", "-1.5"} {
 		t.Run(bad, func(t *testing.T) {
 			sp := makeSPEntry("sp-nonfinite", string(sptypes.SavingsPlanTypeCompute), bad, "", sptypes.SavingsPlanStateActive)
@@ -291,6 +300,7 @@ func TestSPLister_NonFiniteOrNegativeCommitmentFails(t *testing.T) {
 // Start/End dates: a silently zero EndDate would drop the SP from
 // sumExpiringSPHourlyCost and understate expiring commitment.
 func TestSPLister_BadDatesFail(t *testing.T) {
+	t.Parallel()
 	base := func() sptypes.SavingsPlan {
 		return makeSPEntry("sp-dates", string(sptypes.SavingsPlanTypeCompute), "1.00", "", sptypes.SavingsPlanStateActive)
 	}
@@ -327,6 +337,7 @@ func TestSPLister_BadDatesFail(t *testing.T) {
 // through to the region-scope filter would silently exclude it ("" != region),
 // understating existing commitment and over-purchasing.
 func TestSPLister_EmptyRegionEC2InstanceFails(t *testing.T) {
+	t.Parallel()
 	sp := makeSPEntry("sp-noregion", string(sptypes.SavingsPlanTypeEc2Instance), "1.00", "", sptypes.SavingsPlanStateActive)
 	mock := &mockDescribeSP{
 		pages: []*sdksp.DescribeSavingsPlansOutput{{SavingsPlans: []sptypes.SavingsPlan{sp}}},
@@ -343,6 +354,7 @@ func TestSPLister_EmptyRegionEC2InstanceFails(t *testing.T) {
 // TestSPLister_APIErrorPropagated verifies that a DescribeSavingsPlans error
 // is propagated to the caller (no silent swallowing).
 func TestSPLister_APIErrorPropagated(t *testing.T) {
+	t.Parallel()
 	sentinel := errors.New("DescribeSavingsPlans failed")
 	mock := &mockDescribeSP{
 		pages:  []*sdksp.DescribeSavingsPlansOutput{{}},
@@ -359,6 +371,7 @@ func TestSPLister_APIErrorPropagated(t *testing.T) {
 // TestSPLister_EmptyResult verifies that an account with no matching SPs
 // returns an empty slice without error.
 func TestSPLister_EmptyResult(t *testing.T) {
+	t.Parallel()
 	mock := &mockDescribeSP{
 		pages: []*sdksp.DescribeSavingsPlansOutput{{}},
 	}
@@ -373,6 +386,7 @@ func TestSPLister_EmptyResult(t *testing.T) {
 // TestSPLister_ContextCancelled verifies that a canceled context terminates
 // the listing loop before the first (or any subsequent) API call.
 func TestSPLister_ContextCancelled(t *testing.T) {
+	t.Parallel()
 	pages := []*sdksp.DescribeSavingsPlansOutput{
 		{NextToken: aws.String("tok1")},
 		{},
@@ -390,6 +404,7 @@ func TestSPLister_ContextCancelled(t *testing.T) {
 // TestSPLister_NilIDFails verifies fail-loud on a SP entry with a nil
 // SavingsPlanId (un-identifiable entry; feedback_no_silent_fallbacks).
 func TestSPLister_NilIDFails(t *testing.T) {
+	t.Parallel()
 	sp := sptypes.SavingsPlan{
 		SavingsPlanId: nil, // nil: cannot identify
 		Commitment:    aws.String("1.00"),
@@ -489,6 +504,7 @@ func ceDailyRow(dateStr, amount string) cetypes.ResultByTime {
 // []recommendations.DailyCost -> []DailyPoint mapping: dates and values are
 // copied index-for-index, oldest-first.
 func TestOnDemandSeriesAdapter_MapsDailyCostToDailyPoint(t *testing.T) {
+	t.Parallel()
 	day := time.Now().UTC().Truncate(24*time.Hour).AddDate(0, 0, -2)
 	mock := &ladderCEMock{costAndUsage: &costexplorer.GetCostAndUsageOutput{
 		ResultsByTime: []cetypes.ResultByTime{
@@ -511,6 +527,7 @@ func TestOnDemandSeriesAdapter_MapsDailyCostToDailyPoint(t *testing.T) {
 // TestOnDemandSeriesAdapter_PropagatesError verifies errors pass through the
 // adapter unchanged (no silent fallback).
 func TestOnDemandSeriesAdapter_PropagatesError(t *testing.T) {
+	t.Parallel()
 	// Empty CE output -> the client errors on the empty series.
 	adapter := &onDemandSeriesAdapter{client: recommendations.NewClientWithAPI(&ladderCEMock{}, testRegion), accountID: "fixture-account"}
 
@@ -524,6 +541,7 @@ func TestOnDemandSeriesAdapter_PropagatesError(t *testing.T) {
 // recommendations.SPCoverageSummary -> local SPCoverageSummary mapping with a
 // populated CE response: covered $120 + on-demand $120 over 1 day = 50%.
 func TestSPCoverageAdapter_MapsCoveragePct(t *testing.T) {
+	t.Parallel()
 	mock := &ladderCEMock{spCoverage: &costexplorer.GetSavingsPlansCoverageOutput{
 		SavingsPlansCoverages: []cetypes.SavingsPlansCoverage{{
 			Coverage: &cetypes.SavingsPlansCoverageData{
@@ -545,6 +563,7 @@ func TestSPCoverageAdapter_MapsCoveragePct(t *testing.T) {
 // an empty CE coverage response maps to CoveragePct == nil ("not measured"),
 // never a fabricated 0.
 func TestSPCoverageAdapter_NilWhenNoData(t *testing.T) {
+	t.Parallel()
 	adapter := &spCoverageAdapter{client: recommendations.NewClientWithAPI(&ladderCEMock{}, testRegion)}
 
 	got, err := adapter.GetSPCoverageSummary(context.Background(), testRegion, 30)
@@ -556,6 +575,7 @@ func TestSPCoverageAdapter_NilWhenNoData(t *testing.T) {
 // TestSPUtilizationAdapter_MapsUtilizationPct verifies the direct
 // recommendations.SPUtilizationSummary -> local SPUtilizationSummary mapping.
 func TestSPUtilizationAdapter_MapsUtilizationPct(t *testing.T) {
+	t.Parallel()
 	mock := &ladderCEMock{spUtilization: &costexplorer.GetSavingsPlansUtilizationOutput{
 		Total: &cetypes.SavingsPlansUtilizationAggregates{
 			Utilization: &cetypes.SavingsPlansUtilization{
@@ -575,6 +595,7 @@ func TestSPUtilizationAdapter_MapsUtilizationPct(t *testing.T) {
 // TestSPUtilizationAdapter_NilWhenNoData verifies nil propagation on an empty
 // CE utilization response.
 func TestSPUtilizationAdapter_NilWhenNoData(t *testing.T) {
+	t.Parallel()
 	adapter := &spUtilizationAdapter{client: recommendations.NewClientWithAPI(&ladderCEMock{}, testRegion)}
 
 	got, err := adapter.GetSPUtilization(context.Background(), cetypes.SupportedSavingsPlansTypeComputeSp, "", 30)
@@ -594,6 +615,7 @@ func TestSPUtilizationAdapter_NilWhenNoData(t *testing.T) {
 // Compute SP at $2/hr and asserts that GetLayerStates returns
 // ExistingUSDPerHour == 2.0 for LayerComputeSP.
 func TestGetLayerStates_RealSPLister_NonZeroExisting(t *testing.T) {
+	t.Parallel()
 	sp := makeSPEntry("sp-real", string(sptypes.SavingsPlanTypeCompute), "2.00", "", sptypes.SavingsPlanStateActive)
 	mockSPAPI := &mockDescribeSP{
 		pages: []*sdksp.DescribeSavingsPlansOutput{{SavingsPlans: []sptypes.SavingsPlan{sp}}},
@@ -624,6 +646,7 @@ func TestGetLayerStates_RealSPLister_NonZeroExisting(t *testing.T) {
 }
 
 func TestExistingSPStates(t *testing.T) {
+	t.Parallel()
 	got := ExistingSPStates()
 	assert.Equal(t, []sptypes.SavingsPlanState{
 		sptypes.SavingsPlanStateActive,
@@ -635,6 +658,7 @@ func TestExistingSPStates(t *testing.T) {
 }
 
 func TestCountsAsExistingSP(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		planType sptypes.SavingsPlanType

@@ -105,6 +105,7 @@ func sdkRateLadder(t *testing.T, pages []string) *awsladder.AWSLadder {
 }
 
 func TestCommitmentRates_PublicSDKConsumer(t *testing.T) {
+	t.Parallel()
 	a := sdkRateLadder(t, []string{
 		ratePage(rateDetail("fixture-account", "eu-west-1", "m5", "10", "10")+","+
 			rateDetail("other-fixture-account", "eu-west-1", "m5", "999", "1")+","+
@@ -176,6 +177,7 @@ func assertMissingRateHold(t *testing.T, result *ladder.AllocateResult, layer la
 }
 
 func TestCommitmentRates_SDKMissingAndMalformed(t *testing.T) {
+	t.Parallel()
 	for _, cost := range []string{"", "bad"} {
 		t.Run("cost="+cost, func(t *testing.T) {
 			detail := rateDetail("fixture-account", "eu-west-1", "m5", cost, "3")

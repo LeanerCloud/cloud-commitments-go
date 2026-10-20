@@ -84,6 +84,7 @@ func spScopeCoveragePage(covered, uncovered, token string) string {
 }
 
 func TestGetLayerStates_SPCoverageScopeSDK(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name         string
 		regional     []string

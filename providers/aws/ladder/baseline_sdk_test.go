@@ -25,6 +25,7 @@ import (
 
 // Constructed CE responses exercise the public factory without cloud access.
 func TestScopedBaselineParentCompatible(t *testing.T) {
+	t.Parallel()
 	for _, mode := range []string{"account", "reverse", "zero", "lag2", "lag3", "duplicate", "page-duplicate", "hole", "leading", "outside", "future", "bad-start", "nil-start", "nil-period", "nil-end", "bad-end", "short-period", "long-period", "backward-period", "empty", "all-zero", "missing-total", "missing-metric", "missing-amount", "bad-amount", "NaN", "Inf", "negative", "stale", "few", "provider-error"} {
 		t.Run(mode, func(t *testing.T) {
 			var calls atomic.Int32

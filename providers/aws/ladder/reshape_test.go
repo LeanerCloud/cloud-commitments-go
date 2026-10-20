@@ -53,6 +53,7 @@ func validReshapeCfg() ladder.BufferReshapeConfig {
 // ---------------------------------------------------------------------------
 
 func TestReshapeBuffer_CapMapping_SetValuesPassedVerbatim(t *testing.T) {
+	t.Parallel()
 	ex := &fakeExchangeRunner{}
 	a := newWiredLadder(t, &fakePurchaser{}, &fakePurchaser{}, ex)
 
@@ -66,6 +67,7 @@ func TestReshapeBuffer_CapMapping_SetValuesPassedVerbatim(t *testing.T) {
 }
 
 func TestReshapeBuffer_CapMapping_NilMeansUnlimited(t *testing.T) {
+	t.Parallel()
 	ex := &fakeExchangeRunner{}
 	a := newWiredLadder(t, &fakePurchaser{}, &fakePurchaser{}, ex)
 
@@ -81,6 +83,7 @@ func TestReshapeBuffer_CapMapping_NilMeansUnlimited(t *testing.T) {
 }
 
 func TestReshapeBuffer_CapValidation_ZeroAndBadValuesRejected(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		mutate  func(*ladder.BufferReshapeConfig)
@@ -115,6 +118,7 @@ func TestReshapeBuffer_CapValidation_ZeroAndBadValuesRejected(t *testing.T) {
 }
 
 func TestReshapeBuffer_ThresholdAndLookbackValidation(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		mutate  func(*ladder.BufferReshapeConfig)
@@ -143,6 +147,7 @@ func TestReshapeBuffer_ThresholdAndLookbackValidation(t *testing.T) {
 }
 
 func TestReshapeBuffer_DryRun_ForwardedThroughSeam(t *testing.T) {
+	t.Parallel()
 	// pkg/exchange now supports a true dry-run (DryRun=true skips every mutation
 	// and returns Simulated outcomes), so ReshapeBuffer forwards cfg.DryRun
 	// through the seam instead of failing loud. The concrete runner (L16) honors
@@ -159,6 +164,7 @@ func TestReshapeBuffer_DryRun_ForwardedThroughSeam(t *testing.T) {
 }
 
 func TestReshapeBuffer_LiveRun_AlwaysAutoMode(t *testing.T) {
+	t.Parallel()
 	ex := &fakeExchangeRunner{}
 	a := newWiredLadder(t, &fakePurchaser{}, &fakePurchaser{}, ex)
 
@@ -178,6 +184,7 @@ func TestReshapeBuffer_LiveRun_AlwaysAutoMode(t *testing.T) {
 // future concrete runner would default it to nil (standalone scoping) and cancel
 // the standalone task's pendings.
 func TestReshapeBuffer_LadderRunID_ForwardedThroughSeam(t *testing.T) {
+	t.Parallel()
 	ex := &fakeExchangeRunner{}
 	a := newWiredLadder(t, &fakePurchaser{}, &fakePurchaser{}, ex)
 
@@ -194,6 +201,7 @@ func TestReshapeBuffer_LadderRunID_ForwardedThroughSeam(t *testing.T) {
 // TestReshapeBuffer_NilLadderRunID_ForwardedAsNil verifies a non-ladder caller
 // forwards nil (standalone origin) rather than a fabricated value.
 func TestReshapeBuffer_NilLadderRunID_ForwardedAsNil(t *testing.T) {
+	t.Parallel()
 	ex := &fakeExchangeRunner{}
 	a := newWiredLadder(t, &fakePurchaser{}, &fakePurchaser{}, ex)
 
@@ -209,6 +217,7 @@ func TestReshapeBuffer_NilLadderRunID_ForwardedAsNil(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestReshapeBuffer_SummaryMapping(t *testing.T) {
+	t.Parallel()
 	ex := &fakeExchangeRunner{result: &exchange.AutoExchangeResult{
 		Mode: string(exchange.ExchangeModeAuto),
 		Completed: []exchange.ExchangeOutcome{
@@ -238,6 +247,7 @@ func TestReshapeBuffer_SummaryMapping(t *testing.T) {
 }
 
 func TestReshapeBuffer_PartialFailure_SummaryPlusError(t *testing.T) {
+	t.Parallel()
 	// Includes a skipped item so the error's denominator provably counts
 	// actual ATTEMPTS (completed + failed = 2), not Analyzed (3): skipped
 	// and pending items were never attempted.
@@ -273,6 +283,7 @@ func TestReshapeBuffer_PartialFailure_SummaryPlusError(t *testing.T) {
 }
 
 func TestReshapeBuffer_RunnerError_Propagates(t *testing.T) {
+	t.Parallel()
 	runnerErr := errors.New("exchange store unavailable")
 	ex := &fakeExchangeRunner{err: runnerErr}
 	a := newWiredLadder(t, &fakePurchaser{}, &fakePurchaser{}, ex)
@@ -284,6 +295,7 @@ func TestReshapeBuffer_RunnerError_Propagates(t *testing.T) {
 }
 
 func TestReshapeBuffer_NilResultWithoutError_IsContractViolation(t *testing.T) {
+	t.Parallel()
 	// The fake returns a synthetic result when both fields are zero, so force
 	// the nil-result path with a sentinel: result nil, err nil is only
 	// reachable when the runner violates its contract.
@@ -303,6 +315,7 @@ func (n *nilResultRunner) RunAutoExchange(_ context.Context, _ exchange.RIExchan
 }
 
 func TestReshapeBuffer_WrongScope_ReturnsError(t *testing.T) {
+	t.Parallel()
 	ex := &fakeExchangeRunner{}
 	a := newWiredLadder(t, &fakePurchaser{}, &fakePurchaser{}, ex)
 
@@ -314,6 +327,7 @@ func TestReshapeBuffer_WrongScope_ReturnsError(t *testing.T) {
 }
 
 func TestReshapeBuffer_UnknownOutcome_RenderedAsUnknownNotFailed(t *testing.T) {
+	t.Parallel()
 	ex := &fakeExchangeRunner{result: &exchange.AutoExchangeResult{
 		Mode: string(exchange.ExchangeModeAuto),
 		Failed: []exchange.ExchangeOutcome{
@@ -338,6 +352,7 @@ func TestReshapeBuffer_UnknownOutcome_RenderedAsUnknownNotFailed(t *testing.T) {
 }
 
 func TestReshapeBuffer_UnknownOnly_WrapsErrOutcomeUnknown(t *testing.T) {
+	t.Parallel()
 	ex := &fakeExchangeRunner{result: &exchange.AutoExchangeResult{
 		Mode: string(exchange.ExchangeModeAuto),
 		Failed: []exchange.ExchangeOutcome{

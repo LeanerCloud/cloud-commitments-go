@@ -151,6 +151,7 @@ func makeSP(id, planType string, hourly float64, end time.Time) ActiveSP {
 // ---------------------------------------------------------------------------
 
 func TestNew_RequiredFieldValidation(t *testing.T) {
+	t.Parallel()
 	ri := &fakeRILister{}
 	sp := &fakeSPLister{}
 	cov := &fakeCoverageSource{}
@@ -191,11 +192,13 @@ func TestNew_RequiredFieldValidation(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestProvider(t *testing.T) {
+	t.Parallel()
 	a := newTestLadder(t, &fakeRILister{}, &fakeSPLister{}, &fakeCoverageSource{}, &fakeUtilizationSource{})
 	assert.Equal(t, common.ProviderAWS, a.Provider())
 }
 
 func TestSupportedLayers_RoleCardinality(t *testing.T) {
+	t.Parallel()
 	a := newTestLadder(t, &fakeRILister{}, &fakeSPLister{}, &fakeCoverageSource{}, &fakeUtilizationSource{})
 	layers := a.SupportedLayers()
 	require.Len(t, layers, 3)
@@ -225,6 +228,7 @@ func TestSupportedLayers_RoleCardinality(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPurchaseLayer_ReturnsNotWiredError(t *testing.T) {
+	t.Parallel()
 	a := newTestLadder(t, &fakeRILister{}, &fakeSPLister{}, &fakeCoverageSource{}, &fakeUtilizationSource{})
 	_, err := a.PurchaseLayer(context.Background(), ladder.LayerConvertibleRI, common.Recommendation{}, common.PurchaseOptions{})
 	require.Error(t, err)
@@ -234,6 +238,7 @@ func TestPurchaseLayer_ReturnsNotWiredError(t *testing.T) {
 }
 
 func TestReshapeBuffer_ReturnsNotWiredError(t *testing.T) {
+	t.Parallel()
 	a := newTestLadder(t, &fakeRILister{}, &fakeSPLister{}, &fakeCoverageSource{}, &fakeUtilizationSource{})
 	_, err := a.ReshapeBuffer(context.Background(), testScope(), ladder.BufferReshapeConfig{})
 	require.Error(t, err)
@@ -245,6 +250,7 @@ func TestReshapeBuffer_ReturnsNotWiredError(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestListCommitments_MergesRIsAndSPs(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	end1yr := now.Add(365 * 24 * time.Hour)
 
@@ -289,6 +295,7 @@ func TestListCommitments_MergesRIsAndSPs(t *testing.T) {
 }
 
 func TestListCommitments_EmptySourcesReturnEmptySlice(t *testing.T) {
+	t.Parallel()
 	a := newTestLadder(t, &fakeRILister{}, &fakeSPLister{}, &fakeCoverageSource{}, &fakeUtilizationSource{})
 	commitments, err := a.ListCommitments(context.Background(), testScope())
 	require.NoError(t, err)
@@ -296,6 +303,7 @@ func TestListCommitments_EmptySourcesReturnEmptySlice(t *testing.T) {
 }
 
 func TestListCommitments_WrongScope_ReturnsError(t *testing.T) {
+	t.Parallel()
 	a := newTestLadder(t, &fakeRILister{}, &fakeSPLister{}, &fakeCoverageSource{}, &fakeUtilizationSource{})
 	wrongScope := ladder.Scope{Provider: common.ProviderAWS, AccountID: "999"}
 	_, err := a.ListCommitments(context.Background(), wrongScope)
@@ -304,6 +312,7 @@ func TestListCommitments_WrongScope_ReturnsError(t *testing.T) {
 }
 
 func TestListCommitments_RIError_Propagates(t *testing.T) {
+	t.Parallel()
 	ri := &fakeRILister{err: errors.New("AWS API error")}
 	a := newTestLadder(t, ri, &fakeSPLister{}, &fakeCoverageSource{}, &fakeUtilizationSource{})
 	_, err := a.ListCommitments(context.Background(), testScope())
@@ -316,6 +325,7 @@ func TestListCommitments_RIError_Propagates(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestRIHourlyCost_PaymentOptions(t *testing.T) {
+	t.Parallel()
 	oneYearSeconds := int64(31536000)
 	tests := []struct {
 		name            string
@@ -396,6 +406,7 @@ func TestRIHourlyCost_PaymentOptions(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGetLayerStates_EmptyLayer_ExplicitZeros(t *testing.T) {
+	t.Parallel()
 	// Empty RI and SP lists. The contract requires ExistingUSDPerHour and
 	// ExpiringUSDPerHour to be explicit zero pointers (not nil), and
 	// UtilizationPct to be nil (genuinely unmeasured on an empty layer).
@@ -432,6 +443,7 @@ func TestGetLayerStates_EmptyLayer_ExplicitZeros(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGetLayerStates_ExpiryHorizonBoundary(t *testing.T) {
+	t.Parallel()
 	now := time.Now()
 	horizonDays := 30
 
@@ -468,6 +480,7 @@ func TestGetLayerStates_ExpiryHorizonBoundary(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGetLayerStates_RILayer_CountGreaterThanOne_MultipliesCost(t *testing.T) {
+	t.Parallel()
 	// Regression: DescribeReservedInstances pricing fields are per-instance.
 	// A count=3 RI at 0.40/hr recurring must contribute 1.20/hr to
 	// ExistingUSDPerHour — understating this by factor InstanceCount would
@@ -500,6 +513,7 @@ func TestGetLayerStates_RILayer_CountGreaterThanOne_MultipliesCost(t *testing.T)
 // ---------------------------------------------------------------------------
 
 func TestGetLayerStates_RILayer_CoverageAndUtilization(t *testing.T) {
+	t.Parallel()
 	ris := []ec2svc.ConvertibleRI{
 		makeRI("ri-1", "m5.large", 1, 0.50, time.Now().Add(365*24*time.Hour)),
 	}
@@ -543,6 +557,7 @@ func TestGetLayerStates_RILayer_CoverageAndUtilization(t *testing.T) {
 // in "other-ri"'s poor utilization and trigger a reshape decision that has
 // nothing to do with this account's convertible RIs.
 func TestGetLayerStates_RILayer_UtilizationExcludesUnrelatedReservations(t *testing.T) {
+	t.Parallel()
 	ris := []ec2svc.ConvertibleRI{
 		makeRI("ri-1", "m5.large", 1, 0.50, time.Now().Add(365*24*time.Hour)),
 	}
@@ -572,6 +587,7 @@ func TestGetLayerStates_RILayer_UtilizationExcludesUnrelatedReservations(t *test
 }
 
 func TestGetLayerStates_CoverageError_DegradesToNil(t *testing.T) {
+	t.Parallel()
 	ris := []ec2svc.ConvertibleRI{
 		makeRI("ri-1", "m5.large", 1, 0.50, time.Now().Add(365*24*time.Hour)),
 	}
@@ -587,6 +603,7 @@ func TestGetLayerStates_CoverageError_DegradesToNil(t *testing.T) {
 }
 
 func TestGetLayerStates_SPLayers_NilSPInterfaces_GiveNilCovUtil(t *testing.T) {
+	t.Parallel()
 	sps := []ActiveSP{makeSP("sp-1", "Compute", 2.0, time.Now().Add(365*24*time.Hour))}
 	a := newTestLadder(t,
 		&fakeRILister{},
@@ -606,6 +623,7 @@ func TestGetLayerStates_SPLayers_NilSPInterfaces_GiveNilCovUtil(t *testing.T) {
 }
 
 func TestGetLayerStates_SPLayers_EqualGeographyCoverage(t *testing.T) {
+	t.Parallel()
 	// Distinct geographical scopes can have equal aggregate coverage.
 	covPct := 75.0
 	spCov := &fakeSPCoverageSource{summary: SPCoverageSummary{CoveragePct: &covPct}}
@@ -631,6 +649,7 @@ func TestGetLayerStates_SPLayers_EqualGeographyCoverage(t *testing.T) {
 }
 
 func TestGetLayerStates_SPUtilization_CorrectCEEnum(t *testing.T) {
+	t.Parallel()
 	// Verify that spLayerState passes the correct CE SDK enum to GetSPUtilization.
 	utilPct := 85.0
 	spUtil := &fakeSPUtilizationSource{summary: SPUtilizationSummary{UtilizationPct: &utilPct}}
@@ -661,6 +680,7 @@ func TestGetLayerStates_SPUtilization_CorrectCEEnum(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestToSPUtilPlanType_MapsCorrectly(t *testing.T) {
+	t.Parallel()
 	got, err := toSPUtilPlanType("EC2Instance")
 	require.NoError(t, err)
 	assert.Equal(t, cetypes.SupportedSavingsPlansTypeEc2InstanceSp, got)
@@ -678,6 +698,7 @@ func TestToSPUtilPlanType_MapsCorrectly(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestComputeEC2CoveragePct_WeightedAverage(t *testing.T) {
+	t.Parallel()
 	m := recommendations.PoolCoverageMap{
 		"us-east-1:m5.large":  {Pct: 80.0, AvgInstancesPerHour: 10.0},
 		"us-east-1:m5.xlarge": {Pct: 60.0, AvgInstancesPerHour: 5.0},
@@ -689,6 +710,7 @@ func TestComputeEC2CoveragePct_WeightedAverage(t *testing.T) {
 }
 
 func TestComputeEC2CoveragePct_NoMatchingPools_ReturnsNil(t *testing.T) {
+	t.Parallel()
 	m := recommendations.PoolCoverageMap{
 		"us-west-2:m5.large": {Pct: 80.0},
 	}
@@ -697,6 +719,7 @@ func TestComputeEC2CoveragePct_NoMatchingPools_ReturnsNil(t *testing.T) {
 }
 
 func TestComputeEC2CoveragePct_AllZeroWeight_UnweightedAverage(t *testing.T) {
+	t.Parallel()
 	m := recommendations.PoolCoverageMap{
 		"us-east-1:m5.large":  {Pct: 80.0, AvgInstancesPerHour: 0},
 		"us-east-1:m5.xlarge": {Pct: 60.0, AvgInstancesPerHour: 0},
@@ -711,6 +734,7 @@ func TestComputeEC2CoveragePct_AllZeroWeight_UnweightedAverage(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestNearestRankPercentile(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		data    []float64
@@ -744,6 +768,7 @@ func TestNearestRankPercentile(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestGetUsageBaseline_SingleDaySeries_ReturnsThatValue(t *testing.T) {
+	t.Parallel()
 	// A 7-day series with all same value; p5 should return 3.0.
 	cov := &fakeCoverageSource{onDemandPoints: makeConstantPoints(7, 3.0)}
 	a := newTestLadder(t, &fakeRILister{}, &fakeSPLister{}, cov, &fakeUtilizationSource{})
@@ -762,6 +787,7 @@ func TestGetUsageBaseline_SingleDaySeries_ReturnsThatValue(t *testing.T) {
 }
 
 func TestGetUsageBaseline_P5OfVariedSeries(t *testing.T) {
+	t.Parallel()
 	// 20-element series [1..20]; p5 nearest-rank: ceil(5/100*20)=ceil(1)=1 -> sorted[0]=1.
 	cov := &fakeCoverageSource{onDemandPoints: makeRecentPoints(20)}
 	a := newTestLadder(t, &fakeRILister{}, &fakeSPLister{}, cov, &fakeUtilizationSource{})
@@ -773,6 +799,7 @@ func TestGetUsageBaseline_P5OfVariedSeries(t *testing.T) {
 }
 
 func TestGetUsageBaseline_EmptySeries_ReturnsError(t *testing.T) {
+	t.Parallel()
 	cov := &fakeCoverageSource{onDemandPoints: []DailyPoint{}}
 	a := newTestLadder(t, &fakeRILister{}, &fakeSPLister{}, cov, &fakeUtilizationSource{})
 	_, err := a.GetUsageBaseline(context.Background(), testScope(), 7, 5.0)
@@ -781,6 +808,7 @@ func TestGetUsageBaseline_EmptySeries_ReturnsError(t *testing.T) {
 }
 
 func TestGetUsageBaseline_SeriesTooShort_ReturnsError(t *testing.T) {
+	t.Parallel()
 	// 3 points with recent dates: fires minBaselineSeriesDays=7 check (3 < 7).
 	cov := &fakeCoverageSource{onDemandPoints: makeRecentPoints(3)}
 	a := newTestLadder(t, &fakeRILister{}, &fakeSPLister{}, cov, &fakeUtilizationSource{})
@@ -790,6 +818,7 @@ func TestGetUsageBaseline_SeriesTooShort_ReturnsError(t *testing.T) {
 }
 
 func TestGetUsageBaseline_NaNElement_ReturnsErrorNamingIndex(t *testing.T) {
+	t.Parallel()
 	points := makeRecentPoints(10)
 	points[4].USDPerHour = math.NaN()
 	cov := &fakeCoverageSource{onDemandPoints: points}
@@ -801,6 +830,7 @@ func TestGetUsageBaseline_NaNElement_ReturnsErrorNamingIndex(t *testing.T) {
 }
 
 func TestGetUsageBaseline_InfElement_ReturnsErrorNamingIndex(t *testing.T) {
+	t.Parallel()
 	points := makeRecentPoints(10)
 	points[7].USDPerHour = math.Inf(1)
 	cov := &fakeCoverageSource{onDemandPoints: points}
@@ -812,6 +842,7 @@ func TestGetUsageBaseline_InfElement_ReturnsErrorNamingIndex(t *testing.T) {
 }
 
 func TestGetUsageBaseline_NegativeElement_ReturnsErrorNamingIndex(t *testing.T) {
+	t.Parallel()
 	points := makeRecentPoints(10)
 	points[2].USDPerHour = -0.5
 	cov := &fakeCoverageSource{onDemandPoints: points}
@@ -823,6 +854,7 @@ func TestGetUsageBaseline_NegativeElement_ReturnsErrorNamingIndex(t *testing.T) 
 }
 
 func TestGetUsageBaseline_OnDemandSourceError_Propagates(t *testing.T) {
+	t.Parallel()
 	cov := &fakeCoverageSource{onDemandErr: errors.New("CE error")}
 	a := newTestLadder(t, &fakeRILister{}, &fakeSPLister{}, cov, &fakeUtilizationSource{})
 	_, err := a.GetUsageBaseline(context.Background(), testScope(), 30, 5.0)
@@ -831,6 +863,7 @@ func TestGetUsageBaseline_OnDemandSourceError_Propagates(t *testing.T) {
 }
 
 func TestGetUsageBaseline_InvalidPercentile_ReturnsError(t *testing.T) {
+	t.Parallel()
 	cov := &fakeCoverageSource{onDemandPoints: makeRecentPoints(30)}
 	a := newTestLadder(t, &fakeRILister{}, &fakeSPLister{}, cov, &fakeUtilizationSource{})
 
@@ -842,6 +875,7 @@ func TestGetUsageBaseline_InvalidPercentile_ReturnsError(t *testing.T) {
 }
 
 func TestGetUsageBaseline_WrongScope_ReturnsError(t *testing.T) {
+	t.Parallel()
 	cov := &fakeCoverageSource{onDemandPoints: makeRecentPoints(30)}
 	a := newTestLadder(t, &fakeRILister{}, &fakeSPLister{}, cov, &fakeUtilizationSource{})
 	badScope := ladder.Scope{Provider: common.ProviderAWS, AccountID: "wrong"}
@@ -855,6 +889,7 @@ func TestGetUsageBaseline_WrongScope_ReturnsError(t *testing.T) {
 // it as though it were current. Now GetUsageBaseline must return an explicit error
 // naming the last date when the most-recent point is older than maxSeriesAgeDays.
 func TestGetUsageBaseline_StaleSeries_ReturnsError(t *testing.T) {
+	t.Parallel()
 	// Build a 27-point series whose most-recent point is maxSeriesAgeDays+1 days
 	// in the past, simulating a CE feed that stopped (or a wrong date range).
 	// The date is built from the UTC calendar day so it is hour-independent.
@@ -881,6 +916,7 @@ func TestGetUsageBaseline_StaleSeries_ReturnsError(t *testing.T) {
 // Now GetUsageBaseline must return an error when fewer than
 // lookbackDays - maxMissingDays points fall inside the window.
 func TestGetUsageBaseline_SparseSeries_ReturnsError(t *testing.T) {
+	t.Parallel()
 	const lookbackDays = 30
 	// n is one point below the minimum: lookbackDays - maxMissingDays - 1.
 	// All n points are recent (in-window), so at n=26 (>= minBaselineSeriesDays=7)
@@ -901,6 +937,7 @@ func TestGetUsageBaseline_SparseSeries_ReturnsError(t *testing.T) {
 // are 27 total points (enough to pass a naive total-count check) but only 20
 // fall within [today-30, today]; the oldest 7 are pushed far into the past.
 func TestGetUsageBaseline_InsufficientInWindowCoverage_ReturnsError(t *testing.T) {
+	t.Parallel()
 	const lookbackDays = 30
 	today := utcDay(time.Now())
 	points := make([]DailyPoint, 0, 27)
@@ -927,6 +964,7 @@ func TestGetUsageBaseline_InsufficientInWindowCoverage_ReturnsError(t *testing.T
 // confirming that the stale-series guard does not break the happy path:
 // a fresh, sufficiently complete series must still yield a valid baseline.
 func TestGetUsageBaseline_FreshAndCompleteSeries_NoError(t *testing.T) {
+	t.Parallel()
 	// 30 points ending yesterday, which is well within maxSeriesAgeDays=3 and
 	// covers the 30-day lookback window with only one day of natural lag.
 	cov := &fakeCoverageSource{onDemandPoints: makeRecentPoints(30)}
@@ -941,6 +979,7 @@ func TestGetUsageBaseline_FreshAndCompleteSeries_NoError(t *testing.T) {
 // freshness comparison: a series whose most-recent point is EXACTLY
 // maxSeriesAgeDays old must pass (the check is age > max, not age >= max).
 func TestGetUsageBaseline_AgeExactlyAtBoundary_NoError(t *testing.T) {
+	t.Parallel()
 	// Most-recent point exactly maxSeriesAgeDays UTC calendar days ago -> age ==
 	// maxSeriesAgeDays, which must pass (rejection is age > max). The date is
 	// built directly from the UTC calendar day (no hour arithmetic) so the test
@@ -961,6 +1000,7 @@ func TestGetUsageBaseline_AgeExactlyAtBoundary_NoError(t *testing.T) {
 // the coverage comparison: exactly lookbackDays - maxMissingDays in-window
 // points must pass (the check is inWindow < minRequired, not <= minRequired).
 func TestGetUsageBaseline_CoverageExactlyAtBoundary_NoError(t *testing.T) {
+	t.Parallel()
 	const lookbackDays = 30
 	n := lookbackDays - maxMissingDays // exactly the minimum required, all in-window
 	points := makeRecentPoints(lookbackDays)[:n]
@@ -972,6 +1012,7 @@ func TestGetUsageBaseline_CoverageExactlyAtBoundary_NoError(t *testing.T) {
 // hardening: an out-of-order or duplicate-date series must fail loud rather than
 // let validateSeriesFreshness trust the last element as newest.
 func TestGetUsageBaseline_NonMonotonicDates_ReturnsError(t *testing.T) {
+	t.Parallel()
 	t.Run("swapped pair", func(t *testing.T) {
 		points := makeRecentPoints(30)
 		points[10], points[11] = points[11], points[10] // break strict ordering

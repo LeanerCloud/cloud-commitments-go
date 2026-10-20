@@ -88,6 +88,7 @@ func validPurchaseOpts() common.PurchaseOptions {
 // ---------------------------------------------------------------------------
 
 func TestWithWriteSide_NilArgsRejected(t *testing.T) {
+	t.Parallel()
 	riP := &fakePurchaser{}
 	spP := &fakePurchaser{}
 	ex := &fakeExchangeRunner{}
@@ -114,6 +115,7 @@ func TestWithWriteSide_NilArgsRejected(t *testing.T) {
 }
 
 func TestWriteMethods_WithoutWithWriteSide_ReturnErrWriteNotWired(t *testing.T) {
+	t.Parallel()
 	// Direct coverage of the write methods' own nil-dependency guards: a
 	// New()-built ladder that never had WithWriteSide called must reject
 	// both write methods with the errWriteNotWired sentinel even when the
@@ -136,6 +138,7 @@ func TestWriteMethods_WithoutWithWriteSide_ReturnErrWriteNotWired(t *testing.T) 
 // ---------------------------------------------------------------------------
 
 func TestPurchaseLayer_DispatchConvertibleRI(t *testing.T) {
+	t.Parallel()
 	riP := &fakePurchaser{result: common.PurchaseResult{Success: true, CommitmentID: "ri-new-1"}}
 	spP := &fakePurchaser{}
 	a := newWiredLadder(t, riP, spP, &fakeExchangeRunner{})
@@ -153,6 +156,7 @@ func TestPurchaseLayer_DispatchConvertibleRI(t *testing.T) {
 }
 
 func TestPurchaseLayer_DispatchSPLayers(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name         string
 		layer        ladder.LayerType
@@ -184,6 +188,7 @@ func TestPurchaseLayer_DispatchSPLayers(t *testing.T) {
 }
 
 func TestPurchaseLayer_UnknownLayer_ErrorsWithoutCalling(t *testing.T) {
+	t.Parallel()
 	riP := &fakePurchaser{}
 	spP := &fakePurchaser{}
 	a := newWiredLadder(t, riP, spP, &fakeExchangeRunner{})
@@ -196,6 +201,7 @@ func TestPurchaseLayer_UnknownLayer_ErrorsWithoutCalling(t *testing.T) {
 }
 
 func TestPurchaseLayer_MissingIdempotencyToken_ErrorsWithoutCalling(t *testing.T) {
+	t.Parallel()
 	for _, layer := range []ladder.LayerType{ladder.LayerConvertibleRI, ladder.LayerEC2InstanceSP, ladder.LayerComputeSP} {
 		t.Run(string(layer), func(t *testing.T) {
 			riP := &fakePurchaser{}
@@ -218,6 +224,7 @@ func TestPurchaseLayer_MissingIdempotencyToken_ErrorsWithoutCalling(t *testing.T
 // ---------------------------------------------------------------------------
 
 func TestPurchaseLayer_RIRecValidation(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		mutate  func(*common.Recommendation)
@@ -260,6 +267,7 @@ func TestPurchaseLayer_RIRecValidation(t *testing.T) {
 }
 
 func TestPurchaseLayer_SPRecValidation(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		mutate  func(*common.Recommendation)
@@ -303,6 +311,7 @@ func TestPurchaseLayer_SPRecValidation(t *testing.T) {
 }
 
 func TestPurchaseLayer_SPPlanTypeMismatch_InverseDirection(t *testing.T) {
+	t.Parallel()
 	// The mismatch table above covers Compute details dispatched to the
 	// EC2Instance layer; this covers the inverse: EC2Instance details
 	// dispatched to the Compute layer must be rejected the same way.
@@ -320,6 +329,7 @@ func TestPurchaseLayer_SPPlanTypeMismatch_InverseDirection(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestPurchaseLayer_ClientError_WrappedWithLayerContext(t *testing.T) {
+	t.Parallel()
 	clientErr := errors.New("AWS API throttled")
 	clientResult := common.PurchaseResult{Success: false, Error: clientErr}
 	riP := &fakePurchaser{err: clientErr, result: clientResult}
@@ -334,6 +344,7 @@ func TestPurchaseLayer_ClientError_WrappedWithLayerContext(t *testing.T) {
 }
 
 func TestPurchaseLayer_NotSupportedSentinel_PassesThrough(t *testing.T) {
+	t.Parallel()
 	wrapped := fmt.Errorf("savings plans: %w", common.ErrCommitmentPurchaseNotSupported)
 	spP := &fakePurchaser{err: wrapped}
 	a := newWiredLadder(t, &fakePurchaser{}, spP, &fakeExchangeRunner{})
