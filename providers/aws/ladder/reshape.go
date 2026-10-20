@@ -10,19 +10,6 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/ladder"
 )
 
-// unlimitedCapUSD is the explicit "no cap" value passed to
-// exchange.RIExchangeConfig when a BufferReshapeConfig cap is nil.
-//
-// Why not something cleaner: RIExchangeConfig has no nil/absent
-// representation for its float64 caps, and 0 there is maximally RESTRICTIVE
-// (RunAutoExchange skips any exchange whose payment exceeds the cap, so a
-// zero cap blocks everything) — mapping nil to 0 would silently invert the
-// caller's intent. +Inf is not usable either: big.Rat.SetFloat64(+Inf)
-// returns nil and the comparison in RunAutoExchange would panic.
-// math.MaxFloat64 is finite (exactly representable in big.Rat) and exceeds
-// any real exchange payment, making it a faithful "no cap".
-const unlimitedCapUSD = math.MaxFloat64
-
 // ReshapeBuffer runs the automated RI exchange flow over the buffer layer
 // (convertible RIs), delegating to the injected exchangeRunner. AWSLadder
 // only maps the configuration and the outcome; the runner owns the exchange
@@ -49,11 +36,12 @@ const unlimitedCapUSD = math.MaxFloat64
 //
 // Config mapping (BufferReshapeConfig -> exchange.RIExchangeConfig):
 //
-//   - MaxPaymentPerExchangeUSD / MaxPaymentDailyUSD: nil means no cap and maps
-//     to unlimitedCapUSD (see that constant for why); non-nil values must be
-//     finite and > 0 — zero is rejected loudly because RunAutoExchange treats
-//     the cap as a skip threshold and a zero cap would silently block every
-//     exchange (almost certainly a config bug, not an intent).
+//   - MaxPaymentPerExchangeUSD / MaxPaymentDailyUSD: both are required. A nil
+//     cap is rejected loudly (Mode is always auto, so an omitted cap must
+//     never mean unlimited spend), and values must be finite and > 0 — zero
+//     is rejected because RunAutoExchange treats the cap as a skip threshold
+//     and a zero cap would silently block every exchange (almost certainly a
+//     config bug, not an intent).
 //   - UtilizationThresholdPct must be in (0, 100]; LookbackDays must be > 0.
 //   - Mode is always exchange.ExchangeModeAuto: exchanges execute immediately,
 //     subject to the per-exchange and daily caps.
@@ -109,11 +97,11 @@ func (a *AWSLadder) ReshapeBuffer(ctx context.Context, scope ladder.Scope, cfg l
 // exchange package's runtime configuration. See ReshapeBuffer's godoc for the
 // full mapping rationale.
 func buildRIExchangeConfig(cfg ladder.BufferReshapeConfig) (exchange.RIExchangeConfig, error) {
-	perExchangeCap, err := capOrUnlimited("MaxPaymentPerExchangeUSD", cfg.MaxPaymentPerExchangeUSD)
+	perExchangeCap, err := requireCap("MaxPaymentPerExchangeUSD", cfg.MaxPaymentPerExchangeUSD)
 	if err != nil {
 		return exchange.RIExchangeConfig{}, err
 	}
-	dailyCap, err := capOrUnlimited("MaxPaymentDailyUSD", cfg.MaxPaymentDailyUSD)
+	dailyCap, err := requireCap("MaxPaymentDailyUSD", cfg.MaxPaymentDailyUSD)
 	if err != nil {
 		return exchange.RIExchangeConfig{}, err
 	}
@@ -138,19 +126,20 @@ func buildRIExchangeConfig(cfg ladder.BufferReshapeConfig) (exchange.RIExchangeC
 	}, nil
 }
 
-// capOrUnlimited maps an optional money cap to the float64 the exchange
-// config requires: nil -> unlimitedCapUSD (no cap); non-nil values must be
-// finite and > 0 (see the unlimitedCapUSD comment for why zero is rejected).
-func capOrUnlimited(name string, capUSD *float64) (float64, error) {
+// requireCap validates a required money cap and returns it as the float64 the
+// exchange config requires. nil is rejected: the caller must set an explicit
+// cap, so an omitted field can never mean unlimited spend. Values must be
+// finite and > 0 (a zero cap would block every exchange).
+func requireCap(name string, capUSD *float64) (float64, error) {
 	if capUSD == nil {
-		return unlimitedCapUSD, nil
+		return 0, fmt.Errorf("%s is required: set an explicit cap (a nil cap is not treated as unlimited)", name)
 	}
 	v := *capUSD
 	if math.IsNaN(v) || math.IsInf(v, 0) {
 		return 0, fmt.Errorf("%s must be finite, got %g", name, v)
 	}
 	if v <= 0 {
-		return 0, fmt.Errorf("%s must be > 0 when set (a zero cap would block every exchange; use nil for no cap), got %g", name, v)
+		return 0, fmt.Errorf("%s must be > 0 (a zero cap would block every exchange), got %g", name, v)
 	}
 	return v, nil
 }

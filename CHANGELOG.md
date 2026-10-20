@@ -208,6 +208,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **`ReshapeBuffer` rejects nil payment caps** instead of mapping them to
+  `math.MaxFloat64`: `MaxPaymentPerExchangeUSD` and `MaxPaymentDailyUSD`
+  are now required, so an omitted cap can no longer mean unlimited spend on
+  the auto-exchange path (#83).
 - **Azure savings plan recommendations use a 730 hour month** (was 730.5),
   matching `common.HoursPerMonth` and the 8760 hour year; monthly recurring
   cost, on-demand cost and savings shift by about 0.07% (#583).
