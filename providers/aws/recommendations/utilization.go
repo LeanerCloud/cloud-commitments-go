@@ -10,7 +10,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
-	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
 )
 
 // RIUtilization is an alias for common.RIUtilization so existing callers that
@@ -126,24 +125,9 @@ func buildUtilizations(agg map[string]*riAccumulator) []RIUtilization {
 // across the outbound SDK call, matching fetchRIPageWithRetry, so callers
 // running under a semaphore-carrying context stay inside the global IO cap.
 func (c *Client) fetchUtilizationPage(ctx context.Context, input *costexplorer.GetReservationUtilizationInput) (*costexplorer.GetReservationUtilizationOutput, error) {
-	rateLimiter := c.rateLimiter.newOperation()
-	for {
-		if waitErr := rateLimiter.Wait(ctx); waitErr != nil {
-			return nil, fmt.Errorf("rate limiter wait failed: %w", waitErr)
-		}
-
-		if acqErr := concurrency.Acquire(ctx); acqErr != nil {
-			return nil, fmt.Errorf("concurrency acquire failed: %w", acqErr)
-		}
-		result, err := c.costExplorerClient.GetReservationUtilization(ctx, input)
-		concurrency.Release(ctx)
-		if !rateLimiter.ShouldRetry(err) {
-			if err != nil {
-				return nil, fmt.Errorf("failed to get reservation utilization: %w", err)
-			}
-			return result, nil
-		}
-	}
+	return fetchWithRetry(ctx, c.rateLimiter, "failed to get reservation utilization", func() (*costexplorer.GetReservationUtilizationOutput, error) {
+		return c.costExplorerClient.GetReservationUtilization(ctx, input)
+	})
 }
 
 // aggregateUtilizationDetail accumulates hours from a single utilization detail
