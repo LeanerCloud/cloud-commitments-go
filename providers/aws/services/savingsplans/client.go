@@ -143,9 +143,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 
 		page++
 		if page > maxCommitmentPages {
-			log.Printf("WARNING: savingsplans.GetExistingCommitments reached page cap (%d) — returning partial results (issue #1019)",
-				maxCommitmentPages)
-			break
+			return nil, fmt.Errorf("pagination cap reached after %d pages for Savings Plans commitments (issue #561)", maxCommitmentPages)
 		}
 
 		input := &savingsplans.DescribeSavingsPlansInput{
@@ -636,9 +634,9 @@ const maxOfferingPages = 5
 // maxCommitmentPages is the maximum number of DescribeSavingsPlans pages to
 // walk when listing existing commitments. 100 pages * 100 items/page = 10,000
 // SPs, which is a realistic upper bound for even large enterprise accounts.
-// Exceeding the cap logs a warning but still returns the commitments collected
-// so far, consistent with the #691 guidance (data loss is worse than a
-// truncation warning for the commitment path).
+// Exceeding the cap returns an error rather than a partial list: these results
+// feed the duplicate-purchase guards, so a truncated list must fail loud
+// (issue #561).
 const maxCommitmentPages = 100
 
 // lookupOfferingID resolves the offering ID for non-EC2Instance Savings Plans

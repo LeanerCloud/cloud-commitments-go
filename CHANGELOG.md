@@ -187,6 +187,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Unbounded AWS pagination loops now stop at a page cap and honour
+  cancellation** (#561): the existing-commitment and valid-resource-type scans
+  for ElastiCache, RDS, OpenSearch, Redshift and EC2 check the context before
+  each page and fail with an error after 50 pages instead of looping forever.
+  The Savings Plans existing-commitment scan now errors at its page cap instead
+  of returning a partial list to the duplicate-purchase guards.
 - **Duplicate guard counts an existing RDS reservation against other sizes of
   the same family** (#323): an AWS RDS reservation now pays for recommendations
   of any size in the same instance family, engine, region and deployment, by
