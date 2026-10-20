@@ -143,9 +143,9 @@ type regionKey struct{ service, region string }
 // regionBucket holds the distinct resource types requested for one regionKey
 // (in first-seen order) and the recommendation indices for each type.
 type regionBucket struct {
+	recsByType map[string][]int
 	key        regionKey
 	types      []string
-	recsByType map[string][]int
 }
 
 // groupRecsByRegion builds an ordered list of (service, region) buckets, each

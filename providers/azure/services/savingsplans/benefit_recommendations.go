@@ -44,9 +44,9 @@ const (
 	// reservation path (internal/recommendations consumptionLookBack).
 	defaultBenefitLookback = "Last7Days"
 
-	// hoursPerMonth uses the same average month as the other Azure
-	// recommendation converters (recommendations.DaysPerMonth = 30.4375 days).
-	hoursPerMonth = recommendations.DaysPerMonth * 24
+	// hoursPerMonth is the 730 h month Azure's own pricing pages use. The day
+	// based reservation scaling (recommendations.DaysPerMonth) is unrelated.
+	hoursPerMonth = common.HoursPerMonth
 )
 
 type benefitRecsPage struct {

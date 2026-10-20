@@ -133,6 +133,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **`aws/rds`:** the RDS purchase path uses the shared `purchaseguard` idempotency guard and AlreadyExists recovery, like ElastiCache. Behavior for valid purchases is unchanged (#10).
+- **`aws/memorydb`:** the MemoryDB purchase path uses the shared `purchaseguard` idempotency guard and AlreadyExists recovery, like ElastiCache. Behavior for valid purchases is unchanged; only the lookup-failure error wording changes to "before MemoryDB reservation purchase" (#10).
+- **`aws/opensearch`:** the OpenSearch purchase path uses the shared `purchaseguard` idempotency guard and AlreadyExists recovery, like ElastiCache. Behavior for valid purchases is unchanged (#10).
 - **`common.HoursPerMonth`:** exported 730-hour average month (`HoursPerYear / 12`) next to `HoursPerYear`; the remaining bare 730 and 8760 literals in the aws and gcp providers use the shared constants (#109).
 - **`gcp`:** region-lookup permission errors are now classified by type only (googleapi 403 or gRPC `PermissionDenied`) through the shared `IsPermissionError`. gRPC `PermissionDenied` is now skipped with a warning like a 403, and an untyped error whose text merely contains "403" and "permission" now propagates instead of being skipped (#6).
 - **BREAKING `gcp`: stored contexts removed (#6).** `computeengine.NewClient`
@@ -205,6 +208,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   token (#211)
 
 ### Fixed
+
+- **Azure savings plan recommendations use a 730 hour month** (was 730.5),
+  matching `common.HoursPerMonth` and the 8760 hour year; monthly recurring
+  cost, on-demand cost and savings shift by about 0.07% (#583).
 
 - **`exchange.AnalyzeReshaping`:** no longer proposes a same-capacity reshape
   (1x m5.24xlarge to 2x m5.12xlarge); it frees no units and AWS needs an

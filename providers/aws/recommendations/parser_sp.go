@@ -176,16 +176,16 @@ type spNumbers struct {
 func parseSPNumbers(detail *types.SavingsPlansPurchaseRecommendationDetail) (spNumbers, error) {
 	var n spNumbers
 	for _, f := range []struct {
-		name string
 		src  *string
 		dst  *float64
+		name string
 	}{
-		{"HourlyCommitmentToPurchase", detail.HourlyCommitmentToPurchase, &n.hourlyCommitment},
-		{"EstimatedMonthlySavingsAmount", detail.EstimatedMonthlySavingsAmount, &n.monthlySavings},
-		{"UpfrontCost", detail.UpfrontCost, &n.upfrontCost},
-		{"EstimatedSavingsPercentage", detail.EstimatedSavingsPercentage, &n.savingsPercent},
-		{"EstimatedAverageUtilization", detail.EstimatedAverageUtilization, &n.recommendedUtilization},
-		{"CurrentAverageHourlyOnDemandSpend", detail.CurrentAverageHourlyOnDemandSpend, &n.hourlyOnDemand},
+		{src: detail.HourlyCommitmentToPurchase, dst: &n.hourlyCommitment, name: "HourlyCommitmentToPurchase"},
+		{src: detail.EstimatedMonthlySavingsAmount, dst: &n.monthlySavings, name: "EstimatedMonthlySavingsAmount"},
+		{src: detail.UpfrontCost, dst: &n.upfrontCost, name: "UpfrontCost"},
+		{src: detail.EstimatedSavingsPercentage, dst: &n.savingsPercent, name: "EstimatedSavingsPercentage"},
+		{src: detail.EstimatedAverageUtilization, dst: &n.recommendedUtilization, name: "EstimatedAverageUtilization"},
+		{src: detail.CurrentAverageHourlyOnDemandSpend, dst: &n.hourlyOnDemand, name: "CurrentAverageHourlyOnDemandSpend"},
 	} {
 		v, err := parseOptionalFloat(f.name, f.src)
 		if err != nil {
