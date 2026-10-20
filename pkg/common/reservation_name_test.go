@@ -27,13 +27,14 @@ func TestBuildReservationName_HappyPath(t *testing.T) {
 	}.WithRandSource(testFixedRand()), "opensearch-reserved-")
 
 	// The composed full name is too long for the 60-char cap; the builder
-	// drops the random suffix and (here) the timestamp to fit. The
+	// drops the timestamp to fit while keeping the random suffix. The
 	// high-signal required segments (svc/region/sku/count/term) and the
 	// payment-option always remain.
 	assert.LessOrEqual(t, len(got), awsReservationNameMaxLen)
 	assert.True(t, strings.HasPrefix(got, "opensearch-us-east-1-r6g-large-search-3x-1yr"),
 		"required segments must be present: got %q", got)
 	assert.Contains(t, got, "allup", "payment normalization must survive")
+	assert.True(t, strings.HasSuffix(got, "-a1b2c3d4"), "uniqueness suffix must survive: got %q", got)
 }
 
 func TestBuildReservationName_ShortInput_FullName(t *testing.T) {
@@ -55,7 +56,7 @@ func TestBuildReservationName_ShortInput_FullName(t *testing.T) {
 	assert.LessOrEqual(t, len(got), awsReservationNameMaxLen)
 }
 
-func TestBuildReservationName_LengthFit_DropsRandomFirst(t *testing.T) {
+func TestBuildReservationName_LengthFit_DropsTimestampFirst(t *testing.T) {
 	t.Parallel()
 	// Pick fields that compose just barely over 60 with the rand suffix but
 	// fit without it: svc(rds=3) + region(eu-west-1=9) + sku("m6gd.xlarge"->"m6gd-xlarge"=11) +
@@ -72,8 +73,8 @@ func TestBuildReservationName_LengthFit_DropsRandomFirst(t *testing.T) {
 	}.WithRandSource(testFixedRand()), "rds-reserved-")
 
 	assert.LessOrEqual(t, len(got), awsReservationNameMaxLen)
-	assert.NotContains(t, got, "a1b2c3d4", "random suffix should be the first to drop")
-	assert.Contains(t, got, "20260521T002019", "timestamp should still be present")
+	assert.Contains(t, got, "a1b2c3d4", "random suffix must never drop")
+	assert.NotContains(t, got, "20260521T002019", "timestamp should be the first to drop")
 	assert.Contains(t, got, "allup", "payment should still be present")
 }
 
@@ -87,7 +88,7 @@ func TestBuildReservationName_LengthFit_DropsTimestampNext(t *testing.T) {
 	got := BuildReservationName(ReservationNameFields{
 		Service:      "cache",
 		Region:       "us-east-1",
-		ResourceType: "cache.r6gd.xlarge.foobarbaz", // 27 chars -> normalized 27
+		ResourceType: "cache.r6gd.xlarge",
 		Count:        2,
 		Term:         "3yr",
 		Payment:      "partial-upfront", // -> "partup" (6 chars)
@@ -95,8 +96,8 @@ func TestBuildReservationName_LengthFit_DropsTimestampNext(t *testing.T) {
 	}.WithRandSource(testFixedRand()), "cache-reserved-")
 
 	assert.LessOrEqual(t, len(got), awsReservationNameMaxLen)
-	assert.NotContains(t, got, "a1b2c3d4", "rand should drop first")
-	assert.NotContains(t, got, "20260521T002019", "ts should drop next")
+	assert.Contains(t, got, "a1b2c3d4", "rand must never drop")
+	assert.NotContains(t, got, "20260521T002019", "ts should drop")
 	assert.Contains(t, got, "partup", "payment should still survive")
 	assert.Contains(t, got, "2x-3yr", "count+term must never drop")
 }
@@ -122,7 +123,7 @@ func TestBuildReservationName_LengthFit_DropsPaymentLast(t *testing.T) {
 	assert.Contains(t, got, "3yr", "term must never drop")
 	assert.NotContains(t, got, "allup", "payment should be the last optional segment to drop")
 	assert.NotContains(t, got, "20260521T002019", "ts should drop in this length regime")
-	assert.NotContains(t, got, "a1b2c3d4", "rand should drop in this length regime")
+	assert.Contains(t, got, "a1b2c3d4", "rand must never drop")
 }
 
 func TestBuildReservationName_LengthFit_WorstCase_TruncatesSKUNotCountTerm(t *testing.T) {
@@ -146,6 +147,28 @@ func TestBuildReservationName_LengthFit_WorstCase_TruncatesSKUNotCountTerm(t *te
 		"service and region must never drop, even in worst case")
 	assert.Contains(t, got, "99x", "count must survive SKU truncation")
 	assert.Contains(t, got, "3yr", "term must survive SKU truncation")
+	assert.True(t, strings.HasSuffix(got, "-a1b2c3d4"), "suffix must survive SKU truncation: got %q", got)
+}
+
+// Issue #123: a long SKU used to drop the uniqueness suffix first, so two
+// purchases of the same SKU produced the same (idempotency) name.
+func TestBuildReservationName_LongSKU_KeepsUniquenessSuffix(t *testing.T) {
+	t.Parallel()
+	f := ReservationNameFields{
+		Service:      "opensearch",
+		Region:       "us-east-1",
+		ResourceType: "r6gd.large.search",
+		Count:        3,
+		Term:         "1yr",
+		Payment:      "all-upfront",
+		Now:          testFixedNow,
+	}
+	a := BuildReservationName(f.WithRandSource([]byte{1, 2, 3, 4}), "opensearch-reserved-")
+	b := BuildReservationName(f.WithRandSource([]byte{5, 6, 7, 8}), "opensearch-reserved-")
+	assert.NotEqual(t, a, b, "same SKU, different suffix must not collide")
+	assert.LessOrEqual(t, len(a), awsReservationNameMaxLen)
+	assert.True(t, strings.HasSuffix(a, "-01020304"), "got %q", a)
+	assert.True(t, strings.HasSuffix(b, "-05060708"), "got %q", b)
 }
 
 func TestBuildReservationName_PaymentNormalization(t *testing.T) {
@@ -265,7 +288,7 @@ func TestBuildReservationName_NowInUTC(t *testing.T) {
 	got := BuildReservationName(ReservationNameFields{
 		Service:      "rds",
 		Region:       "us-east-1",
-		ResourceType: "db.t4g.medium",
+		ResourceType: "db.t4g.m",
 		Count:        1,
 		Term:         "1yr",
 		Payment:      "all-upfront",
