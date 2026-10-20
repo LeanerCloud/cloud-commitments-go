@@ -201,6 +201,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **exchange:** `RunAutoExchange` now stops and returns the error when cancelling stale pending exchanges fails, instead of logging it and creating new exchanges while a stale pending one may still be approvable.
 - **exchange:** `RunAutoExchange` now rejects any mode other than `auto` or `manual` (including empty) with an error before any store or exchange call; previously every non-`manual` value auto-executed exchanges.
 - **common:** `BuildReservationName` no longer drops its random uniqueness suffix when a long SKU overflows the 60-char cap (it dropped it first, so long-SKU purchases got deterministic, colliding names). The timestamp and payment segments drop first, then the SKU is truncated; the suffix is always kept (#123).
+- **retry:** jittered backoff is now clamped to `MaxDelay` after jitter is applied (upward jitter could exceed it), and the `Do` / `PerAttemptTimeout` docs now say the per-attempt context is derived from, and cancelled with, the outer context (#123).
 - **aws/ec2:** `GetOfferingDetails` always priced the convertible offering and its doc comment wrongly said the class does not change prices. Added `GetOfferingDetailsForClass` to price the class the purchase uses; `GetOfferingDetails` keeps the convertible default (#570).
 - **A Multi-AZ size-flexible RDS reservation now covers Single-AZ demand in the
   duplicate-purchase guard** (#323): it counts as twice the size units of its
