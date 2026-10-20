@@ -153,3 +153,73 @@ func TestGetOfferingDetails_OneYearTermAndMultipleHourlyChargesSum(t *testing.T)
 	assert.InDelta(t, 0.05, d.RecurringCost, 1e-12, "multiple Hourly charges are summed")
 	assert.InDelta(t, 500+0.05*8760, d.TotalCost, 1e-9)
 }
+
+func classPricedMock() *MockEC2Client {
+	m := &MockEC2Client{}
+	conv := priceOffering(func(o *types.ReservedInstancesOffering) {
+		o.ReservedInstancesOfferingId = aws.String("off-convertible")
+	})
+	std := priceOffering(func(o *types.ReservedInstancesOffering) {
+		o.ReservedInstancesOfferingId = aws.String("off-standard")
+		o.OfferingClass = types.OfferingClassTypeStandard
+		o.FixedPrice = aws.Float32(400)
+		o.RecurringCharges = []types.RecurringCharge{{Amount: aws.Float64(0.02), Frequency: types.RecurringChargeFrequencyHourly}}
+	})
+	out := func(o types.ReservedInstancesOffering) *ec2.DescribeReservedInstancesOfferingsOutput {
+		return &ec2.DescribeReservedInstancesOfferingsOutput{ReservedInstancesOfferings: []types.ReservedInstancesOffering{o}}
+	}
+	m.On("DescribeReservedInstancesOfferings", mock.Anything, mock.MatchedBy(func(in *ec2.DescribeReservedInstancesOfferingsInput) bool {
+		return in.OfferingClass == types.OfferingClassTypeStandard
+	})).Return(out(std), nil)
+	m.On("DescribeReservedInstancesOfferings", mock.Anything, mock.MatchedBy(func(in *ec2.DescribeReservedInstancesOfferingsInput) bool {
+		return in.OfferingClass == types.OfferingClassTypeConvertible
+	})).Return(out(conv), nil)
+	m.On("DescribeReservedInstancesOfferings", mock.Anything, mock.MatchedBy(func(in *ec2.DescribeReservedInstancesOfferingsInput) bool {
+		return len(in.ReservedInstancesOfferingIds) == 1 && in.ReservedInstancesOfferingIds[0] == "off-standard"
+	})).Return(out(std), nil)
+	m.On("DescribeReservedInstancesOfferings", mock.Anything, mock.MatchedBy(func(in *ec2.DescribeReservedInstancesOfferingsInput) bool {
+		return len(in.ReservedInstancesOfferingIds) == 1 && in.ReservedInstancesOfferingIds[0] == "off-convertible"
+	})).Return(out(conv), nil)
+	return m
+}
+
+func TestGetOfferingDetailsForClass_PricesTheRequestedClass(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		class   string
+		upfront float64
+		hourly  float64
+	}{
+		{"standard", 400, 0.02},
+		{"convertible", 500, 0.03},
+		{"", 500, 0.03},
+	}
+	for _, tc := range cases {
+		t.Run("class="+tc.class, func(t *testing.T) {
+			t.Parallel()
+			c := &Client{client: classPricedMock(), region: "us-east-1"}
+			d, err := c.GetOfferingDetailsForClass(context.Background(), priceRec("3yr"), tc.class)
+			require.NoError(t, err)
+			assert.Equal(t, tc.upfront, d.UpfrontCost)
+			assert.InDelta(t, tc.hourly, d.RecurringCost, 1e-12)
+		})
+	}
+}
+
+func TestGetOfferingDetails_DefaultsToConvertible(t *testing.T) {
+	t.Parallel()
+	c := &Client{client: classPricedMock(), region: "us-east-1"}
+	d, err := c.GetOfferingDetails(context.Background(), priceRec("3yr"))
+	require.NoError(t, err)
+	assert.Equal(t, 500.0, d.UpfrontCost)
+}
+
+func TestGetOfferingDetailsForClass_UnknownClassErrors(t *testing.T) {
+	t.Parallel()
+	m := &MockEC2Client{}
+	c := &Client{client: m, region: "us-east-1"}
+	_, err := c.GetOfferingDetailsForClass(context.Background(), priceRec("3yr"), "premium")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unknown EC2 RI offering class")
+	m.AssertNotCalled(t, "DescribeReservedInstancesOfferings", mock.Anything, mock.Anything)
+}
