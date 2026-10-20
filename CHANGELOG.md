@@ -187,6 +187,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **common:** `BuildReservationName` no longer drops its random uniqueness suffix when a long SKU overflows the 60-char cap (it dropped it first, so long-SKU purchases got deterministic, colliding names). The timestamp and payment segments drop first, then the SKU is truncated; the suffix is always kept (#123).
 - **aws/ec2:** `GetOfferingDetails` always priced the convertible offering and its doc comment wrongly said the class does not change prices. Added `GetOfferingDetailsForClass` to price the class the purchase uses; `GetOfferingDetails` keeps the convertible default (#570).
 - **Unbounded AWS pagination loops now stop at a page cap and honour
   cancellation** (#561): the existing-commitment and valid-resource-type scans

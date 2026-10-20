@@ -78,8 +78,10 @@ func (f ReservationNameFields) WithRandSource(b []byte) ReservationNameFields {
 // The result is always sanitized via SanitizeReservationID for AWS
 // reservation-name allowlists ([a-zA-Z0-9-], so underscores in SKU names
 // become '-') and never longer than awsReservationNameMaxLen (60). If the
-// composed string would exceed 60, optional tail fields are progressively
-// dropped: random suffix first, then timestamp, then payment-option. The
+// composed string would exceed 60, optional fields are progressively
+// dropped: timestamp first, then payment-option. The random suffix is NEVER
+// dropped (it keeps otherwise-identical purchases from colliding); if the
+// required segments plus suffix still overflow, the SKU is truncated. The
 // service code, region, SKU, count, and term are NEVER dropped — those are
 // the high-signal segments operators rely on to identify the reservation
 // in the AWS console.
@@ -102,53 +104,64 @@ func BuildReservationName(f ReservationNameFields, fallbackPrefix string) string
 	ts := tsTime.UTC().Format("20060102T150405")
 	randHex := generateReservationRandSuffix(f.randSource)
 
-	// Required segments (order matters — never dropped, never reordered).
+	// Required segments (order matters; never dropped, never reordered).
+	// randHex is the uniqueness suffix: names double as purchase idempotency
+	// identifiers, so dropping it would make long-SKU names deterministic and
+	// collide on a legitimate repurchase.
 	required := []string{svc, region, sku, count, term}
 
-	// Optional tail segments, in drop priority. The slice order here is
-	// "keep" order; dropping happens from the right.
-	tail := []string{paymt, ts, randHex}
-
-	// Try full -> drop random -> drop timestamp -> drop payment.
-	for keep := len(tail); keep >= 0; keep-- {
-		segments := append([]string{}, required...)
-		segments = append(segments, tail[:keep]...)
-		candidate := joinReservationNonEmpty(segments, "-")
-		// Defensive sanitization: even though each segment is already
-		// allowlist-conformant, SanitizeReservationID guarantees the
-		// invariant (no leading/trailing/double hyphens) in one place
-		// rather than relying on every caller.
-		candidate = SanitizeReservationID(candidate, fallbackPrefix)
+	// Optional segments, rendered between term and the suffix. Drop priority
+	// is timestamp first, then payment-option.
+	for _, optional := range [][]string{{paymt, ts}, {paymt}, {}} {
+		candidate := assembleReservationName(required, optional, randHex, fallbackPrefix)
 		if len(candidate) <= awsReservationNameMaxLen {
 			return candidate
 		}
 	}
 
-	// All optional segments dropped and we still bust the cap — the SKU
-	// is pathologically long (the other required segments are bounded:
-	// service codes are short, regions ≤14 chars, count "Nx" is 2–3 chars,
-	// term is 3 chars). Truncate the SKU itself (not the joined output)
-	// so count and term still survive the final assembly.
-	overflow := len(joinReservationNonEmpty(required, "-")) - awsReservationNameMaxLen
+	// All optional segments dropped and we still bust the cap: the SKU is
+	// pathologically long (the other required segments are bounded: service
+	// codes are short, regions <=14 chars, count "Nx" is 2-3 chars, term is 3
+	// chars). Truncate the SKU itself (not the joined output) so count, term
+	// and the suffix still survive the final assembly.
+	overflow := len(assembleReservationName(required, nil, randHex, fallbackPrefix)) - awsReservationNameMaxLen
 	if overflow > 0 {
-		// Each separator counts; truncating N chars from the SKU shrinks
-		// the joined string by exactly N. Leave at least 1 SKU char so
-		// the segment doesn't collapse to "" and produce a "--" run.
+		// Truncating N chars from the SKU shrinks the joined string by exactly
+		// N. Leave at least 1 SKU char so the segment doesn't collapse to ""
+		// and produce a "--" run.
 		newLen := len(sku) - overflow
 		if newLen < 1 {
 			newLen = 1
 		}
-		sku = sku[:newLen]
-		required[2] = sku
+		required[2] = sku[:newLen]
 	}
-	out := SanitizeReservationID(joinReservationNonEmpty(required, "-"), fallbackPrefix)
+	out := assembleReservationName(required, nil, randHex, fallbackPrefix)
 	if len(out) > awsReservationNameMaxLen {
-		// Last-resort hard cap if the SKU truncation above wasn't enough
-		// (e.g. a region name longer than expected). All output is ASCII
-		// so byte index == rune index.
-		out = strings.TrimRight(out[:awsReservationNameMaxLen], "-")
+		// Last-resort cap on the base if the SKU truncation above wasn't
+		// enough (e.g. a region name longer than expected); the suffix is
+		// re-appended so it is never lost. All output is ASCII.
+		base := strings.TrimRight(joinReservationNonEmpty(required, "-"), "-")
+		keep := awsReservationNameMaxLen - len(randHex) - 1
+		if keep < 1 {
+			keep = 1
+		}
+		if keep > len(base) {
+			keep = len(base)
+		}
+		out = SanitizeReservationID(strings.TrimRight(base[:keep], "-")+"-"+randHex, fallbackPrefix)
 	}
 	return out
+}
+
+// assembleReservationName renders required, optional and the suffix in name
+// order and sanitizes the result. Defensive sanitization: even though each
+// segment is already allowlist-conformant, SanitizeReservationID guarantees
+// the invariant (no leading/trailing/double hyphens) in one place.
+func assembleReservationName(required, optional []string, suffix, fallbackPrefix string) string {
+	segments := append([]string{}, required...)
+	segments = append(segments, optional...)
+	segments = append(segments, suffix)
+	return SanitizeReservationID(joinReservationNonEmpty(segments, "-"), fallbackPrefix)
 }
 
 // normalizeReservationSegment strips disallowed characters from a single
