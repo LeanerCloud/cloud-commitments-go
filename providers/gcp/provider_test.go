@@ -217,12 +217,12 @@ func TestNewProvider_ProjectIDResolution(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name     string
-		config   *provider.ProviderConfig
+		config   *provider.Config
 		expected string
 	}{
 		{
 			name: "Typed GCPProjectID takes precedence over deprecated Profile",
-			config: &provider.ProviderConfig{
+			config: &provider.Config{
 				GCPProjectID: "typed-project",
 				Profile:      "deprecated-project",
 			},
@@ -230,14 +230,14 @@ func TestNewProvider_ProjectIDResolution(t *testing.T) {
 		},
 		{
 			name: "Typed GCPProjectID alone (no Profile fallback needed)",
-			config: &provider.ProviderConfig{
+			config: &provider.Config{
 				GCPProjectID: "only-typed",
 			},
 			expected: "only-typed",
 		},
 		{
 			name: "Deprecated Profile is honored when typed field is empty",
-			config: &provider.ProviderConfig{
+			config: &provider.Config{
 				Profile: "legacy-project",
 			},
 			expected: "legacy-project",
@@ -249,7 +249,7 @@ func TestNewProvider_ProjectIDResolution(t *testing.T) {
 		},
 		{
 			name:     "Empty config resolves to empty (caller falls through to ADC)",
-			config:   &provider.ProviderConfig{},
+			config:   &provider.Config{},
 			expected: "",
 		},
 	}
@@ -402,7 +402,7 @@ func TestGCPProvider_GetServiceClient_RelationalDB(t *testing.T) {
 func TestNewProvider_WithConfig(t *testing.T) {
 	t.Parallel()
 	// Test NewProvider with a config containing a project ID
-	config := &provider.ProviderConfig{
+	config := &provider.Config{
 		Profile: "test-project-id",
 	}
 
