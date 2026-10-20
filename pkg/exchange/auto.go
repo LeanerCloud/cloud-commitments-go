@@ -128,6 +128,10 @@ type RunAutoExchangeParams struct {
 	// is performed; mock.AssertExpectations will catch any accidental mutation
 	// call in tests (fail-loud gate).
 	DryRun bool
+
+	// OfferedInstanceTypes is the region's offered EC2 instance types. Empty keeps
+	// the legacy size ladder; otherwise reshape targets are limited to it.
+	OfferedInstanceTypes []string
 }
 
 // RIMetadataInfo holds the offering metadata for a specific RI.
@@ -247,7 +251,8 @@ func RunAutoExchange(ctx context.Context, params RunAutoExchangeParams) (*AutoEx
 	}
 
 	// 3. Analyze reshaping
-	recs := AnalyzeReshaping(params.RIs, params.Utilization, params.Config.UtilizationThreshold)
+	recs := AnalyzeReshaping(params.RIs, params.Utilization, params.Config.UtilizationThreshold,
+		WithOfferedInstanceTypes(params.OfferedInstanceTypes))
 	if len(recs) == 0 {
 		logging.Info("all RIs well-utilized, nothing to do")
 		return result, nil
@@ -277,12 +282,8 @@ func RunAutoExchange(ctx context.Context, params RunAutoExchangeParams) (*AutoEx
 func processRecommendation(ctx context.Context, params RunAutoExchangeParams, rec ReshapeRecommendation, perExchangeCap *big.Rat, result *AutoExchangeResult) bool {
 	// Skip idle RIs with no target
 	if rec.TargetInstanceType == "" {
-		reason := "RI is idle (0% utilization) - no target instance type recommended"
-		if rec.NormalizedPurchased == 0 {
-			// analyzeRI emits no target without a purchased total only when the
-			// normalization factor is unknown; its Reason says why.
-			reason = rec.Reason
-		}
+		// analyzeRI explains every no-target outcome in its Reason.
+		reason := rec.Reason
 		result.Skipped = append(result.Skipped, SkippedRecommendation{
 			SourceRIID:         rec.SourceRIID,
 			SourceInstanceType: rec.SourceInstanceType,

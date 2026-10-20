@@ -4,7 +4,7 @@ import "testing"
 
 func TestEC2NormalizationFactor(t *testing.T) {
 	t.Parallel()
-	for size, want := range map[string]float64{"nano": 0.25, "large": 4, "xlarge": 8, "24xlarge": 192, "metal": 0, "bogus": 0, "": 0} {
+	for size, want := range map[string]float64{"nano": 0.25, "large": 4, "xlarge": 8, "24xlarge": 192, "32xlarge": 256, "48xlarge": 384, "56xlarge": 448, "96xlarge": 768, "112xlarge": 896, "metal": 0, "bogus": 0, "": 0} {
 		if got := EC2NormalizationFactor(size); got != want {
 			t.Errorf("EC2NormalizationFactor(%q) = %v, want %v", size, got, want)
 		}

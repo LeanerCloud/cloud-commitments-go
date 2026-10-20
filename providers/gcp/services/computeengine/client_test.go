@@ -1105,8 +1105,7 @@ func TestComputeEngineClient_GetRecommendations_WithMock(t *testing.T) {
 // "iterator error propagates, no silent swallow" contract that commit
 // f75aa6cf4 introduced. Memorystore's test (TestMemorystoreClient_
 // GetRecommendations_WithMockClient) already covers this shape; adding
-// the same coverage for computeengine closes the test-parity gap flagged
-// in known_issues/11_gcp_provider.md.
+// the same coverage for computeengine closes the test-parity gap.
 func TestComputeEngineClient_GetRecommendations_IteratorError(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
