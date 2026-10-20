@@ -18,6 +18,7 @@ import (
 // commitment of Count x the term-total reservation retail price (synthetic
 // rows, not live quotes), for a 1y legacy and a 3y modern recommendation.
 func TestGetRecommendations_ConsumptionUnits(t *testing.T) {
+	t.Parallel()
 	client := NewClientWithHTTP(nil, "sub", "eastus", &mocks.PricingHTTP{Items: []map[string]any{
 		mocks.ReservationRow("Redis Cache", "Azure Redis Cache Premium", "eastus", "Azure_Redis_Cache_Premium_P1_Cache", "P1", "P1 Cache Instance", "1 Year", 1100),
 		mocks.ReservationRow("Redis Cache", "Azure Redis Cache Premium", "eastus", "Azure_Redis_Cache_Premium_P1_Cache", "P1", "P1 Cache Instance", "3 Years", 2600),
@@ -33,6 +34,7 @@ func TestGetRecommendations_ConsumptionUnits(t *testing.T) {
 }
 
 func TestRecommendationsListArgs_SetsLookBackExplicitly(t *testing.T) {
+	t.Parallel()
 	_, opts := NewClient(nil, "sub", "eastus").recommendationsListArgs()
 	require.NotNil(t, opts.Filter)
 	require.Equal(t, "properties/scope eq 'Shared' and properties/resourceType eq 'RedisCache' and properties/lookBackPeriod eq 'Last7Days'", *opts.Filter)
@@ -40,6 +42,7 @@ func TestRecommendationsListArgs_SetsLookBackExplicitly(t *testing.T) {
 
 // A retail price outage must fail the collection, not return a partial list.
 func TestGetRecommendations_ConsumptionPriceFetchFailureFailsCollection(t *testing.T) {
+	t.Parallel()
 	client := NewClientWithHTTP(nil, "sub", "eastus", &mocks.PricingHTTP{Err: errors.New("connection reset")})
 	client.SetRecommendationsPager(&mocks.MockRecommendationsPager{
 		Results: mocks.ConsumptionUnitFixtures("Premium_P1", "eastus"),

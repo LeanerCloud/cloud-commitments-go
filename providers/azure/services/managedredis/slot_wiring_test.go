@@ -36,6 +36,7 @@ func (h slotHTTP) Do(*http.Request) (*http.Response, error) {
 }
 
 func TestSlotHeldDuringCalls(t *testing.T) {
+	t.Parallel()
 	recs := func(p *slottest.Probe) *slotPager[armconsumption.ReservationRecommendationsClientListResponse] {
 		return &slotPager[armconsumption.ReservationRecommendationsClientListResponse]{p: p}
 	}
