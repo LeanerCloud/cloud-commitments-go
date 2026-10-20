@@ -459,11 +459,15 @@ func (c *Client) collectSPOfferings(ctx context.Context, input *savingsplans.Des
 // checkedPlanType fails closed on unsupported partitions before any AWS call
 // (the pinned USD currency filter and USD OfferingDetails are wrong for
 // CNY-billed partitions), then resolves the plan type.
-func (c *Client) checkedPlanType(rec common.Recommendation, spPlanType string) (types.SavingsPlanType, error) {
-	if offeringprice.IsChinaRegion(c.region) || offeringprice.IsChinaRegion(rec.Region) {
-		return "", fmt.Errorf("%w (client region %q, recommendation region %q)", ErrUnsupportedPartition, c.region, rec.Region)
+func (c *Client) checkedPlanType(rec common.Recommendation, spDetails *common.SavingsPlanDetails) (types.SavingsPlanType, error) {
+	// Every region the request can carry: the client's, the recommendation's
+	// and the plan details' (which feeds the EC2Instance region filter).
+	for _, r := range []string{c.region, rec.Region, spDetails.Region} {
+		if offeringprice.IsChinaRegion(r) {
+			return "", fmt.Errorf("%w (region %q)", ErrUnsupportedPartition, r)
+		}
 	}
-	return c.resolveSPPlanType(spPlanType)
+	return c.resolveSPPlanType(spDetails.PlanType)
 }
 
 // findOfferingID finds the appropriate Savings Plans offering ID.
@@ -482,7 +486,7 @@ func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation, 
 
 	// Validate before trusting a CE-supplied offering ID so an invalid plan
 	// type, term or payment option fails loud instead of reaching the purchase.
-	planType, err := c.checkedPlanType(rec, spDetails.PlanType)
+	planType, err := c.checkedPlanType(rec, spDetails)
 	if err != nil {
 		return "", err
 	}

@@ -1856,7 +1856,7 @@ func TestFindOfferingID_CEOfferingIDFastPath(t *testing.T) {
 
 func TestClient_AWSCNPartitionRejectedBeforeAnyAPICall(t *testing.T) {
 	t.Parallel()
-	newRec := func(region string) common.Recommendation {
+	newRec := func(region, detailsRegion string) common.Recommendation {
 		return common.Recommendation{
 			Service:       common.ServiceSavingsPlansAll,
 			ResourceType:  "Compute",
@@ -1864,19 +1864,21 @@ func TestClient_AWSCNPartitionRejectedBeforeAnyAPICall(t *testing.T) {
 			Count:         1,
 			PaymentOption: "all-upfront",
 			Term:          "1yr",
-			Details:       &common.SavingsPlanDetails{PlanType: "Compute", HourlyCommitment: 10.0},
+			Details:       &common.SavingsPlanDetails{PlanType: "Compute", HourlyCommitment: 10.0, Region: detailsRegion},
 		}
 	}
-	for _, tc := range []struct{ name, clientRegion, recRegion string }{
-		{"client in cn-north-1", "cn-north-1", ""},
-		{"client in cn-northwest-1", "cn-northwest-1", "cn-northwest-1"},
-		{"recommendation in cn region", "us-east-1", "cn-north-1"},
+	for _, tc := range []struct{ name, clientRegion, recRegion, detailsRegion string }{
+		{"client in cn-north-1", "cn-north-1", "", ""},
+		{"client in cn-northwest-1", "cn-northwest-1", "cn-northwest-1", ""},
+		{"recommendation in cn region", "us-east-1", "cn-north-1", ""},
+		{"plan details in cn region", "us-east-1", "", "cn-north-1"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			mockSP := &MockSavingsPlansClient{} // no expectations: any call panics
+			mockSP := &MockSavingsPlansClient{} // no expectations: any call fails the test
+			mockSP.Test(t)
 			client := &Client{client: mockSP, region: tc.clientRegion}
-			rec := newRec(tc.recRegion)
+			rec := newRec(tc.recRegion, tc.detailsRegion)
 
 			result, err := client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
 			assert.ErrorIs(t, err, ErrUnsupportedPartition)
