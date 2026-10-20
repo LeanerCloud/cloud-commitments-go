@@ -22,6 +22,7 @@ func newCall(t *testing.T, h http.HandlerFunc) *cloudbilling.ServicesSkusListCal
 }
 
 func TestAll_FollowsNextPageToken(t *testing.T) {
+	t.Parallel()
 	var tokens []string
 	call := newCall(t, func(w http.ResponseWriter, r *http.Request) {
 		tok := r.URL.Query().Get("pageToken")
@@ -43,6 +44,7 @@ func TestAll_FollowsNextPageToken(t *testing.T) {
 }
 
 func TestAll_ExceedingCapErrorsInsteadOfReturningPartialList(t *testing.T) {
+	t.Parallel()
 	call := newCall(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"skus":[{"skuId":"A"}],"nextPageToken":"more"}`)

@@ -9,6 +9,7 @@ import (
 )
 
 func TestFilterRecentCommitments_DateOnlyStart(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 10, 16, 9, 0, 0, 0, time.UTC)
 	cutoff := now.Add(-24 * time.Hour) // 2026-10-15T09:00Z
 	day := func(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 0, 0, 0, 0, time.UTC) }
@@ -36,6 +37,7 @@ func TestFilterRecentCommitments_DateOnlyStart(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			d := &DuplicateChecker{LookbackHours: 24, now: func() time.Time { return now }}
 			got := d.filterRecentCommitments([]common.Commitment{{
 				CommitmentID: "c", StartDate: tt.start, StartDateIsDay: tt.isDay, State: tt.state,

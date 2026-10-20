@@ -26,6 +26,7 @@ func usageTypeSKU(description, usageType string, nanos int32) *cloudbilling.Sku 
 }
 
 func TestExtractor_UsageTypeDecidesCommitmentSlot(t *testing.T) {
+	t.Parallel()
 	skus := []*cloudbilling.Sku{
 		usageTypeSKU("STANDARD Storage in us-central1", "OnDemand", 50000000),
 		usageTypeSKU("STANDARD Storage in us-central1 Committed Use Discount", "Commit1Yr", 42000000),
@@ -37,6 +38,7 @@ func TestExtractor_UsageTypeDecidesCommitmentSlot(t *testing.T) {
 }
 
 func TestExtractor_UnknownUsageTypeIsAnError(t *testing.T) {
+	t.Parallel()
 	skus := []*cloudbilling.Sku{usageTypeSKU("STANDARD Storage in us-central1", "Commit5Yr", 42000000)}
 	_, _, _, err := extractStoragePricingFromSKUs(skus, "STANDARD", "us-central1")
 	require.Error(t, err)

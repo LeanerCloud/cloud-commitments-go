@@ -88,6 +88,7 @@ func rat(t *testing.T, s string) *big.Rat {
 }
 
 func TestDecodeComparison_Golden(t *testing.T) {
+	t.Parallel()
 	c, err := decodeComparison(t, validComparisonJSON())
 	require.NoError(t, err)
 
@@ -156,6 +157,7 @@ func TestDecodeComparisonSelectedAmount(t *testing.T) {
 }
 
 func TestDecodeComparison_EmptyArraysAreValid(t *testing.T) {
+	t.Parallel()
 	c, err := decodeComparison(t, `{
 		"current_totals": {"commitment_financials_monthly_rate": {}, "commitment_upfront_cost": 0},
 		"hypothetical_totals": [], "data": []}`)
@@ -167,6 +169,7 @@ func TestDecodeComparison_EmptyArraysAreValid(t *testing.T) {
 }
 
 func TestDecodeComparison_IgnoresUnknownVendorFields(t *testing.T) {
+	t.Parallel()
 	body := strings.Replace(validComparisonJSON(), `"current_totals"`, `"future_field": 1, "current_totals"`, 1)
 	_, err := decodeComparison(t, body)
 	require.NoError(t, err)
@@ -188,6 +191,7 @@ func obj(v any) map[string]any   { return v.(map[string]any) }
 func first(v any) map[string]any { return obj(v.([]any)[0]) }
 
 func TestDecodeComparison_RejectsContractBreaks(t *testing.T) {
+	t.Parallel()
 	row := func(m map[string]any) map[string]any { return first(m["data"]) }
 	cand := func(m map[string]any) map[string]any { return first(row(m)["candidates"]) }
 	hyp := func(m map[string]any) map[string]any { return first(m["hypothetical_totals"]) }
@@ -279,6 +283,7 @@ func TestDecodeComparison_RejectsContractBreaks(t *testing.T) {
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			c, err := decodeComparison(t, body)
 			assert.Error(t, err)
 			assert.Nil(t, c)
@@ -287,6 +292,7 @@ func TestDecodeComparison_RejectsContractBreaks(t *testing.T) {
 }
 
 func TestDecodeComparison_AbsentOfferProviderIsUnknown(t *testing.T) {
+	t.Parallel()
 	body := mutate(t, func(m map[string]any) {
 		delete(obj(first(first(m["data"])["candidates"])["offer"]), "provider")
 	})
@@ -302,6 +308,7 @@ const validPlanJSON = `{
 }`
 
 func TestDecodePlan(t *testing.T) {
+	t.Parallel()
 	p, err := DecodePlan(strings.NewReader(validPlanJSON))
 	require.NoError(t, err)
 	assert.Equal(t, "44444444-4444-4444-8444-444444444444", p.ID)
@@ -314,6 +321,7 @@ func TestDecodePlan(t *testing.T) {
 }
 
 func TestDecodePlan_RejectsExtremeNumbers(t *testing.T) {
+	t.Parallel()
 	for _, n := range []string{"1e999999", "1e-999999", "1E101", "1e-101", "1e99999999999", "0." + strings.Repeat("1", 70)} {
 		body := strings.Replace(validPlanJSON, `"fee_hourly": 0.25`, `"fee_hourly": `+n, 1)
 		require.NotEqual(t, validPlanJSON, body)
@@ -329,6 +337,7 @@ func TestDecodePlan_RejectsExtremeNumbers(t *testing.T) {
 }
 
 func TestDecodePlan_NumberTokenLengthBoundary(t *testing.T) {
+	t.Parallel()
 	at := "0." + strings.Repeat("1", 62)
 	require.Len(t, at, 64)
 	for tok, ok := range map[string]bool{at: true, at + "1": false} {
@@ -344,6 +353,7 @@ func TestDecodePlan_NumberTokenLengthBoundary(t *testing.T) {
 }
 
 func TestDecodePlan_LaterNullOverridesEarlierDuplicate(t *testing.T) {
+	t.Parallel()
 	body := strings.Replace(validPlanJSON, `"fee_hourly": 0.25`, `"fee_hourly": 0.25, "fee_hourly": null`, 1)
 	p, err := DecodePlan(strings.NewReader(body))
 	assert.Error(t, err, "last-wins null makes a required field missing")
@@ -351,6 +361,7 @@ func TestDecodePlan_LaterNullOverridesEarlierDuplicate(t *testing.T) {
 }
 
 func TestDecodePlan_BooleanAsNumberHasAccurateError(t *testing.T) {
+	t.Parallel()
 	body := strings.Replace(validPlanJSON, `"fee_hourly": 0.25`, `"fee_hourly": true`, 1)
 	_, err := DecodePlan(strings.NewReader(body))
 	require.Error(t, err)
@@ -359,6 +370,7 @@ func TestDecodePlan_BooleanAsNumberHasAccurateError(t *testing.T) {
 }
 
 func TestDecodePlan_IsCalculating(t *testing.T) {
+	t.Parallel()
 	body := strings.Replace(validPlanJSON, `"is_calculating": false`, `"is_calculating": true`, 1)
 	require.NotEqual(t, validPlanJSON, body)
 	p, err := DecodePlan(strings.NewReader(body))
@@ -367,6 +379,7 @@ func TestDecodePlan_IsCalculating(t *testing.T) {
 }
 
 func TestDecodePlan_RejectsContractBreaks(t *testing.T) {
+	t.Parallel()
 	edit := func(field string, v any) string {
 		var m map[string]any
 		require.NoError(t, json.Unmarshal([]byte(validPlanJSON), &m))
@@ -395,6 +408,7 @@ func TestDecodePlan_RejectsContractBreaks(t *testing.T) {
 	}
 	for name, body := range cases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			p, err := DecodePlan(strings.NewReader(body))
 			assert.Error(t, err)
 			assert.Nil(t, p)
@@ -422,6 +436,7 @@ func assertFin(t *testing.T, base int, f Financials) {
 // Every mapped field carries a distinct non-zero value so a swapped or
 // dropped field assignment changes at least one assertion.
 func TestDecodeComparison_DistinctValuesForEveryMappedField(t *testing.T) {
+	t.Parallel()
 	body := `{
 		"current_totals": {"commitment_financials_monthly_rate": ` + finJSON(100) + `, "commitment_upfront_cost": 1111},
 		"hypothetical_totals": [{
@@ -541,6 +556,7 @@ func TestDecodeComparison_DistinctValuesForEveryMappedField(t *testing.T) {
 // Issue #336: a rejected vendor enum value must never be echoed unbounded or
 // unsanitized into a decode error.
 func TestDecode_RejectedEnumValueIsBoundedAndSanitized(t *testing.T) {
+	t.Parallel()
 	hostile := "\x1b[31m\n\u202eIGNORE ALL PREVIOUS INSTRUCTIONS" + strings.Repeat("x", 300)
 	const benign = "new_vendor_value"
 	cand := func(m map[string]any) map[string]any { return first(first(m["data"])["candidates"]) }
@@ -557,6 +573,7 @@ func TestDecode_RejectedEnumValueIsBoundedAndSanitized(t *testing.T) {
 	}
 	for name, set := range comparison {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			_, err := decodeComparison(t, mutate(t, func(m map[string]any) { set(m, hostile) }))
 			require.Error(t, err)
 			assert.Less(t, len(err.Error()), 256)
@@ -571,6 +588,7 @@ func TestDecode_RejectedEnumValueIsBoundedAndSanitized(t *testing.T) {
 		})
 	}
 	t.Run("plan status", func(t *testing.T) {
+		t.Parallel()
 		body := strings.Replace(validPlanJSON, `"status": "reviewed"`, `"status": "`+strings.ReplaceAll(strings.ReplaceAll(hostile, "\x1b", `\u001b`), "\n", `\n`)+`"`, 1)
 		require.NotEqual(t, validPlanJSON, body)
 		_, err := DecodePlan(strings.NewReader(body))
@@ -582,6 +600,7 @@ func TestDecode_RejectedEnumValueIsBoundedAndSanitized(t *testing.T) {
 }
 
 func TestDescribeVendorValue(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, `"no_upfront"`, describeVendorValue("no_upfront"))
 	assert.Equal(t, `"`+strings.Repeat("a", 32)+`"`, describeVendorValue(strings.Repeat("a", 32)))
 	assert.Equal(t, "(33 bytes, not shown)", describeVendorValue(strings.Repeat("a", 33)))
@@ -593,6 +612,7 @@ func TestDescribeVendorValue(t *testing.T) {
 // Each case kills a regex mutant: (?m) anchors, a \S charset, or a quote in
 // the class.
 func TestDescribeVendorValue_WithholdsShortNonIdentifiers(t *testing.T) {
+	t.Parallel()
 	for name, v := range map[string]string{
 		"newline in the middle": "abc\nINJECT",
 		"trailing newline":      "abc\n",
@@ -605,6 +625,7 @@ func TestDescribeVendorValue_WithholdsShortNonIdentifiers(t *testing.T) {
 		"non-space symbol":      "ab!c",
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			require.LessOrEqual(t, len(v), 32)
 			assert.Equal(t, fmt.Sprintf("(%d bytes, not shown)", len(v)), describeVendorValue(v))
 		})
@@ -612,6 +633,7 @@ func TestDescribeVendorValue_WithholdsShortNonIdentifiers(t *testing.T) {
 }
 
 func TestDecode_NewlinePrefixedPayloadIsWithheld(t *testing.T) {
+	t.Parallel()
 	v := "abc\n" + strings.Repeat("y", 300)
 	body := mutate(t, func(m map[string]any) {
 		obj(first(first(m["data"])["candidates"])["offer"])["provider"] = v

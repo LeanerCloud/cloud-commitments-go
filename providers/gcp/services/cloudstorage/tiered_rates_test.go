@@ -18,6 +18,7 @@ func freeFirstTierStorageSKU(description, usageType string, paidNanos int64) *cl
 }
 
 func TestExtractStoragePricing_FreeFirstTierUsesPaidTier(t *testing.T) {
+	t.Parallel()
 	od := freeFirstTierStorageSKU("STANDARD Storage in us-central1", "OnDemand", 20000000)
 
 	price, currency, err := extractStoragePriceFromSKU(od)
@@ -36,6 +37,7 @@ func TestExtractStoragePricing_FreeFirstTierUsesPaidTier(t *testing.T) {
 }
 
 func TestExtractStoragePricing_AllTiersFreeIsSkipped(t *testing.T) {
+	t.Parallel()
 	sku := freeFirstTierStorageSKU("STANDARD Storage in us-central1", "OnDemand", 0)
 	price, _, err := extractStoragePriceFromSKU(sku)
 	require.NoError(t, err)

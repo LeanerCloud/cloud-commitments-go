@@ -21,6 +21,7 @@ func (b *countingBilling) ListSKUs(id string) (*cloudbilling.ListSkusResponse, e
 }
 
 func TestListSKUs_CachedPerClient(t *testing.T) {
+	t.Parallel()
 	b := &countingBilling{BillingService: &MockBillingService{skus: &cloudbilling.ListSkusResponse{}}}
 	c, _ := NewClient(context.Background(), "p", "us-central1")
 	for i := 0; i < 3; i++ {

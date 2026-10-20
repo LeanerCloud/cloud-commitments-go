@@ -11,6 +11,7 @@ import (
 )
 
 func TestIsPermissionError(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name string
 		err  error
@@ -72,6 +73,7 @@ func TestIsPermissionError(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got := IsPermissionError(tt.err)
 			if got != tt.want {
 				t.Errorf("IsPermissionError(%v) = %v, want %v", tt.err, got, tt.want)

@@ -160,6 +160,7 @@ func TestEC2DedupeEntryOrder(t *testing.T) {
 }
 
 func TestEC2DedupeNoWarnForSQLServerPlatform(t *testing.T) {
+	t.Parallel()
 	var lines []string
 	logf := func(format string, args ...any) { lines = append(lines, fmt.Sprintf(format, args...)) }
 	runEC2(t, logf, []common.Commitment{ec2Commitment("Linux with SQL Server Standard", "default", "regional", "", 1)},
@@ -170,6 +171,7 @@ func TestEC2DedupeNoWarnForSQLServerPlatform(t *testing.T) {
 }
 
 func TestEC2DedupeWarnsOncePerUnrecognizedValue(t *testing.T) {
+	t.Parallel()
 	var lines []string
 	logf := func(format string, args ...any) { lines = append(lines, fmt.Sprintf(format, args...)) }
 	runEC2(t, logf, []common.Commitment{ec2Commitment("linux", "default", "weird-scope", "", 1)},

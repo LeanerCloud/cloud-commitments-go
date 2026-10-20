@@ -39,6 +39,7 @@ var pinnedContractTerms = []string{
 }
 
 func TestContractTerms_PinnedSortedUnique(t *testing.T) {
+	t.Parallel()
 	got := ContractTerms()
 	assert.Len(t, got, 74)
 	assert.True(t, slices.IsSorted(got))
@@ -47,6 +48,7 @@ func TestContractTerms_PinnedSortedUnique(t *testing.T) {
 }
 
 func TestContractTerms_ReturnsACopy(t *testing.T) {
+	t.Parallel()
 	first := ContractTerms()
 	first[0] = "mutated"
 	first = append(first[:1], "extra")
@@ -57,6 +59,7 @@ func TestContractTerms_ReturnsACopy(t *testing.T) {
 // Every exported term is accepted by the decoder check and by the request
 // validation; clearly invalid terms are rejected before any request.
 func TestContractTerms_MatchValidators(t *testing.T) {
+	t.Parallel()
 	var calls atomic.Int32
 	c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)

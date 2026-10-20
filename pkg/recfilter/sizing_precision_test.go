@@ -180,6 +180,7 @@ func TestApplyTargetCoverageExactStateLifetime(t *testing.T) {
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			rec := original
 			tc.prepare(&rec)
 			out := ApplyTargetCoverage([]common.Recommendation{rec}, 80, nil, nil)

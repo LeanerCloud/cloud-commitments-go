@@ -12,6 +12,7 @@ func tier(units, nanos int64) *cloudbilling.TierRate {
 }
 
 func TestPaidRate(t *testing.T) {
+	t.Parallel()
 	free, paid, whole := tier(0, 0), tier(0, 50000000), tier(2, 0)
 	tests := []struct {
 		name string
@@ -29,6 +30,7 @@ func TestPaidRate(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Same(t, tt.want, PaidRate(tt.expr))
 		})
 	}

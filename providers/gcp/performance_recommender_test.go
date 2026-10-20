@@ -83,6 +83,7 @@ func performanceSDKAdapter(t *testing.T) (*RecommendationsClientAdapter, *perfor
 // Memorystore PerformanceRecommender, and must not emit their per-instance
 // performance advice as Cloud SQL or Memorystore CUD recommendations.
 func TestGetAllRecommendations_NoPerformanceRecommenderCUDs(t *testing.T) {
+	t.Parallel()
 	adapter, calls := performanceSDKAdapter(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -106,8 +107,10 @@ func TestGetAllRecommendations_NoPerformanceRecommenderCUDs(t *testing.T) {
 // sentinel before any region lookup or Recommender call, instead of returning
 // PerformanceRecommender output as CUDs (issue #294).
 func TestGetRecommendations_ExplicitSQLAndCacheAreNotSupported(t *testing.T) {
+	t.Parallel()
 	for _, service := range []common.ServiceType{common.ServiceRelationalDB, common.ServiceCache} {
 		t.Run(string(service), func(t *testing.T) {
+			t.Parallel()
 			adapter, calls := performanceSDKAdapter(t)
 
 			recs, err := adapter.GetRecommendationsForService(context.Background(), service)

@@ -44,6 +44,7 @@ func testClient(t *testing.T, h http.Handler) *Client {
 }
 
 func TestNewClient_ValidatesConfig(t *testing.T) {
+	t.Parallel()
 	_, err := NewClient(Config{OrgID: testOrg}, nil)
 	assert.Error(t, err)
 	_, err = NewClient(Config{APIKey: NewSecret(testKey), OrgID: "../x"}, nil)
@@ -54,6 +55,7 @@ func TestNewClient_ValidatesConfig(t *testing.T) {
 }
 
 func TestClient_Comparison_RequestAndDecode(t *testing.T) {
+	t.Parallel()
 	var gotPath, gotQuery, gotKey, gotMethod string
 	c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath, gotQuery, gotKey, gotMethod = r.URL.Path, r.URL.RawQuery, r.Header.Get("x-api-key"), r.Method
@@ -97,6 +99,7 @@ func reorder(raw string) string {
 }
 
 func TestClient_Comparison_NoQueryByDefault(t *testing.T) {
+	t.Parallel()
 	var gotQuery string
 	c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotQuery = r.URL.RawQuery
@@ -108,6 +111,7 @@ func TestClient_Comparison_NoQueryByDefault(t *testing.T) {
 }
 
 func TestClient_RejectsBadInputsWithoutSending(t *testing.T) {
+	t.Parallel()
 	var calls atomic.Int32
 	c := testClient(t, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls.Add(1) }))
 	ctx := context.Background()
@@ -128,6 +132,7 @@ func TestClient_RejectsBadInputsWithoutSending(t *testing.T) {
 }
 
 func TestClient_Plan(t *testing.T) {
+	t.Parallel()
 	var gotPath string
 	c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
@@ -140,6 +145,7 @@ func TestClient_Plan(t *testing.T) {
 }
 
 func TestClient_DoesNotFollowRedirectsOrLeakKey(t *testing.T) {
+	t.Parallel()
 	var otherHits atomic.Int32
 	var leaked atomic.Value
 	other := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
@@ -159,6 +165,7 @@ func TestClient_DoesNotFollowRedirectsOrLeakKey(t *testing.T) {
 }
 
 func TestClient_DoesNotMutateCallerHTTPClient(t *testing.T) {
+	t.Parallel()
 	srv := httptest.NewServer(http.NotFoundHandler())
 	t.Cleanup(srv.Close)
 	hc := srv.Client()
@@ -168,6 +175,7 @@ func TestClient_DoesNotMutateCallerHTTPClient(t *testing.T) {
 }
 
 func TestClient_ErrorMapping(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		status  int
@@ -200,6 +208,7 @@ func TestClient_ErrorMapping(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				if tc.header != "" {
 					w.Header().Set("Retry-After", tc.header)
@@ -219,6 +228,7 @@ func TestClient_ErrorMapping(t *testing.T) {
 }
 
 func TestClient_SingleShotNoRetry(t *testing.T) {
+	t.Parallel()
 	var calls atomic.Int32
 	c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
@@ -238,6 +248,7 @@ func oversizeComparisonJSON() string {
 }
 
 func TestClient_BoundedBody(t *testing.T) {
+	t.Parallel()
 	c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/comparison") {
 			_, _ = w.Write([]byte(oversizeComparisonJSON()))
@@ -254,6 +265,7 @@ func TestClient_BoundedBody(t *testing.T) {
 }
 
 func TestLimitsArePinned(t *testing.T) {
+	t.Parallel()
 	assert.EqualValues(t, 8<<20, maxResponseBytes)
 	assert.Equal(t, 24*time.Hour, maxRetryAfter)
 }
@@ -262,6 +274,7 @@ func TestLimitsArePinned(t *testing.T) {
 func padTo(body string, n int) string { return body + strings.Repeat(" ", n-len(body)) }
 
 func TestClient_BodyExactlyAtAndOverTheLimit(t *testing.T) {
+	t.Parallel()
 	var comparison bool
 	var size int
 	c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -289,6 +302,7 @@ func TestClient_BodyExactlyAtAndOverTheLimit(t *testing.T) {
 }
 
 func TestBoundedReader_AllowsExactlyTheLimit(t *testing.T) {
+	t.Parallel()
 	// OneByteReader makes the reader sit at n==1 and n==0 between reads, as
 	// chunked HTTP bodies do.
 	b := &boundedReader{r: iotest.OneByteReader(strings.NewReader("abcd")), n: 4}
@@ -303,6 +317,7 @@ func TestBoundedReader_AllowsExactlyTheLimit(t *testing.T) {
 // A complete JSON value under the limit followed by whitespace past it
 // overflows after Decode, in decodeOne's trailing-data check.
 func TestDecodeOne_TooLargeAfterValue(t *testing.T) {
+	t.Parallel()
 	r := &boundedReader{r: strings.NewReader(`{"a":1}   `), n: 8}
 	var v map[string]any
 	err := decodeOne(r, &v)
@@ -324,6 +339,7 @@ type holder struct {
 }
 
 func TestConfigAndClient_NeverFormatTheKey(t *testing.T) {
+	t.Parallel()
 	cfg := Config{APIKey: NewSecret(testKey), OrgID: testOrg}
 	c, err := newClient("http://127.0.0.1:1", cfg, nil)
 	require.NoError(t, err)
@@ -364,6 +380,7 @@ type unexportedSecretHolders struct {
 // unexported-field paths (where fmt cannot call methods) must not reach the
 // key at all.
 func TestSecret_NeverRevealedByAnyPrinter(t *testing.T) {
+	t.Parallel()
 	sec := NewSecret(testKey)
 	cfg := Config{APIKey: sec, OrgID: testOrg}
 	require.Equal(t, testKey, sec.Reveal())
@@ -415,6 +432,7 @@ func TestSecret_NeverRevealedByAnyPrinter(t *testing.T) {
 }
 
 func TestNewClient_DefaultHTTPClientIsHardened(t *testing.T) {
+	t.Parallel()
 	c, err := NewClient(Config{APIKey: NewSecret(testKey), OrgID: testOrg}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, httpclient.New().Timeout, c.hc.Timeout)
@@ -424,11 +442,13 @@ func TestNewClient_DefaultHTTPClientIsHardened(t *testing.T) {
 }
 
 func TestNewClient_RejectsBlankKey(t *testing.T) {
+	t.Parallel()
 	_, err := NewClient(Config{APIKey: NewSecret("   \t"), OrgID: testOrg}, nil)
 	assert.Error(t, err)
 }
 
 func TestClient_RejectsExtremeExponentFromServer(t *testing.T) {
+	t.Parallel()
 	c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(strings.Replace(validPlanJSON, `"fee_hourly": 0.25`, `"fee_hourly": 1e999999`, 1)))
 	}))
@@ -438,6 +458,7 @@ func TestClient_RejectsExtremeExponentFromServer(t *testing.T) {
 }
 
 func TestClient_ContextCancellation(t *testing.T) {
+	t.Parallel()
 	// The handler gives up after 5s so a client that ignores the context fails
 	// the test instead of hanging it.
 	c := testClient(t, http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
@@ -455,6 +476,7 @@ func TestClient_ContextCancellation(t *testing.T) {
 }
 
 func TestIsUUID(t *testing.T) {
+	t.Parallel()
 	assert.True(t, isUUID(testOrg))
 	assert.True(t, isUUID("ABCDEF01-2345-4678-89AB-CDEF01234567"))
 	for _, s := range []string{"", "x", testOrg + "0", strings.Replace(testOrg, "-", "_", 1),
@@ -464,6 +486,7 @@ func TestIsUUID(t *testing.T) {
 }
 
 func TestClient_ErrorMessageIsSanitized(t *testing.T) {
+	t.Parallel()
 	c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)
 		_, _ = w.Write([]byte(`{"message":"bad key ` + testKey + ` \u001b[31mRED\nINJECTED\r\u0085line"}`))
@@ -482,6 +505,7 @@ type probeErrReader struct{ err error }
 func (r probeErrReader) Read([]byte) (int, error) { return 0, r.err }
 
 func TestBoundedReader_SurfacesProbeError(t *testing.T) {
+	t.Parallel()
 	boom := errors.New("connection reset")
 	_, err := io.ReadAll(&boundedReader{r: probeErrReader{boom}, n: 0})
 	assert.ErrorIs(t, err, boom)
@@ -506,6 +530,7 @@ func errorMessageFor(t *testing.T, message string) string {
 }
 
 func TestClient_ErrorMessageStripsInvisibleFormatting(t *testing.T) {
+	t.Parallel()
 	// One input per stripped category: Cf (several), Zl, Zp.
 	for name, r := range map[string]string{
 		"Cf zero-width space":    "\u200b",
@@ -517,12 +542,14 @@ func TestClient_ErrorMessageStripsInvisibleFormatting(t *testing.T) {
 		"Zp paragraph separator": "\u2029",
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, "abcd", errorMessageFor(t, "ab"+r+"cd"))
 		})
 	}
 }
 
 func TestClient_ErrorMessageRedactsSplitAndRepeatedKeys(t *testing.T) {
+	t.Parallel()
 	split := testKey[:6] + "\u200b" + testKey[6:10] + "\x01" + testKey[10:]
 	// Exact equality: a redact-before-strip pipeline would leave the
 	// reassembled key.
@@ -532,6 +559,7 @@ func TestClient_ErrorMessageRedactsSplitAndRepeatedKeys(t *testing.T) {
 }
 
 func TestClient_ErrorMessageRedactsBeforeTruncating(t *testing.T) {
+	t.Parallel()
 	// The redacted key ends exactly at byte 200, so it must not be cut.
 	got := errorMessageFor(t, strings.Repeat("x", 190)+testKey)
 	assert.Equal(t, strings.Repeat("x", 190)+"[redacted]", got)
@@ -545,6 +573,7 @@ func TestClient_ErrorMessageRedactsBeforeTruncating(t *testing.T) {
 }
 
 func TestNewClient_KeyMustBePrintableASCII(t *testing.T) {
+	t.Parallel()
 	rejected := map[string]string{
 		"trailing space":            testKey + " ",
 		"leading space":             " " + testKey,
@@ -565,6 +594,7 @@ func TestNewClient_KeyMustBePrintableASCII(t *testing.T) {
 	}
 	for name, k := range rejected {
 		t.Run("rejects "+name, func(t *testing.T) {
+			t.Parallel()
 			_, err := newClient("http://127.0.0.1:1", Config{APIKey: NewSecret(k), OrgID: testOrg}, nil)
 			require.Error(t, err)
 			assert.NotContains(t, err.Error(), "sekret")
@@ -581,6 +611,7 @@ func TestNewClient_KeyMustBePrintableASCII(t *testing.T) {
 // A vendor that echoes the x-api-key header back in a 401 message must see it
 // redacted, end to end with a valid key.
 func TestClient_EchoedHeaderKeyIsRedacted(t *testing.T) {
+	t.Parallel()
 	c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
 		b, _ := json.Marshal(map[string]string{"message": "invalid api key " + r.Header.Get("x-api-key")})
@@ -597,6 +628,7 @@ func TestClient_EchoedHeaderKeyIsRedacted(t *testing.T) {
 // values, but a short identifier is still echoed, so a vendor that reflects the
 // key back as an enum value must be redacted.
 func TestClient_DecodeErrorsAreRedacted(t *testing.T) {
+	t.Parallel()
 	reflect := func(t *testing.T, value string) error {
 		t.Helper()
 		body := mutate(t, func(m map[string]any) {
@@ -610,11 +642,13 @@ func TestClient_DecodeErrorsAreRedacted(t *testing.T) {
 		return err
 	}
 	t.Run("key as enum value", func(t *testing.T) {
+		t.Parallel()
 		err := reflect(t, testKey)
 		assert.NotContains(t, err.Error(), testKey)
 		assert.Contains(t, err.Error(), `unsupported value "[redacted]"`)
 	})
 	t.Run("plan decode error", func(t *testing.T) {
+		t.Parallel()
 		body := strings.Replace(validPlanJSON, `"status": "reviewed"`, `"status": "`+testKey+`"`, 1)
 		require.NotEqual(t, validPlanJSON, body)
 		c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -626,6 +660,7 @@ func TestClient_DecodeErrorsAreRedacted(t *testing.T) {
 		assert.Contains(t, err.Error(), "[redacted]")
 	})
 	t.Run("sentinel survives sanitizing", func(t *testing.T) {
+		t.Parallel()
 		c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			_, _ = w.Write([]byte(`{}`))
 		}))

@@ -64,6 +64,7 @@ func TestDecodeLineItemsRequiredFields(t *testing.T) {
 	t.Parallel()
 	for _, key := range []string{"id", "plan_id", "offer_id", "account_id", "selected_quantity", "selected_commitment", "is_selected", "contract_term", "payment_option", "offer", "contract_spec"} {
 		t.Run(key, func(t *testing.T) {
+			t.Parallel()
 			body := editLineItem(t, func(m map[string]any) { delete(m, key) })
 			_, err := DecodeLineItems(strings.NewReader("["+body+"]"), testPlan)
 			require.ErrorContains(t, err, key)
@@ -71,6 +72,7 @@ func TestDecodeLineItemsRequiredFields(t *testing.T) {
 	}
 	for _, key := range []string{"id", "provider", "provider_offering_id", "offering_id", "duration_seconds", "region", "az", "instance_type", "instance_family", "product_description", "tenancy", "plan_type", "is_multi_az", "is_flexible"} {
 		t.Run("offer."+key, func(t *testing.T) {
+			t.Parallel()
 			body := editLineItem(t, func(m map[string]any) { delete(obj(m["offer"]), key) })
 			_, err := DecodeLineItems(strings.NewReader("["+body+"]"), testPlan)
 			require.ErrorContains(t, err, key)
@@ -108,6 +110,7 @@ func TestDecodeLineItemsContractBreaks(t *testing.T) {
 	}
 	for name, edit := range cases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			_, err := DecodeLineItems(strings.NewReader("["+editLineItem(t, edit)+"]"), testPlan)
 			require.Error(t, err)
 			assert.NotContains(t, err.Error(), "opaque-secret")

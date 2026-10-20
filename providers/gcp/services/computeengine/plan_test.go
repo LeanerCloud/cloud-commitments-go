@@ -26,6 +26,7 @@ func planClient(t *testing.T, recs ...*recommenderpb.Recommendation) (*Client, *
 // Issue #291: a THIRTY_SIX_MONTH recommendation with no caller term must be
 // bought as THIRTY_SIX_MONTH. Pre-fix it was labeled 1yr and bought TWELVE_MONTH.
 func TestRecommendationPlanDrivesPurchaseTerm(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name, plan, paramTerm, wantTerm, wantPlan string
 	}{
@@ -38,6 +39,7 @@ func TestRecommendationPlanDrivesPurchaseTerm(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			client, service := planClient(t, rootCUDRecommendationWithPlan("MEMORY_OPTIMIZED_M4_6TB", tc.plan))
 			recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{Term: tc.paramTerm, ExperimentalGCPPlanTerm: true})
 			require.NoError(t, err)
@@ -51,6 +53,7 @@ func TestRecommendationPlanDrivesPurchaseTerm(t *testing.T) {
 }
 
 func TestRecommendationPlanSkips(t *testing.T) {
+	t.Parallel()
 	malformed := func(v *structpb.Value) *recommenderpb.Recommendation {
 		rec := rootCUDRecommendationWithPlan("MEMORY_OPTIMIZED_M4_6TB", "")
 		rec.Content.OperationGroups[0].Operations[0].GetValue().GetStructValue().Fields["plan"] = v
@@ -71,6 +74,7 @@ func TestRecommendationPlanSkips(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			client, service := planClient(t, tc.rec)
 			recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{Term: tc.term, ExperimentalGCPPlanTerm: true})
 			require.NoError(t, err)
@@ -82,6 +86,7 @@ func TestRecommendationPlanSkips(t *testing.T) {
 
 // A conflicting recommendation is skipped without dropping its good neighbor.
 func TestRecommendationPlanConflictKeepsGoodRecommendation(t *testing.T) {
+	t.Parallel()
 	bad := rootCUDRecommendationWithPlan("MEMORY_OPTIMIZED_M4_6TB", "TWELVE_MONTH")
 	bad.Name = "bad"
 	good := rootCUDRecommendationWithPlan("MEMORY_OPTIMIZED_M4_6TB", "THIRTY_SIX_MONTH")
@@ -98,6 +103,7 @@ func TestRecommendationPlanConflictKeepsGoodRecommendation(t *testing.T) {
 // skipped like any other bad plan, not abort the batch before later valid
 // recommendations are processed (issue #291).
 func TestRecommendationMalformedRootValueKeepsGoodRecommendation(t *testing.T) {
+	t.Parallel()
 	bad := rootCUDRecommendationWithPlan("MEMORY_OPTIMIZED_M4_6TB", "TWELVE_MONTH")
 	bad.Name = "bad-root-value"
 	bad.Content.OperationGroups[0].Operations[0].PathValue = &recommenderpb.Operation_Value{
@@ -116,6 +122,7 @@ func TestRecommendationMalformedRootValueKeepsGoodRecommendation(t *testing.T) {
 
 // Mutation probe: the plan-to-term mapping must not be swappable.
 func TestRootCommitmentTermMapping(t *testing.T) {
+	t.Parallel()
 	for plan, want := range map[string]string{"TWELVE_MONTH": "1yr", "THIRTY_SIX_MONTH": "3yr"} {
 		got, found, err := rootCommitmentTerm(rootCUDRecommendationWithPlan("MEMORY_OPTIMIZED_M4_6TB", plan).GetContent())
 		require.NoError(t, err)
@@ -127,6 +134,7 @@ func TestRootCommitmentTermMapping(t *testing.T) {
 // An explicit non-canonical Term must be canonicalized so pricing and grouping
 // see "3yr", not "36mo" (which GetOfferingDetails would price as one year).
 func TestExplicitTermIsCanonicalized(t *testing.T) {
+	t.Parallel()
 	for _, raw := range []string{"36mo", " 3 ", "3yr"} {
 		for _, plan := range []string{"", "THIRTY_SIX_MONTH"} {
 			client, _ := planClient(t, rootCUDRecommendationWithPlan("MEMORY_OPTIMIZED_M4_6TB", plan))
@@ -143,6 +151,7 @@ func TestExplicitTermIsCanonicalized(t *testing.T) {
 // Default (flag off) keeps the pre-#291 behavior: Term or "1yr", plan ignored,
 // nothing skipped.
 func TestPlanTermOffByDefault(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name, plan, paramTerm, wantTerm, wantPlan string
 	}{
@@ -152,6 +161,7 @@ func TestPlanTermOffByDefault(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			client, service := planClient(t, rootCUDRecommendationWithPlan("MEMORY_OPTIMIZED_M4_6TB", tc.plan))
 			recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{Term: tc.paramTerm})
 			require.NoError(t, err)
