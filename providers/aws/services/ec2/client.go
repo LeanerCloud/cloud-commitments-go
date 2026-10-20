@@ -357,6 +357,12 @@ func parseEC2Scope(s string) (types.Scope, error) {
 // of timing out the Lambda budget (issue #688).
 const maxOfferingPages = 5
 
+// maxListPages bounds the full-list scans (existing commitments and the
+// valid-resource-types sweep). At 100 per page this is far above any real
+// account; hitting it means a token cycle or runaway API, so the scan fails
+// loud instead of looping or returning a partial list (issue #561).
+const maxListPages = 50
+
 // convertEC2PaymentOption maps a rec payment-option slug to the AWS
 // DescribeReservedInstancesOfferings OfferingType enum value.
 func convertEC2PaymentOption(option string) (types.OfferingTypeValues, error) {
@@ -693,7 +699,13 @@ func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	instanceTypesMap := make(map[string]bool)
 	var nextToken *string
 
-	for {
+	for page := 0; ; page++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if page >= maxListPages {
+			return nil, fmt.Errorf("pagination cap reached after %d pages for EC2 instance type offerings (issue #561)", maxListPages)
+		}
 		input := &ec2.DescribeInstanceTypeOfferingsInput{
 			LocationType: types.LocationTypeRegion,
 			NextToken:    nextToken,
