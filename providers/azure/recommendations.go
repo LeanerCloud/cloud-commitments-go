@@ -106,7 +106,7 @@ func NewRecommendationsClientAdapter(cred azcore.TokenCredential, subscriptionID
 // service per region (the previous behavior) produced ~60× duplicate results,
 // hammered the rate limit, and meant downstream consumers had to deduplicate.
 // We now call each service client exactly once. Region is intentionally left
-// blank on the client — converters must populate Region from the response data.
+// blank on the client; converters must populate Region from the response data.
 //
 // All seven service calls run concurrently under errgroup. Each goroutine captures
 // its own error and returns nil to the group so that a single service failure

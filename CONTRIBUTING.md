@@ -254,6 +254,7 @@ scope for the current PR.
 
 Open a GitHub issue with the affected files, a description, and why it was
 deferred. Reference the issue number in the PR that defers the work.
+Issues that span components belong in the platform repo's issue tracker.
 
 ### Housekeeping
 
