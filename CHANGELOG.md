@@ -185,6 +185,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **`azure`:** `PurchaseCommitment` for cache, compute, cosmosdb, database, managedredis and search now rejects a blank resource type before any HTTP call, as synapse already did, instead of sending an empty `sku.name` (#538).
 - **`azure`:** The shared `CUDLY_MAX_PARALLELISM` slot is now held per outbound call (page fetch, pricing page, SKU or capability request) instead of across a whole per-service sweep, so a long Azure sweep no longer starves AWS and GCP calls (#8).
 - **`scorer`:** `MinCount` no longer applies to Savings Plans. Their `Count`
   is always 1 (the commitment is dollar-denominated), so `--min-count 2`

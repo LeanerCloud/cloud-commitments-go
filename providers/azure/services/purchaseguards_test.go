@@ -54,13 +54,7 @@ func guardCases() []guardCase {
 				}
 				return errCountZero
 			}},
-		{"blank resource type", func(r common.Recommendation) common.Recommendation { r.ResourceType = "  "; return r }, idOpts,
-			func(s string) string {
-				if s == "synapse" {
-					return errResType
-				}
-				return ""
-			}},
+		{"blank resource type", func(r common.Recommendation) common.Recommendation { r.ResourceType = "  "; return r }, idOpts, same(errResType)},
 		{"bad term", func(r common.Recommendation) common.Recommendation { r.Term = "2yr"; return r }, idOpts,
 			func(s string) string {
 				if s == "compute" {
