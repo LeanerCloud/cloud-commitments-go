@@ -303,6 +303,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   request byte for byte; anything other than `Upfront` or `Monthly` (exact
   spelling) is a validation error before any request (#89).
 
+- **`ladder.Allocate` no longer subtracts existing commitment from a residual
+  baseline a second time (#282).** New `UsageBaseline.Basis`
+  (`BaselineBasisTotal`, the default including the empty value, or
+  `BaselineBasisResidual`). A residual baseline counts only usage existing
+  commitments left uncovered, so Allocate sizes `low_water * target% -
+  in_flight` (never above the residual) instead of `low_water - existing`,
+  which held a $4/hr residual with a $6/hr Savings Plan as "target already
+  met". A residual baseline with a target below 100% and existing commitment
+  is held (the gap needs the covered usage the residual excludes). Expiring
+  commitment is not added back on that basis. Unknown basis values are an
+  error. Additive: total-basis results are unchanged. The AWS ladder adopts the
+  residual basis in a follow-up once this pkg version is published.
+
 - **`azure/savingsplans`:** the commitment currency is no longer hardcoded to
   USD. `SavingsPlanDetails.Currency` (new, additive) is sent in the purchase and
   validate bodies and returned by `GetOfferingDetails`; empty or malformed
