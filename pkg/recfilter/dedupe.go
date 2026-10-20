@@ -215,8 +215,12 @@ func buildExistingCommitmentsMap(commitments []common.Commitment, logf Logf) map
 			warnUnrecognizedElastiCacheEngine(normalizedEngine, logf)
 		}
 		normalizedDeployment := common.NormalizeDeploymentName(c.Deployment)
-		key := dedupeKey(c.ResourceType, c.Region, normalizedEngine, normalizedDeployment)
-		existingMap[key] += c.Count
+		resourceType, nodeUnits := c.ResourceType, 1
+		if family, units, ok := rdsFlexKey(c.Provider, c.Service, c.ResourceType); ok {
+			resourceType, nodeUnits = family, units
+		}
+		key := dedupeKey(resourceType, c.Region, normalizedEngine, normalizedDeployment)
+		existingMap[key] += c.Count * nodeUnits
 		logf.printf("    [DuplicateChecker] Recent RI: key=%s count=%d startDate=%s (raw engine=%s)",
 			key, c.Count, c.StartDate.Format("2006-01-02 15:04:05"), c.Engine)
 	}
@@ -260,15 +264,20 @@ func adjustSingleRecommendation(rec common.Recommendation, existingMap map[strin
 	}
 	engine, isElastiCache := dedupeEngine(rec.Provider, rec.Service, common.EngineFromDetails(rec.Details))
 	deployment := common.NormalizeDeploymentName(common.DeploymentFromDetails(rec.Details))
-	key := dedupeKey(rec.ResourceType, rec.Region, engine, deployment)
+	resourceType := rec.ResourceType
 	covers := []elastiCacheCover{{engine, 1, 1}}
+	if family, units, ok := rdsFlexKey(rec.Provider, rec.Service, rec.ResourceType); ok {
+		// A size-flexible budget holds units: one node of this size spends units of them.
+		resourceType, covers = family, []elastiCacheCover{{engine, 1, units}}
+	}
+	key := dedupeKey(resourceType, rec.Region, engine, deployment)
 	if isElastiCache {
 		covers = coveringElastiCacheEngines(engine)
 		warnUnrecognizedElastiCacheEngine(engine, logf)
 	}
 	remaining := rec.Count
 	for _, cover := range covers {
-		candidate := dedupeKey(rec.ResourceType, rec.Region, cover.engine, deployment)
+		candidate := dedupeKey(resourceType, rec.Region, cover.engine, deployment)
 		if available := existingMap[candidate]; available > 0 {
 			covered, spent := cover.consume(available, remaining)
 			remaining -= covered
