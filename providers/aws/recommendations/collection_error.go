@@ -25,9 +25,9 @@ func requireUSD(code string) error {
 // IncompleteRecommendationsError accompanies survivors of an incomplete collection.
 // Each cause represents one rejected detail or one failed collection scope.
 type IncompleteRecommendationsError struct {
+	Causes        []error
 	FailedDetails int
 	FailedScopes  int
-	Causes        []error
 }
 
 func (e *IncompleteRecommendationsError) Error() string {

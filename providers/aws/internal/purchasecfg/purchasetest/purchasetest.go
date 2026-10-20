@@ -56,18 +56,18 @@ func RunEmptyToken(t *testing.T, call Call, alreadyExists error) {
 
 	lost := &net.OpError{Op: "read", Err: errors.New("connection reset")}
 	for _, tc := range []struct {
-		name, token string
 		apiErr      error
+		name, token string
 		emptyResp   bool
 		unknown     bool
 	}{
-		{"transport error", "", lost, false, true},
-		{"5xx", "", RespErr(http.StatusInternalServerError, &smithy.GenericAPIError{Code: "InternalFailure"}), false, true},
-		{"empty response", "", nil, true, true},
-		{"400 AlreadyExists", "", RespErr(http.StatusBadRequest, alreadyExists), false, false},
-		{"throttle", "", RespErr(http.StatusServiceUnavailable, &smithy.GenericAPIError{Code: "Throttling"}), false, false},
-		{"token: transport error", "exec-token", lost, false, false},
-		{"token: empty response", "exec-token", nil, true, false},
+		{apiErr: lost, name: "transport error", token: "", emptyResp: false, unknown: true},
+		{apiErr: RespErr(http.StatusInternalServerError, &smithy.GenericAPIError{Code: "InternalFailure"}), name: "5xx", token: "", emptyResp: false, unknown: true},
+		{apiErr: nil, name: "empty response", token: "", emptyResp: true, unknown: true},
+		{apiErr: RespErr(http.StatusBadRequest, alreadyExists), name: "400 AlreadyExists", token: "", emptyResp: false, unknown: false},
+		{apiErr: RespErr(http.StatusServiceUnavailable, &smithy.GenericAPIError{Code: "Throttling"}), name: "throttle", token: "", emptyResp: false, unknown: false},
+		{apiErr: lost, name: "token: transport error", token: "exec-token", emptyResp: false, unknown: false},
+		{apiErr: nil, name: "token: empty response", token: "exec-token", emptyResp: true, unknown: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, result, err := call(t, tc.token, tc.apiErr, tc.emptyResp)

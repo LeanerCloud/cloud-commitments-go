@@ -385,9 +385,9 @@ type ec2OfferingQuery struct {
 	tenancy          types.Tenancy
 	scope            types.Scope
 	availabilityZone string // set only for zonal scope
-	duration         int64
 	wantOfferingType types.OfferingTypeValues
 	offeringClass    types.OfferingClassType
+	duration         int64
 }
 
 // resolveOfferingClassType maps the GlobalConfig string value to the AWS SDK
@@ -761,32 +761,32 @@ func (c *Client) getDurationValue(term string) (int64, error) {
 
 // ConvertibleRI represents an active convertible Reserved Instance.
 type ConvertibleRI struct {
-	ReservedInstanceID  string    `json:"reserved_instance_id"`
-	InstanceType        string    `json:"instance_type"`
-	AvailabilityZone    string    `json:"availability_zone"`
-	InstanceCount       int32     `json:"instance_count"`
-	Start               time.Time `json:"start"`
-	End                 time.Time `json:"end"`
-	OfferingType        string    `json:"offering_type"`
-	FixedPrice          float64   `json:"fixed_price"`
-	UsagePrice          float64   `json:"usage_price"`
-	State               string    `json:"state"`
-	NormalizationFactor float64   `json:"normalization_factor"`
-	ProductDescription  string    `json:"product_description"`
-	InstanceTenancy     string    `json:"instance_tenancy"`
-	Scope               string    `json:"scope"`
-	Duration            int64     `json:"duration"`
+	Start              time.Time `json:"start"`
+	End                time.Time `json:"end"`
+	ReservedInstanceID string    `json:"reserved_instance_id"`
+	InstanceType       string    `json:"instance_type"`
+	AvailabilityZone   string    `json:"availability_zone"`
+	OfferingType       string    `json:"offering_type"`
+	State              string    `json:"state"`
+	ProductDescription string    `json:"product_description"`
+	InstanceTenancy    string    `json:"instance_tenancy"`
+	Scope              string    `json:"scope"`
 	// CurrencyCode is the ISO-4217 currency that FixedPrice / UsagePrice
 	// are denominated in (typically "USD"). Plumbed through to
 	// exchange.RIInfo so the dollar-units pre-filter on cross-family
 	// alternatives can refuse comparisons across currencies.
-	CurrencyCode string `json:"currency_code,omitempty"`
+	CurrencyCode        string  `json:"currency_code,omitempty"`
+	FixedPrice          float64 `json:"fixed_price"`
+	UsagePrice          float64 `json:"usage_price"`
+	NormalizationFactor float64 `json:"normalization_factor"`
+	Duration            int64   `json:"duration"`
 	// RecurringHourlyAmount is the per-hour recurring charge (sum across
 	// the SDK's RecurringCharges slice) — this is non-zero for
 	// no-upfront and partial-upfront RIs where some of the cost is
 	// billed hourly rather than as the upfront FixedPrice. Used by the
 	// exchange-package dollar-units calculation.
 	RecurringHourlyAmount float64 `json:"recurring_hourly_amount,omitempty"`
+	InstanceCount         int32   `json:"instance_count"`
 }
 
 // ListConvertibleReservedInstances returns all active convertible RIs in the region.
@@ -971,11 +971,11 @@ type TargetOffering struct {
 	InstanceType        string  `json:"instance_type"`
 	OfferingType        string  `json:"offering_type"`
 	ProductDescription  string  `json:"product_description"`
+	CurrencyCode        string  `json:"currency_code"`
+	Scope               string  `json:"scope"`
 	Duration            int64   `json:"duration"`
 	FixedPrice          float64 `json:"fixed_price"`
 	UsagePrice          float64 `json:"usage_price"`
-	CurrencyCode        string  `json:"currency_code"`
-	Scope               string  `json:"scope"`
 	NormalizationFactor float64 `json:"normalization_factor"`
 }
 
@@ -986,8 +986,8 @@ type ListTargetOfferingsParams struct {
 	Tenancy            string
 	Scope              string
 	AvailabilityZone   string
-	Duration           int64
 	OfferingType       string
+	Duration           int64
 }
 
 // maxTargetOfferingPages caps the pagination walk for ListTargetOfferings.

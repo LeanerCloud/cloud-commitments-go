@@ -81,16 +81,16 @@ func (r *realOrganizationsPaginator) NextPage(ctx context.Context, optFns ...fun
 
 // Provider implements the provider.Provider interface for AWS.
 type Provider struct {
-	cfg                 aws.Config
-	cfgOnce             sync.Once
 	cfgErr              error // non-nil if config loading failed
-	profile             string
-	region              string
 	configLoader        ConfigLoader
 	stsClient           STSClient
 	ec2Client           EC2Client
 	orgPaginator        OrganizationsPaginator
 	credentialsProvider aws.CredentialsProvider // optional override for per-account execution
+	profile             string
+	region              string
+	cfg                 aws.Config
+	cfgOnce             sync.Once
 }
 
 // NewAWSProvider creates a new AWS provider instance.

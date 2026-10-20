@@ -62,14 +62,14 @@ type Client struct {
 
 	region string
 
+	// recLookbackPeriod is forwarded to GetReservationPurchaseRecommendation
+	// as LookbackPeriodInDays. Defaults to "7d" when empty.
+	recLookbackPeriod string
+
 	// skuCatalog caches the per-instance-type vCPU/memory catalog, fetched
 	// lazily once per Client lifetime via sync.Once (one DescribeInstanceTypes
 	// fan-out per scheduler tick).
 	skuCatalog skuCatalog
-
-	// recLookbackPeriod is forwarded to GetReservationPurchaseRecommendation
-	// as LookbackPeriodInDays. Defaults to "7d" when empty.
-	recLookbackPeriod string
 }
 
 // NewClient creates a new recommendations client.
