@@ -15,6 +15,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/recommendations"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/slot"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
 )
 
@@ -179,7 +180,9 @@ func (c *Client) fetchBenefitPages(ctx context.Context, bearer, firstURL string)
 		if err := requireARMURL(next); err != nil {
 			return nil, fmt.Errorf("page %d: %w", pageIdx, err)
 		}
-		page, err := c.fetchBenefitPage(ctx, bearer, next, pageIdx)
+		page, err := slot.Do(ctx, func() (*benefitRecsPage, error) {
+			return c.fetchBenefitPage(ctx, bearer, next, pageIdx)
+		})
 		if err != nil {
 			return nil, err
 		}
