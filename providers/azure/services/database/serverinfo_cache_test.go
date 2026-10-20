@@ -48,6 +48,7 @@ func newServerInfoClient(p SQLManagedInstancesPager) *Client {
 }
 
 func TestServerInfo_TransientFailureIsNotCached(t *testing.T) {
+	t.Parallel()
 	p := &flakyMIPager{failures: 1}
 	c := newServerInfoClient(p)
 	ctx := context.Background()
@@ -60,6 +61,7 @@ func TestServerInfo_TransientFailureIsNotCached(t *testing.T) {
 }
 
 func TestServerInfo_SuccessIsCached(t *testing.T) {
+	t.Parallel()
 	p := &flakyMIPager{}
 	c := newServerInfoClient(p)
 	for i := 0; i < 10; i++ {
@@ -70,6 +72,7 @@ func TestServerInfo_SuccessIsCached(t *testing.T) {
 }
 
 func TestServerInfo_CompleteEmptyWalkIsCached(t *testing.T) {
+	t.Parallel()
 	mi := &MockSQLManagedInstancesPager{}
 	c := newServerInfoClient(mi)
 	for i := 0; i < 3; i++ {
@@ -79,6 +82,7 @@ func TestServerInfo_CompleteEmptyWalkIsCached(t *testing.T) {
 }
 
 func TestServerInfo_FailureBackoffSuppressesRewalk(t *testing.T) {
+	t.Parallel()
 	p := &flakyMIPager{failures: 100}
 	c := newServerInfoClient(p)
 	c.serverInfoRetryDelay = time.Hour
@@ -89,6 +93,7 @@ func TestServerInfo_FailureBackoffSuppressesRewalk(t *testing.T) {
 }
 
 func TestServerInfo_ConcurrentCallsWalkOnce(t *testing.T) {
+	t.Parallel()
 	p := &flakyMIPager{}
 	c := newServerInfoClient(p)
 	var wg sync.WaitGroup
@@ -105,6 +110,7 @@ func TestServerInfo_ConcurrentCallsWalkOnce(t *testing.T) {
 }
 
 func TestServerInfo_CallerCancellationDoesNotStartCooldown(t *testing.T) {
+	t.Parallel()
 	p := &flakyMIPager{}
 	c := newServerInfoClient(p)
 	c.serverInfoRetryDelay = time.Hour

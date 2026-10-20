@@ -43,6 +43,7 @@ func (h probeHTTP) Do(*http.Request) (*http.Response, error) {
 }
 
 func TestClientCallsHoldSharedSlot(t *testing.T) {
+	t.Parallel()
 	cases := map[string]func(ctx context.Context, p *slottest.Probe, c *Client){
 		"GetRecommendations": func(ctx context.Context, p *slottest.Probe, c *Client) {
 			c.SetRecommendationsPager(&onePager[armconsumption.ReservationRecommendationsClientListResponse]{probe: p})
