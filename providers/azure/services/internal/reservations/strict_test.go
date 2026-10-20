@@ -95,3 +95,52 @@ func TestStrictCommitment_SharedScopeAttributedToBillingSubscription(t *testing.
 	_, err = StrictCommitment(r, "sub-a", common.ServiceCompute, armreservations.ReservedResourceTypeVirtualMachines, testLabels, now)
 	require.ErrorContains(t, err, "Shared scope without a subscription billingScopeId")
 }
+
+// #293 and #315 together: a Shared reservation billed to another subscription
+// is skipped whatever its lifecycle, so neither a terminal state nor an
+// expiry-today date makes it this subscription's row or its error. One billed
+// to this subscription still hits the expiry-today check, and a terminal one
+// whose purchaser cannot be identified no longer fails closed.
+func TestStrictCommitment_SharedAttributionAcrossLifecycle(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	shared := armreservations.AppliedScopeTypeShared
+	canceled := armreservations.ProvisioningStateCancelled
+	sharedFixture := func(billingScope *string) *armreservations.ReservationResponse {
+		r := strictFixture("VirtualMachines")
+		r.Properties.AppliedScopeType = &shared
+		r.Properties.AppliedScopes = nil
+		r.Properties.BillingScopeID = billingScope
+		return r
+	}
+	strict := func(r *armreservations.ReservationResponse, sub string) (*common.Commitment, error) {
+		return StrictCommitment(r, sub, common.ServiceCompute, armreservations.ReservedResourceTypeVirtualMachines, testLabels, now)
+	}
+
+	r := sharedFixture(strPtr("/subscriptions/sub-a"))
+	r.Properties.ProvisioningState = &canceled
+	c, err := strict(r, "sub-b")
+	require.NoError(t, err)
+	assert.Nil(t, c, "a terminal Shared reservation bought by another subscription is not attributed to this one")
+
+	r = sharedFixture(strPtr("/subscriptions/sub-a"))
+	r.Properties.ExpiryDate = &now
+	c, err = strict(r, "sub-b")
+	require.NoError(t, err, "another subscription's reservation expiring today must not block this one")
+	assert.Nil(t, c)
+
+	_, err = strict(r, "sub-a")
+	require.ErrorContains(t, err, "date-only expiryDate")
+
+	r = sharedFixture(nil)
+	r.Properties.ExpiryDate = &now
+	_, err = strict(r, "sub-a")
+	require.ErrorContains(t, err, "date-only expiryDate", "an unattributable row expiring today may be live, so the lifecycle check still runs")
+
+	r = sharedFixture(nil)
+	r.Properties.ProvisioningState = &canceled
+	c, err = strict(r, "sub-a")
+	require.NoError(t, err)
+	require.NotNil(t, c)
+	assert.Equal(t, common.CommitmentStateCanceled, c.State)
+}

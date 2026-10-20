@@ -33,24 +33,44 @@ func StrictCommitment(r *armreservations.ReservationResponse, subscriptionID str
 	if commitment == nil {
 		return nil, nil
 	}
-	owned, err := reservationOwnedBy(r.Properties, commitment.CommitmentID, subscriptionID, labels)
-	if err != nil {
+	keep, err := attributeReservation(r.Properties, commitment, subscriptionID, labels, now)
+	if err != nil || !keep {
 		return nil, err
 	}
-	if !owned {
-		log.Printf("%s: skipping Shared %s reservation %q: billed to %q, not subscription %q",
-			labels.Service, labels.Resource, commitment.CommitmentID, *r.Properties.BillingScopeID, subscriptionID)
-		return nil, nil
-	}
-	if err := validateReservationExpiry(r.Properties, commitment.CommitmentID, subscriptionID, labels, now); err != nil {
-		return nil, err
-	}
+	// A terminal reservation no longer counts as coverage, so its field
+	// completeness cannot affect the duplicate guard (#317).
 	if !isTerminalCommitmentState(commitment.State) {
 		if err := validateLiveReservationFields(r, commitment.CommitmentID, subscriptionID, labels); err != nil {
 			return nil, err
 		}
 	}
 	return commitment, nil
+}
+
+// attributeReservation decides whether a reservation counts for
+// subscriptionID, in this order:
+//   - A Shared reservation billed to another subscription is skipped whatever
+//     its state: it is never this subscription's coverage (#293).
+//   - The expiry-today check runs on every other row: a Succeeded reservation
+//     expiring today converts to Expired but may still be live.
+//   - A scope that cannot be attributed (missing, unknown, or Shared without a
+//     subscription billingScopeId) fails closed only on a live reservation. A
+//     terminal one no longer counts as coverage, so failing on it would block
+//     purchases for the subscription indefinitely (#315).
+func attributeReservation(props *armreservations.Properties, commitment *common.Commitment, subscriptionID string, labels StrictLabels, now time.Time) (bool, error) {
+	owned, ownErr := reservationOwnedBy(props, commitment.CommitmentID, subscriptionID, labels)
+	if ownErr == nil && !owned {
+		log.Printf("%s: skipping Shared %s reservation %q: billed to %q, not subscription %q",
+			labels.Service, labels.Resource, commitment.CommitmentID, *props.BillingScopeID, subscriptionID)
+		return false, nil
+	}
+	if err := validateReservationExpiry(props, commitment.CommitmentID, subscriptionID, labels, now); err != nil {
+		return false, err
+	}
+	if ownErr != nil && !isTerminalCommitmentState(commitment.State) {
+		return false, ownErr
+	}
+	return true, nil
 }
 
 func reservationLabel(r *armreservations.ReservationResponse) string {
@@ -63,6 +83,14 @@ func reservationLabel(r *armreservations.ReservationResponse) string {
 // isTerminalCommitmentState reports lifecycle states that no longer count as
 // coverage. It works on the converted state so a Succeeded reservation with a
 // past expiry is terminal too.
+//
+// Retired (Split/Merged parents) is exempt from the scope failure on the
+// assumption, shared with #317's field-completeness gate, that Azure lists the
+// resulting child reservations as separate rows, so each live child is
+// scope-checked on its own. That is an API-shape assumption not verifiable offline; if a
+// live child were ever omitted from the listing, its coverage would be
+// missing rather than misattributed, so the duplicate guard would err toward
+// buying, not toward a false "already covered".
 func isTerminalCommitmentState(s common.CommitmentState) bool {
 	switch s {
 	case common.CommitmentStateCanceled, common.CommitmentStateExpired,
@@ -143,6 +171,8 @@ func billingSubscriptionID(scope *string) (string, bool) {
 	return sub, true
 }
 
+// validateReservationExpiry rejects a Succeeded reservation whose date-only
+// expiryDate is the current UTC date: it may or may not still be live.
 func validateReservationExpiry(props *armreservations.Properties, reservationID, subscriptionID string, labels StrictLabels, now time.Time) error {
 	if props.ProvisioningState != nil && *props.ProvisioningState == armreservations.ProvisioningStateSucceeded &&
 		props.ExpiryDate != nil && props.ExpiryDate.UTC().Format(time.DateOnly) == now.UTC().Format(time.DateOnly) {

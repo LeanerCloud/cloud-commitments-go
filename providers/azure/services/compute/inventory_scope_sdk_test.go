@@ -319,3 +319,116 @@ func TestGetExistingCommitmentsSDKExpiryDateControls(t *testing.T) {
 		})
 	}
 }
+
+// Issue #315: the applied-scope attribution check must only gate live
+// reservations. A terminal (canceled, expired, failed, split, merged) Shared
+// or scope-less VM reservation no longer counts as coverage, so it must not
+// fail the whole inventory and block purchases through the duplicate guard.
+func TestGetExistingCommitmentsSDKTerminalSharedVMDoesNotFail(t *testing.T) {
+	now := time.Now().UTC()
+	cases := []struct {
+		name      string
+		state     string
+		scopeType string
+		expiry    time.Time
+		wantState common.CommitmentState
+	}{
+		{name: "canceled shared", state: string(armreservations.ProvisioningStateCancelled), scopeType: `"Shared"`, expiry: now.AddDate(1, 0, 0), wantState: common.CommitmentStateCanceled},
+		{name: "expired shared", state: string(armreservations.ProvisioningStateExpired), scopeType: `"Shared"`, expiry: now.AddDate(0, 0, -3), wantState: common.CommitmentStateExpired},
+		{name: "failed shared", state: string(armreservations.ProvisioningStateFailed), scopeType: `"Shared"`, expiry: now.AddDate(1, 0, 0), wantState: common.CommitmentStateFailed},
+		{name: "split shared", state: string(armreservations.ProvisioningStateSplit), scopeType: `"Shared"`, expiry: now.AddDate(1, 0, 0), wantState: common.CommitmentStateRetired},
+		{name: "merged shared", state: string(armreservations.ProvisioningStateMerged), scopeType: `"Shared"`, expiry: now.AddDate(1, 0, 0), wantState: common.CommitmentStateRetired},
+		{name: "succeeded shared past expiry", state: "Succeeded", scopeType: `"Shared"`, expiry: now.AddDate(0, 0, -3), wantState: common.CommitmentStateExpired},
+		{name: "canceled missing scope type", state: string(armreservations.ProvisioningStateCancelled), scopeType: `null`, expiry: now.AddDate(1, 0, 0), wantState: common.CommitmentStateCanceled},
+	}
+	rec := common.Recommendation{Provider: common.ProviderAzure, Service: common.ServiceCompute,
+		Account: "sub-a", Region: "eastus", ResourceType: "Standard_D2s_v3", Count: 1}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			child := sdkReservationChild(sdkChild{
+				id: "terminal-shared", resourceType: "VirtualMachines", scopeType: tc.scopeType, scopes: `null`,
+				region: "eastus", state: tc.state, quantity: 1,
+			}, now.AddDate(-1, 0, 0), tc.expiry)
+			client := sdkInventoryClient(t, "sub-a", inventorySDKTransport{child: child})
+			inventory, err := client.GetExistingCommitments(context.Background())
+			require.NoError(t, err)
+			require.Len(t, inventory, 1)
+			require.Equal(t, tc.wantState, inventory[0].State)
+
+			passed, filtered, err := recfilter.NewDuplicateChecker(24).AdjustRecommendationsForExisting(
+				context.Background(), []common.Recommendation{rec}, client)
+			require.NoError(t, err)
+			require.Len(t, passed, 1)
+			require.Empty(t, filtered)
+		})
+	}
+}
+
+// A terminal Shared row next to a live Single row must not hide the live
+// coverage, and a live Shared row next to a terminal one still fails closed.
+func TestGetExistingCommitmentsSDKTerminalSharedMixedWithLive(t *testing.T) {
+	now := time.Now().UTC()
+	canceledShared := sdkReservationChild(sdkChild{
+		id: "canceled-shared", resourceType: "VirtualMachines", scopeType: `"Shared"`, scopes: `null`,
+		region: "eastus", state: string(armreservations.ProvisioningStateCancelled), quantity: 1,
+	}, now.AddDate(-1, 0, 0), now.AddDate(1, 0, 0))
+	liveSingle := sdkReservationChild(sdkChild{
+		id: "live-single", resourceType: "VirtualMachines", scopeType: `"Single"`, scopes: `["/subscriptions/sub-a"]`,
+		region: "eastus", state: "Succeeded", quantity: 1,
+	}, now, now.AddDate(1, 0, 0))
+	client := sdkInventoryClient(t, "sub-a", inventorySDKTransport{child: canceledShared + "," + liveSingle})
+	rec := common.Recommendation{Provider: common.ProviderAzure, Service: common.ServiceCompute,
+		Account: "sub-a", Region: "eastus", ResourceType: "Standard_D2s_v3", Count: 1}
+	passed, filtered, err := recfilter.NewDuplicateChecker(24).AdjustRecommendationsForExisting(
+		context.Background(), []common.Recommendation{rec}, client)
+	require.NoError(t, err)
+	require.Empty(t, passed)
+	require.Len(t, filtered, 1)
+
+	for _, state := range []string{"Succeeded", string(armreservations.ProvisioningStatePendingBilling)} {
+		t.Run("live shared "+state, func(t *testing.T) {
+			liveShared := sdkReservationChild(sdkChild{
+				id: "live-shared", resourceType: "VirtualMachines", scopeType: `"Shared"`, scopes: `null`,
+				region: "eastus", state: state, quantity: 1,
+			}, now, now.AddDate(1, 0, 0))
+			client := sdkInventoryClient(t, "sub-a", inventorySDKTransport{child: canceledShared + "," + liveShared})
+			inventory, err := client.GetExistingCommitments(context.Background())
+			require.ErrorContains(t, err, "cannot attribute")
+			require.Nil(t, inventory)
+		})
+	}
+}
+
+// The date-only expiry ambiguity is not a scope check: a Succeeded Shared
+// reservation expiring today converts to Expired but may still be live, so
+// it must keep failing closed after the terminal exemption.
+func TestGetExistingCommitmentsSDKSharedExpiryTodayStillFails(t *testing.T) {
+	now := time.Now().UTC()
+	child := sdkReservationChild(sdkChild{
+		id: "shared-expiry-today", resourceType: "VirtualMachines", scopeType: `"Shared"`, scopes: `null`,
+		region: "eastus", state: "Succeeded", quantity: 1,
+	}, now.AddDate(-1, 0, 0), now)
+	client := sdkInventoryClient(t, "sub-a", inventorySDKTransport{child: child})
+	inventory, err := client.GetExistingCommitments(context.Background())
+	require.ErrorContains(t, err, "date-only expiryDate")
+	require.Nil(t, inventory)
+}
+
+// A Split parent is exempt from the scope check only because its children
+// are listed as their own rows. A live Shared child of that split must still
+// fail closed, so the exemption cannot hide unattributable live coverage.
+func TestGetExistingCommitmentsSDKSplitParentLiveSharedChildStillFails(t *testing.T) {
+	now := time.Now().UTC()
+	splitParent := sdkReservationChild(sdkChild{
+		id: "split-parent", resourceType: "VirtualMachines", scopeType: `"Shared"`, scopes: `null`,
+		region: "eastus", state: string(armreservations.ProvisioningStateSplit), quantity: 2,
+	}, now.AddDate(-1, 0, 0), now.AddDate(1, 0, 0))
+	liveSharedChild := sdkReservationChild(sdkChild{
+		id: "split-child", resourceType: "VirtualMachines", scopeType: `"Shared"`, scopes: `null`,
+		region: "eastus", state: "Succeeded", quantity: 1,
+	}, now, now.AddDate(1, 0, 0))
+	client := sdkInventoryClient(t, "sub-a", inventorySDKTransport{child: splitParent + "," + liveSharedChild})
+	inventory, err := client.GetExistingCommitments(context.Background())
+	require.ErrorContains(t, err, "cannot attribute")
+	require.Nil(t, inventory)
+}
