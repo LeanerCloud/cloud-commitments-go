@@ -21,6 +21,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/httpclient"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/pricing"
 	azrecs "github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/recommendations"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/slot"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
 )
 
@@ -172,7 +173,7 @@ func (c *Client) collectSearchReservations(ctx context.Context, pager Reservatio
 		if pageIdx >= maxReservationsPages {
 			return nil, fmt.Errorf("search: GetExistingCommitments pagination cap (%d pages) reached", maxReservationsPages)
 		}
-		page, err := pager.NextPage(ctx)
+		page, err := slot.NextPage(ctx, pager)
 		if err != nil {
 			return nil, fmt.Errorf("search: list reservations: %w", err)
 		}
@@ -421,7 +422,7 @@ func (c *Client) collectSKUsFromPager(ctx context.Context, pager ServicesPager) 
 			log.Printf("WARNING: search: GetValidResourceTypes pagination cap (%d pages) reached", maxServicesPages)
 			break
 		}
-		page, err := pager.NextPage(ctx)
+		page, err := slot.NextPage(ctx, pager)
 		if err != nil {
 			break
 		}

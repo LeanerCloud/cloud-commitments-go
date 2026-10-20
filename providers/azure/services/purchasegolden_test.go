@@ -118,7 +118,12 @@ func TestPurchaseGoldenWithToken(t *testing.T) {
 func TestPurchaseGoldenWithoutToken(t *testing.T) {
 	for _, gc := range goldenCases() {
 		t.Run(gc.name, func(t *testing.T) {
-			h, _ := goldenPurchase(t, gc, "")
+			h, cred := goldenPurchase(t, gc, "")
+			wantTokens := 1
+			if gc.name == "compute" {
+				wantTokens = 2
+			}
+			require.Equal(t, wantTokens, cred.Calls)
 			if gc.plainRE == nil {
 				require.Equal(t, fmt.Sprintf(plainBodyTmpl, gc.plainName, gc.resourceType), string(h.BodyBytes))
 			} else {
