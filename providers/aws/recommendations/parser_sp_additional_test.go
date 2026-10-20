@@ -358,7 +358,7 @@ func TestParseSavingsPlanDetail_OnDemandCost(t *testing.T) {
 				EstimatedSavingsPercentage:        aws.String("20.0"),
 				CurrentAverageHourlyOnDemandSpend: aws.String("1.3699"),
 			},
-			wantOnDemand: 1.3699 * hoursPerMonth,
+			wantOnDemand: 1.3699 * common.HoursPerMonth,
 		},
 		{
 			name: "on_demand_cost is zero when CurrentAverageHourlyOnDemandSpend is absent",

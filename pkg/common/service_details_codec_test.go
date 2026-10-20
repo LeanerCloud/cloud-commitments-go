@@ -2,6 +2,8 @@ package common //nolint:revive // pkg/common is the module's core domain package
 
 import (
 	"encoding/json"
+	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -212,17 +214,30 @@ func TestDecodeServiceDetailsFor_LegacyEmpty(t *testing.T) {
 }
 
 // TestDecodeServiceDetailsFor_UnknownService confirms that an unknown
-// service slug returns (nil, nil) rather than erroring — callers can
-// then fall through to their existing nil-Details paths.
+// service slug with no payload returns (nil, nil), but a payload for it is
+// rejected loudly instead of being silently dropped (A09-018).
 func TestDecodeServiceDetailsFor_UnknownService(t *testing.T) {
 	t.Parallel()
-	out, err := DecodeServiceDetailsFor("not-a-real-service", nil)
-	require.NoError(t, err)
-	assert.Nil(t, out)
+	for _, raw := range []json.RawMessage{nil, json.RawMessage(`null`)} {
+		out, err := DecodeServiceDetailsFor("not-a-real-service", raw)
+		require.NoError(t, err)
+		assert.Nil(t, out)
+	}
 
-	out, err = DecodeServiceDetailsFor("not-a-real-service", json.RawMessage(`{"foo":"bar"}`))
+	out, err := DecodeServiceDetailsFor("not-a-real-service", json.RawMessage(`{"foo":"bar"}`))
+	require.Error(t, err)
+	assert.Nil(t, out)
+	assert.Contains(t, err.Error(), "not-a-real-service")
+	assert.ErrorIs(t, err, ErrUntypedServiceDetails)
+}
+
+// TestDecodeServiceDetailsFor_MemoryDB pins that MemoryDB recs, which the AWS
+// parser stamps with CacheDetails, still decode their persisted payload.
+func TestDecodeServiceDetailsFor_MemoryDB(t *testing.T) {
+	t.Parallel()
+	out, err := DecodeServiceDetailsFor(string(ServiceMemoryDB), json.RawMessage(`{"engine":"redis","node_type":"db.r6g.large"}`))
 	require.NoError(t, err)
-	assert.Nil(t, out, "non-empty payload on unknown service must NOT raise; rolling deploys can produce this shape")
+	assert.IsType(t, &CacheDetails{}, out)
 }
 
 // TestDecodeServiceDetailsFor_MalformedJSON ensures a malformed payload
@@ -250,4 +265,48 @@ func TestDecodeServiceDetailsFor_LegacyDashFormSP(t *testing.T) {
 	sp, ok := out.(*SavingsPlanDetails)
 	require.True(t, ok, "got %T", out)
 	assert.Equal(t, "Compute", sp.PlanType)
+}
+
+// TestDecodeServiceDetailsFor_EveryEmittedPair lists every (service slug,
+// Details type) a provider sets on recommendations (audit of
+// providers/{aws,azure,gcp}: aws parser_services.go / parser_sp.go,
+// azure database/cache/cosmosdb/compute/synapse/savingsplans clients, gcp
+// computeengine) and asserts each survives marshal -> decode with the same
+// type. A pair missing from the codec makes this fail.
+func TestDecodeServiceDetailsFor_EveryEmittedPair(t *testing.T) {
+	t.Parallel()
+	pairs := []struct {
+		service string
+		details ServiceDetails
+	}{
+		{string(ServiceEC2), &ComputeDetails{Platform: "Linux/UNIX"}},
+		{string(ServiceCompute), &ComputeDetails{Platform: "Linux/UNIX"}},
+		{string(ServiceCompute), ComputeDetails{MemoryGB: 8}}, // azure/gcp compute, value form
+		{string(ServiceRDS), &DatabaseDetails{Engine: "mysql"}},
+		{string(ServiceRelationalDB), &DatabaseDetails{Engine: "sqlserver"}}, // azure database
+		{string(ServiceElastiCache), &CacheDetails{Engine: "redis"}},
+		{string(ServiceCache), &CacheDetails{Engine: "redis"}}, // azure cache
+		{string(ServiceMemoryDB), &CacheDetails{Engine: "redis"}},
+		{string(ServiceOpenSearch), &SearchDetails{}},
+		{string(ServiceSearch), &SearchDetails{}},
+		{string(ServiceRedshift), &DataWarehouseDetails{}},
+		{string(ServiceDataWarehouse), &DataWarehouseDetails{}},                // azure synapse
+		{string(ServiceNoSQL), NoSQLDetails{Engine: "cosmos", APIType: "sql"}}, // azure cosmosdb (value form)
+		{string(ServiceSavingsPlansAll), &SavingsPlanDetails{PlanType: "Compute"}},
+		{string(ServiceSavingsPlansCompute), &SavingsPlanDetails{PlanType: "Compute"}},
+		{string(ServiceSavingsPlansEC2Instance), &SavingsPlanDetails{PlanType: "EC2Instance"}},
+		{string(ServiceSavingsPlansSageMaker), &SavingsPlanDetails{PlanType: "SageMaker"}},
+		{string(ServiceSavingsPlansDatabase), &SavingsPlanDetails{PlanType: "Database"}},
+	}
+	for _, p := range pairs {
+		t.Run(fmt.Sprintf("%s_%T", p.service, p.details), func(t *testing.T) {
+			t.Parallel()
+			raw, err := MarshalServiceDetails(p.details)
+			require.NoError(t, err)
+			out, err := DecodeServiceDetailsFor(p.service, raw)
+			require.NoError(t, err)
+			require.NotNil(t, out)
+			assert.Equal(t, reflect.Indirect(reflect.ValueOf(p.details)).Type(), reflect.Indirect(reflect.ValueOf(out)).Type())
+		})
+	}
 }

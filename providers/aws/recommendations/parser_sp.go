@@ -93,13 +93,7 @@ func parseOptionalFloatOrWarn(field string, s *string) float64 {
 	return val
 }
 
-// hoursPerMonth is the standard AWS billing constant for monthly cost calculations.
-const hoursPerMonth = 730.0
-
-const (
-	hoursPerYear  = 8760.0
-	monthsPerYear = 12.0
-)
+const monthsPerYear = 12.0
 
 // ec2SPFields holds the Cost Explorer SavingsPlansDetails fields that are
 // specific to EC2Instance Savings Plans. Extracted from parseSavingsPlanDetail
@@ -161,9 +155,9 @@ func spRecurringMonthlyCost(hourly, upfront float64, term, paymentOption string)
 	default:
 		return 0, fmt.Errorf("savings plan recurring cost: unsupported term %q", term)
 	}
-	monthly := (hourly*hoursPerYear*years - upfront) / (monthsPerYear * years)
+	monthly := (hourly*common.HoursPerYear*years - upfront) / (monthsPerYear * years)
 	if monthly < 0 {
-		return 0, fmt.Errorf("savings plan recurring cost: upfront %.2f exceeds the %.2f total commitment (hourly %.4f, term %s)", upfront, hourly*hoursPerYear*years, hourly, term)
+		return 0, fmt.Errorf("savings plan recurring cost: upfront %.2f exceeds the %.2f total commitment (hourly %.4f, term %s)", upfront, hourly*common.HoursPerYear*years, hourly, term)
 	}
 	return monthly, nil
 }
@@ -225,14 +219,14 @@ func (c *Client) parseSavingsPlanDetail(
 	// onDemandCost is the canonical monthly on-demand baseline for this SP
 	// recommendation. AWS Cost Explorer returns the average hourly on-demand
 	// spend over the lookback period in CurrentAverageHourlyOnDemandSpend;
-	// multiplying by hoursPerMonth gives the monthly equivalent, which is the
+	// multiplying by common.HoursPerMonth gives the monthly equivalent, which is the
 	// denominator AWS uses internally when computing EstimatedSavingsPercentage.
 	// We surface it as OnDemandCost so the frontend can use the provider-
 	// supplied value directly instead of reconstructing from
 	// monthly_cost + savings + amortized (which is less accurate for SP rows
 	// where monthly_cost reflects only the no-upfront recurring charge, not
 	// the full on-demand baseline). See #303.
-	onDemandCost := nums.hourlyOnDemand * hoursPerMonth
+	onDemandCost := nums.hourlyOnDemand * common.HoursPerMonth
 	if detail.CurrentAverageHourlyOnDemandSpend == nil {
 		// CurrentAverageHourlyOnDemandSpend absent from AWS CE response — onDemandCost
 		// will be 0 and the scheduler's nonZeroPtr will store nil, causing the
