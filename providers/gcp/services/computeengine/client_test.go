@@ -33,8 +33,10 @@ import (
 )
 
 func TestRootCUDTypeValidationAndFallback(t *testing.T) {
+	t.Parallel()
 	for _, value := range []*structpb.Value{nil, structpb.NewStringValue("GENERAL_PURPOSE_N2"), structpb.NewStringValue(""), structpb.NewStringValue(" "), structpb.NewNullValue(), structpb.NewNumberValue(1), structpb.NewStringValue("general_purpose_n2"), structpb.NewStringValue("UNKNOWN"), structpb.NewStringValue("TYPE_UNSPECIFIED"), structpb.NewStringValue("UNDEFINED_TYPE"), structpb.NewStringValue("ACCELERATOR_OPTIMIZED"), structpb.NewStringValue("GRAPHICS_OPTIMIZED"), structpb.NewStringValue("STORAGE_OPTIMIZED_Z3")} {
 		t.Run(fmt.Sprint(value), func(t *testing.T) {
+			t.Parallel()
 			ctx := context.Background()
 			input := rootCUDRecommendation("MEMORY_OPTIMIZED_M4_6TB")
 			input.Content.OperationGroups[0].Operations[0].Action = "rEpLaCe"
@@ -75,8 +77,10 @@ func TestRootCUDTypeValidationAndFallback(t *testing.T) {
 }
 
 func TestRootCUDUnsupportedShapesAndAmounts(t *testing.T) {
+	t.Parallel()
 	for _, name := range []string{"root", "resources", "entry", "missing VCPU", "missing MEMORY", "duplicate", "UNKNOWN", "ACCELERATOR", "LOCAL_SSD", "bad amount", "fractional", "zero", "overflow", "null amount"} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			input := rootCUDRecommendation("MEMORY_OPTIMIZED_M4_6TB")
 			op := input.Content.OperationGroups[0].Operations[0]
 			fields := op.GetValue().GetStructValue().Fields
@@ -123,11 +127,13 @@ func TestRootCUDUnsupportedShapesAndAmounts(t *testing.T) {
 }
 
 func TestRootCUDCompoundMutations(t *testing.T) {
+	t.Parallel()
 	for _, action := range []string{"add", "replace", "remove", "move", "copy", "custom", "", "test"} {
 		for _, path := range []string{"/", "/type", "/resources/0"} {
 			for _, resourceType := range []string{"compute.googleapis.com/Commitment", "compute.googleapis.com/MachineType"} {
 				for _, later := range []bool{false, true} {
 					t.Run(fmt.Sprintf("%s%s%s/later=%t", action, path, resourceType, later), func(t *testing.T) {
+						t.Parallel()
 						ctx := context.Background()
 						input := rootCUDRecommendation("MEMORY_OPTIMIZED_M4_6TB")
 						modifier := &recommenderpb.Operation{Action: action, Path: path, ResourceType: resourceType, Resource: input.Content.OperationGroups[0].Operations[0].Resource}
@@ -302,6 +308,7 @@ func (m *MockRecommenderClient) Close() error {
 }
 
 func TestNewClient(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, err := NewClient(ctx, "test-project", "us-central1")
 
@@ -312,12 +319,14 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestComputeEngineClient_GetServiceType(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "project", "region")
 	assert.Equal(t, common.ServiceCompute, client.GetServiceType())
 }
 
 func TestComputeEngineClient_GetRegion(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		region   string
@@ -343,6 +352,7 @@ func TestComputeEngineClient_GetRegion(t *testing.T) {
 	ctx := context.Background()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			client, _ := NewClient(ctx, "project", tt.region)
 			assert.Equal(t, tt.expected, client.GetRegion())
 		})
@@ -350,6 +360,7 @@ func TestComputeEngineClient_GetRegion(t *testing.T) {
 }
 
 func TestComputePricingStructure(t *testing.T) {
+	t.Parallel()
 	pricing := ComputePricing{
 		HourlyRate:        0.10,
 		CommitmentPrice:   876.0,
@@ -366,6 +377,7 @@ func TestComputePricingStructure(t *testing.T) {
 }
 
 func TestStringPtr(t *testing.T) {
+	t.Parallel()
 	s := "test"
 	ptr := stringPtr(s)
 	require.NotNil(t, ptr)
@@ -373,6 +385,7 @@ func TestStringPtr(t *testing.T) {
 }
 
 func TestInt64Ptr(t *testing.T) {
+	t.Parallel()
 	i := int64(42)
 	ptr := int64Ptr(i)
 	require.NotNil(t, ptr)
@@ -380,6 +393,7 @@ func TestInt64Ptr(t *testing.T) {
 }
 
 func TestComputeEngineClient_ValidateOffering_NoCredentials(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -393,6 +407,7 @@ func TestComputeEngineClient_ValidateOffering_NoCredentials(t *testing.T) {
 }
 
 func TestComputeEngineClient_GetExistingCommitments_WithMock(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -413,6 +428,7 @@ func TestComputeEngineClient_GetExistingCommitments_WithMock(t *testing.T) {
 }
 
 func TestComputeEngineClient_GetExistingCommitments_Error(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -427,6 +443,7 @@ func TestComputeEngineClient_GetExistingCommitments_Error(t *testing.T) {
 }
 
 func TestComputeEngineClient_GetExistingCommitments_NilName(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -443,6 +460,7 @@ func TestComputeEngineClient_GetExistingCommitments_NilName(t *testing.T) {
 }
 
 func TestComputeEngineClient_GetValidResourceTypes_WithMock(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -463,6 +481,7 @@ func TestComputeEngineClient_GetValidResourceTypes_WithMock(t *testing.T) {
 }
 
 func TestComputeEngineClient_GetValidResourceTypes_Error(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -477,6 +496,7 @@ func TestComputeEngineClient_GetValidResourceTypes_Error(t *testing.T) {
 }
 
 func TestComputeEngineClient_GetValidResourceTypes_Empty(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -491,6 +511,7 @@ func TestComputeEngineClient_GetValidResourceTypes_Empty(t *testing.T) {
 }
 
 func TestComputeEngineClient_ValidateOffering_Valid(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -508,6 +529,7 @@ func TestComputeEngineClient_ValidateOffering_Valid(t *testing.T) {
 }
 
 func TestComputeEngineClient_ValidateOffering_Invalid(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -526,6 +548,7 @@ func TestComputeEngineClient_ValidateOffering_Invalid(t *testing.T) {
 }
 
 func TestComputeEngineClient_PurchaseCommitment_WithMock(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -558,6 +581,7 @@ func TestComputeEngineClient_PurchaseCommitment_WithMock(t *testing.T) {
 // resource amount absent from recommendation Details" even though the
 // pointer carried a real memory amount.
 func TestComputeEngineClient_PurchaseCommitment_PointerDetails(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -583,6 +607,7 @@ func TestComputeEngineClient_PurchaseCommitment_PointerDetails(t *testing.T) {
 }
 
 func TestComputeEngineClient_PurchaseCommitment_UpfrontCost(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		name      string
 		estimate  float64
@@ -595,6 +620,7 @@ func TestComputeEngineClient_PurchaseCommitment_UpfrontCost(t *testing.T) {
 		{name: "wait failed", waitErr: errors.New("wait failed")},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			client, err := NewClient(context.Background(), "test-project", "us-central1")
 			require.NoError(t, err)
 			client.SetCommitmentsService(&MockCommitmentsService{insertErr: tt.insertErr, operation: &MockOperation{err: tt.waitErr}})
@@ -624,6 +650,7 @@ func TestComputeEngineClient_PurchaseCommitment_UpfrontCost(t *testing.T) {
 // treated as absent memory data rather than dereferenced, still failing
 // closed instead of panicking (#71).
 func TestComputeEngineClient_PurchaseCommitment_NilPointerDetails(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -647,6 +674,7 @@ func TestComputeEngineClient_PurchaseCommitment_NilPointerDetails(t *testing.T) 
 }
 
 func TestComputeEngineClient_PurchaseCommitment_EncodesSourceInDescription(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -669,6 +697,7 @@ func TestComputeEngineClient_PurchaseCommitment_EncodesSourceInDescription(t *te
 }
 
 func TestComputeEngineClient_PurchaseCommitment_OmitsTagWhenSourceEmpty(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -696,6 +725,7 @@ func TestComputeEngineClient_PurchaseCommitment_OmitsTagWhenSourceEmpty(t *testi
 // commitment Name (the defense-in-depth ALREADY_EXISTS guard) as the first, so
 // GCP treats the re-drive as a no-op rather than a double-purchase.
 func TestComputeEngineClient_PurchaseCommitment_IdempotentReDrive(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -742,6 +772,7 @@ func TestComputeEngineClient_PurchaseCommitment_IdempotentReDrive(t *testing.T) 
 // CLI path (no owning execution, empty token) keeps its prior non-idempotent
 // behavior: no RequestId is set and the name is the timestamp-based fallback.
 func TestComputeEngineClient_PurchaseCommitment_EmptyTokenNoRequestID(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -767,6 +798,7 @@ func TestComputeEngineClient_PurchaseCommitment_EmptyTokenNoRequestID(t *testing
 // Issue #44, through the real REST client: GCP answers the re-drive Insert with
 // 409 alreadyExists, and the outcome depends on the existing CUD.
 func TestComputeEngineClient_PurchaseCommitment_ReDriveAlreadyExists(t *testing.T) {
+	t.Parallel()
 	rec := common.Recommendation{ResourceType: "n2-standard-4", Term: "3yr", Count: 8,
 		Details: common.ComputeDetails{MemoryGB: 32}}
 	token := common.DeriveIdempotencyToken("exec-44", 0)
@@ -888,6 +920,7 @@ func TestComputeEngineClient_PurchaseCommitment_ReDriveAlreadyExists(t *testing.
 // A conflict can also surface from the operation, which Poll wraps in an
 // apierror, rather than from the Insert call itself.
 func TestComputeEngineClient_PurchaseCommitment_ReDriveAlreadyExistsOnWait(t *testing.T) {
+	t.Parallel()
 	client, err := NewClient(context.Background(), "test-project", "us-central1")
 	require.NoError(t, err)
 	rec := common.Recommendation{ResourceType: "n1-standard-1", Term: "1yr", Count: 2,
@@ -911,6 +944,7 @@ func TestComputeEngineClient_PurchaseCommitment_ReDriveAlreadyExistsOnWait(t *te
 
 // A first purchase that succeeds outright is not an adoption, even with a token.
 func TestComputeEngineClient_PurchaseCommitment_FreshPurchaseNotExisting(t *testing.T) {
+	t.Parallel()
 	client, err := NewClient(context.Background(), "test-project", "us-central1")
 	require.NoError(t, err)
 	client.SetCommitmentsService(&MockCommitmentsService{operation: &MockOperation{}})
@@ -925,6 +959,7 @@ func TestComputeEngineClient_PurchaseCommitment_FreshPurchaseNotExisting(t *test
 }
 
 func TestComputeEngineClient_PurchaseCommitment_3Year(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -946,6 +981,7 @@ func TestComputeEngineClient_PurchaseCommitment_3Year(t *testing.T) {
 }
 
 func TestComputeEngineClient_PurchaseCommitment_InsertError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -970,6 +1006,7 @@ func TestComputeEngineClient_PurchaseCommitment_InsertError(t *testing.T) {
 }
 
 func TestComputeEngineClient_PurchaseCommitment_WaitError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -994,6 +1031,7 @@ func TestComputeEngineClient_PurchaseCommitment_WaitError(t *testing.T) {
 }
 
 func TestComputeEngineClient_GetOfferingDetails_WithMock(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 	client.SetBillingService(mockBillingWithCommitment())
@@ -1017,6 +1055,7 @@ func TestComputeEngineClient_GetOfferingDetails_WithMock(t *testing.T) {
 }
 
 func TestComputeEngineClient_GetOfferingDetails_NoPricing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -1035,6 +1074,7 @@ func TestComputeEngineClient_GetOfferingDetails_NoPricing(t *testing.T) {
 }
 
 func TestComputeEngineClient_GetRecommendations_WithMock(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -1087,6 +1127,7 @@ func TestComputeEngineClient_GetRecommendations_WithMock(t *testing.T) {
 // the same coverage for computeengine closes the test-parity gap flagged
 // in known_issues/11_gcp_provider.md.
 func TestComputeEngineClient_GetRecommendations_IteratorError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -1104,6 +1145,7 @@ func TestComputeEngineClient_GetRecommendations_IteratorError(t *testing.T) {
 }
 
 func TestComputeEngineClient_GetRecommendations_Empty(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -1120,6 +1162,7 @@ func TestComputeEngineClient_GetRecommendations_Empty(t *testing.T) {
 }
 
 func TestComputeEngineClient_SetterMethods(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -1145,6 +1188,7 @@ func TestComputeEngineClient_SetterMethods(t *testing.T) {
 }
 
 func TestComputeEngineClient_ConvertGCPRecommendation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -1197,6 +1241,7 @@ func TestComputeEngineClient_ConvertGCPRecommendation(t *testing.T) {
 // rather than silently producing a partial result set
 // (feedback_ctx_cancel_terminal).
 func TestComputeEngineClient_GetRecommendations_CtxCancelReturnsError(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // cancel before the call
 
@@ -1288,6 +1333,7 @@ func mockBillingWithCommitment() *MockBillingService {
 // based implementation would produce 4*4096 = 16384 MB; the correct value is
 // 6144 MB. This assertion fails on pre-fix ratio-based code.
 func TestConverterToInsert_CountNonZero_VCPUAmountSet(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 	client.SetBillingService(mockBillingWithCommitment())
@@ -1343,6 +1389,7 @@ func TestConverterToInsert_CountNonZero_VCPUAmountSet(t *testing.T) {
 // This test FAILS on the pre-fix code where convertGCPRecommendation never
 // called getComputePricing, leaving SavingsPercentage at 0.
 func TestConverterFillsPricingForScorer(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 	billing := mockBillingWithCommitment()
@@ -1381,6 +1428,7 @@ func TestConverterFillsPricingForScorer(t *testing.T) {
 //
 // This test FAILS on the pre-fix code (which had no such guard).
 func TestBuildInsertRequest_RefusesZeroCount(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -1409,6 +1457,7 @@ func TestBuildInsertRequest_RefusesZeroCount(t *testing.T) {
 //
 // This test FAILS on the pre-fix code where estimateComputeCommitmentPrice was called.
 func TestGetComputePricing_NoCommitmentSKUReturnsError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -1430,6 +1479,7 @@ func TestGetComputePricing_NoCommitmentSKUReturnsError(t *testing.T) {
 //
 // This test FAILS on the pre-fix code that defaulted to "upfront" (10-M5 / auditor finding).
 func TestConvertGCPRecommendation_EmptyParamsDefaultsToMonthly(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -1457,6 +1507,7 @@ func TestConvertGCPRecommendation_EmptyParamsDefaultsToMonthly(t *testing.T) {
 // TestConvertGCPRecommendation_ParamPaymentOptionRespected asserts that an
 // explicit PaymentOption in RecommendationParams is forwarded to the recommendation.
 func TestConvertGCPRecommendation_ParamPaymentOptionRespected(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -1477,6 +1528,7 @@ func TestConvertGCPRecommendation_ParamPaymentOptionRespected(t *testing.T) {
 // This test FAILS on the pre-fix code that passed params.PaymentOption through
 // unchanged when it was non-empty.
 func TestConvertGCPRecommendation_NonMonthlyPaymentOptionForcedToMonthly(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -1493,6 +1545,7 @@ func TestConvertGCPRecommendation_NonMonthlyPaymentOptionForcedToMonthly(t *test
 }
 
 func TestVCPURecommendationRequiresExplicitResourceIdentity(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		change  func(*recommenderpb.Operation)
@@ -1532,6 +1585,7 @@ func TestVCPURecommendationRequiresExplicitResourceIdentity(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			op := &recommenderpb.Operation{
 				Action: "ADD", ResourceType: "compute.googleapis.com/Commitment",
 				Path: "/resources/0/amount", PathFilters: map[string]*structpb.Value{"/resources/0/type": structpb.NewStringValue("VCPU")},
@@ -1564,6 +1618,7 @@ func TestVCPURecommendationRequiresExplicitResourceIdentity(t *testing.T) {
 }
 
 func TestRecommendationVCPUAmountRejectsInvalidQuantities(t *testing.T) {
+	t.Parallel()
 	for _, value := range []*structpb.Value{
 		nil, structpb.NewNullValue(), structpb.NewBoolValue(true), structpb.NewStructValue(&structpb.Struct{}),
 		structpb.NewListValue(&structpb.ListValue{}), structpb.NewNumberValue(0), structpb.NewNumberValue(-1),
@@ -1582,6 +1637,7 @@ func TestRecommendationVCPUAmountRejectsInvalidQuantities(t *testing.T) {
 }
 
 func TestConvertGCPRecommendationMemoryAmountRepresentations(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name    string
 		value   *structpb.Value
@@ -1605,6 +1661,7 @@ func TestConvertGCPRecommendationMemoryAmountRepresentations(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			input := commitmentOnlyCUDRecommendation()
 			input.Content.OperationGroups[0].Operations[1].PathValue = &recommenderpb.Operation_Value{Value: tc.value}
 			rec, err := (&Client{}).convertGCPRecommendation(context.Background(), input, common.RecommendationParams{})
@@ -1631,6 +1688,7 @@ func TestConvertGCPRecommendationMemoryAmountRepresentations(t *testing.T) {
 //
 // This test fails on pre-fix code that silently used memMBPerVCPU as a fallback.
 func TestBuildInsertRequest_RefusesMissingMemory(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -1659,6 +1717,7 @@ func TestBuildInsertRequest_RefusesMissingMemory(t *testing.T) {
 // produced by the SDK enum's String() method (not a hand-written literal), so any
 // future SDK rename propagates automatically.
 func TestTermPlan_UsesSdkEnumConstants(t *testing.T) {
+	t.Parallel()
 	plan12, err := termPlan("1yr")
 	require.NoError(t, err)
 	assert.Equal(t, computepb.Commitment_TWELVE_MONTH.String(), plan12,
@@ -1678,6 +1737,7 @@ func TestTermPlan_UsesSdkEnumConstants(t *testing.T) {
 // This test fails on pre-fix code that silently returned TWELVE_MONTH for any
 // unrecognized input.
 func TestTermPlan_RejectsUnknownTerm(t *testing.T) {
+	t.Parallel()
 	for _, badTerm := range []string{"", "2yr", "invalid", "24mo", "forever"} {
 		_, err := termPlan(badTerm)
 		require.Error(t, err, "termPlan must reject unrecognized term %q (no silent 12-month default)", badTerm)
@@ -1689,6 +1749,7 @@ func TestTermPlan_RejectsUnknownTerm(t *testing.T) {
 // TestTermPlan_AcceptsAllDocumentedForms asserts that termPlan accepts all
 // documented 1-year and 3-year input forms.
 func TestTermPlan_AcceptsAllDocumentedForms(t *testing.T) {
+	t.Parallel()
 	for _, form := range []string{"1yr", "1", "12mo"} {
 		got, err := termPlan(form)
 		require.NoError(t, err, "termPlan must accept 1-year form %q", form)
@@ -1710,6 +1771,7 @@ func TestTermPlan_AcceptsAllDocumentedForms(t *testing.T) {
 //
 // This test FAILS on the pre-fix code that hardcoded Term: "1yr".
 func TestConvertGCPRecommendation_PropagatesParamsTerm(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -1743,6 +1805,7 @@ func TestConvertGCPRecommendation_PropagatesParamsTerm(t *testing.T) {
 //
 // This test FAILS on the pre-fix code that either silently used "1yr" or panicked.
 func TestConvertGCPRecommendation_RejectsUnknownTerm(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -1763,6 +1826,7 @@ func TestConvertGCPRecommendation_RejectsUnknownTerm(t *testing.T) {
 // This test FAILS on the pre-fix code that converted all recommendations
 // regardless of state.
 func TestGetRecommendations_FiltersNonActiveStates(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -1819,6 +1883,7 @@ func TestGetRecommendations_FiltersNonActiveStates(t *testing.T) {
 // TestGetRecommendations_FiltersNonActiveStates: a recommendation explicitly
 // marked ACTIVE must pass the state filter.
 func TestGetRecommendations_ActiveRecIncluded(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -1851,6 +1916,7 @@ func TestGetRecommendations_ActiveRecIncluded(t *testing.T) {
 // regression at unit level: the commitment Type must follow the recommended
 // machine series, not a fixed GENERAL_PURPOSE (which only discounts N1).
 func TestCommitmentTypeForMachineType_MapsFamilyToSDKEnum(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		machineType string
 		want        computepb.Commitment_Type
@@ -1886,6 +1952,7 @@ func TestCommitmentTypeForMachineType_MapsFamilyToSDKEnum(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.machineType, func(t *testing.T) {
+			t.Parallel()
 			got, err := commitmentTypeForMachineType(tc.machineType)
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, got,
@@ -1899,6 +1966,7 @@ func TestCommitmentTypeForMachineType_MapsFamilyToSDKEnum(t *testing.T) {
 // rule: an unknown or size-bucket-ambiguous family must return an explicit
 // error, never a GENERAL_PURPOSE default.
 func TestCommitmentTypeForMachineType_UnmappableFailsLoud(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name        string
 		machineType string
@@ -1915,6 +1983,7 @@ func TestCommitmentTypeForMachineType_UnmappableFailsLoud(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := commitmentTypeForMachineType(tc.machineType)
 			require.Error(t, err, "unmappable machine type must fail loud, not default")
 			assert.Equal(t, computepb.Commitment_UNDEFINED_TYPE, got)
@@ -1933,6 +2002,7 @@ func TestCommitmentTypeForMachineType_UnmappableFailsLoud(t *testing.T) {
 // rejected by GCP or -- worse -- buy a commitment covering the cheap vCPU/RAM
 // and none of the GPU or local-SSD capacity that dominates its cost.
 func TestCommitmentTypeForMachineType_FamiliesNeedingExtraResourcesRefuse(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		machineType  string
 		wantResource computepb.ResourceCommitment_Type
@@ -1949,6 +2019,7 @@ func TestCommitmentTypeForMachineType_FamiliesNeedingExtraResourcesRefuse(t *tes
 
 	for _, tc := range cases {
 		t.Run(tc.machineType, func(t *testing.T) {
+			t.Parallel()
 			got, err := commitmentTypeForMachineType(tc.machineType)
 			require.Error(t, err,
 				"%s needs a %s resource this client does not send; it must refuse, not declare the type anyway",
@@ -1965,6 +2036,7 @@ func TestCommitmentTypeForMachineType_FamiliesNeedingExtraResourcesRefuse(t *tes
 // the InsertRegionCommitmentRequest handed to the SDK client, so a fix that only
 // corrects an intermediate value cannot make it pass.
 func TestComputeEngineClient_PurchaseCommitment_TypeMatchesMachineFamily(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		machineType string
 		wantType    computepb.Commitment_Type
@@ -1979,6 +2051,7 @@ func TestComputeEngineClient_PurchaseCommitment_TypeMatchesMachineFamily(t *test
 
 	for _, tc := range cases {
 		t.Run(tc.machineType, func(t *testing.T) {
+			t.Parallel()
 			ctx := context.Background()
 			client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -2014,8 +2087,10 @@ func TestComputeEngineClient_PurchaseCommitment_TypeMatchesMachineFamily(t *test
 // purchase is refused before any Insert reaches GCP when the machine family
 // cannot be mapped, rather than spending real money on a GENERAL_PURPOSE CUD.
 func TestComputeEngineClient_PurchaseCommitment_UnmappableFamilyRefuses(t *testing.T) {
+	t.Parallel()
 	for _, machineType := range []string{"", "t2a-standard-8", "x4-megamem-960-metal", "a3-megagpu-8g", "z3-highmem-88"} {
 		t.Run(machineType, func(t *testing.T) {
+			t.Parallel()
 			ctx := context.Background()
 			client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -2051,6 +2126,7 @@ func TestComputeEngineClient_PurchaseCommitment_UnmappableFamilyRefuses(t *testi
 // against an SDK-derived actual passes no matter which member the code picks,
 // so it would pin nothing. The literals are what GCP actually accepts.
 func TestComputeEngineClient_PurchaseCommitment_ResourceTypesUseSDKEnums(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -2133,6 +2209,7 @@ func commitmentOnlyCUDRecommendation() *recommenderpb.Recommendation {
 // commitmentTypeForMachineType would then reject as machine family "cud" -- a
 // misleading cause for a payload that simply carries no machine type.
 func TestExtractResourceTypeFromRecommendation_CommitmentOnlyOpsFailLoud(t *testing.T) {
+	t.Parallel()
 	rec := &common.Recommendation{}
 
 	err := extractResourceTypeFromRecommendation(commitmentOnlyCUDRecommendation(), rec)
@@ -2153,6 +2230,7 @@ func TestExtractResourceTypeFromRecommendation_CommitmentOnlyOpsFailLoud(t *test
 // payload must refuse the purchase with a cause naming the missing machine
 // type, and no Insert may reach GCP.
 func TestPurchaseCommitment_CommitmentOnlyRecommendationRefuses(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, err := NewClient(ctx, "test-project", "us-central1")
 	require.NoError(t, err)
@@ -2185,6 +2263,7 @@ func TestPurchaseCommitment_CommitmentOnlyRecommendationRefuses(t *testing.T) {
 // TestMachineTypeFromResourcePath_SelectsOnlyMachineTypePaths pins the selector
 // itself: only a /machineTypes/<name> path yields a machine type.
 func TestMachineTypeFromResourcePath_SelectsOnlyMachineTypePaths(t *testing.T) {
+	t.Parallel()
 	accepted := map[string]string{
 		"projects/test/zones/us-central1-a/machineTypes/n2-standard-16":          "n2-standard-16",
 		"projects/test/machineTypes/n1-standard-1":                               "n1-standard-1",
@@ -2214,6 +2293,7 @@ func TestMachineTypeFromResourcePath_SelectsOnlyMachineTypePaths(t *testing.T) {
 // twice. Ended statuses map to ended states, and an unset status passes through
 // so duplicate detection counts and logs it instead of dropping it.
 func TestGCPCommitmentState(t *testing.T) {
+	t.Parallel()
 	cases := map[string]common.CommitmentState{
 		computepb.Commitment_ACTIVE.String():         common.CommitmentStateActive,
 		computepb.Commitment_NOT_YET_ACTIVE.String(): common.CommitmentStateQueued,
@@ -2232,8 +2312,10 @@ func memoryOpOf(rec *recommenderpb.Recommendation) *recommenderpb.Operation {
 }
 
 func TestConvertGCPRecommendationSkipsNonAddReplaceMemoryOps(t *testing.T) {
+	t.Parallel()
 	for _, action := range []string{"remove", "test"} {
 		t.Run(action, func(t *testing.T) {
+			t.Parallel()
 			input := commitmentOnlyCUDRecommendation()
 			op := memoryOpOf(input)
 			op.Action = action
@@ -2248,6 +2330,7 @@ func TestConvertGCPRecommendationSkipsNonAddReplaceMemoryOps(t *testing.T) {
 }
 
 func TestConvertGCPRecommendationRejectsDuplicateMemoryOp(t *testing.T) {
+	t.Parallel()
 	input := commitmentOnlyCUDRecommendation()
 	dup := proto.Clone(memoryOpOf(input)).(*recommenderpb.Operation)
 	ops := &input.Content.OperationGroups[0].Operations
@@ -2258,6 +2341,7 @@ func TestConvertGCPRecommendationRejectsDuplicateMemoryOp(t *testing.T) {
 }
 
 func TestConvertGCPRecommendationVCPUOnlyKeepsNilDetails(t *testing.T) {
+	t.Parallel()
 	input := commitmentOnlyCUDRecommendation()
 	input.Content.OperationGroups[0].Operations = input.Content.OperationGroups[0].Operations[:1]
 	rec, err := (&Client{}).convertGCPRecommendation(context.Background(), input, common.RecommendationParams{})
@@ -2268,6 +2352,7 @@ func TestConvertGCPRecommendationVCPUOnlyKeepsNilDetails(t *testing.T) {
 }
 
 func TestGetRecommendationsStringMemoryAmountEndToEnd(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 	client.SetBillingService(&MockBillingService{err: errors.New("catalog not under test")})
@@ -2301,6 +2386,7 @@ func badAmountRecommendation(name, vcpu, memory string) *recommenderpb.Recommend
 }
 
 func TestGetRecommendations_SkipsBadAmountRowKeepsOthers(t *testing.T) {
+	t.Parallel()
 	cases := []struct{ name, vcpu, memory string }{
 		{"malformed vcpu", "abc", "6144"},
 		{"malformed memory", "4", "6Gi"},
@@ -2309,6 +2395,7 @@ func TestGetRecommendations_SkipsBadAmountRowKeepsOthers(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			ctx := context.Background()
 			client, _ := NewClient(ctx, "test-project", "us-central1")
 			client.SetRecommenderClient(&MockRecommenderClient{iterator: &MockRecommenderIterator{
@@ -2329,6 +2416,7 @@ func TestGetRecommendations_SkipsBadAmountRowKeepsOthers(t *testing.T) {
 }
 
 func TestGetRecommendations_StructuralErrorsStillAbort(t *testing.T) {
+	t.Parallel()
 	cases := map[string]func(*recommenderpb.Recommendation){
 		"duplicate vcpu": func(r *recommenderpb.Recommendation) {
 			g := r.Content.OperationGroups[0]
@@ -2343,6 +2431,7 @@ func TestGetRecommendations_StructuralErrorsStillAbort(t *testing.T) {
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			ctx := context.Background()
 			client, _ := NewClient(ctx, "test-project", "us-central1")
 			bad := badAmountRecommendation("bad", "4", "6144")
@@ -2359,7 +2448,9 @@ func TestGetRecommendations_StructuralErrorsStillAbort(t *testing.T) {
 }
 
 func TestConvertGCPRecommendationRejectsCrossResourceAmounts(t *testing.T) {
+	t.Parallel()
 	t.Run("same operation group", func(t *testing.T) {
+		t.Parallel()
 		input := commitmentOnlyCUDRecommendation()
 		memoryOpOf(input).Resource += "-other"
 		rec, err := (&Client{}).convertGCPRecommendation(context.Background(), input, common.RecommendationParams{})
@@ -2367,6 +2458,7 @@ func TestConvertGCPRecommendationRejectsCrossResourceAmounts(t *testing.T) {
 		assert.Nil(t, rec)
 	})
 	t.Run("separate operation groups", func(t *testing.T) {
+		t.Parallel()
 		input := commitmentOnlyCUDRecommendation()
 		mem := memoryOpOf(input)
 		mem.Resource += "-other"
@@ -2379,6 +2471,7 @@ func TestConvertGCPRecommendationRejectsCrossResourceAmounts(t *testing.T) {
 		assert.Nil(t, rec)
 	})
 	t.Run("fails the batch instead of skipping the row", func(t *testing.T) {
+		t.Parallel()
 		input := commitmentOnlyCUDRecommendation()
 		memoryOpOf(input).Resource += "-other"
 		rec, err := (&Client{}).convertOrSkipBadAmount(context.Background(), input, common.RecommendationParams{})
@@ -2388,7 +2481,9 @@ func TestConvertGCPRecommendationRejectsCrossResourceAmounts(t *testing.T) {
 }
 
 func TestConvertGCPRecommendationEmptyAmountResources(t *testing.T) {
+	t.Parallel()
 	t.Run("empty memory resource next to a populated VCPU resource is different", func(t *testing.T) {
+		t.Parallel()
 		input := commitmentOnlyCUDRecommendation()
 		memoryOpOf(input).Resource = ""
 		rec, err := (&Client{}).convertGCPRecommendation(context.Background(), input, common.RecommendationParams{})
@@ -2396,6 +2491,7 @@ func TestConvertGCPRecommendationEmptyAmountResources(t *testing.T) {
 		assert.Nil(t, rec)
 	})
 	t.Run("both empty are accepted as the same resource, as before the check existed", func(t *testing.T) {
+		t.Parallel()
 		input := commitmentOnlyCUDRecommendation()
 		input.Content.OperationGroups[0].Operations[0].Resource = ""
 		memoryOpOf(input).Resource = ""
@@ -2406,6 +2502,7 @@ func TestConvertGCPRecommendationEmptyAmountResources(t *testing.T) {
 }
 
 func TestGetRecommendationsRejectsCrossResourceAmounts(t *testing.T) {
+	t.Parallel()
 	input := commitmentOnlyCUDRecommendation()
 	input.StateInfo = &recommenderpb.RecommendationStateInfo{State: recommenderpb.RecommendationStateInfo_ACTIVE}
 	memoryOpOf(input).Resource += "-other"
@@ -2425,6 +2522,7 @@ func TestGetRecommendationsRejectsCrossResourceAmounts(t *testing.T) {
 // '_' or ':') would yield an RFC1035-invalid commitment name; the purchase must
 // fail locally and never reach Insert.
 func TestPurchaseCommitment_RejectsNonHexIdempotencyToken(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	rec := common.Recommendation{
 		ResourceType: "n1-standard-1",
@@ -2439,6 +2537,7 @@ func TestPurchaseCommitment_RejectsNonHexIdempotencyToken(t *testing.T) {
 		"deadbeef-",
 	} {
 		t.Run(token, func(t *testing.T) {
+			t.Parallel()
 			client, _ := NewClient(ctx, "test-project", "us-central1")
 			mockSvc := &MockCommitmentsService{operation: &MockOperation{}}
 			client.SetCommitmentsService(mockSvc)
@@ -2456,6 +2555,7 @@ func TestPurchaseCommitment_RejectsNonHexIdempotencyToken(t *testing.T) {
 // A short or partly non-hex token passes the name check but cannot form a
 // RequestId; it must fail before Insert instead of dropping idempotency.
 func TestPurchaseCommitment_UnformableRequestIDTokenFailsLoud(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	rec := common.Recommendation{
 		ResourceType: "n1-standard-1",
@@ -2465,6 +2565,7 @@ func TestPurchaseCommitment_UnformableRequestIDTokenFailsLoud(t *testing.T) {
 	}
 	for _, token := range []string{"abc", strings.Repeat("a", 31)} {
 		t.Run(token, func(t *testing.T) {
+			t.Parallel()
 			client, _ := NewClient(ctx, "test-project", "us-central1")
 			mockSvc := &MockCommitmentsService{operation: &MockOperation{}}
 			client.SetCommitmentsService(mockSvc)
@@ -2479,6 +2580,7 @@ func TestPurchaseCommitment_UnformableRequestIDTokenFailsLoud(t *testing.T) {
 }
 
 func TestBuildInsertRequest_RejectedTokenWrapsSentinel(t *testing.T) {
+	t.Parallel()
 	client, _ := NewClient(context.Background(), "test-project", "us-central1")
 	rec := common.Recommendation{
 		ResourceType: "n1-standard-1",
@@ -2493,6 +2595,7 @@ func TestBuildInsertRequest_RejectedTokenWrapsSentinel(t *testing.T) {
 // A full 64-char SHA-256 digest must be truncated so the name stays within
 // GCP's 63-char limit.
 func TestIdempotentCommitmentName_TruncatesFullDigest(t *testing.T) {
+	t.Parallel()
 	token := common.DeriveIdempotencyToken("exec-1", 0)
 	require.Len(t, token, 64)
 	name, err := idempotentCommitmentName(token)

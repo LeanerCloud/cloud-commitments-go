@@ -55,6 +55,7 @@ func billingAgainst(t *testing.T, srv *httptest.Server) *realBillingService {
 // The live Compute Engine catalog is 33,453 SKUs over 7 pages of 5000; reading
 // only the first page left the commitment SKUs unseen.
 func TestRealBillingService_ListSKUsFollowsEveryPage(t *testing.T) {
+	t.Parallel()
 	var tokens []string
 	srv := catalogServer(t, 33453, 5000, &tokens)
 	defer srv.Close()

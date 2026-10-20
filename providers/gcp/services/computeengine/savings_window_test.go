@@ -27,6 +27,7 @@ func costImpact(cost *money.Money, duration *durationpb.Duration) *recommenderpb
 }
 
 func TestExtractCostImpact_NormalizesToMonthly(t *testing.T) {
+	t.Parallel()
 	cases := map[string]struct {
 		duration time.Duration
 		want     float64
@@ -37,6 +38,7 @@ func TestExtractCostImpact_NormalizesToMonthly(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			var rec common.Recommendation
 			err := extractCostImpactFromRecommendation(costImpact(&money.Money{Units: -120, CurrencyCode: "USD"}, durationpb.New(tc.duration)), &rec)
 			require.NoError(t, err)
@@ -46,9 +48,11 @@ func TestExtractCostImpact_NormalizesToMonthly(t *testing.T) {
 }
 
 func TestExtractCostImpact_UnknownWindowIsAnError(t *testing.T) {
+	t.Parallel()
 	cost := &money.Money{Units: -120, CurrencyCode: "USD"}
 	for name, duration := range map[string]*durationpb.Duration{"missing": nil, "zero": durationpb.New(0), "negative": durationpb.New(-time.Hour)} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			var rec common.Recommendation
 			err := extractCostImpactFromRecommendation(costImpact(cost, duration), &rec)
 			require.ErrorIs(t, err, errBadAmount)
@@ -58,12 +62,14 @@ func TestExtractCostImpact_UnknownWindowIsAnError(t *testing.T) {
 }
 
 func TestExtractCostImpact_ZeroCostNeedsNoDuration(t *testing.T) {
+	t.Parallel()
 	var rec common.Recommendation
 	require.NoError(t, extractCostImpactFromRecommendation(costImpact(&money.Money{CurrencyCode: "USD"}, nil), &rec))
 }
 
 // A recommendation without a duration is skipped, not reported as monthly.
 func TestConvertGCPRecommendation_MissingDurationSkipsRecommendation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 	gcpRec := realisticCUDRecommendation()
@@ -75,6 +81,7 @@ func TestConvertGCPRecommendation_MissingDurationSkipsRecommendation(t *testing.
 }
 
 func TestExtractCostImpact_RequiresUSD(t *testing.T) {
+	t.Parallel()
 	month := durationpb.New(savingsWindow)
 	cases := map[string]struct {
 		cost    *money.Money
@@ -90,6 +97,7 @@ func TestExtractCostImpact_RequiresUSD(t *testing.T) {
 	}
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			var rec common.Recommendation
 			err := extractCostImpactFromRecommendation(costImpact(tc.cost, month), &rec)
 			if tc.wantErr {
@@ -106,6 +114,7 @@ func TestExtractCostImpact_RequiresUSD(t *testing.T) {
 
 // A non-USD recommendation is skipped, not reported as USD savings.
 func TestConvertGCPRecommendation_NonUSDCostSkipsRecommendation(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 	gcpRec := realisticCUDRecommendation()

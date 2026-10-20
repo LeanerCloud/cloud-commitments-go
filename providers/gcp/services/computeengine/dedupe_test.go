@@ -45,10 +45,12 @@ func rootCUDRecommendationWithPlan(kind, plan string) *recommenderpb.Recommendat
 }
 
 func TestRootCUDPublicPurchasePath(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"MEMORY_OPTIMIZED_M4_6TB", "MEMORY_OPTIMIZED_X4_480_6T"} {
 		for _, decoded := range []bool{false, true} {
 			for _, existingKind := range []string{"", kind, "MEMORY_OPTIMIZED_X4_960_12T"} {
 				t.Run(fmt.Sprintf("%s/decoded=%t/existing=%s", kind, decoded, existingKind), func(t *testing.T) {
+					t.Parallel()
 					ctx := context.Background()
 					client, err := NewClient(ctx, "test-project", "us-central1")
 					require.NoError(t, err)
@@ -96,6 +98,7 @@ func TestRootCUDPublicPurchasePath(t *testing.T) {
 }
 
 func TestCUDStoredTypePublicPath(t *testing.T) {
+	t.Parallel()
 	for _, kind := range []string{"", "MEMORY_OPTIMIZED_M4_6TB", "MEMORY_OPTIMIZED_X4_480_6T", "UNDEFINED_TYPE", "TYPE_UNSPECIFIED", "UNKNOWN", "ACCELERATOR_OPTIMIZED", "GRAPHICS_OPTIMIZED", "STORAGE_OPTIMIZED_Z3"} {
 		for _, decoded := range []bool{false, true} {
 			want := kind
@@ -105,6 +108,7 @@ func TestCUDStoredTypePublicPath(t *testing.T) {
 			valid := kind == "" || kind == "MEMORY_OPTIMIZED_M4_6TB" || kind == "MEMORY_OPTIMIZED_X4_480_6T"
 			for _, sameBucket := range []bool{false, true} {
 				t.Run(fmt.Sprintf("%s/decoded=%t/same=%t", kind, decoded, sameBucket), func(t *testing.T) {
+					t.Parallel()
 					ctx := context.Background()
 					rec := cudRecommendation()
 					rec.Details = common.ComputeDetails{MemoryGB: 256, GCPCommitmentType: kind}
@@ -155,6 +159,7 @@ func TestCUDStoredTypePublicPath(t *testing.T) {
 }
 
 func TestCUDTypeFallbackWithAbsentDetails(t *testing.T) {
+	t.Parallel()
 	for _, details := range []common.ServiceDetails{nil, (*common.ComputeDetails)(nil)} {
 		rec := cudRecommendation()
 		rec.Details = details
@@ -193,6 +198,7 @@ func cudRecommendation() common.Recommendation {
 }
 
 func TestCUDDuplicatePurchasePath(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		name          string
 		change        func(*computepb.Commitment, *common.Recommendation)
@@ -228,6 +234,7 @@ func TestCUDDuplicatePurchasePath(t *testing.T) {
 		}, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			ctx := context.Background()
 			cud, rec := recentCUD(), cudRecommendation()
 			tc.change(cud, &rec)
@@ -256,6 +263,7 @@ func TestCUDDuplicatePurchasePath(t *testing.T) {
 }
 
 func TestCUDInventoryRejectsUnusableMetadata(t *testing.T) {
+	t.Parallel()
 	for name, mutate := range map[string]func(*computepb.Commitment){
 		"missing name":       func(c *computepb.Commitment) { c.Name = nil },
 		"missing start":      func(c *computepb.Commitment) { c.StartTimestamp = nil },
@@ -274,6 +282,7 @@ func TestCUDInventoryRejectsUnusableMetadata(t *testing.T) {
 		"duplicate vcpu":     func(c *computepb.Commitment) { c.Resources = append(c.Resources, c.Resources[1]) },
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			ctx := context.Background()
 			cud := recentCUD()
 			mutate(cud)
@@ -292,6 +301,7 @@ func TestCUDInventoryRejectsUnusableMetadata(t *testing.T) {
 }
 
 func TestCUDDuplicateIdentity(t *testing.T) {
+	t.Parallel()
 	for name, change := range map[string]func(*common.Recommendation){
 		"another project":        func(r *common.Recommendation) { r.Account = "other-project" },
 		"another region":         func(r *common.Recommendation) { r.Region = "europe-west1" },
@@ -303,6 +313,7 @@ func TestCUDDuplicateIdentity(t *testing.T) {
 		"unknown machine family": func(r *common.Recommendation) { r.ResourceType = "future-standard-32" },
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			ctx := context.Background()
 			client, err := NewClient(ctx, "test-project", "us-central1")
 			require.NoError(t, err)
@@ -323,6 +334,7 @@ func TestCUDDuplicateIdentity(t *testing.T) {
 }
 
 func TestCUDNilInventoryRecord(t *testing.T) {
+	t.Parallel()
 	client, err := NewClient(context.Background(), "test-project", "us-central1")
 	require.NoError(t, err)
 	client.SetCommitmentsService(&MockCommitmentsService{commitments: []*computepb.Commitment{nil}})
