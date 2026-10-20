@@ -1120,3 +1120,75 @@ func TestClient_PurchaseCommitment_Idempotent_RejectedNotFlagged(t *testing.T) {
 	assert.False(t, result.Success)
 	assert.False(t, result.ExistingCommitment)
 }
+
+func TestGetExistingCommitments_PageCapAndCtx(t *testing.T) {
+	t.Parallel()
+	endless := &memorydb.DescribeReservedNodesOutput{NextToken: aws.String("more")}
+
+	m := &MockMemoryDBClient{}
+	m.On("DescribeReservedNodes", mock.Anything, mock.Anything).Return(endless, nil).Times(maxListPages)
+	c := &Client{client: m, region: "us-east-1"}
+	_, err := c.GetExistingCommitments(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "pagination cap reached")
+	m.AssertNumberOfCalls(t, "DescribeReservedNodes", maxListPages)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	m2 := &MockMemoryDBClient{}
+	c2 := &Client{client: m2, region: "us-east-1"}
+	_, err = c2.GetExistingCommitments(ctx)
+	assert.ErrorIs(t, err, context.Canceled)
+	m2.AssertNotCalled(t, "DescribeReservedNodes", mock.Anything, mock.Anything)
+}
+
+func TestGetExistingCommitments_MultiPage(t *testing.T) {
+	t.Parallel()
+	m := &MockMemoryDBClient{}
+	m.On("DescribeReservedNodes", mock.Anything, mock.Anything).Return(&memorydb.DescribeReservedNodesOutput{
+		ReservedNodes: []types.ReservedNode{{ReservationId: aws.String("a"), State: aws.String("active")}},
+		NextToken:     aws.String("t2"),
+	}, nil).Once()
+	m.On("DescribeReservedNodes", mock.Anything, mock.Anything).Return(&memorydb.DescribeReservedNodesOutput{
+		ReservedNodes: []types.ReservedNode{{ReservationId: aws.String("b"), State: aws.String("active")}},
+	}, nil).Once()
+	c := &Client{client: m, region: "us-east-1"}
+	got, err := c.GetExistingCommitments(context.Background())
+	require.NoError(t, err)
+	assert.Len(t, got, 2)
+}
+
+func TestGetValidResourceTypes_PageCapAndCtx(t *testing.T) {
+	t.Parallel()
+	m := &MockMemoryDBClient{}
+	m.On("DescribeReservedNodesOfferings", mock.Anything, mock.Anything).
+		Return(&memorydb.DescribeReservedNodesOfferingsOutput{NextToken: aws.String("more")}, nil).Times(maxListPages)
+	c := &Client{client: m, region: "us-east-1"}
+	_, err := c.GetValidResourceTypes(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "pagination cap reached")
+	m.AssertNumberOfCalls(t, "DescribeReservedNodesOfferings", maxListPages)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	m2 := &MockMemoryDBClient{}
+	c2 := &Client{client: m2, region: "us-east-1"}
+	_, err = c2.GetValidResourceTypes(ctx)
+	assert.ErrorIs(t, err, context.Canceled)
+}
+
+func TestGetValidResourceTypes_MultiPage(t *testing.T) {
+	t.Parallel()
+	m := &MockMemoryDBClient{}
+	m.On("DescribeReservedNodesOfferings", mock.Anything, mock.Anything).Return(&memorydb.DescribeReservedNodesOfferingsOutput{
+		ReservedNodesOfferings: []types.ReservedNodesOffering{{NodeType: aws.String("db.r6g.large")}},
+		NextToken:              aws.String("t2"),
+	}, nil).Once()
+	m.On("DescribeReservedNodesOfferings", mock.Anything, mock.Anything).Return(&memorydb.DescribeReservedNodesOfferingsOutput{
+		ReservedNodesOfferings: []types.ReservedNodesOffering{{NodeType: aws.String("db.t4g.small")}},
+	}, nil).Once()
+	c := &Client{client: m, region: "us-east-1"}
+	got, err := c.GetValidResourceTypes(context.Background())
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []string{"db.r6g.large", "db.t4g.small"}, got)
+}

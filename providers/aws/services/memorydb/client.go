@@ -69,7 +69,13 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 	commitments := make([]common.Commitment, 0)
 	var nextToken *string
 
-	for {
+	for page := 0; ; page++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if page >= maxListPages {
+			return nil, fmt.Errorf("pagination cap reached after %d pages for MemoryDB reserved nodes (issue #556)", maxListPages)
+		}
 		input := &memorydb.DescribeReservedNodesInput{
 			NextToken:  nextToken,
 			MaxResults: aws.Int32(100),
@@ -278,6 +284,12 @@ const ReservedNodeEngine = "redis"
 // search at 500 offerings. Exceeding the cap returns a diagnostic error instead
 // of timing out the Lambda budget (issue #688).
 const maxOfferingPages = 5
+
+// maxListPages bounds the full-list scans (DescribeReservedNodes and the
+// offerings sweep in GetValidResourceTypes). At MaxResults=100 per page this
+// is 5000 entries, far above any real account; hitting it means a token cycle
+// or runaway API, so the scan fails loud instead of looping (issue #556).
+const maxListPages = 50
 
 // convertMemoryDBPaymentOption maps a rec payment-option slug to the AWS
 // DescribeReservedNodesOfferings OfferingType string value.
@@ -490,7 +502,13 @@ func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	nodeTypesMap := make(map[string]bool)
 	var nextToken *string
 
-	for {
+	for page := 0; ; page++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if page >= maxListPages {
+			return nil, fmt.Errorf("pagination cap reached after %d pages for MemoryDB offerings (issue #556)", maxListPages)
+		}
 		input := &memorydb.DescribeReservedNodesOfferingsInput{
 			NextToken:  nextToken,
 			MaxResults: aws.Int32(100),

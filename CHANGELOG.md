@@ -187,6 +187,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **MemoryDB reserved-node and offering listings are page-capped and
+  cancellable** (#556): `GetExistingCommitments` and `GetValidResourceTypes`
+  now check the context per page and fail loudly after 50 pages instead of
+  looping on a NextToken that never ends.
 - **`azure`:** compute `PurchaseCommitment` now checks the term before the payment option and returns the term error unwrapped (no `failed to marshal request:` prefix), like the other six services (#538).
 - **`azure`:** synapse's zero-quantity purchase error now includes the quantity (`..., got 0`), like the other six services (#538).
 - **`azure`:** `PurchaseCommitment` for cache, compute, cosmosdb, database, managedredis and search now rejects a blank resource type before any HTTP call, as synapse already did, instead of sending an empty `sku.name` (#538).
