@@ -38,6 +38,7 @@ func (s *recommendationSDKServer) ListRecommendations(ctx context.Context, req *
 }
 
 func TestComputeRecommendationsThroughSDK(t *testing.T) {
+	t.Parallel()
 	const central = "projects/recommendation-project/locations/us-central1/recommenders/google.compute.commitment.UsageCommitmentRecommender"
 	const west = "projects/recommendation-project/locations/europe-west1/recommenders/google.compute.commitment.UsageCommitmentRecommender"
 	cases := []struct {

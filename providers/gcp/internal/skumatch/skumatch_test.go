@@ -9,6 +9,7 @@ import (
 )
 
 func TestInRegion(t *testing.T) {
+	t.Parallel()
 	taxonomy := func(typ string) *cloudbilling.GeoTaxonomy { return &cloudbilling.GeoTaxonomy{Type: typ} }
 	tests := []struct {
 		name string
@@ -27,12 +28,14 @@ func TestInRegion(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.want, InRegion(tt.sku, "europe-west4"))
 		})
 	}
 }
 
 func TestHasToken(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		description, token string
 		want               bool
@@ -52,6 +55,7 @@ func TestHasToken(t *testing.T) {
 }
 
 func TestSlot(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name    string
 		sku     *cloudbilling.Sku
@@ -70,6 +74,7 @@ func TestSlot(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			got, err := Slot(tt.sku)
 			if tt.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tt.wantErr) {

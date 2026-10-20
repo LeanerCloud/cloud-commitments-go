@@ -26,6 +26,7 @@ func currencySKU(id, description, usageType, region, currency string, nanos int6
 }
 
 func TestGetSQLPricing_Currency(t *testing.T) {
+	t.Parallel()
 	const tier, region = "db-n1-standard-1", "us-central1"
 	tests := []struct {
 		name         string
@@ -42,6 +43,7 @@ func TestGetSQLPricing_Currency(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			ctx := context.Background()
 			client, err := NewClient(ctx, "test-project", region)
 			require.NoError(t, err)

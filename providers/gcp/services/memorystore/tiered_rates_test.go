@@ -18,6 +18,7 @@ func freeFirstTierSKU(id, description, usageType, region string, paidNanos int64
 }
 
 func TestExtractPricing_FreeFirstTierUsesPaidTier(t *testing.T) {
+	t.Parallel()
 	const tier, region = "STANDARD_HA", "us-central1"
 	od := freeFirstTierSKU("od", tier+" Memorystore", "OnDemand", region, 50000000)
 
@@ -36,6 +37,7 @@ func TestExtractPricing_FreeFirstTierUsesPaidTier(t *testing.T) {
 }
 
 func TestExtractPricing_AllTiersFreeIsSkipped(t *testing.T) {
+	t.Parallel()
 	sku := freeFirstTierSKU("od", "STANDARD_HA Memorystore", "OnDemand", "us-central1", 0)
 	price, _ := extractPriceFromSKU(sku)
 	assert.Zero(t, price)

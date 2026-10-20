@@ -108,6 +108,7 @@ func (m *MockRecommenderIterator) Next() (*recommenderpb.Recommendation, error) 
 }
 
 func TestNewClient(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, err := NewClient(ctx, "test-project", "us-central1")
 
@@ -118,12 +119,14 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestMemorystoreClient_GetServiceType(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "project", "region")
 	assert.Equal(t, common.ServiceCache, client.GetServiceType())
 }
 
 func TestMemorystoreClient_GetRegion(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		region   string
@@ -149,6 +152,7 @@ func TestMemorystoreClient_GetRegion(t *testing.T) {
 	ctx := context.Background()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			client, _ := NewClient(ctx, "project", tt.region)
 			assert.Equal(t, tt.expected, client.GetRegion())
 		})
@@ -156,6 +160,7 @@ func TestMemorystoreClient_GetRegion(t *testing.T) {
 }
 
 func TestMemorystoreClient_GetValidResourceTypes(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -168,6 +173,7 @@ func TestMemorystoreClient_GetValidResourceTypes(t *testing.T) {
 }
 
 func TestSkuMatchesTier(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		sku      *cloudbilling.Sku
@@ -256,6 +262,7 @@ func TestSkuMatchesTier(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result := skuMatchesTier(tt.sku, tt.tier, tt.region)
 			assert.Equal(t, tt.expected, result)
 		})
@@ -263,6 +270,7 @@ func TestSkuMatchesTier(t *testing.T) {
 }
 
 func TestRedisPricingStructure(t *testing.T) {
+	t.Parallel()
 	pricing := RedisPricing{
 		HourlyRate:        0.03,
 		CommitmentPrice:   262.8,
@@ -279,6 +287,7 @@ func TestRedisPricingStructure(t *testing.T) {
 }
 
 func TestMemorystoreClient_ValidateOffering_ValidTier(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -291,6 +300,7 @@ func TestMemorystoreClient_ValidateOffering_ValidTier(t *testing.T) {
 }
 
 func TestMemorystoreClient_ValidateOffering_InvalidTier(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -314,6 +324,7 @@ func TestMemorystoreClient_ValidateOffering_InvalidTier(t *testing.T) {
 // that was previously merged (it asserted behavior the production code never
 // implemented, causing false CI failures).
 func TestMemorystoreClient_GetExistingCommitments_Stub(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -340,6 +351,7 @@ func TestMemorystoreClient_GetExistingCommitments_Stub(t *testing.T) {
 // must return ErrCommitmentPurchaseNotSupported and MUST NOT call any
 // resource-creation API (it previously created a new billable Redis instance).
 func TestMemorystoreClient_PurchaseCommitment_NotSupported(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -367,6 +379,7 @@ func TestMemorystoreClient_PurchaseCommitment_NotSupported(t *testing.T) {
 }
 
 func TestMemorystoreClient_GetOfferingDetails_WithMockService(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		rec         common.Recommendation
@@ -510,6 +523,7 @@ func TestMemorystoreClient_GetOfferingDetails_WithMockService(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			ctx := context.Background()
 			client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -543,6 +557,7 @@ func TestMemorystoreClient_GetOfferingDetails_WithMockService(t *testing.T) {
 //
 // This test FAILS on the pre-fix code where CommitmentPrice == 0.035 (per-hour).
 func TestGetRedisPricing_CommitmentPriceIsTermTotal(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -618,6 +633,7 @@ func TestGetRedisPricing_CommitmentPriceIsTermTotal(t *testing.T) {
 }
 
 func TestMemorystoreClient_SetterMethods(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -636,6 +652,7 @@ func TestMemorystoreClient_SetterMethods(t *testing.T) {
 // quote derived from the catalog, in the catalog currency, for every term and
 // payment option.
 func TestMemorystoreClient_GetOfferingDetails_RecurringMonthlyCost(t *testing.T) {
+	t.Parallel()
 	const region = "europe-west1"
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", region)
@@ -650,6 +667,7 @@ func TestMemorystoreClient_GetOfferingDetails_RecurringMonthlyCost(t *testing.T)
 	for term, months := range map[string]float64{"1yr": 12, "3yr": 36} {
 		for _, payment := range []string{"monthly", "no-upfront"} {
 			t.Run(term+"/"+payment, func(t *testing.T) {
+				t.Parallel()
 				rec := common.Recommendation{ResourceType: "redis-basic", Region: region, Term: term, PaymentOption: payment}
 				quote, err := client.GetOfferingDetails(ctx, rec)
 				require.NoError(t, err)
@@ -692,6 +710,7 @@ func (r *performanceRecommender) Close() error { return nil }
 // relabel its per-instance advice as a CUD. It fails loud instead of returning
 // an empty list that would read as "nothing to buy".
 func TestMemorystoreClient_GetRecommendations_NotSupported(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, err := NewClient(ctx, "test-project", "us-central1")
 	require.NoError(t, err)

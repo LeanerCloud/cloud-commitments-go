@@ -9,6 +9,7 @@ import (
 )
 
 func TestExtractPriceFromSKU_ValidPrice(t *testing.T) {
+	t.Parallel()
 	sku := &cloudbilling.Sku{
 		PricingInfo: []*cloudbilling.PricingInfo{
 			{
@@ -33,6 +34,7 @@ func TestExtractPriceFromSKU_ValidPrice(t *testing.T) {
 }
 
 func TestExtractPriceFromSKU_NoPricingInfo(t *testing.T) {
+	t.Parallel()
 	sku := &cloudbilling.Sku{
 		PricingInfo: []*cloudbilling.PricingInfo{},
 	}
@@ -43,6 +45,7 @@ func TestExtractPriceFromSKU_NoPricingInfo(t *testing.T) {
 }
 
 func TestExtractPriceFromSKU_NoPricingExpression(t *testing.T) {
+	t.Parallel()
 	sku := &cloudbilling.Sku{
 		PricingInfo: []*cloudbilling.PricingInfo{
 			{
@@ -57,6 +60,7 @@ func TestExtractPriceFromSKU_NoPricingExpression(t *testing.T) {
 }
 
 func TestExtractPriceFromSKU_NoTieredRates(t *testing.T) {
+	t.Parallel()
 	sku := &cloudbilling.Sku{
 		PricingInfo: []*cloudbilling.PricingInfo{
 			{
@@ -73,6 +77,7 @@ func TestExtractPriceFromSKU_NoTieredRates(t *testing.T) {
 }
 
 func TestExtractPriceFromSKU_NoUnitPrice(t *testing.T) {
+	t.Parallel()
 	sku := &cloudbilling.Sku{
 		PricingInfo: []*cloudbilling.PricingInfo{
 			{
@@ -93,6 +98,7 @@ func TestExtractPriceFromSKU_NoUnitPrice(t *testing.T) {
 }
 
 func TestExtractPricingFromSKUs_ValidPricing(t *testing.T) {
+	t.Parallel()
 	skus := []*cloudbilling.Sku{
 		{
 			Description: "Memorystore for Redis: M1 in us-central1",
@@ -150,6 +156,7 @@ func TestExtractPricingFromSKUs_ValidPricing(t *testing.T) {
 }
 
 func TestExtractPricingFromSKUs_NoMatchingSKUs(t *testing.T) {
+	t.Parallel()
 	skus := []*cloudbilling.Sku{
 		{
 			Description: "Memorystore for Redis: M2 in us-east1",

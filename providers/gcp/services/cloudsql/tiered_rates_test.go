@@ -18,6 +18,7 @@ func freeFirstTierSKU(id, description, usageType, region string, paidNanos int64
 }
 
 func TestExtractSQLPricing_FreeFirstTierUsesPaidTier(t *testing.T) {
+	t.Parallel()
 	const tier, region = "db-n1-standard-1", "us-central1"
 	od := freeFirstTierSKU("od", tier+" Cloud SQL", "OnDemand", region, 50000000)
 
@@ -36,6 +37,7 @@ func TestExtractSQLPricing_FreeFirstTierUsesPaidTier(t *testing.T) {
 }
 
 func TestExtractSQLPricing_AllTiersFreeIsSkipped(t *testing.T) {
+	t.Parallel()
 	sku := freeFirstTierSKU("od", "db-n1-standard-1 Cloud SQL", "OnDemand", "us-central1", 0)
 	price, _ := extractSQLPriceFromSKU(sku)
 	assert.Zero(t, price)

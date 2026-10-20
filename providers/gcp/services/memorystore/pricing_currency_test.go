@@ -26,6 +26,7 @@ func currencySKU(id, description, usageType, region, currency string, nanos int6
 }
 
 func TestGetRedisPricing_Currency(t *testing.T) {
+	t.Parallel()
 	const tier, region = "STANDARD_HA", "us-central1"
 	tests := []struct {
 		name         string
@@ -42,6 +43,7 @@ func TestGetRedisPricing_Currency(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			ctx := context.Background()
 			client, err := NewClient(ctx, "test-project", region)
 			require.NoError(t, err)

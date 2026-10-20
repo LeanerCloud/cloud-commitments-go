@@ -18,6 +18,7 @@ func (s *serviceIDSpy) ListSKUs(serviceID string) (*cloudbilling.ListSkusRespons
 
 // Regression for #380: the previous ID returned 404 from the live Billing API.
 func TestListSKUs_UsesMemorystoreForRedisServiceID(t *testing.T) {
+	t.Parallel()
 	client, err := NewClient(context.Background(), "test-project", "us-central1")
 	require.NoError(t, err)
 	spy := &serviceIDSpy{}

@@ -80,6 +80,7 @@ func (m *MockRecommenderIterator) Next() (*recommenderpb.Recommendation, error) 
 }
 
 func TestNewClient(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, err := NewClient(ctx, "test-project", "us-central1")
 
@@ -90,12 +91,14 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestCloudSQLClient_GetServiceType(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "project", "region")
 	assert.Equal(t, common.ServiceRelationalDB, client.GetServiceType())
 }
 
 func TestCloudSQLClient_GetRegion(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		region   string
@@ -121,6 +124,7 @@ func TestCloudSQLClient_GetRegion(t *testing.T) {
 	ctx := context.Background()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			client, _ := NewClient(ctx, "project", tt.region)
 			assert.Equal(t, tt.expected, client.GetRegion())
 		})
@@ -128,6 +132,7 @@ func TestCloudSQLClient_GetRegion(t *testing.T) {
 }
 
 func TestContains(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		slice    []string
@@ -168,6 +173,7 @@ func TestContains(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result := contains(tt.slice, tt.str)
 			assert.Equal(t, tt.expected, result)
 		})
@@ -175,6 +181,7 @@ func TestContains(t *testing.T) {
 }
 
 func TestSkuMatchesTier(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		sku      *cloudbilling.Sku
@@ -252,6 +259,7 @@ func TestSkuMatchesTier(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result := skuMatchesTier(tt.sku, tt.tier, tt.region)
 			assert.Equal(t, tt.expected, result)
 		})
@@ -259,6 +267,7 @@ func TestSkuMatchesTier(t *testing.T) {
 }
 
 func TestSQLPricingStructure(t *testing.T) {
+	t.Parallel()
 	pricing := SQLPricing{
 		HourlyRate:        0.05,
 		CommitmentPrice:   438.0,
@@ -284,6 +293,7 @@ func TestSQLPricingStructure(t *testing.T) {
 // Using an injected mock that always errors is deterministic regardless of
 // the host environment. See issue #251.
 func TestCloudSQLClient_ValidateOffering_TierListError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -307,6 +317,7 @@ func TestCloudSQLClient_ValidateOffering_TierListError(t *testing.T) {
 // the sqladmin API; PricingPlan "PACKAGE" is a legacy billing mode, not a
 // commitment indicator (10-L3).
 func TestCloudSQLClient_GetExistingCommitments_ReturnsEmpty(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -316,6 +327,7 @@ func TestCloudSQLClient_GetExistingCommitments_ReturnsEmpty(t *testing.T) {
 }
 
 func TestCloudSQLClient_GetValidResourceTypes_WithMock(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -340,6 +352,7 @@ func TestCloudSQLClient_GetValidResourceTypes_WithMock(t *testing.T) {
 }
 
 func TestCloudSQLClient_GetValidResourceTypes_Error(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -354,6 +367,7 @@ func TestCloudSQLClient_GetValidResourceTypes_Error(t *testing.T) {
 }
 
 func TestCloudSQLClient_GetValidResourceTypes_NoTiers(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -372,6 +386,7 @@ func TestCloudSQLClient_GetValidResourceTypes_NoTiers(t *testing.T) {
 }
 
 func TestCloudSQLClient_ValidateOffering_Valid(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -393,6 +408,7 @@ func TestCloudSQLClient_ValidateOffering_Valid(t *testing.T) {
 }
 
 func TestCloudSQLClient_ValidateOffering_Invalid(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -419,6 +435,7 @@ func TestCloudSQLClient_ValidateOffering_Invalid(t *testing.T) {
 // so PurchaseCommitment must return ErrCommitmentPurchaseNotSupported and MUST NOT
 // call any resource-creation API (it previously created a new billable SQL instance).
 func TestCloudSQLClient_PurchaseCommitment_NotSupported(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -494,6 +511,7 @@ func sqlMockSkus(tier, region string) []*cloudbilling.Sku {
 }
 
 func TestCloudSQLClient_GetOfferingDetails_WithMock(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -518,6 +536,7 @@ func TestCloudSQLClient_GetOfferingDetails_WithMock(t *testing.T) {
 }
 
 func TestCloudSQLClient_GetOfferingDetails_3Year(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -542,6 +561,7 @@ func TestCloudSQLClient_GetOfferingDetails_3Year(t *testing.T) {
 }
 
 func TestCloudSQLClient_GetOfferingDetails_NoPricing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -562,6 +582,7 @@ func TestCloudSQLClient_GetOfferingDetails_NoPricing(t *testing.T) {
 }
 
 func TestCloudSQLClient_GetOfferingDetails_APIError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -580,6 +601,7 @@ func TestCloudSQLClient_GetOfferingDetails_APIError(t *testing.T) {
 }
 
 func TestCloudSQLClient_SetterMethods(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -602,6 +624,7 @@ func TestCloudSQLClient_SetterMethods(t *testing.T) {
 //
 // This test FAILS on the pre-fix code where CommitmentPrice == 0.042 (per-hour).
 func TestGetSQLPricing_CommitmentPriceIsTermTotal(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
@@ -678,6 +701,7 @@ func TestGetSQLPricing_CommitmentPriceIsTermTotal(t *testing.T) {
 // quote derived from the catalog, in the catalog currency, for every term and
 // payment option.
 func TestCloudSQLClient_GetOfferingDetails_RecurringMonthlyCost(t *testing.T) {
+	t.Parallel()
 	const region = "europe-west1"
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", region)
@@ -692,6 +716,7 @@ func TestCloudSQLClient_GetOfferingDetails_RecurringMonthlyCost(t *testing.T) {
 	for term, months := range map[string]float64{"1yr": 12, "3yr": 36} {
 		for _, payment := range []string{"monthly", "no-upfront"} {
 			t.Run(term+"/"+payment, func(t *testing.T) {
+				t.Parallel()
 				rec := common.Recommendation{ResourceType: "db-n1-standard-1", Region: region, Term: term, PaymentOption: payment}
 				quote, err := client.GetOfferingDetails(ctx, rec)
 				require.NoError(t, err)
@@ -705,6 +730,7 @@ func TestCloudSQLClient_GetOfferingDetails_RecurringMonthlyCost(t *testing.T) {
 }
 
 func TestExtractSQLPricingFromSKUs_IgnoresLargerTierAndRegionlessSKUs(t *testing.T) {
+	t.Parallel()
 	sku := func(description string, regions []string, units int64) *cloudbilling.Sku {
 		return &cloudbilling.Sku{
 			Description:    description,
@@ -760,6 +786,7 @@ func (r *performanceRecommender) Close() error { return nil }
 // relabel its per-instance advice as a CUD. It fails loud instead of returning
 // an empty list that would read as "nothing to buy".
 func TestCloudSQLClient_GetRecommendations_NotSupported(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client, err := NewClient(ctx, "test-project", "us-central1")
 	require.NoError(t, err)

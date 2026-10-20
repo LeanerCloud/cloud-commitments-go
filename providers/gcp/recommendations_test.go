@@ -28,6 +28,7 @@ import (
 )
 
 func TestShouldIncludeService(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		params   common.RecommendationParams
@@ -82,6 +83,7 @@ func TestShouldIncludeService(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			result := shouldIncludeService(tt.params, tt.service)
 			assert.Equal(t, tt.expected, result)
 		})
@@ -89,6 +91,7 @@ func TestShouldIncludeService(t *testing.T) {
 }
 
 func TestRecommendationsClientAdapter_GetRecommendationsForService(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	adapter := &RecommendationsClientAdapter{
 		ctx:       ctx,
@@ -111,6 +114,7 @@ func TestRecommendationsClientAdapter_GetRecommendationsForService(t *testing.T)
 }
 
 func TestRecommendationsClientAdapter_GetAllRecommendations(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	adapter := &RecommendationsClientAdapter{
 		ctx:       ctx,
@@ -128,6 +132,7 @@ func TestRecommendationsClientAdapter_GetAllRecommendations(t *testing.T) {
 }
 
 func TestRecommendationsClientAdapter_Fields(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	adapter := &RecommendationsClientAdapter{
 		ctx:       ctx,
@@ -156,6 +161,7 @@ func TestRecommendationsClientAdapter_Fields(t *testing.T) {
 // and providers/aws/recommendations/client_test.go's
 // TestGetAllRecommendations_PropagatesContextCancellation.
 func TestRecommendationsClientAdapter_GetRecommendations_PropagatesContextCancellation(t *testing.T) {
+	t.Parallel()
 	adapter := &RecommendationsClientAdapter{
 		ctx:       context.Background(),
 		projectID: "test-project",
@@ -180,6 +186,7 @@ func TestRecommendationsClientAdapter_GetRecommendations_PropagatesContextCancel
 // matches ServiceCache and ServiceStorage like any other service. Neither is
 // part of the region fan-out (issues #78 and #294); this pins the helper only.
 func TestShouldIncludeService_Cache_Storage(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		params   common.RecommendationParams
@@ -225,6 +232,7 @@ func TestShouldIncludeService_Cache_Storage(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 			assert.Equal(t, tt.expected, shouldIncludeService(tt.params, tt.service))
 		})
 	}
@@ -271,6 +279,7 @@ func TestGCPRegionConcurrency(t *testing.T) {
 // SucceededAccountIDs, UpsertRecommendations evicted all previously collected
 // rows for it, and last_collection_error was cleared.
 func TestMergeRegionResults_AllAttemptedFailed(t *testing.T) {
+	t.Parallel()
 	rbacErr := errors.New("googleapi: Error 403: missing recommender.commitmentRecommendations.list")
 
 	results := map[string]regionResult{
@@ -290,6 +299,7 @@ func TestMergeRegionResults_AllAttemptedFailed(t *testing.T) {
 // partial-failure behavior: a single successful (region, service) call is
 // enough for the merge to return its recommendations with a nil error.
 func TestMergeRegionResults_PartialFailureStillSucceeds(t *testing.T) {
+	t.Parallel()
 	throttleErr := errors.New("googleapi: Error 429: quota exceeded")
 	computeRec := common.Recommendation{Service: common.ServiceCompute, Provider: common.ProviderGCP, Region: "us-central1"}
 
@@ -314,6 +324,7 @@ func TestMergeRegionResults_PartialFailureStillSucceeds(t *testing.T) {
 // fire when nothing was attempted (zero regions, or every service filtered
 // out by params): that case keeps the previous empty-success behavior.
 func TestMergeRegionResults_NoAttemptsIsNotAFailure(t *testing.T) {
+	t.Parallel()
 	recs, err := mergeRegionResults(nil, map[string]regionResult{})
 
 	require.NoError(t, err)
@@ -359,6 +370,7 @@ func deniedSDKAdapter(t *testing.T) (*RecommendationsClientAdapter, *deniedSDKCa
 }
 
 func TestGetAllRecommendations_TotalFailureKeepsRealCause(t *testing.T) {
+	t.Parallel()
 	adapter, calls := deniedSDKAdapter(t)
 
 	recs, err := adapter.GetAllRecommendations(context.Background())
@@ -377,6 +389,7 @@ func TestGetAllRecommendations_TotalFailureKeepsRealCause(t *testing.T) {
 // Storage (issue #78), Cloud SQL and Memorystore (issue #294) have no
 // project-scoped commitment recommender.
 func TestCollectRegion_DefaultFanOutIsComputeOnly(t *testing.T) {
+	t.Parallel()
 	adapter, calls := deniedSDKAdapter(t)
 
 	res := adapter.collectRegion(context.Background(), common.RecommendationParams{}, "us-central1")
@@ -389,6 +402,7 @@ func TestCollectRegion_DefaultFanOutIsComputeOnly(t *testing.T) {
 }
 
 func TestGetRecommendations_ExplicitCloudStorageIsNotSupported(t *testing.T) {
+	t.Parallel()
 	adapter, calls := deniedSDKAdapter(t)
 
 	recs, err := adapter.GetRecommendationsForService(context.Background(), common.ServiceStorage)
@@ -403,6 +417,7 @@ func TestGetRecommendations_ExplicitCloudStorageIsNotSupported(t *testing.T) {
 }
 
 func TestGetRecommendations_ExplicitCloudStoragePreCanceled(t *testing.T) {
+	t.Parallel()
 	adapter, calls := deniedSDKAdapter(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -417,6 +432,7 @@ func TestGetRecommendations_ExplicitCloudStoragePreCanceled(t *testing.T) {
 }
 
 func TestGetRecommendations_NilParamsBeforeCancellation(t *testing.T) {
+	t.Parallel()
 	adapter, calls := deniedSDKAdapter(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -431,6 +447,7 @@ func TestGetRecommendations_NilParamsBeforeCancellation(t *testing.T) {
 }
 
 func TestGetRecommendations_ExplicitCloudStorageIgnoresOccupiedSemaphore(t *testing.T) {
+	t.Parallel()
 	adapter, calls := deniedSDKAdapter(t)
 	sem := semaphore.NewWeighted(1)
 	require.NoError(t, sem.Acquire(context.Background(), 1))
