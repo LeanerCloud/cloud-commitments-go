@@ -20,7 +20,7 @@ type Registry struct {
 }
 
 // Factory is a function that creates a new provider instance.
-type Factory func(config *ProviderConfig) (Provider, error)
+type Factory func(config *Config) (Provider, error)
 
 // NewRegistry creates a new provider registry.
 func NewRegistry() *Registry {
@@ -72,7 +72,7 @@ func (r *Registry) GetProvider(name string) (Provider, error) {
 		return nil, fmt.Errorf("provider %s not registered", name)
 	}
 
-	provider, err := factory(&ProviderConfig{Name: name})
+	provider, err := factory(&Config{Name: name})
 	if err != nil {
 		return nil, fmt.Errorf("provider %s factory failed: %w", name, err)
 	}
@@ -80,7 +80,7 @@ func (r *Registry) GetProvider(name string) (Provider, error) {
 }
 
 // GetProviderWithConfig creates a provider instance with custom config.
-func (r *Registry) GetProviderWithConfig(name string, config *ProviderConfig) (Provider, error) {
+func (r *Registry) GetProviderWithConfig(name string, config *Config) (Provider, error) {
 	// Snapshot the factory under the lock, call it lock-free (see GetProvider).
 	r.mu.RLock()
 	factory, exists := r.providers[name]
@@ -129,7 +129,7 @@ func (r *Registry) GetAllProvidersWithErrors() ([]Provider, []error) {
 	providers := make([]Provider, 0, len(factories))
 	var errs []error
 	for _, name := range names {
-		provider, err := factories[name](&ProviderConfig{Name: name})
+		provider, err := factories[name](&Config{Name: name})
 		if err != nil {
 			errs = append(errs, fmt.Errorf("provider %q factory error: %w", name, err))
 			continue

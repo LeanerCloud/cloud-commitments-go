@@ -133,6 +133,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **`provider`:** `ProviderConfig` is renamed to `Config` (#39). `ProviderConfig` stays as a deprecated type alias, so existing consumers keep compiling; migrate to `provider.Config`. The provider modules move over once their pinned `pkg` version includes the rename.
 - **`common.HoursPerMonth`:** exported 730-hour average month (`HoursPerYear / 12`) next to `HoursPerYear`; the remaining bare 730 and 8760 literals in the aws and gcp providers use the shared constants (#109).
 - **`gcp`:** region-lookup permission errors are now classified by type only (googleapi 403 or gRPC `PermissionDenied`) through the shared `IsPermissionError`. gRPC `PermissionDenied` is now skipped with a warning like a 403, and an untyped error whose text merely contains "403" and "permission" now propagates instead of being skipped (#6).
 - **BREAKING `gcp`: stored contexts removed (#6).** `computeengine.NewClient`

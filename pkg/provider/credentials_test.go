@@ -139,7 +139,7 @@ func registerCredTestProvider(t *testing.T, name string, configured bool, creden
 	t.Helper()
 	GetRegistry().Unregister(name) // Clean up first
 
-	factory := func(config *ProviderConfig) (Provider, error) {
+	factory := func(config *Config) (Provider, error) {
 		return &MockProvider{
 			name:             config.Name,
 			displayName:      config.Name + " Provider",
@@ -313,7 +313,7 @@ func TestDetectAvailableProviders_FactoryErrorIsNotReportedAsMissingCredentials(
 	t.Parallel()
 	cause := errors.New("list projects: permission denied")
 	r := NewRegistry()
-	require.NoError(t, r.Register("gcp", func(*ProviderConfig) (Provider, error) { return nil, cause }))
+	require.NoError(t, r.Register("gcp", func(*Config) (Provider, error) { return nil, cause }))
 
 	providers, err := detectAvailableProviders(context.Background(), r)
 
@@ -336,8 +336,8 @@ func TestDetectAvailableProviders_NothingRegisteredReportsMissingCredentials(t *
 func TestDetectAvailableProviders_WorkingProviderSurvivesFactoryError(t *testing.T) {
 	t.Parallel()
 	r := NewRegistry()
-	require.NoError(t, r.Register("broken", func(*ProviderConfig) (Provider, error) { return nil, errors.New("boom") }))
-	require.NoError(t, r.Register("ok", func(c *ProviderConfig) (Provider, error) {
+	require.NoError(t, r.Register("broken", func(*Config) (Provider, error) { return nil, errors.New("boom") }))
+	require.NoError(t, r.Register("ok", func(c *Config) (Provider, error) {
 		return &MockProvider{name: c.Name, configured: true, credentialsValid: true}, nil
 	}))
 
@@ -352,7 +352,7 @@ func TestDetectAvailableProviders_InvalidCredentialsAreReported(t *testing.T) {
 	t.Parallel()
 	cause := errors.New("credentials expired")
 	r := NewRegistry()
-	require.NoError(t, r.Register("aws", func(c *ProviderConfig) (Provider, error) {
+	require.NoError(t, r.Register("aws", func(c *Config) (Provider, error) {
 		return &MockProvider{name: c.Name, configured: true, credentialsError: cause}, nil
 	}))
 
@@ -372,8 +372,8 @@ func TestDetectAvailableProviders_LogsFactoryErrorsWhenAnotherProviderSucceeds(t
 	defer log.SetOutput(os.Stderr)
 
 	r := NewRegistry()
-	require.NoError(t, r.Register("gcp", func(*ProviderConfig) (Provider, error) { return nil, errors.New("no ADC") }))
-	require.NoError(t, r.Register("aws", func(c *ProviderConfig) (Provider, error) {
+	require.NoError(t, r.Register("gcp", func(*Config) (Provider, error) { return nil, errors.New("no ADC") }))
+	require.NoError(t, r.Register("aws", func(c *Config) (Provider, error) {
 		return &MockProvider{name: c.Name, configured: true, credentialsValid: true}, nil
 	}))
 
@@ -388,7 +388,7 @@ func TestDetectAvailableProviders_ErrorOrderIsStable(t *testing.T) {
 	t.Parallel()
 	r := NewRegistry()
 	for _, name := range []string{"zeta", "alpha", "mid"} {
-		require.NoError(t, r.Register(name, func(*ProviderConfig) (Provider, error) {
+		require.NoError(t, r.Register(name, func(*Config) (Provider, error) {
 			return nil, errors.New("boom")
 		}))
 	}
