@@ -38,6 +38,7 @@ func listingClient(ris ...types.ReservedInstances) *Client {
 }
 
 func TestGetExistingCommitments_ReportsPlatformTenancyScope(t *testing.T) {
+	t.Parallel()
 	client := listingClient(
 		sdkRI("ri-regional", "Linux/UNIX", types.TenancyDefault, types.ScopeRegional, nil),
 		sdkRI("ri-zonal", "Windows", types.TenancyDedicated, types.ScopeAvailabilityZone, aws.String("us-east-1a")),
@@ -74,6 +75,7 @@ func parserRec(scope, az string) common.Recommendation {
 }
 
 func TestListingFeedsDuplicateChecker(t *testing.T) {
+	t.Parallel()
 	linuxRegional := sdkRI("ri-1", "Linux/UNIX", types.TenancyDefault, types.ScopeRegional, nil)
 	windowsRegional := sdkRI("ri-2", "Windows", types.TenancyDefault, types.ScopeRegional, nil)
 	linuxZonal := sdkRI("ri-3", "Linux/UNIX", types.TenancyDefault, types.ScopeAvailabilityZone, aws.String("us-east-1a"))

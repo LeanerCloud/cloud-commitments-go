@@ -450,6 +450,7 @@ func TestClient_PurchaseCommitment(t *testing.T) {
 }
 
 func TestClient_PurchaseCommitment_UpfrontCost(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		name  string
 		price *float32
@@ -965,6 +966,7 @@ func TestClient_PurchaseCommitment_NameTagInCreateTagsRequest(t *testing.T) {
 // populates Platform from the recommendation payload; an empty value signals a
 // malformed rec, not a value to be fabricated.
 func TestBuildEC2OfferingQuery_EmptyPlatformErrors(t *testing.T) {
+	t.Parallel()
 	rec := common.Recommendation{
 		ResourceType:  "m5.large",
 		PaymentOption: "all-upfront",
@@ -985,6 +987,7 @@ func TestBuildEC2OfferingQuery_EmptyPlatformErrors(t *testing.T) {
 
 // TestBuildEC2OfferingQuery_ValidPlatform asserts the happy path still works.
 func TestBuildEC2OfferingQuery_ValidPlatform(t *testing.T) {
+	t.Parallel()
 	rec := common.Recommendation{
 		ResourceType:  "m5.large",
 		PaymentOption: "all-upfront",

@@ -36,6 +36,7 @@ func (r *realPurchaseAPI) PurchaseReservedInstancesOffering(ctx context.Context,
 // purchase API has no ClientToken, so a second SDK-level attempt buys a second,
 // untagged Reserved Instance. Exactly one purchase request may reach AWS.
 func TestPurchaseCommitment_LostResponseIsNotRetriedBySDK(t *testing.T) {
+	t.Parallel()
 	var purchases atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -77,6 +78,7 @@ func TestPurchaseCommitment_LostResponseIsNotRetriedBySDK(t *testing.T) {
 // ReservedInstancesId means the buy most likely happened, so it must not read
 // as a definite failure that a caller may safely retry.
 func TestPurchaseCommitment_EmptyResponseIsOutcomeUnknown(t *testing.T) {
+	t.Parallel()
 	m := &MockEC2Client{}
 	c := &Client{client: m, region: "us-east-1"}
 	m.On("DescribeReservedInstancesOfferings", mock.Anything, mock.Anything).
