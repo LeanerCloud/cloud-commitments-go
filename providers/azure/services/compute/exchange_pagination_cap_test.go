@@ -22,6 +22,7 @@ func (p *countingExchangeablePager) NextPage(_ context.Context) (armreservations
 }
 
 func TestListExchangeableReservations_PageCapReturnsError(t *testing.T) {
+	t.Parallel()
 	const limit = 1000
 	pager := &countingExchangeablePager{limit: limit}
 	client := newClient()
@@ -34,6 +35,7 @@ func TestListExchangeableReservations_PageCapReturnsError(t *testing.T) {
 }
 
 func TestListExchangeableReservations_CancelledContextReturnsContextError(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	pager := &countingExchangeablePager{limit: 1000}
@@ -49,6 +51,7 @@ func TestListExchangeableReservations_CancelledContextReturnsContextError(t *tes
 const exchangeCap = 50
 
 func TestListExchangeableReservations_CapIsExact(t *testing.T) {
+	t.Parallel()
 	atCap := &countingExchangeablePager{limit: exchangeCap}
 	client := newClient()
 	client.SetExchangeablePager(atCap)
@@ -81,6 +84,7 @@ func (p *cancelOnSecondCallPager) NextPage(_ context.Context) (armreservations.R
 }
 
 func TestListExchangeableReservations_CancelMidWalkReturnsContextError(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	pager := &cancelOnSecondCallPager{cancel: cancel}

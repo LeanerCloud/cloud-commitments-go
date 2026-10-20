@@ -11,6 +11,7 @@ import (
 )
 
 func TestSanitizeDisplayName(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name  string
 		input string
@@ -87,6 +88,7 @@ var fixedTime = time.Date(2026, 5, 22, 19, 0, 0, 0, time.UTC)
 var fixedRand = []byte{0xa1, 0xb2, 0xc3, 0xd4}
 
 func TestBuildDisplayName_HappyPath(t *testing.T) {
+	t.Parallel()
 	got := BuildDisplayName(DisplayNameFields{
 		Service:      "vm",
 		Region:       "eastus",
@@ -104,6 +106,7 @@ func TestBuildDisplayName_HappyPath(t *testing.T) {
 }
 
 func TestBuildDisplayName_PerServiceExamples(t *testing.T) {
+	t.Parallel()
 	// One realistic example per service — the call sites use these
 	// service codes. Test catches accidental swaps in the literal strings.
 	cases := []struct {
@@ -138,6 +141,7 @@ func TestBuildDisplayName_PerServiceExamples(t *testing.T) {
 }
 
 func TestBuildDisplayName_LengthFitDropsRandomFirst(t *testing.T) {
+	t.Parallel()
 	// Long but realistic input: huge SKU + long region. Full format is
 	// ~75 chars; builder must drop the random suffix first, then the
 	// timestamp, keeping payment + the required segments.
@@ -162,6 +166,7 @@ func TestBuildDisplayName_LengthFitDropsRandomFirst(t *testing.T) {
 }
 
 func TestBuildDisplayName_LengthFitDropsTimestampNext(t *testing.T) {
+	t.Parallel()
 	// Push beyond just dropping random — also need to drop timestamp.
 	// Use a long SKU that pushes the total above 64 even without random.
 	got := BuildDisplayName(DisplayNameFields{
@@ -185,6 +190,7 @@ func TestBuildDisplayName_LengthFitDropsTimestampNext(t *testing.T) {
 }
 
 func TestBuildDisplayName_LengthFitDropsPaymentLast(t *testing.T) {
+	t.Parallel()
 	// Push beyond ts+random drops so paymt must also go, but keep total
 	// short enough that all required segments still survive.
 	// Sizes: "search"(6) + "germanywestcentral"(18) + SKU(25) + "9999x"(5)
@@ -211,6 +217,7 @@ func TestBuildDisplayName_LengthFitDropsPaymentLast(t *testing.T) {
 }
 
 func TestBuildDisplayName_LengthFitTruncatesRequiredAsLastResort(t *testing.T) {
+	t.Parallel()
 	// Even the required segments alone exceed 64. Builder must still
 	// produce a ≤64-char allowlist-conformant string rather than panicking
 	// or returning a too-long value.
@@ -229,6 +236,7 @@ func TestBuildDisplayName_LengthFitTruncatesRequiredAsLastResort(t *testing.T) {
 }
 
 func TestBuildDisplayName_PaymentNormalization(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in   string
 		want string
@@ -252,6 +260,7 @@ func TestBuildDisplayName_PaymentNormalization(t *testing.T) {
 }
 
 func TestBuildDisplayName_PaymentNormalizationVisibleInOutput(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		paymt   string
 		wantSeg string
@@ -280,6 +289,7 @@ func TestBuildDisplayName_PaymentNormalizationVisibleInOutput(t *testing.T) {
 }
 
 func TestBuildDisplayName_TermNormalization(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in   string
 		want string
@@ -301,6 +311,7 @@ func TestBuildDisplayName_TermNormalization(t *testing.T) {
 }
 
 func TestBuildDisplayName_SanitizesDirtyInput(t *testing.T) {
+	t.Parallel()
 	// Unexpected chars in any field must be sanitized to underscores.
 	got := BuildDisplayName(DisplayNameFields{
 		Service:      "v m", // space
@@ -320,6 +331,7 @@ func TestBuildDisplayName_SanitizesDirtyInput(t *testing.T) {
 }
 
 func TestBuildDisplayName_EmbeddedDashInSegmentBecomesUnderscore(t *testing.T) {
+	t.Parallel()
 	// A SKU containing a dash would create ambiguity with the join
 	// separator. The builder collapses internal dashes to underscores.
 	got := BuildDisplayName(DisplayNameFields{
@@ -339,6 +351,7 @@ func TestBuildDisplayName_EmbeddedDashInSegmentBecomesUnderscore(t *testing.T) {
 }
 
 func TestBuildDisplayName_Deterministic(t *testing.T) {
+	t.Parallel()
 	// Same fields + same Now + same randSource -> identical output.
 	f := DisplayNameFields{
 		Service:      "vm",
@@ -355,6 +368,7 @@ func TestBuildDisplayName_Deterministic(t *testing.T) {
 }
 
 func TestBuildDisplayName_DifferentRandsProduceDifferentOutputs(t *testing.T) {
+	t.Parallel()
 	base := DisplayNameFields{
 		Service:      "vm",
 		Region:       "eastus",
@@ -372,6 +386,7 @@ func TestBuildDisplayName_DifferentRandsProduceDifferentOutputs(t *testing.T) {
 }
 
 func TestBuildDisplayName_ProductionUsesCryptoRand(t *testing.T) {
+	t.Parallel()
 	// No randSource set: builder reads from crypto/rand. The two calls
 	// should differ in their 8-hex suffix with extremely high probability
 	// (2^-32 collision), and both should still conform to the allowlist.
@@ -393,6 +408,7 @@ func TestBuildDisplayName_ProductionUsesCryptoRand(t *testing.T) {
 }
 
 func TestBuildDisplayName_EmptyPaymentSegmentIsSkipped(t *testing.T) {
+	t.Parallel()
 	got := BuildDisplayName(DisplayNameFields{
 		Service:      "vm",
 		Region:       "eastus",
@@ -421,6 +437,7 @@ func TestBuildDisplayName_EmptyPaymentSegmentIsSkipped(t *testing.T) {
 // suffix AND the 15-char timestamp; the result must end with "-allup" and
 // contain NO trace of the timestamp digits.
 func TestBuildDisplayName_DropLoopActuallyDropsTimestamp(t *testing.T) {
+	t.Parallel()
 	got := BuildDisplayName(DisplayNameFields{
 		Service:      "vm",
 		Region:       "germanywestcentral", // 18 chars
@@ -448,6 +465,7 @@ func TestBuildDisplayName_DropLoopActuallyDropsTimestamp(t *testing.T) {
 // segment too (keep=0, required-only). The broken loop again would short-
 // circuit at iteration 1 and mid-truncate, leaving partial payment bytes.
 func TestBuildDisplayName_DropLoopActuallyDropsPayment(t *testing.T) {
+	t.Parallel()
 	got := BuildDisplayName(DisplayNameFields{
 		Service:      "vm",
 		Region:       "germanywestcentral",
@@ -473,6 +491,7 @@ func TestBuildDisplayName_DropLoopActuallyDropsPayment(t *testing.T) {
 // a zero-value Now must not emit the placeholder "00010101T000000" segment.
 // The builder substitutes time.Now() so the timestamp is always meaningful.
 func TestBuildDisplayName_ZeroNowReplacedByWallClock(t *testing.T) {
+	t.Parallel()
 	got := BuildDisplayName(DisplayNameFields{
 		Service:      "vm",
 		Region:       "eastus",
@@ -491,6 +510,7 @@ func TestBuildDisplayName_ZeroNowReplacedByWallClock(t *testing.T) {
 }
 
 func TestBuildDisplayName_TimestampUTC(t *testing.T) {
+	t.Parallel()
 	// Even if the caller passes a local-zone time, the builder must
 	// normalize to UTC so identifiers are comparable across hosts.
 	loc, err := time.LoadLocation("America/Los_Angeles")

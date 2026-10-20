@@ -23,6 +23,7 @@ func (p *advisorProbePager) NextPage(context.Context) (armadvisor.Recommendation
 }
 
 func TestCollectAdvisorRecommendationsHoldsSharedSlot(t *testing.T) {
+	t.Parallel()
 	p, ctx := slottest.New(t)
 	a := &RecommendationsClientAdapter{subscriptionID: "sub"}
 	_, _ = a.collectAdvisorRecommendations(ctx, common.RecommendationParams{}, &advisorProbePager{probe: p})

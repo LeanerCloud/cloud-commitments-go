@@ -28,6 +28,7 @@ type purchaser interface {
 const purchaseBodyGolden = `{"location":"eastus","properties":{"appliedScopeType":"Shared","billingPlan":"Monthly","billingScopeId":"/subscriptions/sub","quantity":2,"renew":false,"reservedResourceType":"%s","term":"%s"},"sku":{"name":"GP_Gen5_8"},"tags":{"purchase-automation":"cudly-cli"}}`
 
 func TestPurchaseBodies(t *testing.T) {
+	t.Parallel()
 	cred := &fake.TokenCredential{}
 	services := []struct {
 		name, resourceType string

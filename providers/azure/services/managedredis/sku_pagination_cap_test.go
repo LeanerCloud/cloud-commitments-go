@@ -45,6 +45,7 @@ func capacityPage(n int) armredis.ClientListBySubscriptionResponse {
 }
 
 func TestCollectSKUsFromPager_PageCap(t *testing.T) {
+	t.Parallel()
 	t.Run("endless pager errors at the cap", func(t *testing.T) {
 		pager := &fakeCachesPager{limit: 10000}
 		skus, err := collectSKUsFromPager(context.Background(), pager)

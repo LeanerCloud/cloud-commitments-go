@@ -22,6 +22,7 @@ func (p *countingReservationsPager) NextPage(_ context.Context) (armconsumption.
 }
 
 func TestGetExistingCommitments_PageCapReturnsError(t *testing.T) {
+	t.Parallel()
 	pager := &countingReservationsPager{limit: 1000}
 	client := NewClient(nil, "test-subscription", "eastus")
 	client.SetReservationsPager(pager)
@@ -33,6 +34,7 @@ func TestGetExistingCommitments_PageCapReturnsError(t *testing.T) {
 }
 
 func TestGetExistingCommitments_CancelledContextReturnsContextError(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	pager := &countingReservationsPager{limit: 1000}
@@ -45,6 +47,7 @@ func TestGetExistingCommitments_CancelledContextReturnsContextError(t *testing.T
 }
 
 func TestGetExistingCommitments_CapIsExact(t *testing.T) {
+	t.Parallel()
 	atCap := &countingReservationsPager{limit: maxReservationsPages}
 	client := NewClient(nil, "test-subscription", "eastus")
 	client.SetReservationsPager(atCap)
@@ -76,6 +79,7 @@ func (p *cancelOnSecondCallPager) NextPage(_ context.Context) (armconsumption.Re
 }
 
 func TestGetExistingCommitments_CancelMidWalkReturnsContextError(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	pager := &cancelOnSecondCallPager{cancel: cancel}

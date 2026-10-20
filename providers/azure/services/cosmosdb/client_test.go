@@ -261,6 +261,7 @@ func createOnlyOtherSKUCosmosPricingResponse() string {
 }
 
 func TestNewClient(t *testing.T) {
+	t.Parallel()
 	client := NewClient(nil, "test-subscription", "eastus")
 
 	require.NotNil(t, client)
@@ -270,6 +271,7 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestNewClientWithHTTP(t *testing.T) {
+	t.Parallel()
 	mockHTTP := &MockHTTPClient{}
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
 
@@ -280,11 +282,13 @@ func TestNewClientWithHTTP(t *testing.T) {
 }
 
 func TestCosmosDBClient_GetServiceType(t *testing.T) {
+	t.Parallel()
 	client := NewClient(nil, "sub", "region")
 	assert.Equal(t, common.ServiceNoSQL, client.GetServiceType())
 }
 
 func TestCosmosDBClient_GetRegion(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		region   string
@@ -316,6 +320,7 @@ func TestCosmosDBClient_GetRegion(t *testing.T) {
 }
 
 func TestCosmosDBClient_Fields(t *testing.T) {
+	t.Parallel()
 	client := NewClient(nil, "test-sub", "northeurope")
 
 	assert.Equal(t, "test-sub", client.subscriptionID)
@@ -324,6 +329,7 @@ func TestCosmosDBClient_Fields(t *testing.T) {
 }
 
 func TestCosmosDBClient_GetOfferingDetails_WithMock(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockHTTP := &MockHTTPClient{}
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
@@ -351,6 +357,7 @@ func TestCosmosDBClient_GetOfferingDetails_WithMock(t *testing.T) {
 }
 
 func TestCosmosDBClient_GetOfferingDetails_3YearTerm(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockHTTP := &MockHTTPClient{}
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
@@ -377,6 +384,7 @@ func TestCosmosDBClient_GetOfferingDetails_3YearTerm(t *testing.T) {
 }
 
 func TestCosmosDBClient_GetOfferingDetails_NoUpfront(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockHTTP := &MockHTTPClient{}
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
@@ -403,6 +411,7 @@ func TestCosmosDBClient_GetOfferingDetails_NoUpfront(t *testing.T) {
 }
 
 func TestCosmosDBClient_GetOfferingDetails_APIError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockHTTP := &MockHTTPClient{}
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
@@ -427,6 +436,7 @@ func TestCosmosDBClient_GetOfferingDetails_APIError(t *testing.T) {
 }
 
 func TestCosmosDBClient_GetOfferingDetails_NoPricing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockHTTP := &MockHTTPClient{}
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
@@ -456,6 +466,7 @@ func TestCosmosDBClient_GetOfferingDetails_NoPricing(t *testing.T) {
 // (issue #1020 H4). Pre-fix this would have silently surfaced a fabricated
 // TotalCost/SavingsPercentage as a real quote.
 func TestCosmosDBClient_GetOfferingDetails_NoReservationPricing(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	onDemandOnly := `{
@@ -498,6 +509,7 @@ func TestCosmosDBClient_GetOfferingDetails_NoReservationPricing(t *testing.T) {
 // (100RU), the quoted price must come from the requested SKU, not whichever
 // item the extraction loop happens to see first.
 func TestCosmosDBClient_GetOfferingDetails_MixedSKUsPicksRequestedSKU(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockHTTP := &MockHTTPClient{}
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
@@ -527,6 +539,7 @@ func TestCosmosDBClient_GetOfferingDetails_MixedSKUsPicksRequestedSKU(t *testing
 // the one requested, GetOfferingDetails returns an error rather than
 // fabricating a quote from the first item present (#126).
 func TestCosmosDBClient_GetOfferingDetails_NoMatchingSKU_FailsClosed(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockHTTP := &MockHTTPClient{}
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
@@ -552,6 +565,7 @@ func TestCosmosDBClient_GetOfferingDetails_NoMatchingSKU_FailsClosed(t *testing.
 // outbound Retail Prices API request scopes the query to the requested SKU
 // via armSkuName, matching the sibling pricing functions (#126).
 func TestCosmosDBClient_GetOfferingDetails_RequestsSKUFilter(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockHTTP := &MockHTTPClient{}
 	client := NewClientWithHTTP(nil, "test-subscription", "eastus", mockHTTP)
@@ -577,6 +591,7 @@ func TestCosmosDBClient_GetOfferingDetails_RequestsSKUFilter(t *testing.T) {
 }
 
 func TestCosmosDBClient_GetExistingCommitments_Empty(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client := NewClient(nil, "test-subscription", "eastus")
 
@@ -589,6 +604,7 @@ func TestCosmosDBClient_GetExistingCommitments_Empty(t *testing.T) {
 }
 
 func TestCosmosPricingStructure(t *testing.T) {
+	t.Parallel()
 	pricing := CosmosPricing{
 		HourlyRate:       0.10,
 		ReservationPrice: 876.0,
@@ -601,6 +617,7 @@ func TestCosmosPricingStructure(t *testing.T) {
 }
 
 func TestCosmosDBClient_GetRecommendations_WithMockPager(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client := NewClient(nil, "test-subscription", "eastus")
 
@@ -625,6 +642,7 @@ func TestCosmosDBClient_GetRecommendations_WithMockPager(t *testing.T) {
 }
 
 func TestCosmosDBClient_GetRecommendations_PagerError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client := NewClient(nil, "test-subscription", "eastus")
 
@@ -641,6 +659,7 @@ func TestCosmosDBClient_GetRecommendations_PagerError(t *testing.T) {
 }
 
 func TestCosmosDBClient_GetRecommendations_MultiplePages(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client := NewClient(nil, "test-subscription", "eastus")
 
@@ -668,6 +687,7 @@ func TestCosmosDBClient_GetRecommendations_MultiplePages(t *testing.T) {
 }
 
 func TestCosmosDBClient_GetExistingCommitments_WithMockPager(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client := NewClient(nil, "test-subscription", "eastus")
 
@@ -701,6 +721,7 @@ func TestCosmosDBClient_GetExistingCommitments_WithMockPager(t *testing.T) {
 }
 
 func TestCosmosDBClient_GetExistingCommitments_CosmosCommitments(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client := NewClient(nil, "test-subscription", "eastus")
 
@@ -739,6 +760,7 @@ func TestCosmosDBClient_GetExistingCommitments_CosmosCommitments(t *testing.T) {
 // usage API, one row per reservation per usage day. A pager returning three
 // rows for the same ReservationID must surface as a single commitment.
 func TestCosmosDBClient_GetExistingCommitments_DedupesDailyUsageRows(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client := NewClient(nil, "test-subscription", "eastus")
 
@@ -770,6 +792,7 @@ func TestCosmosDBClient_GetExistingCommitments_DedupesDailyUsageRows(t *testing.
 }
 
 func TestCosmosDBClient_GetExistingCommitments_PagerError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client := NewClient(nil, "test-subscription", "eastus")
 
@@ -787,6 +810,7 @@ func TestCosmosDBClient_GetExistingCommitments_PagerError(t *testing.T) {
 }
 
 func TestCosmosDBClient_GetExistingCommitments_NilProperties(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client := NewClient(nil, "test-subscription", "eastus")
 
@@ -812,6 +836,7 @@ func TestCosmosDBClient_GetExistingCommitments_NilProperties(t *testing.T) {
 }
 
 func TestCosmosDBClient_GetValidResourceTypes_WithMockPager(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client := NewClient(nil, "test-subscription", "eastus")
 
@@ -847,6 +872,7 @@ func TestCosmosDBClient_GetValidResourceTypes_WithMockPager(t *testing.T) {
 }
 
 func TestCosmosDBClient_GetValidResourceTypes_PagerError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client := NewClient(nil, "test-subscription", "eastus")
 
@@ -866,6 +892,7 @@ func TestCosmosDBClient_GetValidResourceTypes_PagerError(t *testing.T) {
 }
 
 func TestCosmosDBClient_GetValidResourceTypes_NoCapabilities(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client := NewClient(nil, "test-subscription", "eastus")
 
@@ -896,6 +923,7 @@ func TestCosmosDBClient_GetValidResourceTypes_NoCapabilities(t *testing.T) {
 }
 
 func TestCosmosDBClient_ValidateOffering_Valid(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client := NewClient(nil, "test-subscription", "eastus")
 
@@ -929,6 +957,7 @@ func TestCosmosDBClient_ValidateOffering_Valid(t *testing.T) {
 }
 
 func TestCosmosDBClient_ValidateOffering_Invalid(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	client := NewClient(nil, "test-subscription", "eastus")
 
@@ -963,6 +992,7 @@ func TestCosmosDBClient_ValidateOffering_Invalid(t *testing.T) {
 }
 
 func TestCosmosDBClient_ValidateOffering_CaseInsensitive(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 
 	capability := "EnableCassandra"
@@ -1004,6 +1034,7 @@ func TestCosmosDBClient_ValidateOffering_CaseInsensitive(t *testing.T) {
 }
 
 func TestCosmosDBClient_SetterMethods(t *testing.T) {
+	t.Parallel()
 	client := NewClient(nil, "test-sub", "eastus")
 
 	// Test SetRecommendationsPager
@@ -1044,6 +1075,7 @@ func calcPriceRespJSON(orderID string) string {
 }
 
 func TestCosmosDBClient_PurchaseCommitment_Success(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockHTTP := &MockHTTPClient{}
 	mockCred := &MockTokenCredential{token: "test-token"}
@@ -1082,6 +1114,7 @@ func TestCosmosDBClient_PurchaseCommitment_Success(t *testing.T) {
 }
 
 func TestCosmosDBClient_PurchaseCommitment_3YearTerm(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockHTTP := &MockHTTPClient{}
 	mockCred := &MockTokenCredential{token: "test-token"}
@@ -1118,6 +1151,7 @@ func TestCosmosDBClient_PurchaseCommitment_3YearTerm(t *testing.T) {
 }
 
 func TestCosmosDBClient_PurchaseCommitment_Accepted(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockHTTP := &MockHTTPClient{}
 	mockCred := &MockTokenCredential{token: "test-token"}
@@ -1153,6 +1187,7 @@ func TestCosmosDBClient_PurchaseCommitment_Accepted(t *testing.T) {
 }
 
 func TestCosmosDBClient_PurchaseCommitment_TokenError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockHTTP := &MockHTTPClient{}
 	mockCred := &MockTokenCredential{err: errors.New("token error")}
@@ -1172,6 +1207,7 @@ func TestCosmosDBClient_PurchaseCommitment_TokenError(t *testing.T) {
 }
 
 func TestCosmosDBClient_PurchaseCommitment_HTTPError(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockHTTP := &MockHTTPClient{}
 	mockCred := &MockTokenCredential{token: "test-token"}
@@ -1195,6 +1231,7 @@ func TestCosmosDBClient_PurchaseCommitment_HTTPError(t *testing.T) {
 }
 
 func TestCosmosDBClient_PurchaseCommitment_BadStatus(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockHTTP := &MockHTTPClient{}
 	mockCred := &MockTokenCredential{token: "test-token"}
@@ -1236,6 +1273,7 @@ func TestCosmosDBClient_PurchaseCommitment_BadStatus(t *testing.T) {
 // the call would succeed without the tag and re-driven purchases would
 // duplicate reservations server-side.
 func TestCosmosDBClient_PurchaseCommitment_TagInjection(t *testing.T) {
+	t.Parallel()
 	const orderID = "cosmos-tag-test"
 	const source = common.PurchaseSourceWeb
 
@@ -1286,6 +1324,7 @@ func TestCosmosDBClient_PurchaseCommitment_TagInjection(t *testing.T) {
 // ReservationBillingPlan value in the purchase body rather than silently
 // defaulting to Azure's Upfront behavior for a no-upfront/monthly rec.
 func TestCosmosDBClient_PurchaseCommitment_BillingPlan(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name          string
 		paymentOption string
@@ -1364,6 +1403,7 @@ func TestCosmosDBClient_PurchaseCommitment_BillingPlan(t *testing.T) {
 // signal CUDly controls -- proceeding without it would allow a re-driven
 // purchase to create a duplicate reservation.
 func TestCosmosDBClient_PurchaseCommitment_RequiresSource(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockHTTP := &MockHTTPClient{}
 	mockCred := &MockTokenCredential{token: "test-token"}
@@ -1380,6 +1420,7 @@ func TestCosmosDBClient_PurchaseCommitment_RequiresSource(t *testing.T) {
 // TestCosmosDBClient_ConvertAzureCosmosRecommendation_NilGuards pins the
 // new contract: unusable SDK payloads produce a nil *Recommendation.
 func TestCosmosDBClient_ConvertAzureCosmosRecommendation_NilGuards(t *testing.T) {
+	t.Parallel()
 	client := NewClient(nil, "test-subscription", "eastus")
 	assert.Nil(t, client.convertAzureCosmosRecommendation(context.Background(), nil))
 }
@@ -1390,6 +1431,7 @@ func TestCosmosDBClient_ConvertAzureCosmosRecommendation_NilGuards(t *testing.T)
 // (zero-account subscription) is the "no signal" baseline — APIType
 // stays empty.
 func TestCosmosDBClient_ConvertAzureCosmosRecommendation_PopulatesAllFields(t *testing.T) {
+	t.Parallel()
 	client := NewClient(nil, "test-subscription", "eastus")
 	// Inject empty mock pager so cachedAPIType doesn't make a real call.
 	client.SetCosmosAccountsPager(&MockCosmosAccountsPager{})
@@ -1434,6 +1476,7 @@ func TestCosmosDBClient_ConvertAzureCosmosRecommendation_PopulatesAllFields(t *t
 // account, mapping the account.Kind + Capabilities into the canonical
 // API string.
 func TestCosmosDBClient_ConvertAzureCosmosRecommendation_PopulatesAPIType(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		account     *armcosmos.DatabaseAccountGetResults
@@ -1522,6 +1565,7 @@ func TestCosmosDBClient_ConvertAzureCosmosRecommendation_PopulatesAPIType(t *tes
 // asserts that a multi-API-type subscription leaves APIType empty —
 // guessing would produce wrong UI rendering.
 func TestCosmosDBClient_ConvertAzureCosmosRecommendation_AmbiguousAPIType(t *testing.T) {
+	t.Parallel()
 	client := NewClient(nil, "test-subscription", "eastus")
 	client.SetCosmosAccountsPager(&MockCosmosAccountsPager{
 		pages: []armcosmos.DatabaseAccountsClientListResponse{
@@ -1553,6 +1597,7 @@ func TestCosmosDBClient_ConvertAzureCosmosRecommendation_AmbiguousAPIType(t *tes
 // — APIType just stays empty and the rest of Details is populated as
 // before.
 func TestCosmosDBClient_ConvertAzureCosmosRecommendation_PagerErrorFallsBack(t *testing.T) {
+	t.Parallel()
 	client := NewClient(nil, "test-subscription", "eastus")
 	client.SetCosmosAccountsPager(&MockCosmosAccountsPager{
 		err: errors.New("transient Azure API error"),
@@ -1575,6 +1620,7 @@ func TestCosmosDBClient_ConvertAzureCosmosRecommendation_PagerErrorFallsBack(t *
 // TestCosmosDBClient_CachedAPIType_FetchedOnce pins the perf invariant:
 // many converter calls share a single accounts-listing fetch.
 func TestCosmosDBClient_CachedAPIType_FetchedOnce(t *testing.T) {
+	t.Parallel()
 	client := NewClient(nil, "test-subscription", "eastus")
 	mockPager := &MockCosmosAccountsPager{
 		pages: []armcosmos.DatabaseAccountsClientListResponse{
@@ -1606,6 +1652,7 @@ func ptrStr(s string) *string { return &s }
 // strings without a numeric prefix. The parser extracts leading digits
 // as ThroughputUnits and leaves the field at zero on any other shape.
 func TestDetailsFromCosmosSKU(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name       string
 		sku        string
@@ -1633,6 +1680,7 @@ func TestDetailsFromCosmosSKU(t *testing.T) {
 // against regression: displayName in the calculatePrice body must match
 // [A-Za-z0-9_-]{1,64} (Azure rejects DisplayNameInvalid otherwise).
 func TestCosmosDBClient_PurchaseCommitment_DisplayNameConformsToAzureAllowlist(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	mockHTTP := &MockHTTPClient{}
 	mockCred := &MockTokenCredential{token: "test-token"}
@@ -1696,6 +1744,7 @@ func TestCosmosDBClient_PurchaseCommitment_DisplayNameConformsToAzureAllowlist(t
 // hand-written string "CosmosDb" (lowercase d) which is not a valid resourceType
 // enum member, causing the API to return no recommendations.
 func TestReservationResourceTypeCosmosDB_IsCanonical(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "CosmosDB", reservationResourceTypeCosmosDB,
 		"Cosmos DB filter value must be the Azure REST API canonical enum \"CosmosDB\"; "+
 			"\"CosmosDb\" (pre-fix) is not a valid resourceType")
@@ -1705,6 +1754,7 @@ func TestReservationResourceTypeCosmosDB_IsCanonical(t *testing.T) {
 // httpClient falls back to the SSRF-hardened httpclient.New(), which rejects
 // IMDS connections, instead of leaving a nil client that panics on first use.
 func TestNewClientWithHTTP_NilFallbackIsHardened(t *testing.T) {
+	t.Parallel()
 	c := NewClientWithHTTP(nil, "sub-123", "eastus", nil)
 	require.NotNil(t, c.httpClient)
 	require.NotEqual(t, http.DefaultClient, c.httpClient,
@@ -1720,6 +1770,7 @@ func TestNewClientWithHTTP_NilFallbackIsHardened(t *testing.T) {
 }
 
 func TestGetCosmosPricing_RejectsInjectedSKU(t *testing.T) {
+	t.Parallel()
 	client := NewClientWithHTTP(nil, "sub", "eastus", &MockHTTPClient{})
 	_, err := client.getCosmosPricing(context.Background(), "Cosmos_DB_x' or armSkuName ne '", "eastus", 1)
 	require.Error(t, err)
@@ -1727,6 +1778,7 @@ func TestGetCosmosPricing_RejectsInjectedSKU(t *testing.T) {
 }
 
 func TestGetCosmosPricing_LegitimateSKUBuildsExactFilter(t *testing.T) {
+	t.Parallel()
 	response := createMockHTTPResponse(http.StatusOK, `{"Items":[]}`)
 	t.Cleanup(func() { require.NoError(t, response.Body.Close()) })
 	mockHTTP := &MockHTTPClient{}

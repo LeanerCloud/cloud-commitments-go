@@ -14,6 +14,7 @@ import (
 )
 
 func TestDo_ReleasesSlotOnErrorAndCanceledWait(t *testing.T) {
+	t.Parallel()
 	sem := semaphore.NewWeighted(1)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -37,6 +38,7 @@ func TestDo_ReleasesSlotOnErrorAndCanceledWait(t *testing.T) {
 }
 
 func TestDo_NoSemaphoreRunsFn(t *testing.T) {
+	t.Parallel()
 	v, err := Do(context.Background(), func() (int, error) { return 7, nil })
 	require.NoError(t, err)
 	assert.Equal(t, 7, v)

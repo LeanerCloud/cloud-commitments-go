@@ -8,6 +8,7 @@ import (
 )
 
 func TestReservationTermForYears(t *testing.T) {
+	t.Parallel()
 	for years, want := range map[int]string{1: "P1Y", 3: "P3Y"} {
 		got, err := ReservationTermForYears(years)
 		require.NoError(t, err)

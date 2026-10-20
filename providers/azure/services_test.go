@@ -10,6 +10,7 @@ import (
 )
 
 func TestNewComputeClient(t *testing.T) {
+	t.Parallel()
 	client := NewComputeClient(nil, "test-subscription", "eastus")
 
 	require.NotNil(t, client)
@@ -18,6 +19,7 @@ func TestNewComputeClient(t *testing.T) {
 }
 
 func TestNewDatabaseClient(t *testing.T) {
+	t.Parallel()
 	client := NewDatabaseClient(nil, "test-subscription", "westeurope")
 
 	require.NotNil(t, client)
@@ -26,6 +28,7 @@ func TestNewDatabaseClient(t *testing.T) {
 }
 
 func TestNewCacheClient(t *testing.T) {
+	t.Parallel()
 	client := NewCacheClient(nil, "test-subscription", "westus2")
 
 	require.NotNil(t, client)
@@ -34,6 +37,7 @@ func TestNewCacheClient(t *testing.T) {
 }
 
 func TestNewManagedRedisClient(t *testing.T) {
+	t.Parallel()
 	client := NewManagedRedisClient(nil, "test-subscription", "eastus")
 
 	require.NotNil(t, client)
@@ -42,6 +46,7 @@ func TestNewManagedRedisClient(t *testing.T) {
 }
 
 func TestNewSearchClient(t *testing.T) {
+	t.Parallel()
 	client := NewSearchClient(nil, "test-subscription", "eastus")
 
 	require.NotNil(t, client)
@@ -50,6 +55,7 @@ func TestNewSearchClient(t *testing.T) {
 }
 
 func TestNewRecommendationsClient(t *testing.T) {
+	t.Parallel()
 	client, err := NewRecommendationsClient(nil, "test-subscription")
 	require.NoError(t, err)
 
@@ -60,6 +66,7 @@ func TestNewRecommendationsClient(t *testing.T) {
 }
 
 func TestNewRecommendationsClient_RejectsEmptySubscriptionID(t *testing.T) {
+	t.Parallel()
 	client, err := NewRecommendationsClient(nil, "")
 	require.Error(t, err)
 	assert.Nil(t, client, "constructor must not return a partially-initialized adapter on invariant failure")
@@ -67,6 +74,7 @@ func TestNewRecommendationsClient_RejectsEmptySubscriptionID(t *testing.T) {
 }
 
 func TestNewRecommendationsClientAdapter_RejectsEmptySubscriptionID(t *testing.T) {
+	t.Parallel()
 	adapter, err := NewRecommendationsClientAdapter(nil, "")
 	require.Error(t, err)
 	assert.Nil(t, adapter)

@@ -17,6 +17,7 @@ import (
 )
 
 func TestUpfrontCostForBillingPlan(t *testing.T) {
+	t.Parallel()
 	for _, plan := range []armreservations.ReservationBillingPlan{
 		armreservations.ReservationBillingPlanMonthly,
 		armreservations.ReservationBillingPlanUpfront,
@@ -69,6 +70,7 @@ const testBody = `{"sku":{"name":"Standard_B2ats_v2"},"location":"eastus","prope
 
 // TestDoPurchaseTwoStep_HappyPath tests successful calculatePrice->purchase flow.
 func TestDoPurchaseTwoStep_HappyPath(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
@@ -105,6 +107,7 @@ func TestDoPurchaseTwoStep_HappyPath(t *testing.T) {
 
 // TestDoPurchaseTwoStep_PurchaseAccepted tests that 202 Accepted counts as success.
 func TestDoPurchaseTwoStep_PurchaseAccepted(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
@@ -134,6 +137,7 @@ func TestDoPurchaseTwoStep_PurchaseAccepted(t *testing.T) {
 // 400 on the purchase endpoint triggers a re-run of calculatePrice and succeeds on
 // the second attempt.
 func TestDoPurchaseTwoStep_SessionTimeoutThenSuccess(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
@@ -196,6 +200,7 @@ func TestDoPurchaseTwoStep_SessionTimeoutThenSuccess(t *testing.T) {
 // TestDoPurchaseTwoStep_CalculateFailure tests that a calculatePrice 4xx is
 // returned immediately without retrying.
 func TestDoPurchaseTwoStep_CalculateFailure(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
@@ -218,6 +223,7 @@ func TestDoPurchaseTwoStep_CalculateFailure(t *testing.T) {
 // TestDoPurchaseTwoStep_PurchaseNonTimeoutFailure tests that a non-session-timeout
 // 4xx from the purchase endpoint is returned immediately without retrying.
 func TestDoPurchaseTwoStep_PurchaseNonTimeoutFailure(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
@@ -249,6 +255,7 @@ func TestDoPurchaseTwoStep_PurchaseNonTimeoutFailure(t *testing.T) {
 
 // TestDoPurchaseTwoStep_CalculateHTTPError tests network-level errors on calculatePrice.
 func TestDoPurchaseTwoStep_CalculateHTTPError(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
@@ -261,6 +268,7 @@ func TestDoPurchaseTwoStep_CalculateHTTPError(t *testing.T) {
 
 // TestDoPurchaseTwoStep_PurchaseHTTPError tests network-level errors on the purchase step.
 func TestDoPurchaseTwoStep_PurchaseHTTPError(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
@@ -284,6 +292,7 @@ func TestDoPurchaseTwoStep_PurchaseHTTPError(t *testing.T) {
 // TestDoPurchaseTwoStep_EmptyOrderID tests that calculatePrice returning an
 // empty reservationOrderId is treated as an error.
 func TestDoPurchaseTwoStep_EmptyOrderID(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
@@ -302,6 +311,7 @@ func TestDoPurchaseTwoStep_EmptyOrderID(t *testing.T) {
 }
 
 func TestDoPurchaseTwoStep_MalformedJSON(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
@@ -322,6 +332,7 @@ func TestDoPurchaseTwoStep_MalformedJSON(t *testing.T) {
 
 // TestIsSessionTimeout tests the session timeout classifier.
 func TestIsSessionTimeout(t *testing.T) {
+	t.Parallel()
 	assert.False(t, IsSessionTimeout(nil))
 	assert.False(t, IsSessionTimeout(errors.New("some other error")))
 	assert.True(t, IsSessionTimeout(errors.New("reservation purchase failed with status 400: Session timed out - Call CalculatePrice again and provide the new Reservation Order ID for purchase")))
@@ -331,16 +342,19 @@ func TestIsSessionTimeout(t *testing.T) {
 // TestCalculatePriceURL and TestPurchaseURL verify the URL helpers produce
 // the expected endpoints.
 func TestCalculatePriceURL(t *testing.T) {
+	t.Parallel()
 	u := CalculatePriceURL()
 	assert.Equal(t, "https://management.azure.com/providers/Microsoft.Capacity/calculatePrice?api-version=2022-11-01", u)
 }
 
 func TestPurchaseURL(t *testing.T) {
+	t.Parallel()
 	u := PurchaseURL("abc-def-123")
 	assert.Equal(t, "https://management.azure.com/providers/Microsoft.Capacity/reservationOrders/abc-def-123/purchase?api-version=2022-11-01", u)
 }
 
 func TestReservationOrdersListURL(t *testing.T) {
+	t.Parallel()
 	u := ReservationOrdersListURL()
 	assert.Equal(t, "https://management.azure.com/providers/Microsoft.Capacity/reservationOrders?api-version=2022-11-01", u)
 }
@@ -353,6 +367,7 @@ func TestReservationOrdersListURL(t *testing.T) {
 // attributable AND findable by FindReservationOrderByIdempotencyToken on a
 // re-drive.
 func TestApplyPurchaseTags_BothTags(t *testing.T) {
+	t.Parallel()
 	body := map[string]interface{}{}
 	ApplyPurchaseTags(body, common.PurchaseSourceWeb, "idem-tok-abc")
 
@@ -364,6 +379,7 @@ func TestApplyPurchaseTags_BothTags(t *testing.T) {
 }
 
 func TestApplyPurchaseTags_OnlySource(t *testing.T) {
+	t.Parallel()
 	body := map[string]interface{}{}
 	ApplyPurchaseTags(body, common.PurchaseSourceCLI, "")
 
@@ -375,6 +391,7 @@ func TestApplyPurchaseTags_OnlySource(t *testing.T) {
 }
 
 func TestApplyPurchaseTags_OnlyIdempotency(t *testing.T) {
+	t.Parallel()
 	body := map[string]interface{}{}
 	ApplyPurchaseTags(body, "", "idem-only")
 
@@ -390,6 +407,7 @@ func TestApplyPurchaseTags_OnlyIdempotency(t *testing.T) {
 // present. This preserves the existing snapshot tests in the per-service
 // client_test.go files that assert the absence of "tags" when source is "".
 func TestApplyPurchaseTags_NoTags(t *testing.T) {
+	t.Parallel()
 	body := map[string]interface{}{"sku": "Standard_D2s_v3"}
 	ApplyPurchaseTags(body, "", "")
 
@@ -438,6 +456,7 @@ func orderListJSON(orders []struct {
 const listURL = "https://management.azure.com/providers/Microsoft.Capacity/reservationOrders?api-version=2022-11-01"
 
 func TestFindReservationOrderByIdempotencyToken_Match(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
@@ -469,6 +488,7 @@ func TestFindReservationOrderByIdempotencyToken_Match(t *testing.T) {
 }
 
 func TestFindReservationOrderByIdempotencyToken_NoMatch(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
@@ -498,6 +518,7 @@ func TestFindReservationOrderByIdempotencyToken_NoMatch(t *testing.T) {
 // tag MUST NOT short-circuit a legitimate fresh purchase. Mirrors the AWS EC2
 // findRIByIdempotencyToken filter (state in active|payment-pending).
 func TestFindReservationOrderByIdempotencyToken_SkipsTerminalFailed(t *testing.T) {
+	t.Parallel()
 	for _, st := range []armreservations.ProvisioningState{
 		armreservations.ProvisioningStateCancelled,
 		armreservations.ProvisioningStateFailed,
@@ -537,6 +558,7 @@ func TestFindReservationOrderByIdempotencyToken_SkipsTerminalFailed(t *testing.T
 // already-paid-for or currently being processed and a re-drive would create
 // a duplicate.
 func TestFindReservationOrderByIdempotencyToken_AcceptsInFlightStates(t *testing.T) {
+	t.Parallel()
 	for _, state := range []string{
 		string(armreservations.ProvisioningStateSucceeded),
 		string(armreservations.ProvisioningStateCreated),
@@ -579,6 +601,7 @@ func TestFindReservationOrderByIdempotencyToken_AcceptsInFlightStates(t *testing
 // every ProvisioningState the SDK defines, so a newly added state cannot
 // silently fall into the adopt default.
 func TestReservationOrderDispositions_CoversEverySDKState(t *testing.T) {
+	t.Parallel()
 	for _, state := range armreservations.PossibleProvisioningStateValues() {
 		_, classified := reservationOrderDispositions[state]
 		assert.True(t, classified, "ProvisioningState %q has no entry in reservationOrderDispositions", state)
@@ -588,6 +611,7 @@ func TestReservationOrderDispositions_CoversEverySDKState(t *testing.T) {
 // TestFindReservationOrderByIdempotencyToken_UnrecognizedStateIsBlocked: a
 // non-empty state outside the SDK enum is neither adopted nor skipped.
 func TestFindReservationOrderByIdempotencyToken_UnrecognizedStateIsBlocked(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	body := orderListJSON([]struct {
 		Name              string
@@ -611,6 +635,7 @@ func TestFindReservationOrderByIdempotencyToken_UnrecognizedStateIsBlocked(t *te
 
 // TestDoIdempotentPurchaseTwoStep_UnrecognizedState_DoesNotPurchase: zero POSTs.
 func TestDoIdempotentPurchaseTwoStep_UnrecognizedState_DoesNotPurchase(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	body := orderListJSON([]struct {
 		Name              string
@@ -640,6 +665,7 @@ func TestDoIdempotentPurchaseTwoStep_UnrecognizedState_DoesNotPurchase(t *testin
 // #72: a BillingFailed order is neither adopted (false success) nor skipped
 // (possible double-buy); the lookup returns an error.
 func TestFindReservationOrderByIdempotencyToken_BillingFailedIsBlocked(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	body := orderListJSON([]struct {
 		Name              string
@@ -665,6 +691,7 @@ func TestFindReservationOrderByIdempotencyToken_BillingFailedIsBlocked(t *testin
 // TestDoIdempotentPurchaseTwoStep_BillingFailed_NeitherAdoptsNorPurchases is the
 // end-to-end form: no success, no existing flag, and zero POSTs.
 func TestDoIdempotentPurchaseTwoStep_BillingFailed_NeitherAdoptsNorPurchases(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	body := orderListJSON([]struct {
 		Name              string
@@ -693,6 +720,7 @@ func TestDoIdempotentPurchaseTwoStep_BillingFailed_NeitherAdoptsNorPurchases(t *
 // TestFindReservationOrderByIdempotencyToken_EmptyStateIsAdopted: an order
 // listed without a provisioning state still suppresses a re-drive.
 func TestFindReservationOrderByIdempotencyToken_EmptyStateIsAdopted(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	body := orderListJSON([]struct {
 		Name              string
@@ -713,6 +741,7 @@ func TestFindReservationOrderByIdempotencyToken_EmptyStateIsAdopted(t *testing.T
 }
 
 func TestFindReservationOrderByIdempotencyToken_HTTPError(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
@@ -725,6 +754,7 @@ func TestFindReservationOrderByIdempotencyToken_HTTPError(t *testing.T) {
 }
 
 func TestFindReservationOrderByIdempotencyToken_403(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
@@ -744,6 +774,7 @@ func TestFindReservationOrderByIdempotencyToken_403(t *testing.T) {
 }
 
 func TestFindReservationOrderByIdempotencyToken_EmptyToken(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
@@ -755,6 +786,7 @@ func TestFindReservationOrderByIdempotencyToken_EmptyToken(t *testing.T) {
 }
 
 func TestFindReservationOrderByIdempotencyToken_PaginatedFollowsNextLink(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
@@ -808,6 +840,7 @@ func TestFindReservationOrderByIdempotencyToken_PaginatedFollowsNextLink(t *test
 // the raw DoPurchaseTwoStep (no list call), preserving the pre-issue-721
 // behavior for callers without an owning execution.
 func TestDoIdempotentPurchaseTwoStep_EmptyToken_NoLookup(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
@@ -841,6 +874,7 @@ func TestDoIdempotentPurchaseTwoStep_EmptyToken_NoLookup(t *testing.T) {
 // first-time purchase: the lookup returns no match, so the wrapper proceeds
 // with the two-step purchase flow as normal.
 func TestDoIdempotentPurchaseTwoStep_NoMatch_FallsThroughToPurchase(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
@@ -881,6 +915,7 @@ func TestDoIdempotentPurchaseTwoStep_NoMatch_FallsThroughToPurchase(t *testing.T
 // NOT issue a second calculatePrice/purchase call. The list call finds the
 // existing order and the wrapper returns it directly.
 func TestDoIdempotentPurchaseTwoStep_Match_ShortCircuits(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
@@ -918,6 +953,7 @@ func TestDoIdempotentPurchaseTwoStep_Match_ShortCircuits(t *testing.T) {
 // it did, the dedupe guard could be silently bypassed by a transient list
 // failure and a re-drive would double-buy. Mirrors the EC2 safety pattern.
 func TestDoIdempotentPurchaseTwoStep_LookupFailure_DoesNotPurchase(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
@@ -947,6 +983,7 @@ func TestDoIdempotentPurchaseTwoStep_LookupFailure_DoesNotPurchase(t *testing.T)
 // fragile across calls, so each purchase is exercised against its own freshly
 // programmed mock to keep the per-call expectations clearly partitioned.
 func TestDoIdempotentPurchaseTwoStep_DifferentTokens_DistinctReservations(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	tok1 := common.DeriveIdempotencyToken("exec-1", 0)
 	tok2 := common.DeriveIdempotencyToken("exec-1", 1)
@@ -999,6 +1036,7 @@ func TestDoIdempotentPurchaseTwoStep_DifferentTokens_DistinctReservations(t *tes
 // new wrapper -- the wrapper is purely additive for the lookup, and once it
 // falls through to DoPurchaseTwoStep the original retry behavior applies.
 func TestDoIdempotentPurchaseTwoStep_PreservesTwoStepFlow(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
@@ -1069,6 +1107,7 @@ func TestDoIdempotentPurchaseTwoStep_PreservesTwoStepFlow(t *testing.T) {
 // before this fix, five service clients used a literal "3yr"||"3" check that
 // silently treated unrecognized terms as 1yr instead of returning an error).
 func TestParseTermYears(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		term    string
 		want    int
@@ -1110,6 +1149,7 @@ func TestParseTermYears(t *testing.T) {
 // strings) must be a hard error, never a silent default
 // (feedback_no_silent_fallbacks).
 func TestBillingPlanForPaymentOption(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		paymentOption string
 		want          armreservations.ReservationBillingPlan
@@ -1239,6 +1279,7 @@ func (b *truncatingBody) Close() error { return nil }
 // which counts attempts, because a message assertion cannot tell a changed
 // message from changed behavior.
 func TestDoPurchase_UnreadableBodyDoesNotSilentlyLookPermanent(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	full := `{"error":{"code":"BadRequest","message":"Session timed out - Call CalculatePrice again"}}`
 
@@ -1301,6 +1342,7 @@ func (c *countingPurchaseClient) Do(req *http.Request) (*http.Response, error) {
 // constant. If the control ever stops reaching the cap, the second half is no
 // longer evidence about anything.
 func TestDoPurchaseTwoStep_TruncatedSessionTimeoutStillRetries(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	full := `{"error":{"code":"BadRequest","message":"Session timed out - Call CalculatePrice again"}}`
 
@@ -1333,6 +1375,7 @@ func TestDoPurchaseTwoStep_TruncatedSessionTimeoutStillRetries(t *testing.T) {
 // direction: success is decided by the status code alone, so a body that fails
 // to read must not turn a completed purchase into a reported failure.
 func TestDoPurchase_UnreadableBodyOnSuccessStillSucceeds(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	m := &mockHTTPClient{}
 	purchaseResp37 := &http.Response{
@@ -1365,6 +1408,7 @@ func TestDoPurchase_UnreadableBodyOnSuccessStillSucceeds(t *testing.T) {
 // narrowing costs no coverage and removes the unverified commit-ambiguous
 // statuses from the retry surface entirely.
 func TestDoPurchase_TruncatedNon400IsNotRetryable(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	for _, status := range []int{
 		http.StatusConflict,
@@ -1396,6 +1440,7 @@ func TestDoPurchase_TruncatedNon400IsNotRetryable(t *testing.T) {
 // the narrowing: the sentinel scoping must actually keep the retry loop out of
 // the commit-ambiguous statuses, not merely leave the error untagged.
 func TestDoPurchaseTwoStep_TruncatedNon400DoesNotRetry(t *testing.T) {
+	t.Parallel()
 	c := &countingPurchaseClient{
 		purchaseResp: func() *http.Response {
 			return &http.Response{
@@ -1460,6 +1505,7 @@ const emptyOrdersList = `{"value":[]}`
 // again, because the only idempotency lookup happened before the loop was ever
 // entered. The bound was purchaseMaxAttempts, not the guard.
 func TestPurchaseRetry_DoesNotDoubleBuyWhenFirstAttemptCommitted(t *testing.T) {
+	t.Parallel()
 	const token = "tok-1774"
 	sessionTimeout := `{"error":{"code":"BadRequest","message":"Session timed out - Call CalculatePrice again"}}`
 
@@ -1491,6 +1537,7 @@ func TestPurchaseRetry_DoesNotDoubleBuyWhenFirstAttemptCommitted(t *testing.T) {
 // simply refused to retry would pass the test above while silently breaking the
 // recovery this retry loop exists for.
 func TestPurchaseRetry_StillRecoversWhenFirstAttemptGenuinelyFailed(t *testing.T) {
+	t.Parallel()
 	const token = "tok-1774-recover"
 	sessionTimeout := `{"error":{"code":"BadRequest","message":"Session timed out - Call CalculatePrice again"}}`
 
@@ -1518,6 +1565,7 @@ func TestPurchaseRetry_StillRecoversWhenFirstAttemptGenuinelyFailed(t *testing.T
 // when its lookup errors; the in-loop check must behave identically, or it
 // would reintroduce the fall-through it exists to prevent.
 func TestPurchaseRetry_RefusesRetryWhenRecheckLookupFails(t *testing.T) {
+	t.Parallel()
 	const token = "tok-1774-lookup-fail"
 	sessionTimeout := `{"error":{"code":"BadRequest","message":"Session timed out - Call CalculatePrice again"}}`
 
@@ -1545,6 +1593,7 @@ func TestPurchaseRetry_RefusesRetryWhenRecheckLookupFails(t *testing.T) {
 // token. The retry must stop with the blocked error and issue no second
 // calculatePrice or purchase.
 func TestPurchaseRetry_RefusesRetryWhenRecheckFindsBillingFailedOrder(t *testing.T) {
+	t.Parallel()
 	const token = "tok-72-recheck"
 	sessionTimeout := `{"error":{"code":"BadRequest","message":"Session timed out - Call CalculatePrice again"}}`
 	billingFailed := orderListJSON([]struct {
@@ -1578,6 +1627,7 @@ func TestPurchaseRetry_RefusesRetryWhenRecheckFindsBillingFailedOrder(t *testing
 
 // A non-retryable purchase failure is an error, never an adoption (issue #211).
 func TestDoIdempotentPurchaseTwoStep_PurchaseFailure_NotFlagged(t *testing.T) {
+	t.Parallel()
 	m := &mockHTTPClient{}
 	lookup := fakeResp(http.StatusOK, `{"value":[]}`)
 	calc := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"order-x"}}`)

@@ -153,6 +153,7 @@ func assertCosmosQuote(t *testing.T, q *common.OfferingDetails, sku, region, ter
 }
 
 func TestCosmosOffering_CapturedReservations(t *testing.T) {
+	t.Parallel()
 	for i, fixture := range cosmosCatalog() {
 		aliases := []string{fixture.arm}
 		if i == 0 {
@@ -177,6 +178,7 @@ func TestCosmosOffering_CapturedReservations(t *testing.T) {
 }
 
 func TestCosmosOffering_FilterAndEscaping(t *testing.T) {
+	t.Parallel()
 	for _, sku := range []string{"100RU", "100RUperSecond", "Cosmos_DB_100_RUs"} {
 		t.Run(sku, func(t *testing.T) {
 			arm := "Cosmos_DB_100_RUs"
@@ -196,6 +198,7 @@ func TestCosmosOffering_FilterAndEscaping(t *testing.T) {
 }
 
 func TestCosmosOffering_UnknownAliasesAvoidHTTP(t *testing.T) {
+	t.Parallel()
 	for _, sku := range []string{"", "1000RU", "1000000RU", "100mRU", "100ru", "100RU'", " 100RU", "Cosmos_DB_test'RU", "CosmosDB_RU_1000", "EnableCassandra"} {
 		t.Run(sku, func(t *testing.T) {
 			q, err := cosmosQuote(t, sku, nil)
@@ -206,6 +209,7 @@ func TestCosmosOffering_UnknownAliasesAvoidHTTP(t *testing.T) {
 }
 
 func TestCosmosOffering_IdentityAndOrderSynthetic(t *testing.T) {
+	t.Parallel()
 	for field, value := range map[string]any{
 		"serviceName": "Other", "productName": "Azure Cosmos DB for PostgreSQL", "armRegionName": "eastus",
 		"armSkuName": "Cosmos_DB_1000_RUs", "type": "Consumption", "reservationTerm": "11 Year",
@@ -237,6 +241,7 @@ func TestCosmosOffering_IdentityAndOrderSynthetic(t *testing.T) {
 }
 
 func TestCosmosOffering_SelectedValidationSynthetic(t *testing.T) {
+	t.Parallel()
 	for _, bad := range []struct {
 		field string
 		value any
@@ -255,6 +260,7 @@ func TestCosmosOffering_SelectedValidationSynthetic(t *testing.T) {
 }
 
 func TestCosmosOffering_EquivalentAndConflictingQuotesSynthetic(t *testing.T) {
+	t.Parallel()
 	for _, change := range []string{"equivalent", "price", "currency", "meter", "display", "invalid unit"} {
 		for _, reverse := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/%t", change, reverse), func(t *testing.T) {
@@ -292,6 +298,7 @@ func TestCosmosOffering_EquivalentAndConflictingQuotesSynthetic(t *testing.T) {
 }
 
 func TestCosmosOffering_ForeignMalformedRowsSynthetic(t *testing.T) {
+	t.Parallel()
 	for _, reverse := range []bool{false, true} {
 		t.Run(strconv.FormatBool(reverse), func(t *testing.T) {
 			first, second := []map[string]any{cosmosConsumption(), cosmosCatalog()[0].row(1)}, []map[string]any{}
@@ -311,6 +318,7 @@ func TestCosmosOffering_ForeignMalformedRowsSynthetic(t *testing.T) {
 }
 
 func TestCosmosOffering_ValidShapesSynthetic(t *testing.T) {
+	t.Parallel()
 	for _, currency := range []string{"USD", "EUR"} {
 		for _, unit := range []string{"1 Hour", "1/Hour"} {
 			t.Run(currency+"/"+unit, func(t *testing.T) {
@@ -325,18 +333,21 @@ func TestCosmosOffering_ValidShapesSynthetic(t *testing.T) {
 }
 
 func TestCosmosOffering_PaginatedReservation(t *testing.T) {
+	t.Parallel()
 	q, err := cosmosQuote(t, "Cosmos_DB_100_RUs", [][]map[string]any{{cosmosConsumption()}, {cosmosCatalog()[0].row(1)}})
 	require.NoError(t, err)
 	assertCosmosQuote(t, q, "Cosmos_DB_100_RUs", "eastus", "1yr", "upfront", "USD", 56, 1)
 }
 
 func TestCosmosOffering_NoCanonicalMatch(t *testing.T) {
+	t.Parallel()
 	q, err := cosmosQuote(t, "Cosmos_DB_unknown", [][]map[string]any{{cosmosCatalog()[0].row(1)}})
 	require.Error(t, err)
 	assert.Nil(t, q)
 }
 
 func TestCosmosOffering_MixedTerms(t *testing.T) {
+	t.Parallel()
 	for _, years := range []int{1, 3} {
 		for _, reverse := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%d/reverse=%t", years, reverse), func(t *testing.T) {

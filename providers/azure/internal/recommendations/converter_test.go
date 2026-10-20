@@ -12,6 +12,7 @@ import (
 )
 
 func TestExtract_NilInput(t *testing.T) {
+	t.Parallel()
 	assert.Nil(t, Extract(nil))
 }
 
@@ -24,15 +25,18 @@ func (w *wrongTypeRec) GetReservationRecommendation() *armconsumption.Reservatio
 }
 
 func TestExtract_WrongConcreteType(t *testing.T) {
+	t.Parallel()
 	assert.Nil(t, Extract(&wrongTypeRec{}))
 }
 
 func TestExtract_NilProperties(t *testing.T) {
+	t.Parallel()
 	rec := mocks.BuildLegacyReservationRecommendation(mocks.WithNilProperties())
 	assert.Nil(t, Extract(rec))
 }
 
 func TestExtract_AllFieldsSet(t *testing.T) {
+	t.Parallel()
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithRegion("westus2"),
 		mocks.WithScope("Shared"),
@@ -54,6 +58,7 @@ func TestExtract_AllFieldsSet(t *testing.T) {
 }
 
 func TestExtract_TermNormalisation(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name     string
 		in       string // empty → passes nil to the fixture
@@ -76,6 +81,7 @@ func TestExtract_TermNormalisation(t *testing.T) {
 }
 
 func TestExtract_QuantityRoundsDown(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		in       float64
 		expected int
@@ -97,6 +103,7 @@ func TestExtract_QuantityRoundsDown(t *testing.T) {
 }
 
 func TestExtract_ResourceTypePrefersActualSKUOverNormalizedSize(t *testing.T) {
+	t.Parallel()
 	// When both are populated the actual SKU wins, because RecommendedQuantity
 	// counts THAT SKU. Preferring NormalizedSize here was issue #1540: the
 	// normalized size was paired with the un-normalized count.
@@ -110,6 +117,7 @@ func TestExtract_ResourceTypePrefersActualSKUOverNormalizedSize(t *testing.T) {
 }
 
 func TestExtract_ResourceTypeUsesSKUName(t *testing.T) {
+	t.Parallel()
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithSKU("Standard_E4s_v5"),
 	)
@@ -119,6 +127,7 @@ func TestExtract_ResourceTypeUsesSKUName(t *testing.T) {
 }
 
 func TestExtract_ResourceTypeFallsBackToFirstPropertyValue(t *testing.T) {
+	t.Parallel()
 	// No SKUName-keyed property — fall back to the first non-empty value in
 	// the list (last-ditch fallback). Still an actual-SKU rung, so it keeps
 	// RecommendedQuantity as its partner.
@@ -132,6 +141,7 @@ func TestExtract_ResourceTypeFallsBackToFirstPropertyValue(t *testing.T) {
 }
 
 func TestExtract_ResourceTypeFallsBackToNormalizedSize(t *testing.T) {
+	t.Parallel()
 	// No SKU properties at all — NormalizedSize is the only source left, and
 	// it is counted by RecommendedQuantityNormalized.
 	rec := mocks.BuildLegacyReservationRecommendation(
@@ -157,6 +167,7 @@ func TestExtract_ResourceTypeFallsBackToNormalizedSize(t *testing.T) {
 // valid pair must still be produced. Asserting only the first passes against a
 // converter that returns nothing at all.
 func TestExtract_LegacySKUAndQuantityStayInMatchingUnits(t *testing.T) {
+	t.Parallel()
 	// Azure recommends 4 x Standard_D8s_v3, normalized to 16 x Standard_D2s_v3.
 	const (
 		actualSKU  = "Standard_D8s_v3"
@@ -226,6 +237,7 @@ func TestExtract_LegacySKUAndQuantityStayInMatchingUnits(t *testing.T) {
 // would reintroduce exactly the mismatch #1540 is about, so the count is left
 // at zero, which every service's `Count <= 0` guard refuses before purchasing.
 func TestExtract_LegacyNormalizedSizeWithoutNormalizedQuantityLeavesCountUnset(t *testing.T) {
+	t.Parallel()
 	rec := mocks.BuildLegacyReservationRecommendation(
 		mocks.WithNormalizedSize("Standard_D2s_v3"),
 		mocks.WithQuantity(4),
@@ -239,6 +251,7 @@ func TestExtract_LegacyNormalizedSizeWithoutNormalizedQuantityLeavesCountUnset(t
 }
 
 func TestExtract_MissingCostsReadAsZero(t *testing.T) {
+	t.Parallel()
 	// Cost fields are *float64 in the SDK — nil must become 0.0, not panic.
 	rec := mocks.BuildLegacyReservationRecommendation() // no WithCosts
 	f := Extract(rec)
@@ -249,6 +262,7 @@ func TestExtract_MissingCostsReadAsZero(t *testing.T) {
 }
 
 func TestExtract_Legacy_RecurringMonthlyCostIsCoveredCost(t *testing.T) {
+	t.Parallel()
 	// RecurringMonthlyCost is the covered/effective cost (what you pay WITH
 	// the reservation) = TotalCostWithReservedInstances, NOT 0 (which would
 	// make the GUI fall back to displaying the on-demand spend).
@@ -265,6 +279,7 @@ func TestExtract_Legacy_RecurringMonthlyCostIsCoveredCost(t *testing.T) {
 }
 
 func TestExtract_Legacy_RecurringMonthlyCostReconstructedWhenTotalAbsent(t *testing.T) {
+	t.Parallel()
 	// TotalCostWithReservedInstances absent → reconstruct covered cost as
 	// on-demand minus net savings (120 - 45 = 75), still never 0.
 	withOnDemandAndSavingsOnly := func(_ *armconsumption.LegacyReservationRecommendation, props *armconsumption.LegacyReservationRecommendationProperties) {
@@ -285,6 +300,7 @@ func TestExtract_Legacy_RecurringMonthlyCostReconstructedWhenTotalAbsent(t *test
 }
 
 func TestExtract_Legacy_RecurringMonthlyCostNilWhenSourcesAbsent(t *testing.T) {
+	t.Parallel()
 	// Neither total-with-RI nor a complete (on-demand, net-savings) pair →
 	// RecurringMonthlyCost must be nil ("data not available"), NEVER 0.
 	rec := mocks.BuildLegacyReservationRecommendation(
@@ -299,11 +315,13 @@ func TestExtract_Legacy_RecurringMonthlyCostNilWhenSourcesAbsent(t *testing.T) {
 // --- Modern (MCA billing account) ----------------------------------------
 
 func TestExtract_Modern_NilProperties(t *testing.T) {
+	t.Parallel()
 	rec := mocks.BuildModernReservationRecommendation(mocks.WithModernNilProperties())
 	assert.Nil(t, Extract(rec))
 }
 
 func TestExtract_Modern_AllFieldsSet(t *testing.T) {
+	t.Parallel()
 	rec := mocks.BuildModernReservationRecommendation(
 		mocks.WithModernRegion("westeurope"),
 		mocks.WithModernScope("Shared"),
@@ -325,6 +343,7 @@ func TestExtract_Modern_AllFieldsSet(t *testing.T) {
 }
 
 func TestExtract_Modern_RegionFallsBackToInnerProperties(t *testing.T) {
+	t.Parallel()
 	// Envelope Location is nil; Properties.Location supplies the fallback.
 	rec := mocks.BuildModernReservationRecommendation(
 		mocks.WithModernInnerRegion("northeurope"),
@@ -336,6 +355,7 @@ func TestExtract_Modern_RegionFallsBackToInnerProperties(t *testing.T) {
 }
 
 func TestExtract_Modern_ResourceTypePrefersSKUNameOverNormalizedSize(t *testing.T) {
+	t.Parallel()
 	// Both populated — Modern's top-level SKUName wins over NormalizedSize
 	// (matches the Modern field-preference documented in
 	// resolveModernSKUAndQuantity), and is counted by RecommendedQuantity.
@@ -358,6 +378,7 @@ func TestExtract_Modern_ResourceTypePrefersSKUNameOverNormalizedSize(t *testing.
 // but with SKUName absent it paired NormalizedSize with RecommendedQuantity
 // just as Legacy did.
 func TestExtract_Modern_NormalizedSizeRungIsCountedNormalized(t *testing.T) {
+	t.Parallel()
 	rec := mocks.BuildModernReservationRecommendation(
 		mocks.WithModernNormalizedSize("Standard_D2"),
 		mocks.WithModernQuantity(4),
@@ -371,6 +392,7 @@ func TestExtract_Modern_NormalizedSizeRungIsCountedNormalized(t *testing.T) {
 }
 
 func TestExtract_Modern_MissingCostAmountsLeaveFieldsUnset(t *testing.T) {
+	t.Parallel()
 	// *Amount fields left nil by default. Plain Extract leaves the float64
 	// fields unset; ExtractConsumption rejects such a payload (see
 	// TestExtractConsumption_ModernAmountPresence).
@@ -383,6 +405,7 @@ func TestExtract_Modern_MissingCostAmountsLeaveFieldsUnset(t *testing.T) {
 }
 
 func TestExtract_Modern_RecurringMonthlyCostIsCoveredCost(t *testing.T) {
+	t.Parallel()
 	// Same covered-cost semantics as Legacy: RecurringMonthlyCost equals
 	// TotalCostWithReservedInstances, not 0.
 	rec := mocks.BuildModernReservationRecommendation(
@@ -398,6 +421,7 @@ func TestExtract_Modern_RecurringMonthlyCostIsCoveredCost(t *testing.T) {
 }
 
 func TestExtract_Modern_RecurringMonthlyCostReconstructedWhenTotalAbsent(t *testing.T) {
+	t.Parallel()
 	// TotalCostWithReservedInstances absent → covered = on-demand - net
 	// savings (500 - 180 = 320). amountValuePtr must preserve the nil for
 	// the absent *Amount so the fallback engages.
@@ -420,6 +444,7 @@ func TestExtract_Modern_RecurringMonthlyCostReconstructedWhenTotalAbsent(t *test
 }
 
 func TestExtract_Modern_RecurringMonthlyCostNilWhenSourcesAbsent(t *testing.T) {
+	t.Parallel()
 	// No cost *Amount fields at all → RecurringMonthlyCost nil, never 0.
 	rec := mocks.BuildModernReservationRecommendation(
 		mocks.WithModernSKUName("Standard_D4s_v5"),
@@ -472,6 +497,7 @@ func expandLegacy(t *testing.T, opts ...mocks.LegacyOpt) (upfront, monthly commo
 }
 
 func TestExpandPaymentVariants_MonthlyRecurringIsRunRateNotDividedByTerm(t *testing.T) {
+	t.Parallel()
 	// Issue #43: TotalCostWithReservedInstances is an amount over the
 	// lookback window, not a term total, so the monthly variant's recurring
 	// charge is $600, not 600/36 = $16.67.
@@ -491,6 +517,7 @@ func TestExpandPaymentVariants_MonthlyRecurringIsRunRateNotDividedByTerm(t *test
 }
 
 func TestExpandPaymentVariants_AbsentTotalWithRIKeepsProviderSavings(t *testing.T) {
+	t.Parallel()
 	// Issue #43 (A08-006): with TotalCostWithReservedInstances absent,
 	// CommitmentCost is 0. Savings must stay the provider's NetSavings (45 of
 	// 120, 37.5%), not OnDemandCost - 0 = 120 at 100%, and the monthly
@@ -513,17 +540,20 @@ func TestExpandPaymentVariants_AbsentTotalWithRIKeepsProviderSavings(t *testing.
 }
 
 func TestExpandPaymentVariants_ReturnsTwoVariants(t *testing.T) {
+	t.Parallel()
 	variants := ExpandPaymentVariants(baseRec(common.ServiceCompute, "1yr", 100, 70))
 	require.Len(t, variants, 2, "must return exactly two variants")
 }
 
 func TestExpandPaymentVariants_PaymentOptionValues(t *testing.T) {
+	t.Parallel()
 	variants := ExpandPaymentVariants(baseRec(common.ServiceCompute, "1yr", 100, 70))
 	assert.Equal(t, "upfront", variants[0].PaymentOption)
 	assert.Equal(t, "monthly", variants[1].PaymentOption)
 }
 
 func TestExpandPaymentVariants_AllUpfrontCashflow(t *testing.T) {
+	t.Parallel()
 	// all-upfront: RecurringMonthlyCost must be a non-nil pointer to 0.
 	variants := ExpandPaymentVariants(baseRec(common.ServiceCompute, "1yr", 100, 70))
 	allUpfront := variants[0]
@@ -532,6 +562,7 @@ func TestExpandPaymentVariants_AllUpfrontCashflow(t *testing.T) {
 }
 
 func TestExpandPaymentVariants_SavingsIdenticalAcrossVariants(t *testing.T) {
+	t.Parallel()
 	// EstimatedSavings and SavingsPercentage must be the same for both
 	// variants — Azure's total reservation price is unchanged between billing
 	// plans; only cashflow splits.
@@ -541,6 +572,7 @@ func TestExpandPaymentVariants_SavingsIdenticalAcrossVariants(t *testing.T) {
 }
 
 func TestExpandPaymentVariants_SavingsValues(t *testing.T) {
+	t.Parallel()
 	variants := ExpandPaymentVariants(baseRec(common.ServiceCompute, "1yr", 100, 70))
 	assert.InDelta(t, 30.0, variants[0].EstimatedSavings, 1e-9)
 	assert.InDelta(t, 30.0, variants[1].EstimatedSavings, 1e-9)
@@ -549,6 +581,7 @@ func TestExpandPaymentVariants_SavingsValues(t *testing.T) {
 }
 
 func TestExpandPaymentVariants_ZeroOnDemand_NoSavings(t *testing.T) {
+	t.Parallel()
 	// Guard: avoid divide-by-zero when OnDemandCost is 0.
 	variants := ExpandPaymentVariants(baseRec(common.ServiceCompute, "1yr", 0, 0))
 	for _, v := range variants {
@@ -558,6 +591,7 @@ func TestExpandPaymentVariants_ZeroOnDemand_NoSavings(t *testing.T) {
 }
 
 func TestExpandPaymentVariants_ZeroOnDemand_NonZeroCommitment(t *testing.T) {
+	t.Parallel()
 	// Regression: when OnDemandCost == 0 but CommitmentCost > 0, the guard
 	// must also force EstimatedSavings to 0. Without it, savings would be
 	// computed as 0 - CommitmentCost and emit negative savings.
@@ -570,6 +604,7 @@ func TestExpandPaymentVariants_ZeroOnDemand_NonZeroCommitment(t *testing.T) {
 }
 
 func TestExpandPaymentVariants_ZeroCommitmentCost(t *testing.T) {
+	t.Parallel()
 	// M1 regression: when CommitmentCost is 0 (absent from provider response),
 	// both variants must carry nil RecurringMonthlyCost so the frontend renders
 	// "-" (data absent) rather than "$0" (known-zero). The pre-fix code
@@ -584,6 +619,7 @@ func TestExpandPaymentVariants_ZeroCommitmentCost(t *testing.T) {
 }
 
 func TestExpandPaymentVariants_SharedFieldsCarriedThrough(t *testing.T) {
+	t.Parallel()
 	// Service, Region, ResourceType, CommitmentType, Term, Account must be
 	// identical between the two returned variants (only payment schedule changes).
 	base := baseRec(common.ServiceRelationalDB, "3yr", 200, 140)
@@ -600,6 +636,7 @@ func TestExpandPaymentVariants_SharedFieldsCarriedThrough(t *testing.T) {
 }
 
 func TestExpandPaymentVariants_RecurringMonthlyCostPointersAreIndependent(t *testing.T) {
+	t.Parallel()
 	// The two variants must hold independent pointer values — mutating one
 	// must not affect the other.
 	variants := ExpandPaymentVariants(baseRec(common.ServiceCompute, "1yr", 100, 60))
@@ -610,6 +647,7 @@ func TestExpandPaymentVariants_RecurringMonthlyCostPointersAreIndependent(t *tes
 }
 
 func TestExpandPaymentVariants_ZeroOnDemandKeepsProviderSavings(t *testing.T) {
+	t.Parallel()
 	// Issue #224: Azure may return netSavings (Microsoft sample: 4.63) with
 	// costWithNoReservedInstances 0. The savings must survive expansion; the
 	// percentage cannot be computed without a baseline and stays 0.

@@ -37,6 +37,7 @@ func riStrPtr(s string) *string       { return &s }
 func riFloat64Ptr(f float64) *float64 { return &f }
 
 func TestGetRIUtilization_HappyPath(t *testing.T) {
+	t.Parallel()
 	skuA := "Standard_D2s_v3"
 	skuB := "Standard_E4s_v3"
 	idA := "reservation-aaa"
@@ -100,6 +101,7 @@ func TestGetRIUtilization_HappyPath(t *testing.T) {
 }
 
 func TestGetRIUtilization_MultiPageAggregation(t *testing.T) {
+	t.Parallel()
 	// Two monthly summary rows for the same reservation: the function must
 	// sum PurchasedHours and UsedHours across pages/rows.
 	id := "reservation-multi"
@@ -146,6 +148,7 @@ func TestGetRIUtilization_MultiPageAggregation(t *testing.T) {
 }
 
 func TestGetRIUtilization_EmptyPage(t *testing.T) {
+	t.Parallel()
 	mockPager := &mocks.MockReservationsSummariesPager{
 		Results: []*armconsumption.ReservationSummary{},
 		HasMore: true,
@@ -160,6 +163,7 @@ func TestGetRIUtilization_EmptyPage(t *testing.T) {
 }
 
 func TestGetRIUtilization_NilProperties(t *testing.T) {
+	t.Parallel()
 	// Rows with nil Properties must be skipped without panicking.
 	summaries := []*armconsumption.ReservationSummary{
 		nil,
@@ -189,6 +193,7 @@ func TestGetRIUtilization_NilProperties(t *testing.T) {
 }
 
 func TestGetRIUtilization_NilReservationID(t *testing.T) {
+	t.Parallel()
 	// Rows with nil or empty ReservationID must be silently skipped.
 	summaries := []*armconsumption.ReservationSummary{
 		{
@@ -221,6 +226,7 @@ func TestGetRIUtilization_NilReservationID(t *testing.T) {
 }
 
 func TestGetRIUtilization_ZeroPurchasedHours(t *testing.T) {
+	t.Parallel()
 	// When PurchasedHours is 0 the utilization percent should be 0, not NaN/Inf.
 	summaries := []*armconsumption.ReservationSummary{
 		{

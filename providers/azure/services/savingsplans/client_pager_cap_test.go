@@ -40,6 +40,7 @@ func ownedPlan(id string) *armbillingbenefits.SavingsPlanModel {
 }
 
 func TestGetExistingCommitments_PageCap(t *testing.T) {
+	t.Parallel()
 	t.Run("endless pager errors at the cap", func(t *testing.T) {
 		pager := &pagedListAllPager{limit: 10000}
 		c := NewClient(nil, "sub-abc", "eastus")

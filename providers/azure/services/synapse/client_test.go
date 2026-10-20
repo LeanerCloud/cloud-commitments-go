@@ -132,11 +132,13 @@ func synapseRows(region string, triples ...any) []map[string]any {
 // ---- GetServiceType / GetRegion -------------------------------------------
 
 func TestGetServiceType(t *testing.T) {
+	t.Parallel()
 	c := newTestClient()
 	assert.Equal(t, common.ServiceDataWarehouse, c.GetServiceType())
 }
 
 func TestGetRegion(t *testing.T) {
+	t.Parallel()
 	c := newTestClient()
 	assert.Equal(t, "eastus", c.GetRegion())
 }
@@ -144,6 +146,7 @@ func TestGetRegion(t *testing.T) {
 // ---- GetValidResourceTypes ------------------------------------------------
 
 func TestGetValidResourceTypes(t *testing.T) {
+	t.Parallel()
 	c := newTestClient()
 	skus, err := c.GetValidResourceTypes(context.Background())
 	require.NoError(t, err)
@@ -156,6 +159,7 @@ func TestGetValidResourceTypes(t *testing.T) {
 // ---- GetRecommendations ---------------------------------------------------
 
 func TestGetRecommendations_empty(t *testing.T) {
+	t.Parallel()
 	c := newTestClient()
 	c.SetRecommendationsPager(&fakeRecommendationsPager{})
 
@@ -165,6 +169,7 @@ func TestGetRecommendations_empty(t *testing.T) {
 }
 
 func TestGetRecommendations_singlePage(t *testing.T) {
+	t.Parallel()
 	c := newPricedTestClient()
 
 	azRec := mocks.BuildLegacyReservationRecommendation(
@@ -213,6 +218,7 @@ func TestGetRecommendations_singlePage(t *testing.T) {
 }
 
 func TestGetRecommendations_multiPage(t *testing.T) {
+	t.Parallel()
 	c := newPricedTestClient()
 
 	rec1 := mocks.BuildLegacyReservationRecommendation(
@@ -247,6 +253,7 @@ func TestGetRecommendations_multiPage(t *testing.T) {
 }
 
 func TestGetRecommendations_pagerError(t *testing.T) {
+	t.Parallel()
 	c := newTestClient()
 	c.SetRecommendationsPager(&errorRecommendationsPager{})
 
@@ -255,6 +262,7 @@ func TestGetRecommendations_pagerError(t *testing.T) {
 }
 
 func TestGetRecommendations_regionFilter(t *testing.T) {
+	t.Parallel()
 	c := newPricedTestClient() // region = "eastus"
 
 	// One rec in "eastus", one in "westus"; only the matching one should survive.
@@ -289,6 +297,7 @@ func TestGetRecommendations_regionFilter(t *testing.T) {
 }
 
 func TestGetRecommendations_modernShape(t *testing.T) {
+	t.Parallel()
 	c := newPricedTestClient() // region = "eastus"
 
 	azRec := mocks.BuildModernReservationRecommendation(
@@ -320,6 +329,7 @@ func TestGetRecommendations_modernShape(t *testing.T) {
 // ---- GetExistingCommitments -----------------------------------------------
 
 func TestGetExistingCommitments_empty(t *testing.T) {
+	t.Parallel()
 	c := newTestClient()
 	c.SetReservationsPager(&fakeReservationsPager{})
 
@@ -329,6 +339,7 @@ func TestGetExistingCommitments_empty(t *testing.T) {
 }
 
 func TestGetExistingCommitments_synapseSKU(t *testing.T) {
+	t.Parallel()
 	c := newTestClient()
 
 	skuName := "DW1000c"
@@ -365,6 +376,7 @@ func TestGetExistingCommitments_synapseSKU(t *testing.T) {
 // per reservation per usage day. A pager returning three rows for the same
 // ReservationID must surface as a single commitment.
 func TestGetExistingCommitments_dedupesDailyUsageRows(t *testing.T) {
+	t.Parallel()
 	c := newTestClient()
 
 	skuName := "DW1000c"
@@ -392,6 +404,7 @@ func TestGetExistingCommitments_dedupesDailyUsageRows(t *testing.T) {
 }
 
 func TestGetExistingCommitments_filterNonSynapse(t *testing.T) {
+	t.Parallel()
 	c := newTestClient()
 
 	vmSKU := "Standard_D2s_v3"
@@ -417,6 +430,7 @@ func TestGetExistingCommitments_filterNonSynapse(t *testing.T) {
 }
 
 func TestGetExistingCommitments_pagerError(t *testing.T) {
+	t.Parallel()
 	c := newTestClient()
 	c.SetReservationsPager(&fakeReservationsPager{
 		pages: []armconsumption.ReservationsDetailsClientListResponse{{}},
@@ -430,6 +444,7 @@ func TestGetExistingCommitments_pagerError(t *testing.T) {
 // ---- ValidateOffering -----------------------------------------------------
 
 func TestValidateOffering_valid(t *testing.T) {
+	t.Parallel()
 	c := newTestClient()
 	rec := common.Recommendation{ResourceType: "DW1000c"}
 	err := c.ValidateOffering(context.Background(), rec)
@@ -437,6 +452,7 @@ func TestValidateOffering_valid(t *testing.T) {
 }
 
 func TestValidateOffering_invalid(t *testing.T) {
+	t.Parallel()
 	c := newTestClient()
 	rec := common.Recommendation{ResourceType: "not-a-synapse-sku"}
 	err := c.ValidateOffering(context.Background(), rec)
@@ -444,6 +460,7 @@ func TestValidateOffering_invalid(t *testing.T) {
 }
 
 func TestValidateOffering_caseInsensitive(t *testing.T) {
+	t.Parallel()
 	c := newTestClient()
 	// Lowercase variant of DW1000c should validate.
 	rec := common.Recommendation{ResourceType: "dw1000c"}
@@ -452,6 +469,7 @@ func TestValidateOffering_caseInsensitive(t *testing.T) {
 }
 
 func TestValidateOffering_trimsWhitespace(t *testing.T) {
+	t.Parallel()
 	c := newTestClient()
 	rec := common.Recommendation{ResourceType: "  DW1000c  "}
 	err := c.ValidateOffering(context.Background(), rec)
@@ -487,6 +505,7 @@ const sampleSynapsePricingJSON = `{
 }`
 
 func TestGetOfferingDetails_upfront(t *testing.T) {
+	t.Parallel()
 	mHTTP := &mocks.MockHTTPClient{}
 	response1 := mocks.CreateMockHTTPResponse(http.StatusOK, sampleSynapsePricingJSON)
 	t.Cleanup(func() {
@@ -507,6 +526,7 @@ func TestGetOfferingDetails_upfront(t *testing.T) {
 }
 
 func TestGetOfferingDetails_monthly(t *testing.T) {
+	t.Parallel()
 	mHTTP := &mocks.MockHTTPClient{}
 	response2 := mocks.CreateMockHTTPResponse(http.StatusOK, sampleSynapsePricingJSON)
 	t.Cleanup(func() {
@@ -524,6 +544,7 @@ func TestGetOfferingDetails_monthly(t *testing.T) {
 }
 
 func TestGetOfferingDetails_httpError(t *testing.T) {
+	t.Parallel()
 	mHTTP := &mocks.MockHTTPClient{}
 	mHTTP.On("Do", mock.Anything).Return(nil, errors.New("network error"))
 
@@ -594,6 +615,7 @@ func synapseCapturedDW100c(overrides map[string]any) map[string]any {
 }
 
 func TestGetOfferingDetails_CapturedDW100cAndTerms(t *testing.T) {
+	t.Parallel()
 	oneYear := synapseCapturedDW100c(nil)
 	threeYears := synapseCapturedDW100c(map[string]any{"reservationTerm": "3 Years", "retailPrice": 13889.0, "unitPrice": 13889.0, "skuId": "DZH318Z0BZ1B/00MF"})
 	for _, tc := range []struct {
@@ -640,6 +662,7 @@ func calcPriceRespJSON(orderID string) string {
 // ---- PurchaseCommitment ---------------------------------------------------
 
 func TestPurchaseCommitment_success(t *testing.T) {
+	t.Parallel()
 	mHTTP := &mocks.MockHTTPClient{}
 	t.Cleanup(func() { mHTTP.AssertExpectations(t) })
 	calculateResp3 := mocks.CreateMockHTTPResponse(http.StatusOK, calcPriceRespJSON("syn-order-001"))
@@ -676,6 +699,7 @@ func TestPurchaseCommitment_success(t *testing.T) {
 }
 
 func TestPurchaseCommitment_3yrTerm(t *testing.T) {
+	t.Parallel()
 	mHTTP := &mocks.MockHTTPClient{}
 	t.Cleanup(func() { mHTTP.AssertExpectations(t) })
 	calculateResp5 := mocks.CreateMockHTTPResponse(http.StatusOK, calcPriceRespJSON("syn-order-3yr"))
@@ -703,6 +727,7 @@ func TestPurchaseCommitment_3yrTerm(t *testing.T) {
 }
 
 func TestPurchaseCommitment_withSource(t *testing.T) {
+	t.Parallel()
 	// Capture the body sent to calculatePrice to verify the automation tag is present.
 	var capturedBody []byte
 	mHTTP := &mocks.MockHTTPClient{}
@@ -739,6 +764,7 @@ func TestPurchaseCommitment_withSource(t *testing.T) {
 }
 
 func TestPurchaseCommitment_apiError(t *testing.T) {
+	t.Parallel()
 	// calculatePrice succeeds; purchase fails with a non-timeout 400.
 	mHTTP := &mocks.MockHTTPClient{}
 	t.Cleanup(func() { mHTTP.AssertExpectations(t) })
@@ -767,6 +793,7 @@ func TestPurchaseCommitment_apiError(t *testing.T) {
 }
 
 func TestPurchaseCommitment_httpError(t *testing.T) {
+	t.Parallel()
 	// calculatePrice network failure.
 	mHTTP := &mocks.MockHTTPClient{}
 	t.Cleanup(func() { mHTTP.AssertExpectations(t) })
@@ -785,6 +812,7 @@ func TestPurchaseCommitment_httpError(t *testing.T) {
 }
 
 func TestPurchaseCommitment_tokenError(t *testing.T) {
+	t.Parallel()
 	cred := &mockTokenCredential{err: errors.New("token error")}
 	c := NewClientWithHTTP(cred, "sub-123", "eastus", nil)
 
@@ -797,16 +825,19 @@ func TestPurchaseCommitment_tokenError(t *testing.T) {
 // ---- convertSynapseReservation --------------------------------------------
 
 func TestConvertSynapseReservation_nil(t *testing.T) {
+	t.Parallel()
 	c := newTestClient()
 	assert.Nil(t, c.convertSynapseReservation(nil))
 }
 
 func TestConvertSynapseReservation_nilProperties(t *testing.T) {
+	t.Parallel()
 	c := newTestClient()
 	assert.Nil(t, c.convertSynapseReservation(&armconsumption.ReservationDetail{}))
 }
 
 func TestConvertSynapseReservation_nonSynapseSKU(t *testing.T) {
+	t.Parallel()
 	c := newTestClient()
 	sku := "Premium_P1"
 	assert.Nil(t, c.convertSynapseReservation(&armconsumption.ReservationDetail{
@@ -815,6 +846,7 @@ func TestConvertSynapseReservation_nonSynapseSKU(t *testing.T) {
 }
 
 func TestConvertSynapseReservation_dwSKU(t *testing.T) {
+	t.Parallel()
 	c := newTestClient()
 	sku := "DW3000c"
 	resID := "res-abc"
@@ -831,6 +863,7 @@ func TestConvertSynapseReservation_dwSKU(t *testing.T) {
 }
 
 func TestConvertSynapseReservation_scuPrefix(t *testing.T) {
+	t.Parallel()
 	c := newTestClient()
 	// SCU prefix (Spark Compute Units) should be classified as Synapse.
 	sku := "SCU_Standard"
@@ -846,6 +879,7 @@ func TestConvertSynapseReservation_scuPrefix(t *testing.T) {
 }
 
 func TestConvertSynapseReservation_scuSubstringNotMatched(t *testing.T) {
+	t.Parallel()
 	c := newTestClient()
 	// Non-Synapse SKU that merely contains "scu" as a substring must not
 	// be misclassified as a Synapse reservation. Guards against the prior
@@ -857,6 +891,7 @@ func TestConvertSynapseReservation_scuSubstringNotMatched(t *testing.T) {
 }
 
 func TestConvertSynapseReservation_nilSKUName(t *testing.T) {
+	t.Parallel()
 	c := newTestClient()
 	assert.Nil(t, c.convertSynapseReservation(&armconsumption.ReservationDetail{
 		Properties: &armconsumption.ReservationDetailProperties{},
@@ -866,6 +901,7 @@ func TestConvertSynapseReservation_nilSKUName(t *testing.T) {
 // ---- public reservation selection -----------------------------------------
 
 func TestGetOfferingDetails_ReservationSelection(t *testing.T) {
+	t.Parallel()
 	good := synapseCapturedDW100c(nil)
 	metadata := synapseCapturedDW100c(map[string]any{
 		"meterId": "different", "productId": "different", "skuId": "different",
@@ -925,6 +961,7 @@ func TestGetOfferingDetails_ReservationSelection(t *testing.T) {
 }
 
 func TestGetOfferingDetails_Pagination(t *testing.T) {
+	t.Parallel()
 	good := synapseCapturedDW100c(nil)
 	foreign := synapseCapturedDW100c(map[string]any{"skuName": "DW200c"})
 	conflict := synapseCapturedDW100c(map[string]any{"retailPrice": 9000.0, "unitPrice": 9000.0})
@@ -958,6 +995,7 @@ func TestGetOfferingDetails_Pagination(t *testing.T) {
 }
 
 func TestGetOfferingDetails_RejectsQuoteInRegionAndSKU(t *testing.T) {
+	t.Parallel()
 	client, requests := synapseQuoteClient(t, "east'us", synapsePricePage(t, nil, ""))
 	quote, err := client.GetOfferingDetails(context.Background(), common.Recommendation{ResourceType: "DW'100c", Term: "1yr", PaymentOption: "upfront"})
 	require.Error(t, err)
@@ -967,6 +1005,7 @@ func TestGetOfferingDetails_RejectsQuoteInRegionAndSKU(t *testing.T) {
 }
 
 func TestGetOfferingDetails_RejectsUnsupportedTermAndPayment(t *testing.T) {
+	t.Parallel()
 	client, requests := synapseQuoteClient(t, "eastus", synapsePricePage(t, []map[string]any{synapseCapturedDW100c(nil)}, ""))
 	quote, err := client.GetOfferingDetails(context.Background(), common.Recommendation{ResourceType: "DW100c", Term: "2yr", PaymentOption: "upfront"})
 	require.Error(t, err)
@@ -982,6 +1021,7 @@ func TestGetOfferingDetails_RejectsUnsupportedTermAndPayment(t *testing.T) {
 // ---- parseReservationTermYears --------------------------------------------
 
 func TestParseReservationTermYears(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		term    string
 		want    int
@@ -1015,6 +1055,7 @@ func TestParseReservationTermYears(t *testing.T) {
 // ---- PurchaseCommitment input validation ----------------------------------
 
 func TestPurchaseCommitment_emptyResourceType(t *testing.T) {
+	t.Parallel()
 	cred := &mockTokenCredential{token: "tok"}
 	c := NewClientWithHTTP(cred, "sub-123", "eastus", nil)
 	rec := common.Recommendation{ResourceType: "", Term: "1yr", Count: 1}
@@ -1025,6 +1066,7 @@ func TestPurchaseCommitment_emptyResourceType(t *testing.T) {
 }
 
 func TestPurchaseCommitment_zeroCount(t *testing.T) {
+	t.Parallel()
 	cred := &mockTokenCredential{token: "tok"}
 	c := NewClientWithHTTP(cred, "sub-123", "eastus", nil)
 	rec := common.Recommendation{ResourceType: "DW1000c", Term: "1yr", Count: 0}
@@ -1035,6 +1077,7 @@ func TestPurchaseCommitment_zeroCount(t *testing.T) {
 }
 
 func TestPurchaseCommitment_negativeCount(t *testing.T) {
+	t.Parallel()
 	cred := &mockTokenCredential{token: "tok"}
 	c := NewClientWithHTTP(cred, "sub-123", "eastus", nil)
 	rec := common.Recommendation{ResourceType: "DW1000c", Term: "1yr", Count: -1}
@@ -1044,6 +1087,7 @@ func TestPurchaseCommitment_negativeCount(t *testing.T) {
 }
 
 func TestPurchaseCommitment_unsupportedTerm(t *testing.T) {
+	t.Parallel()
 	cred := &mockTokenCredential{token: "tok"}
 	c := NewClientWithHTTP(cred, "sub-123", "eastus", nil)
 	rec := common.Recommendation{ResourceType: "DW1000c", Term: "5yr", Count: 1}
@@ -1062,6 +1106,7 @@ func TestPurchaseCommitment_unsupportedTerm(t *testing.T) {
 // purchase body rather than silently defaulting to Azure's Upfront behavior
 // for a no-upfront/monthly rec.
 func TestPurchaseCommitment_billingPlan(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name          string
 		paymentOption string
@@ -1140,6 +1185,7 @@ func TestPurchaseCommitment_billingPlan(t *testing.T) {
 // signal CUDly controls -- proceeding without it would allow a re-driven
 // purchase to create a duplicate reservation.
 func TestPurchaseCommitment_requiresSource(t *testing.T) {
+	t.Parallel()
 	mHTTP := &mocks.MockHTTPClient{}
 	t.Cleanup(func() { mHTTP.AssertExpectations(t) })
 	cred := &mockTokenCredential{token: "tok"}
@@ -1155,6 +1201,7 @@ func TestPurchaseCommitment_requiresSource(t *testing.T) {
 // ---- GetOfferingDetails: no reservation price ----------------------------
 
 func TestGetOfferingDetails_noReservationPrice(t *testing.T) {
+	t.Parallel()
 	onDemandOnlyJSON := `{
 		"Items": [
 			{
@@ -1196,6 +1243,7 @@ func TestGetOfferingDetails_noReservationPrice(t *testing.T) {
 // canonical SDK enum value "SqlDataWarehouse", not the hand-written "SqlDW"
 // Azure rejects as an invalid reservedResourceType.
 func TestPurchaseCommitment_canonicalReservedResourceType(t *testing.T) {
+	t.Parallel()
 	mHTTP := &mocks.MockHTTPClient{}
 	t.Cleanup(func() { mHTTP.AssertExpectations(t) })
 
@@ -1258,6 +1306,7 @@ func TestPurchaseCommitment_canonicalReservedResourceType(t *testing.T) {
 // The pre-fix code used the hand-written string "SQLDatabaseDTU" which is not
 // a valid resourceType enum member, causing the API to return no recommendations.
 func TestReservationResourceTypeSynapse_IsCanonical(t *testing.T) {
+	t.Parallel()
 	assert.Equal(t, "SqlDataWarehouse", reservationResourceTypeSynapse,
 		"Synapse filter value must be the Azure REST API canonical enum \"SqlDataWarehouse\"; "+
 			"\"SQLDatabaseDTU\" (pre-fix) is not a valid resourceType")
@@ -1270,6 +1319,7 @@ func TestReservationResourceTypeSynapse_IsCanonical(t *testing.T) {
 // httpClient falls back to httpclient.New() (SSRF-hardened), not
 // http.DefaultClient, so the fallback also rejects IMDS connections.
 func TestNewClientWithHTTP_NilFallbackIsHardened(t *testing.T) {
+	t.Parallel()
 	c := NewClientWithHTTP(nil, "sub-123", "eastus", nil)
 	require.NotNil(t, c.httpClient)
 	require.NotEqual(t, http.DefaultClient, c.httpClient,

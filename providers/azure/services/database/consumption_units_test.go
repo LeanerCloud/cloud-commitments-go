@@ -18,6 +18,7 @@ import (
 // commitment of Count x the term-total reservation retail price (synthetic
 // rows, not live quotes), for a 1y legacy and a 3y modern recommendation.
 func TestGetRecommendations_ConsumptionUnits(t *testing.T) {
+	t.Parallel()
 	client := NewClientWithHTTP(nil, "sub", "eastus", &mocks.PricingHTTP{Items: []map[string]any{
 		mocks.ReservationRow("SQL Database", "SQL Database Single/Elastic Pool General Purpose - Provisioned - Compute Gen5", "eastus", "GP_Gen5_2", "2 vCore", "vCore", "1 Year", 1500),
 		mocks.ReservationRow("SQL Database", "SQL Database Single/Elastic Pool General Purpose - Provisioned - Compute Gen5", "eastus", "GP_Gen5_2", "2 vCore", "vCore", "3 Years", 3200),
@@ -37,6 +38,7 @@ func TestGetRecommendations_ConsumptionUnits(t *testing.T) {
 
 // A retail price outage must fail the collection, not return a partial list.
 func TestGetRecommendations_ConsumptionPriceFetchFailureFailsCollection(t *testing.T) {
+	t.Parallel()
 	client := NewClientWithHTTP(nil, "sub", "eastus", &mocks.PricingHTTP{Err: errors.New("connection reset")})
 	client.SetCapabilitiesClient(&MockCapabilitiesClient{})
 	client.SetManagedInstancesPager(&MockSQLManagedInstancesPager{})

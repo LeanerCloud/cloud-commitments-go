@@ -38,6 +38,7 @@ func (p *boundedPager) NextPage(context.Context) (armconsumption.ReservationsSum
 }
 
 func TestGetRIUtilization_EndlessPagerHitsCap(t *testing.T) {
+	t.Parallel()
 	pager := &boundedPager{ceiling: 500}
 	adapter := &RecommendationsClientAdapter{subscriptionID: "sub-cap"}
 
@@ -49,6 +50,7 @@ func TestGetRIUtilization_EndlessPagerHitsCap(t *testing.T) {
 }
 
 func TestGetRIUtilization_CanceledMidWalkReturnsCtxErr(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	pager := &boundedPager{ceiling: 500, onPage: func(call int) {

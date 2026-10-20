@@ -47,6 +47,7 @@ func requireFailsClosed(t *testing.T, child, wantErr string) {
 }
 
 func TestGetExistingCommitmentsSDKIncompleteFailsClosed(t *testing.T) {
+	t.Parallel()
 	live := completenessChild("Succeeded", 1, "eastus")
 	cases := []struct {
 		name    string
@@ -70,6 +71,7 @@ func TestGetExistingCommitmentsSDKIncompleteFailsClosed(t *testing.T) {
 }
 
 func TestGetExistingCommitmentsSDKIncompleteControls(t *testing.T) {
+	t.Parallel()
 	t.Run("canceled with missing fields is not an error", func(t *testing.T) {
 		child := mustReplace(t, completenessChild(string(armreservations.ProvisioningStateCancelled), 0, ""), `"sku":{"name":"Standard_D2s_v3"},`, ``)
 		client := sdkInventoryClient(t, "sub-a", inventorySDKTransport{child: child})

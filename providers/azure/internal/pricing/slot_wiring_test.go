@@ -17,6 +17,7 @@ func (c checkingHTTPClient) Do(*http.Request) (*http.Response, error) {
 }
 
 func TestFetchAll_HoldsSlot(t *testing.T) {
+	t.Parallel()
 	p, ctx := slottest.New(t)
 	_, err := FetchAll[fakeItem](ctx, checkingHTTPClient{p.Check}, "https://prices.example/p", DefaultPageTimeout, DefaultMaxPages)
 	require.NoError(t, err)

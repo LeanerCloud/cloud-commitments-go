@@ -22,6 +22,7 @@ var testParams = PurchaseParams{
 var testRec = common.Recommendation{ResourceType: "sku1", Count: 3, Term: "1yr", PaymentOption: "all-upfront"}
 
 func TestBuildPurchaseBody_Shape(t *testing.T) {
+	t.Parallel()
 	b, err := BuildPurchaseBody(testParams, testRec, common.PurchaseOptions{Source: "cudly", IdempotencyToken: "tok"}, "westus", "sub1", armreservations.ReservationBillingPlanUpfront)
 	require.NoError(t, err)
 	assert.Contains(t, string(b), `"reservedResourceType":"CosmosDb"`)
@@ -35,6 +36,7 @@ func TestBuildPurchaseBody_Shape(t *testing.T) {
 }
 
 func TestBuildPurchaseBody_NoSourceNoTokenSkipsTags(t *testing.T) {
+	t.Parallel()
 	b, err := BuildPurchaseBody(testParams, testRec, common.PurchaseOptions{}, "westus", "sub1", armreservations.ReservationBillingPlanUpfront)
 	require.NoError(t, err)
 	assert.NotContains(t, string(b), `"tags"`)
@@ -42,6 +44,7 @@ func TestBuildPurchaseBody_NoSourceNoTokenSkipsTags(t *testing.T) {
 }
 
 func TestBuildPurchaseBody_BadTermReturnedRaw(t *testing.T) {
+	t.Parallel()
 	rec := testRec
 	rec.Term = "2yr"
 	_, err := BuildPurchaseBody(testParams, rec, common.PurchaseOptions{}, "r", "s", armreservations.ReservationBillingPlanUpfront)
@@ -51,6 +54,7 @@ func TestBuildPurchaseBody_BadTermReturnedRaw(t *testing.T) {
 }
 
 func TestSubmit_EmptyTokenSkipsLookup(t *testing.T) {
+	t.Parallel()
 	capt := &reservationstest.Capture{}
 	cred := &reservationstest.CountingCred{}
 	id, existing, err := Submit(context.Background(), cred, capt, []byte(`{}`), common.PurchaseOptions{})
@@ -64,6 +68,7 @@ func TestSubmit_EmptyTokenSkipsLookup(t *testing.T) {
 }
 
 func TestSubmit_TokenFailureWrapped(t *testing.T) {
+	t.Parallel()
 	boom := errors.New("boom")
 	capt := &reservationstest.Capture{}
 	_, _, err := Submit(context.Background(), &reservationstest.CountingCred{Err: boom}, capt, []byte(`{}`), common.PurchaseOptions{})
@@ -73,6 +78,7 @@ func TestSubmit_TokenFailureWrapped(t *testing.T) {
 }
 
 func TestSubmit_TwoStepErrorUnwrapped(t *testing.T) {
+	t.Parallel()
 	boom := errors.New("lookup down")
 	capt := &reservationstest.Capture{FailWhen: func(*reservationstest.Request) error { return boom }}
 	_, _, err := Submit(context.Background(), &reservationstest.CountingCred{}, capt, []byte(`{}`), common.PurchaseOptions{IdempotencyToken: "tok"})

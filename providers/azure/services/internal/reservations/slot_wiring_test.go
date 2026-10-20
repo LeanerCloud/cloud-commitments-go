@@ -31,6 +31,7 @@ func (p *checkingOrderPager) NextPage(context.Context) (armreservations.Reservat
 }
 
 func TestListAppliedReservations_HoldsSlot(t *testing.T) {
+	t.Parallel()
 	var lister, order int
 	p, ctx := slottest.New(t)
 	f := InventoryFactories{

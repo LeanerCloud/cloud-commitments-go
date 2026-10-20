@@ -51,6 +51,7 @@ func succeededResult(props *armreservations.CalculateExchangeResponseProperties)
 // --- CalculateExchange validation ---
 
 func TestCalculateExchange_ValidationSources(t *testing.T) {
+	t.Parallel()
 	c := compute.NewClient(nil, "sub-1", "")
 	callerInvoked := false
 	c.SetCalculateExchangeCaller(func(_ context.Context, _ armreservations.CalculateExchangeRequest) (armreservations.CalculateExchangeOperationResultResponse, error) {
@@ -93,6 +94,7 @@ func TestCalculateExchange_ValidationSources(t *testing.T) {
 }
 
 func TestCalculateExchange_ValidationTargets(t *testing.T) {
+	t.Parallel()
 	c := compute.NewClient(nil, "sub-1", "")
 	callerInvoked := false
 	c.SetCalculateExchangeCaller(func(_ context.Context, _ armreservations.CalculateExchangeRequest) (armreservations.CalculateExchangeOperationResultResponse, error) {
@@ -139,6 +141,7 @@ func TestCalculateExchange_ValidationTargets(t *testing.T) {
 // --- CalculateExchange request-builder golden assertions ---
 
 func TestCalculateExchange_RequestBuilderWiring(t *testing.T) {
+	t.Parallel()
 	c := compute.NewClient(nil, "sub-1", "")
 	var captured armreservations.CalculateExchangeRequest
 	c.SetCalculateExchangeCaller(func(_ context.Context, body armreservations.CalculateExchangeRequest) (armreservations.CalculateExchangeOperationResultResponse, error) {
@@ -182,6 +185,7 @@ func TestCalculateExchange_RequestBuilderWiring(t *testing.T) {
 // Issue #57: a reservation Single-scoped to prod for chargeback must not come
 // back Shared after an exchange, or other subscriptions absorb its discount.
 func TestCalculateExchange_PreservesSingleScopeOfSources(t *testing.T) {
+	t.Parallel()
 	c := compute.NewClient(nil, "sub-1", "")
 	var captured armreservations.CalculateExchangeRequest
 	c.SetCalculateExchangeCaller(func(_ context.Context, body armreservations.CalculateExchangeRequest) (armreservations.CalculateExchangeOperationResultResponse, error) {
@@ -208,6 +212,7 @@ func TestCalculateExchange_PreservesSingleScopeOfSources(t *testing.T) {
 // appliedScopeType is Shared, so stray scopes reported on a Shared source must
 // neither block a mixed batch nor reach the wire.
 func TestCalculateExchange_SharedOmitsAppliedScopes(t *testing.T) {
+	t.Parallel()
 	c := compute.NewClient(nil, "sub-1", "")
 	var captured armreservations.CalculateExchangeRequest
 	c.SetCalculateExchangeCaller(func(_ context.Context, body armreservations.CalculateExchangeRequest) (armreservations.CalculateExchangeOperationResultResponse, error) {
@@ -226,6 +231,7 @@ func TestCalculateExchange_SharedOmitsAppliedScopes(t *testing.T) {
 // --- CalculateExchange response handling ---
 
 func TestCalculateExchange_NilPropertiesError(t *testing.T) {
+	t.Parallel()
 	c := compute.NewClient(nil, "sub-1", "")
 	c.SetCalculateExchangeCaller(func(_ context.Context, _ armreservations.CalculateExchangeRequest) (armreservations.CalculateExchangeOperationResultResponse, error) {
 		return succeededResult(nil), nil
@@ -239,6 +245,7 @@ func TestCalculateExchange_NilPropertiesError(t *testing.T) {
 }
 
 func TestCalculateExchange_EmptySessionIDError(t *testing.T) {
+	t.Parallel()
 	c := compute.NewClient(nil, "sub-1", "")
 	c.SetCalculateExchangeCaller(func(_ context.Context, _ armreservations.CalculateExchangeRequest) (armreservations.CalculateExchangeOperationResultResponse, error) {
 		return succeededResult(&armreservations.CalculateExchangeResponseProperties{SessionID: to.Ptr("")}), nil
@@ -254,6 +261,7 @@ func TestCalculateExchange_EmptySessionIDError(t *testing.T) {
 // SessionID would otherwise be handed to executeAzureExchange, which
 // commits whatever session its fresh quote returned.
 func TestCalculateExchange_NonSucceededStatusIsRefused(t *testing.T) {
+	t.Parallel()
 	for _, status := range []armreservations.CalculateExchangeOperationResultStatus{
 		armreservations.CalculateExchangeOperationResultStatusFailed,
 		armreservations.CalculateExchangeOperationResultStatusCancelled,
@@ -281,6 +289,7 @@ func TestCalculateExchange_NonSucceededStatusIsRefused(t *testing.T) {
 }
 
 func TestCalculateExchange_OperationError(t *testing.T) {
+	t.Parallel()
 	c := compute.NewClient(nil, "sub-1", "")
 	c.SetCalculateExchangeCaller(func(_ context.Context, _ armreservations.CalculateExchangeRequest) (armreservations.CalculateExchangeOperationResultResponse, error) {
 		return armreservations.CalculateExchangeOperationResultResponse{
@@ -295,6 +304,7 @@ func TestCalculateExchange_OperationError(t *testing.T) {
 }
 
 func TestCalculateExchange_PolicyErrorsExtraction(t *testing.T) {
+	t.Parallel()
 	c := compute.NewClient(nil, "sub-1", "")
 	c.SetCalculateExchangeCaller(func(_ context.Context, _ armreservations.CalculateExchangeRequest) (armreservations.CalculateExchangeOperationResultResponse, error) {
 		return succeededResult(&armreservations.CalculateExchangeResponseProperties{
@@ -325,6 +335,7 @@ func TestCalculateExchange_PolicyErrorsExtraction(t *testing.T) {
 // extractExchangePreview skipped every entry whose Message was nil and this
 // test failed with 0 entries.
 func TestCalculateExchange_PolicyErrorsWithoutMessageStillSurface(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name   string
 		policy *armreservations.ExchangePolicyError
@@ -374,6 +385,7 @@ func TestCalculateExchange_PolicyErrorsWithoutMessageStillSurface(t *testing.T) 
 }
 
 func TestCalculateExchange_NilVsZeroMoneyFields(t *testing.T) {
+	t.Parallel()
 	c := compute.NewClient(nil, "sub-1", "")
 	c.SetCalculateExchangeCaller(func(_ context.Context, _ armreservations.CalculateExchangeRequest) (armreservations.CalculateExchangeOperationResultResponse, error) {
 		return succeededResult(&armreservations.CalculateExchangeResponseProperties{
@@ -400,6 +412,7 @@ func TestCalculateExchange_NilVsZeroMoneyFields(t *testing.T) {
 }
 
 func TestCalculateExchange_OfferingsExtraction(t *testing.T) {
+	t.Parallel()
 	c := compute.NewClient(nil, "sub-1", "")
 	c.SetCalculateExchangeCaller(func(_ context.Context, _ armreservations.CalculateExchangeRequest) (armreservations.CalculateExchangeOperationResultResponse, error) {
 		return succeededResult(&armreservations.CalculateExchangeResponseProperties{
@@ -435,6 +448,7 @@ func TestCalculateExchange_OfferingsExtraction(t *testing.T) {
 }
 
 func TestCalculateExchange_CtxCancelPassthrough(t *testing.T) {
+	t.Parallel()
 	c := compute.NewClient(nil, "sub-1", "")
 	c.SetCalculateExchangeCaller(func(_ context.Context, _ armreservations.CalculateExchangeRequest) (armreservations.CalculateExchangeOperationResultResponse, error) {
 		return armreservations.CalculateExchangeOperationResultResponse{}, context.Canceled
@@ -446,6 +460,7 @@ func TestCalculateExchange_CtxCancelPassthrough(t *testing.T) {
 }
 
 func TestCalculateExchange_CallerAPIError(t *testing.T) {
+	t.Parallel()
 	c := compute.NewClient(nil, "sub-1", "")
 	c.SetCalculateExchangeCaller(func(_ context.Context, _ armreservations.CalculateExchangeRequest) (armreservations.CalculateExchangeOperationResultResponse, error) {
 		return armreservations.CalculateExchangeOperationResultResponse{}, errors.New("azure: CalculateExchange begin: transport error")
@@ -459,6 +474,7 @@ func TestCalculateExchange_CallerAPIError(t *testing.T) {
 // --- ExecuteExchange ---
 
 func TestExecuteExchange_EmptySessionID(t *testing.T) {
+	t.Parallel()
 	c := compute.NewClient(nil, "sub-1", "")
 	c.SetDoExchangeCaller(func(_ context.Context, _ string) (armreservations.ExchangeOperationResultResponse, error) {
 		t.Fatal("caller must not be invoked when session_id is empty")
@@ -472,6 +488,7 @@ func TestExecuteExchange_EmptySessionID(t *testing.T) {
 }
 
 func TestExecuteExchange_NilPropertiesError(t *testing.T) {
+	t.Parallel()
 	c := compute.NewClient(nil, "sub-1", "")
 	c.SetDoExchangeCaller(func(_ context.Context, _ string) (armreservations.ExchangeOperationResultResponse, error) {
 		return armreservations.ExchangeOperationResultResponse{
@@ -486,6 +503,7 @@ func TestExecuteExchange_NilPropertiesError(t *testing.T) {
 }
 
 func TestExecuteExchange_OperationError(t *testing.T) {
+	t.Parallel()
 	c := compute.NewClient(nil, "sub-1", "")
 	c.SetDoExchangeCaller(func(_ context.Context, _ string) (armreservations.ExchangeOperationResultResponse, error) {
 		return armreservations.ExchangeOperationResultResponse{
@@ -507,6 +525,7 @@ func TestExecuteExchange_OperationError(t *testing.T) {
 // returns HTTP 200 with status "Failed" and logs "exchange executed",
 // telling the caller a failed exchange succeeded.
 func TestExecuteExchange_FailedStatusWithoutErrorIsRefused(t *testing.T) {
+	t.Parallel()
 	for _, status := range []armreservations.ExchangeOperationResultStatus{
 		armreservations.ExchangeOperationResultStatusFailed,
 		armreservations.ExchangeOperationResultStatusCancelled,
@@ -534,6 +553,7 @@ func TestExecuteExchange_FailedStatusWithoutErrorIsRefused(t *testing.T) {
 // allow-list: PendingPurchases/PendingRefunds mean Azure committed the swap
 // and is still settling one leg, so they must NOT be turned into errors.
 func TestExecuteExchange_PendingStatusesAccepted(t *testing.T) {
+	t.Parallel()
 	for _, status := range []armreservations.ExchangeOperationResultStatus{
 		armreservations.ExchangeOperationResultStatusPendingPurchases,
 		armreservations.ExchangeOperationResultStatusPendingRefunds,
@@ -556,6 +576,7 @@ func TestExecuteExchange_PendingStatusesAccepted(t *testing.T) {
 }
 
 func TestExecuteExchange_CtxCancelPassthrough(t *testing.T) {
+	t.Parallel()
 	c := compute.NewClient(nil, "sub-1", "")
 	c.SetDoExchangeCaller(func(_ context.Context, _ string) (armreservations.ExchangeOperationResultResponse, error) {
 		return armreservations.ExchangeOperationResultResponse{}, context.DeadlineExceeded
@@ -567,6 +588,7 @@ func TestExecuteExchange_CtxCancelPassthrough(t *testing.T) {
 }
 
 func TestExecuteExchange_HappyPath(t *testing.T) {
+	t.Parallel()
 	c := compute.NewClient(nil, "sub-1", "")
 	var capturedSessionID string
 	c.SetDoExchangeCaller(func(_ context.Context, sessionID string) (armreservations.ExchangeOperationResultResponse, error) {

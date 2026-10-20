@@ -166,6 +166,7 @@ func assertRedisQuote(t *testing.T, c redisClientCase, q *common.OfferingDetails
 }
 
 func TestRedisOffering_CapturedReservations(t *testing.T) {
+	t.Parallel()
 	for _, c := range redisClients() {
 		for _, fixture := range redisCatalog() {
 			aliases := []string{fixture.arm}
@@ -192,6 +193,7 @@ func TestRedisOffering_CapturedReservations(t *testing.T) {
 }
 
 func TestRedisOffering_RejectsQuoteInRegion(t *testing.T) {
+	t.Parallel()
 	for _, c := range redisClients() {
 		t.Run(c.name, func(t *testing.T) {
 			h, requests := redisHTTP(t, nil, nil)
@@ -205,6 +207,7 @@ func TestRedisOffering_RejectsQuoteInRegion(t *testing.T) {
 }
 
 func TestRedisOffering_UnknownAliasesAvoidHTTP(t *testing.T) {
+	t.Parallel()
 	for _, c := range redisClients() {
 		for _, sku := range []string{"", "Premium_P10", "Premium_P1'", "premium_p1", " Premium_P1", "Standard_C1", "Enterprise_E1", "Azure_Redis_Cache_Enterprise_E", "Azure_Redis_Cache_Enterprise_E1x", "Azure_Redis_Cache_Enterprise_E１", "Azure_Redis_Cache_Enterprise_Flash_F", "Azure_Managed_Redis_Balanced_B1"} {
 			t.Run(c.name+"/"+sku, func(t *testing.T) {
@@ -217,6 +220,7 @@ func TestRedisOffering_UnknownAliasesAvoidHTTP(t *testing.T) {
 }
 
 func TestRedisOffering_IdentityAndOrderSynthetic(t *testing.T) {
+	t.Parallel()
 	badFields := map[string]any{
 		"armSkuName": "Azure_Redis_Cache_Premium_P10_Cache", "armRegionName": "westus",
 		"serviceName": "Azure Cache for Redis", "productName": "Azure Redis Cache Enterprise",
@@ -252,6 +256,7 @@ func TestRedisOffering_IdentityAndOrderSynthetic(t *testing.T) {
 }
 
 func TestRedisOffering_SelectedValidationSynthetic(t *testing.T) {
+	t.Parallel()
 	for _, c := range redisClients() {
 		for _, bad := range []struct {
 			field string
@@ -272,6 +277,7 @@ func TestRedisOffering_SelectedValidationSynthetic(t *testing.T) {
 }
 
 func TestRedisOffering_EquivalentAndConflictingQuotesSynthetic(t *testing.T) {
+	t.Parallel()
 	for _, c := range redisClients() {
 		for _, change := range []string{"equivalent", "price", "currency", "invalid selected unit"} {
 			for _, reverse := range []bool{false, true} {
@@ -305,6 +311,7 @@ func TestRedisOffering_EquivalentAndConflictingQuotesSynthetic(t *testing.T) {
 }
 
 func TestRedisOffering_PrefixNeighborsAndMalformedRowsSynthetic(t *testing.T) {
+	t.Parallel()
 	for _, c := range redisClients() {
 		for _, selected := range redisCatalog() {
 			for _, reverse := range []bool{false, true} {
@@ -330,6 +337,7 @@ func TestRedisOffering_PrefixNeighborsAndMalformedRowsSynthetic(t *testing.T) {
 }
 
 func TestRedisOffering_ValidShapesSynthetic(t *testing.T) {
+	t.Parallel()
 	for _, c := range redisClients() {
 		for _, currency := range []string{"USD", "EUR"} {
 			for _, unit := range []string{"1 Hour", "1/Hour"} {
@@ -346,6 +354,7 @@ func TestRedisOffering_ValidShapesSynthetic(t *testing.T) {
 }
 
 func TestRedisOffering_PaginatedReservation(t *testing.T) {
+	t.Parallel()
 	for _, c := range redisClients() {
 		t.Run(c.name, func(t *testing.T) {
 			q, err := redisQuote(t, c, "Premium_P1", [][]map[string]any{{redisConsumption()}, {redisCatalog()[0].row(1)}})

@@ -94,6 +94,7 @@ func scriptPageChain(t *testing.T, client *fakeHTTPClient, n int) {
 // empty NextPageLink, page 2 has an empty NextPageLink, all items are
 // merged into the returned slice in order.
 func TestFetchAll_MergesPages(t *testing.T) {
+	t.Parallel()
 	client := newFakeHTTPClient()
 	resp1 := okJSONResponse(
 		`{"Items":[{"name":"a"}],"NextPageLink":"https://prices.example/page2"}`,
@@ -123,6 +124,7 @@ func TestFetchAll_MergesPages(t *testing.T) {
 // server-bug case where NextPageLink points at the URL that just produced
 // it. Without the seen-URL set the walker would loop forever.
 func TestFetchAll_RejectsSelfReferentialNextPageLink(t *testing.T) {
+	t.Parallel()
 	client := newFakeHTTPClient()
 	resp := okJSONResponse(
 		`{"Items":[],"NextPageLink":"https://prices.example/loop"}`,
@@ -142,6 +144,7 @@ func TestFetchAll_RejectsSelfReferentialNextPageLink(t *testing.T) {
 // the first maxPages pages with a nil error. The walker must still stop
 // fetching at the cap.
 func TestFetchAll_ErrorsWhenCapReachedWithPagesRemaining(t *testing.T) {
+	t.Parallel()
 	client := newFakeHTTPClient()
 	scriptPageChain(t, client, 10)
 
@@ -157,6 +160,7 @@ func TestFetchAll_ErrorsWhenCapReachedWithPagesRemaining(t *testing.T) {
 // exactly maxPages pages whose last page has an empty NextPageLink is
 // complete and must not be reported as truncated.
 func TestFetchAll_ExactlyMaxPagesSucceeds(t *testing.T) {
+	t.Parallel()
 	client := newFakeHTTPClient()
 	scriptPageChain(t, client, 3)
 
@@ -172,6 +176,7 @@ func TestFetchAll_ExactlyMaxPagesSucceeds(t *testing.T) {
 // independently of the caller's outer ctx: the request context carries
 // a deadline, and a page failure does NOT cancel the outer ctx.
 func TestFetchAll_PerPageTimeout(t *testing.T) {
+	t.Parallel()
 	client := newFakeHTTPClient()
 	resp := okJSONResponse(
 		`{"Items":[{"name":"a"}],"NextPageLink":"https://prices.example/page2"}`,
@@ -204,6 +209,7 @@ func TestFetchAll_PerPageTimeout(t *testing.T) {
 // surfaces as a wrapped error carrying the body (for diagnosis) and the
 // page index.
 func TestFetchAll_RejectsNonOKStatus(t *testing.T) {
+	t.Parallel()
 	client := newFakeHTTPClient()
 	client.responses["https://prices.example/page1"] = &http.Response{
 		StatusCode: http.StatusInternalServerError,
@@ -220,6 +226,7 @@ func TestFetchAll_RejectsNonOKStatus(t *testing.T) {
 
 // TestFetchAll_ZeroMaxPages guards against an obvious caller bug.
 func TestFetchAll_ZeroMaxPages(t *testing.T) {
+	t.Parallel()
 	client := newFakeHTTPClient()
 	_, err := FetchAll[fakeItem](context.Background(), client, "https://prices.example/page1", DefaultPageTimeout, 0)
 	require.Error(t, err)
@@ -227,6 +234,7 @@ func TestFetchAll_ZeroMaxPages(t *testing.T) {
 }
 
 func TestFetchAll_ClosesResponses(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name       string
 		statusCode int
@@ -280,6 +288,7 @@ func TestFetchAll_ClosesResponses(t *testing.T) {
 }
 
 func TestOKJSONResponse_CallerOwnedCleanupClosesUnusedFixture(t *testing.T) {
+	t.Parallel()
 	var trackedBody *closeTrackingBody
 	t.Run("unused response is open until subtest cleanup", func(t *testing.T) {
 		resp := okJSONResponse(`{"Items":[]}`)
