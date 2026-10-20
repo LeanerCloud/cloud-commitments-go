@@ -18,6 +18,7 @@ import (
 // commitment of Count x the term-total reservation retail price (synthetic
 // rows, not live quotes), for a 1y legacy and a 3y modern recommendation.
 func TestGetRecommendations_ConsumptionUnits(t *testing.T) {
+	t.Parallel()
 	client := newPricedTestClient()
 	client.SetRecommendationsPager(&mocks.MockRecommendationsPager{
 		Results: mocks.ConsumptionUnitFixtures("DW1000c", "eastus"),
@@ -31,6 +32,7 @@ func TestGetRecommendations_ConsumptionUnits(t *testing.T) {
 
 // A retail price outage must fail the collection, not return a partial list.
 func TestGetRecommendations_ConsumptionPriceFetchFailureFailsCollection(t *testing.T) {
+	t.Parallel()
 	client := newTestClient()
 	client.httpClient = &mocks.PricingHTTP{Err: errors.New("connection reset")}
 	client.SetRecommendationsPager(&mocks.MockRecommendationsPager{

@@ -35,6 +35,7 @@ func (p *countingReservationsPager) NextPage(_ context.Context) (armconsumption.
 }
 
 func TestGetRecommendations_PageCapReturnsError(t *testing.T) {
+	t.Parallel()
 	pager := &countingRecommendationsPager{limit: 1000}
 	client := NewClient(nil, "test-subscription", "eastus")
 	client.SetRecommendationsPager(pager)
@@ -46,6 +47,7 @@ func TestGetRecommendations_PageCapReturnsError(t *testing.T) {
 }
 
 func TestGetRecommendations_CancelledContextReturnsContextError(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	pager := &countingRecommendationsPager{limit: 1000}
@@ -58,6 +60,7 @@ func TestGetRecommendations_CancelledContextReturnsContextError(t *testing.T) {
 }
 
 func TestGetExistingCommitments_PageCapReturnsError(t *testing.T) {
+	t.Parallel()
 	pager := &countingReservationsPager{limit: 1000}
 	client := NewClient(nil, "test-subscription", "eastus")
 	client.SetReservationsPager(pager)
@@ -69,6 +72,7 @@ func TestGetExistingCommitments_PageCapReturnsError(t *testing.T) {
 }
 
 func TestGetExistingCommitments_CancelledContextReturnsContextError(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	pager := &countingReservationsPager{limit: 1000}
@@ -133,6 +137,7 @@ func (p *finalPartialReservationsPager) NextPage(_ context.Context) (armconsumpt
 }
 
 func TestGetRecommendations_ExactlyCapPagesWithPartialLastPageSucceeds(t *testing.T) {
+	t.Parallel()
 	pager := &finalPartialRecommendationsPager{pages: maxRecsPages}
 	client := newPricedTestClient()
 	client.SetRecommendationsPager(pager)
@@ -145,6 +150,7 @@ func TestGetRecommendations_ExactlyCapPagesWithPartialLastPageSucceeds(t *testin
 }
 
 func TestGetExistingCommitments_ExactlyCapPagesWithPartialLastPageSucceeds(t *testing.T) {
+	t.Parallel()
 	pager := &finalPartialReservationsPager{pages: maxReservationsPages}
 	client := NewClient(nil, "test-subscription", "eastus")
 	client.SetReservationsPager(pager)
