@@ -68,12 +68,12 @@ type CosmosAccountsPager interface {
 // Client handles Azure Cosmos DB Reserved Capacity.
 type Client struct {
 	cred                 azcore.TokenCredential
-	subscriptionID       string
-	region               string
 	httpClient           HTTPClient
 	recommendationsPager RecommendationsPager
 	reservationsPager    ReservationsDetailsPager
 	cosmosAccountsPager  CosmosAccountsPager
+	subscriptionID       string
+	region               string
 
 	// Lazy account-API-type cache. Cosmos DB has no per-SKU APIType (the
 	// API type lives on the account, not the reservation SKU which is
@@ -82,8 +82,8 @@ type Client struct {
 	// dominant APIType the converter can apply to recommendations.
 	// "Dominant" = the only API type observed if there's exactly one,
 	// else empty (meaning: subscription is multi-API, can't infer).
-	apiTypeOnce sync.Once
 	apiType     string
+	apiTypeOnce sync.Once
 }
 
 // NewClient creates a new Azure Cosmos DB client.
@@ -539,9 +539,9 @@ func (c *Client) getCommonSKUs() []string {
 
 // CosmosPricing contains pricing information for Cosmos DB.
 type CosmosPricing struct {
+	Currency         string
 	HourlyRate       float64
 	ReservationPrice float64
-	Currency         string
 }
 
 func (c *Client) getCosmosPricing(ctx context.Context, sku, region string, termYears int) (*CosmosPricing, error) {

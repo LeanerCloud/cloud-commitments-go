@@ -63,12 +63,12 @@ type RedisCachesPager interface {
 // provider-dispatch level.
 type Client struct {
 	cred                 azcore.TokenCredential
-	subscriptionID       string
-	region               string
 	httpClient           HTTPClient
 	recommendationsPager RecommendationsPager
 	reservationsPager    ReservationsDetailsPager
 	redisCachesPager     RedisCachesPager
+	subscriptionID       string
+	region               string
 }
 
 // recommendationsListArgs builds the (scope, options) for the Consumption
@@ -495,9 +495,9 @@ func (c *Client) commonSKUs() []string {
 
 // RedisPricing holds pricing details for a given Redis Cache SKU.
 type RedisPricing struct {
+	Currency         string
 	HourlyRate       float64
 	ReservationPrice float64
-	Currency         string
 }
 
 func (c *Client) getRedisPricing(ctx context.Context, sku, region string, termYears int) (*RedisPricing, error) {

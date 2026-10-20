@@ -33,6 +33,11 @@ import (
 // CompatibleOffering describes one candidate target SKU that Azure priced as
 // an exchange destination for the source reservations.
 type CompatibleOffering struct {
+	// BillingCurrencyTotal is the net amount the customer would pay in their
+	// billing currency for this offering. Nil when Azure did not report an
+	// amount (never coerced to 0 -- absent is not the same as free).
+	BillingCurrencyTotal *float64 `json:"billing_currency_total"`
+
 	// SKU is the VM size (e.g. "Standard_D4s_v3").
 	SKU string `json:"sku"`
 
@@ -46,16 +51,11 @@ type CompatibleOffering struct {
 	// pair as unsupported.
 	Term string `json:"term"`
 
-	// Quantity is the number of instances that would be purchased.
-	Quantity int32 `json:"quantity"`
-
-	// BillingCurrencyTotal is the net amount the customer would pay in their
-	// billing currency for this offering. Nil when Azure did not report an
-	// amount (never coerced to 0 -- absent is not the same as free).
-	BillingCurrencyTotal *float64 `json:"billing_currency_total"`
-
 	// CurrencyCode is the ISO 4217 code for BillingCurrencyTotal (e.g. "USD").
 	CurrencyCode string `json:"currency_code,omitempty"`
+
+	// Quantity is the number of instances that would be purchased.
+	Quantity int32 `json:"quantity"`
 }
 
 // ExchangePreview holds the priced result of a CalculateExchange call: what
@@ -123,9 +123,6 @@ type ExchangeTarget struct {
 	// CalculateExchange rather than second-guessed here.
 	Term armreservations.ReservationTerm
 
-	// Quantity is the number of instances to reserve. Required: must be >= 1.
-	Quantity int32
-
 	// BillingScopeID is the subscription or billing account that will be
 	// charged. Required by the Azure exchange API.
 	BillingScopeID string
@@ -145,6 +142,9 @@ type ExchangeTarget struct {
 	// CalculateExchange session; ExecuteExchange sends only the session ID,
 	// so the executed exchange is billed with the plan that was priced.
 	BillingPlan armreservations.ReservationBillingPlan
+
+	// Quantity is the number of instances to reserve. Required: must be >= 1.
+	Quantity int32
 }
 
 // CalculateExchangeCallerFunc is the narrow LRO-invoker interface that

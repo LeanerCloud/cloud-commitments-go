@@ -17,10 +17,10 @@ type offeringWant struct {
 	productDesc  string
 	tenancy      types.Tenancy
 	scope        types.Scope
-	duration     int64
 	class        types.OfferingClassType
 	offeringType types.OfferingTypeValues
 	az           string
+	duration     int64
 }
 
 // want maps the lookup query onto the fields offeringMismatch re-checks.
@@ -44,31 +44,31 @@ const vpcProductSuffix = " (Amazon VPC)"
 // field is a mismatch); instance type, scope and product are compared only
 // when AWS populated the offering field.
 var offeringChecks = []struct {
-	reason   string
 	mismatch func(o types.ReservedInstancesOffering, w offeringWant) bool
+	reason   string
 }{
-	{"zone", func(o types.ReservedInstancesOffering, w offeringWant) bool {
+	{reason: "zone", mismatch: func(o types.ReservedInstancesOffering, w offeringWant) bool {
 		return !offeringInZone(o, w.az)
 	}},
-	{"class", func(o types.ReservedInstancesOffering, w offeringWant) bool {
+	{reason: "class", mismatch: func(o types.ReservedInstancesOffering, w offeringWant) bool {
 		return w.class != "" && o.OfferingClass != w.class
 	}},
-	{"tenancy", func(o types.ReservedInstancesOffering, w offeringWant) bool {
+	{reason: "tenancy", mismatch: func(o types.ReservedInstancesOffering, w offeringWant) bool {
 		return w.tenancy != "" && o.InstanceTenancy != w.tenancy
 	}},
-	{"duration", func(o types.ReservedInstancesOffering, w offeringWant) bool {
+	{reason: "duration", mismatch: func(o types.ReservedInstancesOffering, w offeringWant) bool {
 		return w.duration != 0 && aws.ToInt64(o.Duration) != w.duration
 	}},
-	{"offering-type", func(o types.ReservedInstancesOffering, w offeringWant) bool {
+	{reason: "offering-type", mismatch: func(o types.ReservedInstancesOffering, w offeringWant) bool {
 		return w.offeringType != "" && o.OfferingType != w.offeringType
 	}},
-	{"instance-type", func(o types.ReservedInstancesOffering, w offeringWant) bool {
+	{reason: "instance-type", mismatch: func(o types.ReservedInstancesOffering, w offeringWant) bool {
 		return w.instanceType != "" && o.InstanceType != "" && string(o.InstanceType) != w.instanceType
 	}},
-	{"scope", func(o types.ReservedInstancesOffering, w offeringWant) bool {
+	{reason: "scope", mismatch: func(o types.ReservedInstancesOffering, w offeringWant) bool {
 		return w.scope != "" && o.Scope != "" && o.Scope != w.scope
 	}},
-	{"product", func(o types.ReservedInstancesOffering, w offeringWant) bool {
+	{reason: "product", mismatch: func(o types.ReservedInstancesOffering, w offeringWant) bool {
 		got, want := string(o.ProductDescription), w.productDesc
 		if got == "" || want == "" {
 			return false

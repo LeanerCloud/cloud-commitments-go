@@ -58,11 +58,11 @@ type ReservationsDetailsPager interface {
 // Client handles Azure Synapse Analytics Reserved Capacity.
 type Client struct {
 	cred                 azcore.TokenCredential
-	subscriptionID       string
-	region               string
 	httpClient           HTTPClient
 	recommendationsPager RecommendationsPager
 	reservationsPager    ReservationsDetailsPager
+	subscriptionID       string
+	region               string
 }
 
 // NewClient creates a new Azure Synapse Analytics client.
@@ -116,8 +116,6 @@ func (c *Client) GetRegion() string {
 // Synapse Analytics. Private pricing selection uses the shared item shape.
 type RetailPriceItem struct {
 	CurrencyCode    string  `json:"currencyCode"`
-	RetailPrice     float64 `json:"retailPrice"`
-	UnitPrice       float64 `json:"unitPrice"`
 	ArmRegionName   string  `json:"armRegionName"`
 	ProductName     string  `json:"productName"`
 	ServiceName     string  `json:"serviceName"`
@@ -126,6 +124,8 @@ type RetailPriceItem struct {
 	SKUName         string  `json:"skuName"`
 	ReservationTerm string  `json:"reservationTerm"`
 	Type            string  `json:"type"`
+	RetailPrice     float64 `json:"retailPrice"`
+	UnitPrice       float64 `json:"unitPrice"`
 }
 
 // GetRecommendations retrieves Synapse reservation recommendations from the
@@ -440,9 +440,9 @@ func (c *Client) GetValidResourceTypes(_ context.Context) ([]string, error) {
 
 // Pricing holds pricing information for Synapse Analytics.
 type Pricing struct {
+	Currency         string
 	HourlyRate       float64
 	ReservationPrice float64
-	Currency         string
 }
 
 // getSynapsePricing fetches pricing from the Azure Retail Prices API.
