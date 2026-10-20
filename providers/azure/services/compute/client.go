@@ -87,14 +87,21 @@ type vmSKUEntry struct {
 
 // Client handles Azure VM Reserved Instances.
 type Client struct {
-	cred           azcore.TokenCredential
-	subscriptionID string
-	region         string
-	httpClient     HTTPClient
+	cred       azcore.TokenCredential
+	httpClient HTTPClient
 
 	// For testing - these can be set to mock implementations
 	recommendationsPager RecommendationsPager
 	resourceSKUsPager    ResourceSKUsPager
+
+	// Microsoft.Capacity provider registration check (cached per client lifetime)
+	capacityProviderErr error
+
+	// Optional injected pager for ListExchangeableReservations. When nil
+	// (the production default) the method creates a real
+	// armreservations.ReservationClient. Tests inject a stub to run
+	// hermetically without Azure credentials.
+	exchangeablePager ExchangeableReservationPager
 
 	// Optional injected factories for the reservation-inventory path used by
 	// GetExistingCommitments. When nil (the production default) the method
@@ -102,10 +109,6 @@ type Client struct {
 	// reservations.DefaultInventoryFactories. Tests inject stubs via
 	// SetInventoryFactories to run hermetically without Azure credentials.
 	inventoryFactories *InventoryFactories
-
-	// Microsoft.Capacity provider registration check (cached per client lifetime)
-	capacityProviderOnce sync.Once
-	capacityProviderErr  error
 
 	// Lazy SKU catalog cache. armcompute.ResourceSKUsClient.NewListPager
 	// returns every SKU available to the subscription with its
@@ -115,14 +118,7 @@ type Client struct {
 	// converters fall back to VCPU=0/MemoryGB=0 with a WARN log — the
 	// conversion itself does NOT fail (graceful-degradation contract,
 	// matches cache/cosmosdb/database from PR #81).
-	skuCacheOnce sync.Once
-	skuCacheMap  map[string]vmSKUEntry
-
-	// Optional injected pager for ListExchangeableReservations. When nil
-	// (the production default) the method creates a real
-	// armreservations.ReservationClient. Tests inject a stub to run
-	// hermetically without Azure credentials.
-	exchangeablePager ExchangeableReservationPager
+	skuCacheMap map[string]vmSKUEntry
 
 	// Optional injected LRO callers for CalculateExchange and
 	// ExecuteExchange. When nil (the production default) the methods
@@ -137,6 +133,22 @@ type Client struct {
 	// fake HTTP transport so the production LRO wrappers and the SDK's own
 	// request serialization run without reaching Azure.
 	exchangeClientOptions *arm.ClientOptions
+
+	subscriptionID string
+	region         string
+
+	// Microsoft.Capacity provider registration check (cached per client lifetime)
+	capacityProviderOnce sync.Once
+
+	// Lazy SKU catalog cache. armcompute.ResourceSKUsClient.NewListPager
+	// returns every SKU available to the subscription with its
+	// Capabilities (vCPUs, MemoryGB). Fetched ONCE per client lifetime;
+	// subsequent converter calls in the same GetRecommendations run hit
+	// the in-memory map. A failed fetch leaves skuCacheMap nil and
+	// converters fall back to VCPU=0/MemoryGB=0 with a WARN log — the
+	// conversion itself does NOT fail (graceful-degradation contract,
+	// matches cache/cosmosdb/database from PR #81).
+	skuCacheOnce sync.Once
 }
 
 // NewClient creates a new Azure Compute client.
@@ -674,9 +686,9 @@ func (c *Client) isAvailableInRegion(sku *armcompute.ResourceSKU, region string)
 
 // VMPricing contains VM pricing information.
 type VMPricing struct {
+	Currency         string
 	HourlyRate       float64
 	ReservationPrice float64
-	Currency         string
 }
 
 // getVMPricing gets real VM pricing from Azure Retail Prices API.

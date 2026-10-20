@@ -54,12 +54,12 @@ type ServicesPager interface {
 // Client handles Azure Cognitive Search Reserved Capacity.
 type Client struct {
 	cred                 azcore.TokenCredential
-	subscriptionID       string
-	region               string
 	httpClient           HTTPClient
 	recommendationsPager RecommendationsPager
 	reservationsPager    ReservationsDetailsPager
 	searchServicesPager  ServicesPager
+	subscriptionID       string
+	region               string
 }
 
 // NewClient creates a new Azure Search client.
@@ -116,8 +116,8 @@ func (c *Client) GetRegion() string {
 
 // AzureRetailPrice represents pricing information from Azure Retail Prices API.
 type AzureRetailPrice struct {
-	Items        []pricing.RetailPriceItem `json:"Items"`
 	NextPageLink string                    `json:"NextPageLink"`
+	Items        []pricing.RetailPriceItem `json:"Items"`
 	Count        int                       `json:"Count"`
 }
 
@@ -428,9 +428,9 @@ func (c *Client) getCommonSKUs() []string {
 
 // Pricing contains pricing information for Azure Search.
 type Pricing struct {
+	Currency         string
 	HourlyRate       float64
 	ReservationPrice float64
-	Currency         string
 }
 
 var searchDisplaySKUs = map[string]string{

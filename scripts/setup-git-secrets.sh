@@ -111,10 +111,14 @@ git secrets --add 'api[_-]?key[[:space:]]*[=:][[:space:]]*['\''"][^'\''"]{8,}'  
 git secrets --add 'secret[_-]?key[[:space:]]*[=:][[:space:]]*['\''"][^'\''"]{8,}'      # Secret key with quoted value
 git secrets --add 'BEGIN[[:space:]]((RSA|DSA|EC|OPENSSH|ENCRYPTED)[[:space:]])?PRIVATE[[:space:]]KEY-----'  # PEM private keys
 
-# Database connection strings
-git secrets --add 'postgres://[^:]+:[^@]+@'                           # PostgreSQL
-git secrets --add 'mysql://[^:]+:[^@]+@'                              # MySQL
-git secrets --add 'mongodb(\+srv)?://[^:]+:[^@]+@'                    # MongoDB
+# Database connection strings with embedded credentials. One pattern covers
+# postgres/postgresql/mysql/mariadb/mongodb, optional driver suffixes
+# (postgresql+psycopg2, mysql+pymysql, mongodb+srv) and an empty username.
+# The pattern must consume the host: git-secrets scans with `grep -w`, which
+# rejects a match whose last character ("@") is followed by a word character,
+# so a pattern ending at "@" never fired on user:pw@host. The bracketed
+# letters keep this line from matching itself, so it needs no .gitallowed entry.
+git secrets --add '(postgre(s|sq[l])|mysq[l]|mariad[b]|mongod[b])(\+[a-z0-9_]+)?://[^:@/]*:[^@]+@[^[:space:]]+'  # DB connection strings
 
 # Allowed patterns live in .gitallowed (versioned, applied by every scan, including CI).
 # They are matched against the whole "path:line:content" scanner output line, so an entry

@@ -1516,20 +1516,33 @@ func TestCacheClient_GetValidResourceTypes_CtxCancelReturnsError(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled, "canceled context must produce an error, not a silent partial result")
 }
 
-// TestCacheClient_GetValidResourceTypes_PageCapReturnsError asserts that the
-// page budget is enforced: an unbounded pager is stopped after maxCachesPages
-// iterations and the function returns an error rather than looping forever.
-func TestCacheClient_GetValidResourceTypes_PageCapFires(t *testing.T) {
+// TestCacheClient_GetValidResourceTypes_PageCapReturnsError asserts that an
+// unbounded pager is stopped after maxCachesPages iterations with a loud error,
+// never a partial or fallback result.
+func TestCacheClient_GetValidResourceTypes_PageCapReturnsError(t *testing.T) {
 	t.Parallel()
+	pager := &countingRedisPager{limit: 1000}
 	client := NewClient(nil, "test-subscription", "eastus")
-	client.SetRedisCachesPager(&infiniteRedisCachesPager{})
+	client.SetRedisCachesPager(pager)
 
-	// GetValidResourceTypes falls back to common SKUs after hitting the log-only
-	// cap, so the call itself succeeds. The important invariant is that it
-	// terminates rather than looping forever.
+	skus, err := client.GetValidResourceTypes(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "pagination cap")
+	assert.Nil(t, skus)
+	assert.Equal(t, maxCachesPages, pager.calls)
+}
+
+// TestCacheClient_GetValidResourceTypes_ExactlyCapPagesSucceeds asserts the cap
+// is an error only when more pages remain after maxCachesPages.
+func TestCacheClient_GetValidResourceTypes_ExactlyCapPagesSucceeds(t *testing.T) {
+	t.Parallel()
+	pager := &finalPartialRedisPager{pages: maxCachesPages, perPage: 2}
+	client := NewClient(nil, "test-subscription", "eastus")
+	client.SetRedisCachesPager(pager)
+
 	skus, err := client.GetValidResourceTypes(context.Background())
 	require.NoError(t, err)
-	require.NotEmpty(t, skus, "page cap must trigger fallback to common SKUs, not an empty result")
+	assert.Len(t, skus, 2*(maxCachesPages-1)+1)
 }
 
 // TestNewClientWithHTTP_NilFallbackIsHardened verifies that passing nil as the

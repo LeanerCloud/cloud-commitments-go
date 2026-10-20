@@ -426,12 +426,12 @@ func TestMergeServiceResults_OrderIsStable(t *testing.T) {
 
 	// Replicate the exact call order from GetRecommendations.
 	result, err := mergeServiceResults(
-		serviceResult{"compute", []common.Recommendation{computeRec}, nil, true},
-		serviceResult{"database", []common.Recommendation{dbRec}, nil, true},
-		serviceResult{"cache", []common.Recommendation{cacheRec}, nil, true},
-		serviceResult{"cosmosdb", []common.Recommendation{cosmosRec}, nil, true},
-		serviceResult{"savingsplans", []common.Recommendation{spRec}, nil, true},
-		serviceResult{"advisor", []common.Recommendation{advisorRec}, nil, true},
+		serviceResult{err: nil, name: "compute", recs: []common.Recommendation{computeRec}, attempted: true},
+		serviceResult{err: nil, name: "database", recs: []common.Recommendation{dbRec}, attempted: true},
+		serviceResult{err: nil, name: "cache", recs: []common.Recommendation{cacheRec}, attempted: true},
+		serviceResult{err: nil, name: "cosmosdb", recs: []common.Recommendation{cosmosRec}, attempted: true},
+		serviceResult{err: nil, name: "savingsplans", recs: []common.Recommendation{spRec}, attempted: true},
+		serviceResult{err: nil, name: "advisor", recs: []common.Recommendation{advisorRec}, attempted: true},
 	)
 
 	require.NoError(t, err, "all-success merge must not error")
@@ -464,12 +464,12 @@ func TestMergeServiceResults_AllAttemptedFailed(t *testing.T) {
 	authErr := errors.New("DefaultAzureCredential: federated token expired")
 
 	recs, err := mergeServiceResults(
-		serviceResult{"compute", nil, authErr, true},
-		serviceResult{"database", nil, authErr, true},
-		serviceResult{"cache", nil, authErr, true},
-		serviceResult{"cosmosdb", nil, authErr, true},
-		serviceResult{"savingsplans", nil, nil, false},
-		serviceResult{"advisor", nil, nil, false},
+		serviceResult{err: authErr, name: "compute", recs: nil, attempted: true},
+		serviceResult{err: authErr, name: "database", recs: nil, attempted: true},
+		serviceResult{err: authErr, name: "cache", recs: nil, attempted: true},
+		serviceResult{err: authErr, name: "cosmosdb", recs: nil, attempted: true},
+		serviceResult{err: nil, name: "savingsplans", recs: nil, attempted: false},
+		serviceResult{err: nil, name: "advisor", recs: nil, attempted: false},
 	)
 
 	require.Error(t, err, "all-attempted-failed merge must fail loud, not return (empty, nil)")
@@ -490,12 +490,12 @@ func TestMergeServiceResults_SkippedServicesDoNotMaskTotalFailure(t *testing.T) 
 	throttleErr := errors.New("429 too many requests")
 
 	_, err := mergeServiceResults(
-		serviceResult{"compute", nil, throttleErr, true},
-		serviceResult{"database", nil, nil, false},
-		serviceResult{"cache", nil, nil, false},
-		serviceResult{"cosmosdb", nil, nil, false},
-		serviceResult{"savingsplans", nil, nil, false},
-		serviceResult{"advisor", nil, nil, false},
+		serviceResult{err: throttleErr, name: "compute", recs: nil, attempted: true},
+		serviceResult{err: nil, name: "database", recs: nil, attempted: false},
+		serviceResult{err: nil, name: "cache", recs: nil, attempted: false},
+		serviceResult{err: nil, name: "cosmosdb", recs: nil, attempted: false},
+		serviceResult{err: nil, name: "savingsplans", recs: nil, attempted: false},
+		serviceResult{err: nil, name: "advisor", recs: nil, attempted: false},
 	)
 
 	require.Error(t, err, "skipped services must not count as successes in the all-failed guard")
@@ -511,12 +511,12 @@ func TestMergeServiceResults_PartialFailureStillSucceeds(t *testing.T) {
 	computeRec := common.Recommendation{Service: common.ServiceCompute, Provider: common.ProviderAzure}
 
 	recs, err := mergeServiceResults(
-		serviceResult{"compute", []common.Recommendation{computeRec}, nil, true},
-		serviceResult{"database", nil, svcErr, true},
-		serviceResult{"cache", nil, svcErr, true},
-		serviceResult{"cosmosdb", nil, svcErr, true},
-		serviceResult{"savingsplans", nil, nil, false},
-		serviceResult{"advisor", nil, nil, false},
+		serviceResult{err: nil, name: "compute", recs: []common.Recommendation{computeRec}, attempted: true},
+		serviceResult{err: svcErr, name: "database", recs: nil, attempted: true},
+		serviceResult{err: svcErr, name: "cache", recs: nil, attempted: true},
+		serviceResult{err: svcErr, name: "cosmosdb", recs: nil, attempted: true},
+		serviceResult{err: nil, name: "savingsplans", recs: nil, attempted: false},
+		serviceResult{err: nil, name: "advisor", recs: nil, attempted: false},
 	)
 
 	require.NoError(t, err, "partial failure must still return the successful services' recs")
@@ -537,12 +537,12 @@ func TestMergeServiceResults_StubsDoNotMaskTotalFailure(t *testing.T) {
 	authErr := errors.New("DefaultAzureCredential: federated token expired")
 
 	recs, err := mergeServiceResults(
-		serviceResult{"compute", nil, authErr, true},
-		serviceResult{"database", nil, authErr, true},
-		serviceResult{"cache", nil, authErr, true},
-		serviceResult{"cosmosdb", nil, authErr, true},
-		serviceResult{"savingsplans", []common.Recommendation{}, nil, false},
-		serviceResult{"advisor", []common.Recommendation{}, nil, false},
+		serviceResult{err: authErr, name: "compute", recs: nil, attempted: true},
+		serviceResult{err: authErr, name: "database", recs: nil, attempted: true},
+		serviceResult{err: authErr, name: "cache", recs: nil, attempted: true},
+		serviceResult{err: authErr, name: "cosmosdb", recs: nil, attempted: true},
+		serviceResult{err: nil, name: "savingsplans", recs: []common.Recommendation{}, attempted: false},
+		serviceResult{err: nil, name: "advisor", recs: []common.Recommendation{}, attempted: false},
 	)
 
 	require.Error(t, err, "stubs that swallow errors must not mask a total provider failure")

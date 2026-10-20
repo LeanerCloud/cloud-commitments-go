@@ -66,20 +66,32 @@ func TestReshapeBuffer_CapMapping_SetValuesPassedVerbatim(t *testing.T) {
 	assert.Equal(t, 30, ex.gotCfg.LookbackDays)
 }
 
-func TestReshapeBuffer_CapMapping_NilMeansUnlimited(t *testing.T) {
+func TestReshapeBuffer_CapMapping_NilRejected(t *testing.T) {
 	t.Parallel()
-	ex := &fakeExchangeRunner{}
-	a := newWiredLadder(t, &fakePurchaser{}, &fakePurchaser{}, ex)
+	tests := []struct {
+		name    string
+		mutate  func(*ladder.BufferReshapeConfig)
+		wantErr string
+	}{
+		{"nil per-exchange cap", func(c *ladder.BufferReshapeConfig) { c.MaxPaymentPerExchangeUSD = nil },
+			"MaxPaymentPerExchangeUSD is required"},
+		{"nil daily cap", func(c *ladder.BufferReshapeConfig) { c.MaxPaymentDailyUSD = nil },
+			"MaxPaymentDailyUSD is required"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ex := &fakeExchangeRunner{}
+			a := newWiredLadder(t, &fakePurchaser{}, &fakePurchaser{}, ex)
 
-	cfg := validReshapeCfg()
-	cfg.MaxPaymentPerExchangeUSD = nil
-	cfg.MaxPaymentDailyUSD = nil
-	_, err := a.ReshapeBuffer(context.Background(), testScope(), cfg)
-	require.NoError(t, err)
-	assert.Equal(t, unlimitedCapUSD, ex.gotCfg.MaxPaymentPerExchangeUSD,
-		"nil per-exchange cap must map to the explicit unlimited constant, never to 0 (0 blocks every exchange)")
-	assert.Equal(t, unlimitedCapUSD, ex.gotCfg.MaxPaymentDailyUSD,
-		"nil daily cap must map to the explicit unlimited constant, never to 0")
+			cfg := validReshapeCfg()
+			tt.mutate(&cfg)
+			_, err := a.ReshapeBuffer(context.Background(), testScope(), cfg)
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tt.wantErr)
+			assert.Equal(t, 0, ex.calls, "a missing cap must never reach the exchange runner")
+		})
+	}
 }
 
 func TestReshapeBuffer_CapValidation_ZeroAndBadValuesRejected(t *testing.T) {

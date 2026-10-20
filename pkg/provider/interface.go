@@ -71,10 +71,8 @@ type Credentials interface {
 	GetType() string // "environment", "file", "iam-role", "msi", "adc", etc.
 }
 
-// ProviderConfig represents configuration for a provider.
-//
-//nolint:revive // exported far beyond this repo (consumer-mcp references provider.ProviderConfig 100+ times); renaming to Config would break every consumer
-type ProviderConfig struct {
+// Config represents configuration for a provider.
+type Config struct {
 	Name string
 
 	// Deprecated: Profile is overloaded with provider-specific semantics
@@ -85,7 +83,7 @@ type ProviderConfig struct {
 
 	// Typed per-provider identity fields. When set, these take precedence
 	// over Profile. Each provider only reads its own field and ignores the
-	// others, so a single ProviderConfig can be reused across providers.
+	// others, so a single Config can be reused across providers.
 	AWSProfile          string // AWS named profile from ~/.aws/credentials or ~/.aws/config
 	AzureSubscriptionID string // Azure subscription ID (UUID)
 	GCPProjectID        string // GCP project ID (e.g. "my-project")
@@ -113,3 +111,10 @@ type ProviderConfig struct {
 	// provider when the typed credential slots above aren't expressive enough.
 	ProviderOverride Provider
 }
+
+// ProviderConfig is the former name of Config, kept so external consumers keep
+// compiling. Use Config. The "Deprecated:" marker is added once the provider
+// modules, which still pin a pkg version without Config, have migrated.
+//
+//nolint:revive // kept for external consumers; remove once none reference it
+type ProviderConfig = Config
