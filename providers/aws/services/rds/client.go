@@ -71,7 +71,13 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 	commitments := make([]common.Commitment, 0)
 	var marker *string
 
-	for {
+	for page := 0; ; page++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if page >= maxListPages {
+			return nil, fmt.Errorf("pagination cap reached after %d pages for RDS reserved instances (issue #561)", maxListPages)
+		}
 		input := &rds.DescribeReservedDBInstancesInput{
 			Marker:     marker,
 			MaxRecords: aws.Int32(100),
@@ -307,6 +313,12 @@ func (c *Client) findReservationByID(ctx context.Context, reservationID string) 
 // request filters on class, engine, multi-AZ, duration and payment option, so
 // a result set anywhere near 500 rows is not expected.
 const maxOfferingPages = 5
+
+// maxListPages bounds the full-list scans (existing commitments and the
+// valid-resource-types sweep). At 100 per page this is far above any real
+// account; hitting it means a token cycle or runaway API, so the scan fails
+// loud instead of looping or returning a partial list (issue #561).
+const maxListPages = 50
 
 // findOfferingID finds the appropriate RDS Reserved Instance offering ID.
 // execID is the purchase execution UUID for log correlation; pass "" when
@@ -640,7 +652,13 @@ func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	instanceTypesMap := make(map[string]bool)
 	var marker *string
 
-	for {
+	for page := 0; ; page++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if page >= maxListPages {
+			return nil, fmt.Errorf("pagination cap reached after %d pages for RDS offerings (issue #561)", maxListPages)
+		}
 		input := &rds.DescribeReservedDBInstancesOfferingsInput{
 			Marker:     marker,
 			MaxRecords: aws.Int32(100),
