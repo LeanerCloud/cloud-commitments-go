@@ -98,6 +98,7 @@ func TestCommitmentPrecision_InvalidInputMakesNoSDKCalls(t *testing.T) {
 }
 
 func TestCommitmentPrecision_ValidateOfferingDoesNotRequireCommitment(t *testing.T) {
+	t.Parallel()
 	c := NewClient(aws.Config{}, types.SavingsPlanTypeCompute)
 	m := &MockSavingsPlansClient{}
 	c.SetSavingsPlansAPI(m)

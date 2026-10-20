@@ -55,6 +55,7 @@ func (m *MockSavingsPlansClient) DescribeSavingsPlansOfferingRates(ctx context.C
 }
 
 func TestNewClient(t *testing.T) {
+	t.Parallel()
 	cfg := aws.Config{
 		Region: "us-east-1",
 	}
@@ -68,6 +69,7 @@ func TestNewClient(t *testing.T) {
 }
 
 func TestClient_GetServiceType(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		planType    types.SavingsPlanType
 		wantService common.ServiceType
@@ -86,11 +88,13 @@ func TestClient_GetServiceType(t *testing.T) {
 }
 
 func TestClient_GetRegion(t *testing.T) {
+	t.Parallel()
 	client := &Client{region: "eu-west-1"}
 	assert.Equal(t, "eu-west-1", client.GetRegion())
 }
 
 func TestClient_GetRecommendations(t *testing.T) {
+	t.Parallel()
 	client := &Client{region: "us-east-1"}
 	recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{})
 	assert.NoError(t, err)
@@ -98,6 +102,7 @@ func TestClient_GetRecommendations(t *testing.T) {
 }
 
 func TestClient_GetExistingCommitments(t *testing.T) {
+	t.Parallel()
 	startTime := time.Now().Format(time.RFC3339)
 	endTime := time.Now().AddDate(1, 0, 0).Format(time.RFC3339)
 
@@ -227,6 +232,7 @@ func TestClient_GetExistingCommitments(t *testing.T) {
 // behavior for any persisted RecommendationRecord still tagged with the
 // umbrella slug.
 func TestClient_GetExistingCommitments_UmbrellaMode(t *testing.T) {
+	t.Parallel()
 	mockClient := &MockSavingsPlansClient{}
 	mockClient.On("DescribeSavingsPlans", mock.Anything, mock.Anything).
 		Return(&savingsplans.DescribeSavingsPlansOutput{
@@ -268,6 +274,7 @@ func TestClient_GetExistingCommitments_UmbrellaMode(t *testing.T) {
 // The test fails on pre-fix code (only 1 item returned from page 1) and passes
 // after the NextToken accumulator loop is in place (both items returned).
 func TestClient_GetExistingCommitments_Pagination(t *testing.T) {
+	t.Parallel()
 	mockClient := &MockSavingsPlansClient{}
 	t.Cleanup(func() { mockClient.AssertExpectations(t) })
 
@@ -321,6 +328,7 @@ func TestClient_GetExistingCommitments_Pagination(t *testing.T) {
 // lastErr while the loop continues). Per feedback_ctx_cancel_terminal: context
 // cancellation is terminal in API fan-out loops.
 func TestClient_GetExistingCommitments_CtxCancellation(t *testing.T) {
+	t.Parallel()
 	mockClient := &MockSavingsPlansClient{}
 	t.Cleanup(func() { mockClient.AssertExpectations(t) })
 
@@ -364,6 +372,7 @@ func TestClient_GetExistingCommitments_CtxCancellation(t *testing.T) {
 // upstream bugs that pass mismatched recommendations into the wrong
 // service client.
 func TestClient_findOfferingID_RejectsMismatchedPlanType(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	// Client scoped to Compute SP.
 	client := &Client{
@@ -393,6 +402,7 @@ func TestClient_findOfferingID_RejectsMismatchedPlanType(t *testing.T) {
 }
 
 func TestClient_GetValidResourceTypes(t *testing.T) {
+	t.Parallel()
 	client := &Client{region: "us-east-1"}
 
 	result, err := client.GetValidResourceTypes(context.Background())
@@ -406,6 +416,7 @@ func TestClient_GetValidResourceTypes(t *testing.T) {
 }
 
 func TestClient_ValidateOffering(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	client := &Client{
 		client: mockSP,
@@ -438,6 +449,7 @@ func TestClient_ValidateOffering(t *testing.T) {
 }
 
 func TestClient_ValidateOffering_InvalidDetails(t *testing.T) {
+	t.Parallel()
 	client := &Client{region: "us-east-1"}
 
 	// Use ComputeDetails instead of SavingsPlanDetails to test type assertion failure
@@ -454,6 +466,7 @@ func TestClient_ValidateOffering_InvalidDetails(t *testing.T) {
 }
 
 func TestClient_PurchaseCommitment(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	client := &Client{
 		client: mockSP,
@@ -503,6 +516,7 @@ func TestClient_PurchaseCommitment(t *testing.T) {
 }
 
 func TestClient_PurchaseCommitment_UpfrontCost(t *testing.T) {
+	t.Parallel()
 	for _, tt := range []struct {
 		name    string
 		payment types.SavingsPlanPaymentOption
@@ -565,6 +579,7 @@ func TestClient_PurchaseCommitment_UpfrontCost(t *testing.T) {
 }
 
 func TestClient_PurchaseCommitment_UpfrontUnreadableIsNil(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	client := &Client{client: mockSP, region: "us-east-1"}
 
@@ -602,6 +617,7 @@ func TestClient_PurchaseCommitment_UpfrontUnreadableIsNil(t *testing.T) {
 // instead of creating a second one. The test captures the input and confirms
 // the same token would be sent again on a re-drive.
 func TestClient_PurchaseCommitment_SetsClientTokenForIdempotency(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	client := &Client{client: mockSP, region: "us-east-1"}
 
@@ -645,6 +661,7 @@ func TestClient_PurchaseCommitment_SetsClientTokenForIdempotency(t *testing.T) {
 // (no owning execution, empty token) leaves ClientToken nil and keeps its prior
 // non-idempotent behavior unchanged.
 func TestClient_PurchaseCommitment_NoClientTokenWhenUnset(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	client := &Client{client: mockSP, region: "us-east-1"}
 
@@ -678,6 +695,7 @@ func TestClient_PurchaseCommitment_NoClientTokenWhenUnset(t *testing.T) {
 }
 
 func TestClient_PurchaseCommitment_InvalidDetails(t *testing.T) {
+	t.Parallel()
 	client := &Client{region: "us-east-1"}
 
 	// Use ComputeDetails instead of SavingsPlanDetails to test type assertion failure
@@ -696,6 +714,7 @@ func TestClient_PurchaseCommitment_InvalidDetails(t *testing.T) {
 }
 
 func TestClient_PurchaseCommitment_OfferingNotFound(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	client := &Client{
 		client: mockSP,
@@ -726,6 +745,7 @@ func TestClient_PurchaseCommitment_OfferingNotFound(t *testing.T) {
 }
 
 func TestClient_PurchaseCommitment_CreateFails(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	client := &Client{
 		client: mockSP,
@@ -761,6 +781,7 @@ func TestClient_PurchaseCommitment_CreateFails(t *testing.T) {
 }
 
 func TestClient_PurchaseCommitment_EmptyResponse(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	client := &Client{
 		client: mockSP,
@@ -798,6 +819,7 @@ func TestClient_PurchaseCommitment_EmptyResponse(t *testing.T) {
 }
 
 func TestClient_GetOfferingDetails(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	client := &Client{
 		client: mockSP,
@@ -839,6 +861,7 @@ func TestClient_GetOfferingDetails(t *testing.T) {
 }
 
 func TestClient_GetOfferingDetails_3YearTerm(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	client := &Client{
 		client: mockSP,
@@ -879,6 +902,7 @@ func TestClient_GetOfferingDetails_3YearTerm(t *testing.T) {
 }
 
 func TestClient_GetOfferingDetails_NoUpfront(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	client := &Client{
 		client: mockSP,
@@ -916,6 +940,7 @@ func TestClient_GetOfferingDetails_NoUpfront(t *testing.T) {
 }
 
 func TestClient_GetOfferingDetails_InvalidDetails(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	client := &Client{
 		client: mockSP,
@@ -938,6 +963,7 @@ func TestClient_GetOfferingDetails_InvalidDetails(t *testing.T) {
 }
 
 func TestClient_GetOfferingDetails_RatesError(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	client := &Client{
 		client: mockSP,
@@ -973,6 +999,7 @@ func TestClient_GetOfferingDetails_RatesError(t *testing.T) {
 }
 
 func TestClient_FindOfferingID_AllPlanTypes(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		planType    string
@@ -1028,6 +1055,7 @@ func TestClient_FindOfferingID_AllPlanTypes(t *testing.T) {
 }
 
 func TestClient_FindOfferingID_AllPaymentOptions(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name          string
 		paymentOption string
@@ -1087,6 +1115,7 @@ func TestClient_FindOfferingID_AllPaymentOptions(t *testing.T) {
 }
 
 func TestClient_FindOfferingID_TermVariations(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name        string
 		term        string
@@ -1143,6 +1172,7 @@ func TestClient_FindOfferingID_TermVariations(t *testing.T) {
 }
 
 func TestClient_FindOfferingID_APIError(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	client := &Client{
 		client: mockSP,
@@ -1169,6 +1199,7 @@ func TestClient_FindOfferingID_APIError(t *testing.T) {
 }
 
 func TestClient_SetSavingsPlansAPI(t *testing.T) {
+	t.Parallel()
 	client := &Client{region: "us-east-1"}
 	mockAPI := &MockSavingsPlansClient{}
 
@@ -1178,12 +1209,14 @@ func TestClient_SetSavingsPlansAPI(t *testing.T) {
 }
 
 func TestBuildSavingsPlanTags_IncludesPurchaseAutomation(t *testing.T) {
+	t.Parallel()
 	tags := buildSavingsPlanTags(common.PurchaseSourceWeb)
 	assert.Equal(t, common.PurchaseSourceWeb, tags[common.PurchaseTagKey])
 	assert.Equal(t, "CUDly", tags["Tool"])
 }
 
 func TestBuildSavingsPlanTags_OmitsPurchaseAutomationWhenSourceEmpty(t *testing.T) {
+	t.Parallel()
 	tags := buildSavingsPlanTags("")
 	_, present := tags[common.PurchaseTagKey]
 	assert.False(t, present, "purchase-automation tag must be skipped when source is empty")
@@ -1206,6 +1239,7 @@ func spRec() common.Recommendation {
 // "pagination cap reached" error after maxOfferingPages empty pages and does NOT
 // make a (maxOfferingPages+1)th call (issue #688).
 func TestLookupOfferingID_PaginationCapFires(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	t.Cleanup(func() { mockSP.AssertExpectations(t) })
 	client := &Client{client: mockSP, region: "us-east-1", planType: types.SavingsPlanTypeCompute}
@@ -1229,6 +1263,7 @@ func TestLookupOfferingID_PaginationCapFires(t *testing.T) {
 // TestLookupOfferingID_HappyPath asserts that lookupOfferingID returns the correct
 // offering ID when a matching offering is returned on the first page (issue #688).
 func TestLookupOfferingID_HappyPath(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	t.Cleanup(func() { mockSP.AssertExpectations(t) })
 	client := &Client{client: mockSP, region: "us-east-1", planType: types.SavingsPlanTypeCompute}
@@ -1252,6 +1287,7 @@ func TestLookupOfferingID_HappyPath(t *testing.T) {
 // (finding 08-L1). Without the filter the API may return non-USD offerings
 // and a blind [0] pick selects the wrong offering.
 func TestFindOfferingID_SendsUSDCurrencyFilter(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	t.Cleanup(func() { mockSP.AssertExpectations(t) })
 	client := &Client{client: mockSP, region: "us-east-1", planType: types.SavingsPlanTypeCompute}
@@ -1276,6 +1312,7 @@ func TestFindOfferingID_SendsUSDCurrencyFilter(t *testing.T) {
 // Instance SPs are region-scoped; picking without a region filter risks
 // selecting an offering for the wrong region.
 func TestFindOfferingID_EC2InstanceSendsRegionFilter(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	t.Cleanup(func() { mockSP.AssertExpectations(t) })
 	client := &Client{client: mockSP, region: "eu-west-1", planType: types.SavingsPlanTypeEc2Instance}
@@ -1314,6 +1351,7 @@ func TestFindOfferingID_EC2InstanceSendsRegionFilter(t *testing.T) {
 // TestFindOfferingID_ComputeNoRegionFilter asserts that a Compute SP client
 // does NOT attach a region filter (Compute SPs are global, not region-scoped).
 func TestFindOfferingID_ComputeNoRegionFilter(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	t.Cleanup(func() { mockSP.AssertExpectations(t) })
 	client := &Client{client: mockSP, region: "us-east-1", planType: types.SavingsPlanTypeCompute}
@@ -1345,6 +1383,7 @@ func TestFindOfferingID_ComputeNoRegionFilter(t *testing.T) {
 // (finding 08-L1). Pre-fix code returned SearchResults[0] without sorting,
 // making the result nondeterministic across API calls.
 func TestLookupOfferingID_DeterministicSort(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	t.Cleanup(func() { mockSP.AssertExpectations(t) })
 	client := &Client{client: mockSP, region: "us-east-1", planType: types.SavingsPlanTypeCompute}
@@ -1373,6 +1412,7 @@ func TestLookupOfferingID_DeterministicSort(t *testing.T) {
 // deterministic sort operates across ALL accumulated pages, not just within a
 // single page (finding 08-L1 multi-page variant).
 func TestLookupOfferingID_DeterministicSortAcrossPages(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	t.Cleanup(func() { mockSP.AssertExpectations(t) })
 	client := &Client{client: mockSP, region: "us-east-1", planType: types.SavingsPlanTypeCompute}
@@ -1412,6 +1452,7 @@ func TestLookupOfferingID_DeterministicSortAcrossPages(t *testing.T) {
 // returns context.Canceled immediately when the context is already canceled
 // before the first pagination iteration, without calling the AWS API (issue #515).
 func TestLookupOfferingID_CtxCancelledBeforePage(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	t.Cleanup(func() { mockSP.AssertExpectations(t) })
 	client := &Client{client: mockSP, region: "us-east-1", planType: types.SavingsPlanTypeCompute}
@@ -1430,6 +1471,7 @@ func TestLookupOfferingID_CtxCancelledBeforePage(t *testing.T) {
 // NextToken is a pointer to an empty string (rather than nil) is treated as the
 // terminal page and does not cause an extra API call (issue #515).
 func TestLookupOfferingID_EmptyStringTokenEndsPagination(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	t.Cleanup(func() { mockSP.AssertExpectations(t) })
 	client := &Client{client: mockSP, region: "us-east-1", planType: types.SavingsPlanTypeCompute}
@@ -1505,6 +1547,7 @@ func spOfferingWithProps(id, family, region string) types.SavingsPlanOffering {
 // new buildSPOfferingsInput adds both filters, the mock matches, and the m5
 // offering is returned.
 func TestEC2InstanceSP_ResolvesCorrectFamilyAndRegion(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	t.Cleanup(func() { mockSP.AssertExpectations(t) })
 	client := &Client{
@@ -1556,6 +1599,7 @@ func TestEC2InstanceSP_ResolvesCorrectFamilyAndRegion(t *testing.T) {
 // (lexicographically smallest), committing money to the wrong workload. Post-fix:
 // lookupEC2OfferingIDStrict detects the ambiguity and returns an explicit error.
 func TestEC2InstanceSP_MultiFamilyResponseFailsLoud(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	t.Cleanup(func() { mockSP.AssertExpectations(t) })
 	client := &Client{
@@ -1586,6 +1630,7 @@ func TestEC2InstanceSP_MultiFamilyResponseFailsLoud(t *testing.T) {
 // multi-family test but for a response spanning multiple regions. Ensures that
 // region ambiguity is also caught and surfaced explicitly.
 func TestEC2InstanceSP_MultiRegionResponseFailsLoud(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	t.Cleanup(func() { mockSP.AssertExpectations(t) })
 	client := &Client{
@@ -1615,6 +1660,7 @@ func TestEC2InstanceSP_MultiRegionResponseFailsLoud(t *testing.T) {
 // DescribeSavingsPlansOfferings. Post-fix: the direct path is taken, the API
 // is not called.
 func TestEC2InstanceSP_CEProvidedOfferingIDUsedDirectly(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	t.Cleanup(func() { mockSP.AssertExpectations(t) })
 	client := &Client{
@@ -1651,6 +1697,7 @@ func TestEC2InstanceSP_CEProvidedOfferingIDUsedDirectly(t *testing.T) {
 // DescribeSavingsPlans state filter must request it, or duplicate detection
 // never sees the plan and the next run buys it again.
 func TestClient_GetExistingCommitments_RequestsPaymentPending(t *testing.T) {
+	t.Parallel()
 	mockClient := &MockSavingsPlansClient{}
 	mockClient.On("DescribeSavingsPlans", mock.Anything, mock.MatchedBy(func(in *savingsplans.DescribeSavingsPlansInput) bool {
 		return slices.Contains(in.States, types.SavingsPlanStatePaymentPending)
@@ -1671,6 +1718,7 @@ func TestClient_GetExistingCommitments_RequestsPaymentPending(t *testing.T) {
 }
 
 func TestCalculateHoursInTerm(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		term    string
 		want    float64
@@ -1699,6 +1747,7 @@ func TestCalculateHoursInTerm(t *testing.T) {
 }
 
 func TestNormalizeTermString(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		term    string
 		want    string
@@ -1726,6 +1775,7 @@ func TestNormalizeTermString(t *testing.T) {
 }
 
 func TestClient_GetOfferingDetails_UnknownTermErrors(t *testing.T) {
+	t.Parallel()
 	for _, term := range []string{"2yr", ""} {
 		t.Run("term_"+term, func(t *testing.T) {
 			mockSP := &MockSavingsPlansClient{}
@@ -1756,6 +1806,7 @@ func TestClient_GetOfferingDetails_UnknownTermErrors(t *testing.T) {
 // TestFindOfferingID_CEOfferingIDStillValidatesInputs pins that a CE-supplied
 // offering ID does not bypass plan type, term or payment validation (issue #53).
 func TestFindOfferingID_CEOfferingIDStillValidatesInputs(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name   string
 		mutate func(*common.Recommendation)
@@ -1791,6 +1842,7 @@ func TestFindOfferingID_CEOfferingIDStillValidatesInputs(t *testing.T) {
 // TestFindOfferingID_CEOfferingIDFastPath pins that valid inputs with a CE
 // offering ID still skip DescribeSavingsPlansOfferings.
 func TestFindOfferingID_CEOfferingIDFastPath(t *testing.T) {
+	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
 	client := &Client{client: mockSP, region: "us-east-1", planType: types.SavingsPlanTypeCompute}
 	rec := spRec()
