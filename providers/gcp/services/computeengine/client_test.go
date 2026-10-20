@@ -266,7 +266,7 @@ type MockBillingService struct {
 	err  error
 }
 
-func (m *MockBillingService) ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error) {
+func (m *MockBillingService) ListSKUs(_ context.Context, serviceID string) (*cloudbilling.ListSkusResponse, error) {
 	if m.err != nil {
 		return nil, m.err
 	}

@@ -271,7 +271,6 @@ func TestNewProviderWithProject(t *testing.T) {
 
 	require.NotNil(t, provider)
 	assert.Equal(t, "test-project", provider.projectID)
-	assert.Equal(t, ctx, provider.ctx)
 	// clientOpts is nil when no options are passed (not an error - it's expected)
 }
 
@@ -358,7 +357,6 @@ func TestGCPProvider_Fields(t *testing.T) {
 	provider := NewProviderWithProject(ctx, "my-gcp-project")
 
 	assert.Equal(t, "my-gcp-project", provider.projectID)
-	assert.Equal(t, ctx, provider.ctx)
 	assert.Empty(t, provider.clientOpts)
 }
 

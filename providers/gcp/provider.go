@@ -93,7 +93,6 @@ func (r *realResourceManagerService) ListProjects(ctx context.Context) ([]*cloud
 
 // Provider implements the provider.Provider interface for Google Cloud Platform.
 type Provider struct {
-	ctx                    context.Context
 	projectID              string
 	clientOpts             []option.ClientOption
 	projectsClient         ProjectsClient
@@ -139,7 +138,6 @@ func NewProvider(config *provider.ProviderConfig) (*Provider, error) {
 	}
 
 	return &Provider{
-		ctx:        ctx,
 		projectID:  projectID,
 		clientOpts: clientOpts,
 	}, nil
@@ -161,7 +159,6 @@ func resolveGCPProjectID(config *provider.ProviderConfig) string {
 // NewProviderWithProject creates a new GCP provider with a specific project.
 func NewProviderWithProject(ctx context.Context, projectID string, opts ...option.ClientOption) *Provider {
 	return &Provider{
-		ctx:        ctx,
 		projectID:  projectID,
 		clientOpts: opts,
 	}
