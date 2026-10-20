@@ -3,16 +3,13 @@ package gcp
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 
 	"golang.org/x/sync/errgroup"
-	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -72,6 +69,8 @@ type RecommendationsClientAdapter struct {
 	ctx        context.Context
 	projectID  string
 	clientOpts []option.ClientOption
+	// regionsFn replaces the live region lookup; tests only.
+	regionsFn func(context.Context) ([]string, error)
 }
 
 // GetRecommendations retrieves all GCP commitment recommendations across all
@@ -124,7 +123,7 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 		// still works; only GCP recommendations for this account are skipped.
 		// See issue #247. A canceled ctx never reaches this branch (guarded
 		// above), so a genuine 403 is the only thing swallowed here.
-		if isPermissionError(err) {
+		if IsPermissionError(err) {
 			logging.Warnf("GCP account %s: skipping recommendations — insufficient Compute permission to list regions (grant roles/compute.viewer): %v", r.projectID, err)
 			return []common.Recommendation{}, nil
 		}
@@ -295,6 +294,9 @@ func (r *RecommendationsClientAdapter) GetAllRecommendations(ctx context.Context
 
 // getRegions retrieves available GCP regions for the project.
 func (r *RecommendationsClientAdapter) getRegions(ctx context.Context) ([]string, error) {
+	if r.regionsFn != nil {
+		return r.regionsFn(ctx)
+	}
 	// Create a temporary provider to get regions. The local variable is named
 	// p (not provider) to avoid shadowing the imported provider package (10-N3).
 	p := NewProviderWithProject(ctx, r.projectID, r.clientOpts...)
@@ -321,37 +323,4 @@ func shouldIncludeService(params common.RecommendationParams, service common.Ser
 
 	// Check if this is the requested service
 	return params.Service == service
-}
-
-// isPermissionError returns true when err is a GCP 403 "Required '...' permission"
-// error. These errors arise when the service account is missing an IAM role
-// (e.g. roles/compute.viewer for compute.regions.list). Callers can then log
-// at Warn rather than propagating an error that would be recorded as ERROR by
-// the Lambda handler — see issue #247.
-func isPermissionError(err error) bool {
-	if err == nil {
-		return false
-	}
-	var gapiErr *googleapi.Error
-	if ok := errorAs(err, &gapiErr); ok && gapiErr.Code == 403 {
-		return true
-	}
-	// Fall back to string inspection for wrapped or non-googleapi 403s.
-	msg := err.Error()
-	return strings.Contains(msg, "403") && strings.Contains(msg, "permission")
-}
-
-// errorAs is a thin shim around errors.As so it can be stubbed in tests
-// without importing errors at the call site.
-var errorAs = func(err error, target interface{}) bool {
-	switch t := target.(type) {
-	case **googleapi.Error:
-		var gErr *googleapi.Error
-		if !errors.As(err, &gErr) {
-			return false
-		}
-		*t = gErr
-		return true
-	}
-	return false
 }

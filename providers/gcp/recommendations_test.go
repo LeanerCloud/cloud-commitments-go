@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/semaphore"
+	"google.golang.org/api/googleapi"
 	"google.golang.org/api/option"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -463,4 +464,34 @@ func TestGetRecommendations_ExplicitCloudStorageIgnoresOccupiedSemaphore(t *test
 	assert.Zero(t, calls.httpRequests.Load())
 	assert.Zero(t, calls.grpcDials.Load())
 	assert.Zero(t, calls.listRPCs.Load())
+}
+
+func TestGetRecommendations_RegionLookupErrorClassification(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		err     error
+		wantErr bool
+	}{
+		{"googleapi 403 is skipped", &googleapi.Error{Code: 403, Message: "Required 'compute.regions.list' permission"}, false},
+		{"grpc PermissionDenied is skipped", status.Error(codes.PermissionDenied, "denied"), false},
+		{"untyped 403 permission string propagates", errors.New("403 permission denied"), true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			adapter := &RecommendationsClientAdapter{
+				projectID: "p",
+				regionsFn: func(context.Context) ([]string, error) { return nil, tt.err },
+			}
+			recs, err := adapter.GetAllRecommendations(context.Background())
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.ErrorContains(t, err, "failed to get regions")
+				return
+			}
+			require.NoError(t, err)
+			assert.Empty(t, recs)
+		})
+	}
 }

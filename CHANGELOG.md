@@ -126,6 +126,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **`gcp`:** region-lookup permission errors are now classified by type only (googleapi 403 or gRPC `PermissionDenied`) through the shared `IsPermissionError`. gRPC `PermissionDenied` is now skipped with a warning like a 403, and an untyped error whose text merely contains "403" and "permission" now propagates instead of being skipped (#6).
 - **`azure`:** managedredis and synapse reservations now get the same generated display name as the other services (`redis-<region>-<sku>-<n>x-<term>-<payment>-...` and `synapse-...`) instead of the fixed `Azure Cache for Redis Reservation - <sku>` / `Synapse SQL Pool Reservation - <sku>`. This also removes the stray space before the idempotency marker on managedredis. Idempotency lookup keys on the tag or the marker suffix, not the base name (#538).
 - **BREAKING `gcp`: Cloud SQL and Memorystore no longer return CUD
   recommendations (#294).** They came from the project-scoped
