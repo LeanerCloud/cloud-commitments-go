@@ -21,6 +21,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/httpclient"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/pricing"
 	azrecs "github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/recommendations"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/slot"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
 )
 
@@ -177,7 +178,7 @@ func (c *Client) GetRecommendations(ctx context.Context, _ *common.Recommendatio
 		if pageIdx >= maxRecsPages {
 			return nil, fmt.Errorf("cache: GetRecommendations pagination cap (%d pages) reached", maxRecsPages)
 		}
-		page, err := pager.NextPage(ctx)
+		page, err := slot.NextPage(ctx, pager)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get Redis Cache recommendations: %w", err)
 		}
@@ -248,7 +249,7 @@ func (c *Client) collectRedisReservations(ctx context.Context, pager Reservation
 		if pageIdx >= maxReservationsPages {
 			return nil, fmt.Errorf("cache: GetExistingCommitments pagination cap (%d pages) reached", maxReservationsPages)
 		}
-		page, err := pager.NextPage(ctx)
+		page, err := slot.NextPage(ctx, pager)
 		if err != nil {
 			return nil, fmt.Errorf("cache: list reservations: %w", err)
 		}
@@ -478,7 +479,7 @@ func (c *Client) collectSKUsFromCaches(ctx context.Context, pager RedisCachesPag
 			log.Printf("WARNING: cache: GetValidResourceTypes pagination cap (%d pages) reached", maxCachesPages)
 			break
 		}
-		page, err := pager.NextPage(ctx)
+		page, err := slot.NextPage(ctx, pager)
 		if err != nil {
 			// If we can't list existing caches, fall back to known SKU families
 			break
@@ -669,7 +670,7 @@ func (c *Client) fetchSKUCatalogue(ctx context.Context) map[string]redisSKUEntry
 			logging.Warnf("azure cache: SKU catalog pagination cap (%d pages) reached for region %s; partial cache (%d entries) discarded, Details.Shards left at 0", maxCachesPages, c.region, len(out))
 			return nil
 		}
-		page, err := pager.NextPage(ctx)
+		page, err := slot.NextPage(ctx, pager)
 		if err != nil {
 			logging.Warnf("azure cache: SKU catalog page fetch failed for region %s: %v — partial cache (%d entries) discarded, Details.Shards left at 0", c.region, err, len(out))
 			return nil

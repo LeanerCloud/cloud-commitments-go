@@ -11,6 +11,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/slot"
 )
 
 // AppliedReservationsLister wraps AzureReservationAPIClient.GetAppliedReservationList,
@@ -87,7 +88,9 @@ func ListAppliedReservations(ctx context.Context, subscriptionID string, f Inven
 	if err != nil {
 		return nil, fmt.Errorf("create applied reservations lister: %w", err)
 	}
-	applied, err := lister.GetAppliedReservationList(ctx, subscriptionID, nil)
+	applied, err := slot.Do(ctx, func() (armreservations.AzureReservationAPIClientGetAppliedReservationListResponse, error) {
+		return lister.GetAppliedReservationList(ctx, subscriptionID, nil)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("list applied reservations for subscription %s: %w", subscriptionID, err)
 	}
@@ -107,7 +110,7 @@ func ListAppliedReservations(ctx context.Context, subscriptionID string, f Inven
 			if pageIdx >= maxPagesPerOrder {
 				return nil, fmt.Errorf("reservation listing for order %s exceeded pagination cap (%d pages)", orderID, maxPagesPerOrder)
 			}
-			page, err := pager.NextPage(ctx)
+			page, err := slot.NextPage(ctx, pager)
 			if err != nil {
 				return nil, fmt.Errorf("list reservations for order %s: %w", orderID, err)
 			}

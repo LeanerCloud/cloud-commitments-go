@@ -22,6 +22,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/httpclient"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/pricing"
 	azrecs "github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/recommendations"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/slot"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
 )
 
@@ -179,7 +180,7 @@ func (c *Client) GetRecommendations(ctx context.Context, _ *common.Recommendatio
 		if pageIdx >= maxRecsPages {
 			return nil, fmt.Errorf("cosmosdb: GetRecommendations pagination cap (%d pages) reached", maxRecsPages)
 		}
-		page, err := pager.NextPage(ctx)
+		page, err := slot.NextPage(ctx, pager)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get Cosmos DB recommendations: %w", err)
 		}
@@ -250,7 +251,7 @@ func (c *Client) collectCosmosReservations(ctx context.Context, pager Reservatio
 		if pageIdx >= maxReservationsPages {
 			return nil, fmt.Errorf("cosmosdb: GetExistingCommitments pagination cap (%d pages) reached", maxReservationsPages)
 		}
-		page, err := pager.NextPage(ctx)
+		page, err := slot.NextPage(ctx, pager)
 		if err != nil {
 			return nil, fmt.Errorf("cosmosdb: list reservations: %w", err)
 		}
@@ -478,7 +479,7 @@ func (c *Client) collectCapabilitiesFromAccounts(ctx context.Context, pager Cosm
 			log.Printf("WARNING: cosmosdb: GetValidResourceTypes pagination cap (%d pages) reached", maxAccountsPages)
 			break
 		}
-		page, err := pager.NextPage(ctx)
+		page, err := slot.NextPage(ctx, pager)
 		if err != nil {
 			// If we can't list existing accounts, fall back to known SKU types
 			break
@@ -673,7 +674,7 @@ func (c *Client) fetchDominantAPIType(ctx context.Context) string {
 			logging.Warnf("azure cosmosdb: account listing pagination cap (%d pages) reached for region %s; Details.APIType left empty", maxAccountsPages, c.region)
 			return ""
 		}
-		page, err := pager.NextPage(ctx)
+		page, err := slot.NextPage(ctx, pager)
 		if err != nil {
 			logging.Warnf("azure cosmosdb: account listing page fetch failed for region %s: %v — Details.APIType left empty", c.region, err)
 			return ""

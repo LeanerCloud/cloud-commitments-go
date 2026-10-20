@@ -18,6 +18,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/httpclient"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/pricing"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/slot"
 )
 
 // SavingsPlanOrderAliasAPI defines operations on SavingsPlanOrderAlias (enables mocking).
@@ -164,7 +165,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 		if pageIndex > maxSavingsPlanPages {
 			return nil, fmt.Errorf("failed to list savings plans: pagination cap (%d pages) reached", maxSavingsPlanPages)
 		}
-		page, err := pager.NextPage(ctx)
+		page, err := slot.NextPage(ctx, pager)
 		if err != nil {
 			return nil, fmt.Errorf("failed to list savings plans: %w", err)
 		}
