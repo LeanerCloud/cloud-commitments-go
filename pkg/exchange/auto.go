@@ -202,9 +202,12 @@ func validateMode(mode string) error {
 // fires and cancels pending records, the TransitionRIExchangeStatus atomic
 // WHERE clause prevents the exchange from executing (record already canceled
 // -> returns nil -> handler returns 409).
-func cancelStalePending(ctx context.Context, params RunAutoExchangeParams) {
+//
+// A cancellation failure is returned: a stale pending record may still be
+// approvable, so no new exchange may start until it is resolved.
+func cancelStalePending(ctx context.Context, params RunAutoExchangeParams) error {
 	if params.DryRun {
-		return
+		return nil
 	}
 	origin := common.ExchangeOriginStandalone
 	if params.LadderRunID != nil {
@@ -212,10 +215,12 @@ func cancelStalePending(ctx context.Context, params RunAutoExchangeParams) {
 	}
 	canceled, err := params.Store.CancelPendingExchangesByOrigin(ctx, origin)
 	if err != nil {
-		logging.Warnf("failed to cancel pending exchanges: %v", err)
-	} else if canceled > 0 {
+		return fmt.Errorf("cancel stale pending exchanges (origin=%s): %w", origin, err)
+	}
+	if canceled > 0 {
 		logging.Infof("canceled %d stale pending exchange records (origin=%s)", canceled, origin)
 	}
+	return nil
 }
 
 // RunAutoExchange orchestrates automated RI exchanges.
@@ -226,7 +231,9 @@ func RunAutoExchange(ctx context.Context, params RunAutoExchangeParams) (*AutoEx
 
 	result := &AutoExchangeResult{Mode: params.Config.Mode}
 
-	cancelStalePending(ctx, params)
+	if err := cancelStalePending(ctx, params); err != nil {
+		return nil, err
+	}
 
 	// Log warning for stale processing records
 	stale, err := params.Store.GetStaleProcessingExchanges(ctx, staleProcessingThreshold)

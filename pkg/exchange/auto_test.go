@@ -22,6 +22,7 @@ type mockExchangeStore struct {
 	dailyReadGate  chan struct{}
 	savedRecords   []*ExchangeRecord
 	cancelledCount int64
+	cancelErr      error
 	staleRecords   []ExchangeRecord
 	dailySpend     string
 	dailySpendErr  error
@@ -54,6 +55,9 @@ func (m *mockExchangeStore) CancelPendingExchangesByOrigin(_ context.Context, or
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.cancelByOriginLast = &origin
+	if m.cancelErr != nil {
+		return 0, m.cancelErr
+	}
 	return m.cancelledCount, nil
 }
 
@@ -1148,4 +1152,36 @@ func TestRunAutoExchange_InvalidMode_FailsClosed(t *testing.T) {
 			assert.Nil(t, store.cancelByOriginLast)
 		})
 	}
+}
+
+func TestRunAutoExchange_CancelPendingFails_StopsRun(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"auto", "manual"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			store := &mockExchangeStore{dailySpend: "0", cancelErr: fmt.Errorf("db down")}
+			client := &mockExchangeClient{quoteResult: defaultQuote(), executeResult: "exch-1"}
+			params := defaultParams(store, client)
+			params.Config.Mode = mode
+
+			result, err := RunAutoExchange(context.Background(), params)
+			require.Error(t, err)
+			assert.Nil(t, result)
+			assert.ErrorContains(t, err, "db down")
+			assert.Zero(t, client.executeCalls)
+			assert.Empty(t, store.savedRecords)
+		})
+	}
+}
+
+func TestRunAutoExchange_CancelPendingFails_DryRunStillRuns(t *testing.T) {
+	t.Parallel()
+	store := &mockExchangeStore{dailySpend: "0", cancelErr: fmt.Errorf("db down")}
+	client := &mockExchangeClient{quoteResult: defaultQuote()}
+	params := defaultParams(store, client)
+	params.DryRun = true
+
+	_, err := RunAutoExchange(context.Background(), params)
+	require.NoError(t, err)
+	assert.Nil(t, store.cancelByOriginLast)
 }
