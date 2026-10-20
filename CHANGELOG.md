@@ -198,6 +198,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **common:** `DecodeServiceDetailsFor` now rejects a non-empty details payload for a service with no typed details instead of silently returning nil details; MemoryDB (whose recommendations carry `CacheDetails`) now decodes as `CacheDetails` (#123).
 - **aws/ec2:** `GetOfferingDetails` always priced the convertible offering and its doc comment wrongly said the class does not change prices. Added `GetOfferingDetailsForClass` to price the class the purchase uses; `GetOfferingDetails` keeps the convertible default (#570).
 - **Unbounded AWS pagination loops now stop at a page cap and honour
   cancellation** (#561): the existing-commitment and valid-resource-type scans

@@ -212,17 +212,29 @@ func TestDecodeServiceDetailsFor_LegacyEmpty(t *testing.T) {
 }
 
 // TestDecodeServiceDetailsFor_UnknownService confirms that an unknown
-// service slug returns (nil, nil) rather than erroring — callers can
-// then fall through to their existing nil-Details paths.
+// service slug with no payload returns (nil, nil), but a payload for it is
+// rejected loudly instead of being silently dropped (A09-018).
 func TestDecodeServiceDetailsFor_UnknownService(t *testing.T) {
 	t.Parallel()
-	out, err := DecodeServiceDetailsFor("not-a-real-service", nil)
-	require.NoError(t, err)
-	assert.Nil(t, out)
+	for _, raw := range []json.RawMessage{nil, json.RawMessage(`null`)} {
+		out, err := DecodeServiceDetailsFor("not-a-real-service", raw)
+		require.NoError(t, err)
+		assert.Nil(t, out)
+	}
 
-	out, err = DecodeServiceDetailsFor("not-a-real-service", json.RawMessage(`{"foo":"bar"}`))
+	out, err := DecodeServiceDetailsFor("not-a-real-service", json.RawMessage(`{"foo":"bar"}`))
+	require.Error(t, err)
+	assert.Nil(t, out)
+	assert.Contains(t, err.Error(), "not-a-real-service")
+}
+
+// TestDecodeServiceDetailsFor_MemoryDB pins that MemoryDB recs, which the AWS
+// parser stamps with CacheDetails, still decode their persisted payload.
+func TestDecodeServiceDetailsFor_MemoryDB(t *testing.T) {
+	t.Parallel()
+	out, err := DecodeServiceDetailsFor(string(ServiceMemoryDB), json.RawMessage(`{"engine":"redis","node_type":"db.r6g.large"}`))
 	require.NoError(t, err)
-	assert.Nil(t, out, "non-empty payload on unknown service must NOT raise; rolling deploys can produce this shape")
+	assert.IsType(t, &CacheDetails{}, out)
 }
 
 // TestDecodeServiceDetailsFor_MalformedJSON ensures a malformed payload
