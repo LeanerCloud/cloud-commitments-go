@@ -68,6 +68,7 @@ func existingCommitmentRun(t *testing.T, h *existingCommitmentHTTP) (common.Purc
 }
 
 func TestPurchaseCommitment_ExistingCommitment_FreshPurchaseNotFlagged(t *testing.T) {
+	t.Parallel()
 	h := &existingCommitmentHTTP{listBody: `{"value":[]}`, purchaseStatus: http.StatusOK}
 	result, err := existingCommitmentRun(t, h)
 	require.NoError(t, err)
@@ -78,6 +79,7 @@ func TestPurchaseCommitment_ExistingCommitment_FreshPurchaseNotFlagged(t *testin
 }
 
 func TestPurchaseCommitment_ExistingCommitment_FailedPurchaseNotFlagged(t *testing.T) {
+	t.Parallel()
 	h := &existingCommitmentHTTP{listBody: `{"value":[]}`, purchaseStatus: http.StatusInternalServerError}
 	result, err := existingCommitmentRun(t, h)
 	require.Error(t, err)
@@ -86,6 +88,7 @@ func TestPurchaseCommitment_ExistingCommitment_FailedPurchaseNotFlagged(t *testi
 }
 
 func TestPurchaseCommitment_ExistingCommitment_RedriveAdoptsAndFlags(t *testing.T) {
+	t.Parallel()
 	h := &existingCommitmentHTTP{
 		listBody:       `{"value":[{"name":"adopted-order","properties":{"provisioningState":"Succeeded"},"tags":{"cudly-idempotency-token":"tok-211"}}]}`,
 		purchaseStatus: http.StatusOK,
@@ -101,6 +104,7 @@ func TestPurchaseCommitment_ExistingCommitment_RedriveAdoptsAndFlags(t *testing.
 // A terminal-failed order carrying the token is not adopted, so the purchase
 // proceeds and is not flagged.
 func TestPurchaseCommitment_ExistingCommitment_FailedOrderNotAdopted(t *testing.T) {
+	t.Parallel()
 	h := &existingCommitmentHTTP{
 		listBody:       `{"value":[{"name":"dead-order","properties":{"provisioningState":"Failed"},"tags":{"cudly-idempotency-token":"tok-211"}}]}`,
 		purchaseStatus: http.StatusOK,

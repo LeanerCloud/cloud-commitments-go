@@ -18,6 +18,7 @@ import (
 // commitment of Count x the term-total reservation retail price (synthetic
 // rows, not live quotes), for a 1y legacy and a 3y modern recommendation.
 func TestGetRecommendations_ConsumptionUnits(t *testing.T) {
+	t.Parallel()
 	// Cosmos reservation rows are region "Global", priced per 100 RU/s unit,
 	// the same row and unit the purchase path bills (quantity = Count).
 	client := NewClientWithHTTP(nil, "sub", "eastus", &mocks.PricingHTTP{Items: []map[string]any{
@@ -37,6 +38,7 @@ func TestGetRecommendations_ConsumptionUnits(t *testing.T) {
 
 // A retail price outage must fail the collection, not return a partial list.
 func TestGetRecommendations_ConsumptionPriceFetchFailureFailsCollection(t *testing.T) {
+	t.Parallel()
 	// Cosmos reservation rows are region "Global", priced per 100 RU/s unit,
 	// the same row and unit the purchase path bills (quantity = Count).
 	client := NewClientWithHTTP(nil, "sub", "eastus", &mocks.PricingHTTP{Err: errors.New("connection reset")})

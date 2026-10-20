@@ -21,6 +21,7 @@ func (p *countingAccountsPager) NextPage(_ context.Context) (armcosmos.DatabaseA
 }
 
 func TestFetchDominantAPIType_PageCapStopsEndlessPager(t *testing.T) {
+	t.Parallel()
 	pager := &countingAccountsPager{limit: 1000}
 	client := NewClient(nil, "test-subscription", "eastus")
 	client.SetCosmosAccountsPager(pager)
@@ -30,6 +31,7 @@ func TestFetchDominantAPIType_PageCapStopsEndlessPager(t *testing.T) {
 }
 
 func TestFetchDominantAPIType_CancelledContextStopsWalk(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	pager := &countingAccountsPager{limit: 1000}
@@ -61,6 +63,7 @@ func (p *finalPartialAccountsPager) NextPage(_ context.Context) (armcosmos.Datab
 }
 
 func TestFetchDominantAPIType_ExactlyCapPagesWithPartialLastPageSucceeds(t *testing.T) {
+	t.Parallel()
 	pager := &finalPartialAccountsPager{pages: maxAccountsPages}
 	client := NewClient(nil, "test-subscription", "eastus")
 	client.SetCosmosAccountsPager(pager)
