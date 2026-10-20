@@ -5,7 +5,6 @@ package managedredis
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -13,7 +12,6 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/consumption/armconsumption"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/redis/armredis/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
@@ -305,8 +303,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		result.Error = termErr
 		return result, result.Error
 	}
-	term, termEnumErr := reservations.ReservationTermForYears(termYears)
-	if termEnumErr != nil {
+	if _, termEnumErr := reservations.ReservationTermForYears(termYears); termEnumErr != nil {
 		result.Error = termEnumErr
 		return result, result.Error
 	}
@@ -316,39 +313,18 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		return result, result.Error
 	}
 
-	requestBody := map[string]interface{}{
-		"sku": map[string]string{
-			"name": rec.ResourceType,
+	bodyBytes, err := reservations.BuildPurchaseBody(reservations.PurchaseParams{
+		ReservedResourceType: string(armreservations.ReservedResourceTypeRedisCache),
+		DisplayName: func(r common.Recommendation) string {
+			return fmt.Sprintf("Azure Cache for Redis Reservation - %s", r.ResourceType)
 		},
-		"location": c.region,
-		"properties": map[string]interface{}{
-			"reservedResourceType": string(armreservations.ReservedResourceTypeRedisCache),
-			"billingScopeId":       fmt.Sprintf("/subscriptions/%s", c.subscriptionID),
-			"billingPlan":          string(billingPlan),
-			"term":                 string(term),
-			"quantity":             rec.Count,
-			"displayName":          fmt.Sprintf("Azure Cache for Redis Reservation - %s", rec.ResourceType),
-			"appliedScopeType":     string(armreservations.AppliedScopeTypeShared),
-			"renew":                false,
-		},
-	}
-	reservations.ApplyPurchaseTags(requestBody, opts.Source, opts.IdempotencyToken)
-
-	bodyBytes, err := json.Marshal(requestBody)
+	}, rec, opts, c.region, c.subscriptionID, billingPlan)
 	if err != nil {
 		result.Error = fmt.Errorf("failed to marshal request: %w", err)
 		return result, result.Error
 	}
 
-	token, err := c.cred.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: []string{"https://management.azure.com/.default"},
-	})
-	if err != nil {
-		result.Error = fmt.Errorf("failed to get access token: %w", err)
-		return result, result.Error
-	}
-
-	reservationOrderID, existing, err := reservations.DoIdempotentPurchaseTwoStep(ctx, c.httpClient, reservations.CalculatePriceURL(), bodyBytes, token.Token, opts.IdempotencyToken)
+	reservationOrderID, existing, err := reservations.Submit(ctx, c.cred, c.httpClient, bodyBytes, opts)
 	if err != nil {
 		result.Error = err
 		return result, result.Error
