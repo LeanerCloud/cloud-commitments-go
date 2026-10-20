@@ -17,9 +17,9 @@
 # keyword whitelists every line that happens to contain it (#1972).
 
 # scripts/setup-git-secrets.sh registers its detectors as literal regex text
-# and three of them (Azure connection string, PostgreSQL and MySQL DSN
-# detectors, verified empirically -- MongoDB's does not) match their own
-# registration line. Each entry below is anchored on the path, the line
+# and one of them (the Azure connection string detector, verified
+# empirically; the DSN detector bracket-breaks its own triggers) matches its
+# own registration line. Each entry below is anchored on the path, the line
 # number, AND the entire line as it appears in that file (including the
 # trailing comment), with a trailing $ -- not just the "git secrets --add
 # '" command prefix, and not just the added pattern with the anchor left
@@ -40,8 +40,6 @@
 # self-scan case below fails -- and note this comment must not spell any
 # of those spans out literally either, for the same reason).
 ^scripts/setup-git-secrets\.sh:[0-9]+:git secrets --add 'DefaultEndpointsProtoco[l]=https'                      # Azure Connection String$
-^scripts/setup-git-secrets\.sh:[0-9]+:git secrets --add 'postgre[s]://\[\^:\]\+:\[\^@\]\+@'                           # PostgreSQL$
-^scripts/setup-git-secrets\.sh:[0-9]+:git secrets --add 'mysq[l]://\[\^:\]\+:\[\^@\]\+@'                              # MySQL$
 
 # Truncated PEM placeholder used by scripts/test-git-secrets-allowlist.sh
 # (and by any fixture in this repo needing a non-secret PEM-shaped string):

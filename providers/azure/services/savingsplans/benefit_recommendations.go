@@ -50,25 +50,25 @@ const (
 )
 
 type benefitRecsPage struct {
-	Value    []benefitRecommendation `json:"value"`
 	NextLink string                  `json:"nextLink"`
+	Value    []benefitRecommendation `json:"value"`
 }
 
 type benefitRecommendation struct {
+	Properties *benefitRecommendationProps `json:"properties"`
 	ID         string                      `json:"id"`
 	Kind       string                      `json:"kind"`
-	Properties *benefitRecommendationProps `json:"properties"`
 }
 
 type benefitRecommendationProps struct {
+	TotalHours            *int32                 `json:"totalHours"`
+	CostWithoutBenefit    *float64               `json:"costWithoutBenefit"`
+	RecommendationDetails *benefitRecommendDetls `json:"recommendationDetails"`
 	ArmSkuName            string                 `json:"armSkuName"`
 	Term                  string                 `json:"term"`
 	Scope                 string                 `json:"scope"`
 	CommitmentGranularity string                 `json:"commitmentGranularity"`
 	CurrencyCode          string                 `json:"currencyCode"`
-	TotalHours            *int32                 `json:"totalHours"`
-	CostWithoutBenefit    *float64               `json:"costWithoutBenefit"`
-	RecommendationDetails *benefitRecommendDetls `json:"recommendationDetails"`
 }
 
 type benefitRecommendDetls struct {
