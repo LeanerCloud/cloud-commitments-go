@@ -1,0 +1,50 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      github-actions:
+        patterns: ["*"]
+  - package-ecosystem: gomod
+    directory: /pkg
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      gomod-pkg:
+        patterns: ["*"]
+  - package-ecosystem: gomod
+    directory: /providers/aws
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      gomod-providers-aws:
+        patterns: ["*"]
+  - package-ecosystem: gomod
+    directory: /providers/azure
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      gomod-providers-azure:
+        patterns: ["*"]
+  - package-ecosystem: gomod
+    directory: /providers/gcp
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      gomod-providers-gcp:
+        patterns: ["*"]
+  - package-ecosystem: gomod
+    directory: /ci_cd_sanity_tests
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      gomod-ci-cd-sanity-tests:
+        patterns: ["*"]
