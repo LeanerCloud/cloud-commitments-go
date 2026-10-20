@@ -14,9 +14,9 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
-	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	azrecs "github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/recommendations"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/slot"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/cache"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/compute"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/cosmosdb"
@@ -126,25 +126,14 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 	g, gctx := errgroup.WithContext(ctx)
 	gctx, skips := azrecs.WithSkipLog(gctx)
 
-	// Each per-service goroutine is a leaf — it issues the actual ARM /
-	// pricing-API call. The shared semaphore on gctx (set by the scheduler)
-	// bounds aggregate concurrent IO across the whole recommendations-
-	// collection fan-out tree at CUDLY_MAX_PARALLELISM (default 20). If no
-	// semaphore is attached (CLI tools, unit tests), Acquire/Release are
-	// no-ops. See pkg/concurrency.
-	//
-	// goService extracts the Acquire/Release boilerplate so each per-
-	// service block stays a single g.Go call — keeps GetRecommendations
-	// under the project's gocyclo gate (the per-service `if Acquire {…}`
-	// branches counted toward this function's cyclomatic complexity
-	// before extraction).
-	goService := func(errOut *error, fn func()) {
+	// Each per-service goroutine runs a whole sweep (many pages plus lazily
+	// loaded catalogs), so it does not hold the shared CUDLY_MAX_PARALLELISM
+	// slot itself: every outbound call inside the service clients takes the
+	// slot for that one call via internal/slot. Holding it across a sweep
+	// would starve the AWS/GCP leaf calls, and with a cap of 1 a sweep that
+	// also acquired per call would deadlock on itself.
+	goService := func(fn func()) {
 		g.Go(func() error {
-			if err := concurrency.Acquire(gctx); err != nil {
-				*errOut = err
-				return nil
-			}
-			defer concurrency.Release(gctx)
 			fn()
 			return nil // error isolation: never propagate to errgroup
 		})
@@ -162,7 +151,7 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 
 	// Compute (VM) recommendations — subscription-wide.
 	if includeCompute {
-		goService(&computeErr, func() {
+		goService(func() {
 			computeClient := newComputeClientFn(r.cred, r.subscriptionID, "")
 			computeRecs, computeErr = computeClient.GetRecommendations(gctx, params)
 		})
@@ -170,7 +159,7 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 
 	// Database (SQL) recommendations — subscription-wide.
 	if includeDB {
-		goService(&dbErr, func() {
+		goService(func() {
 			dbClient := newDatabaseClientFn(r.cred, r.subscriptionID, "")
 			dbRecs, dbErr = dbClient.GetRecommendations(gctx, params)
 		})
@@ -178,7 +167,7 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 
 	// Cache (Redis) recommendations — subscription-wide.
 	if includeCache {
-		goService(&cacheErr, func() {
+		goService(func() {
 			cacheClient := newCacheClientFn(r.cred, r.subscriptionID, "")
 			cacheRecs, cacheErr = cacheClient.GetRecommendations(gctx, params)
 		})
@@ -186,7 +175,7 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 
 	// CosmosDB (NoSQL) recommendations — subscription-wide.
 	if includeCosmos {
-		goService(&cosmosErr, func() {
+		goService(func() {
 			cosmosClient := newCosmosDBClientFn(r.cred, r.subscriptionID, "")
 			cosmosRecs, cosmosErr = cosmosClient.GetRecommendations(gctx, params)
 		})
@@ -195,7 +184,7 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 	// Synapse (SqlDataWarehouse) recommendations — subscription-wide. Search and
 	// Managed Redis are deliberately not collected here: see #47.
 	if includeSynapse {
-		goService(&synapseErr, func() {
+		goService(func() {
 			synapseRecs, synapseErr = newSynapseClientFn(r.cred, r.subscriptionID, "").GetRecommendations(gctx, params)
 		})
 	}
@@ -206,7 +195,7 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 	// and will start returning data once the API stabilizes without requiring
 	// a scheduler change.
 	if includeSP {
-		goService(&spErr, func() {
+		goService(func() {
 			spClient := newSavingsPlansClientFn(r.cred, r.subscriptionID, "")
 			spRecs, spErr = spClient.GetRecommendations(gctx, params)
 		})
@@ -219,7 +208,7 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 	// getAdvisorRecsFn defaults to r.getAdvisorRecommendations and may be
 	// replaced per-adapter in tests to avoid real ARM network calls.
 	advisorFn := r.advisorFn()
-	goService(&advisorErr, func() {
+	goService(func() {
 		advisorRecs, advisorErr = collectAdvisorOrSkip(gctx, advisorFn, *params)
 	})
 
@@ -448,7 +437,7 @@ func (r *RecommendationsClientAdapter) collectAdvisorRecommendations(ctx context
 		if pageIdx >= maxAdvisorPages {
 			return recommendations, fmt.Errorf("%w: pagination cap (%d pages) reached after %d recommendations", errAdvisorTruncated, maxAdvisorPages, len(recommendations))
 		}
-		page, err := pager.NextPage(ctx)
+		page, err := slot.NextPage(ctx, pager)
 		if err != nil {
 			return recommendations, fmt.Errorf("%w: page error after %d recommendations: %w", errAdvisorTruncated, len(recommendations), err)
 		}
