@@ -219,6 +219,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   are now required, so an omitted cap can no longer mean unlimited spend on
   the auto-exchange path (#83).
 - **`aws/recommendations`:** `GetRecommendations` for RI services now rejects an unrecognized term, payment option or lookback period instead of letting Cost Explorer apply its own defaults under the requested label; the deprecated silent converters are removed (#53).
+- **`aws/recommendations`:** `GetRecommendations` for RI services now rejects a non-empty unrecognized term, payment option or lookback period instead of letting Cost Explorer apply its own defaults under the requested label; an unset (empty) value still means the Cost Explorer default. The deprecated silent converters are removed (#53).
 - **Azure savings plan recommendations use a 730 hour month** (was 730.5),
   matching `common.HoursPerMonth` and the 8760 hour year; monthly recurring
   cost, on-demand cost and savings shift by about 0.07% (#583).

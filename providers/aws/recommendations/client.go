@@ -126,7 +126,8 @@ func (c *Client) instanceTypeLookup(ctx context.Context, instanceType string) (i
 
 // SetRecLookbackPeriod configures the LookbackPeriodInDays used by
 // GetRecommendationsForService. Valid values: "7d", "30d", "60d".
-// An empty or unrecognized value falls back to "7d" at call time.
+// An empty value falls back to "7d" at call time; a non-empty unrecognized
+// value makes the fetch fail.
 func (c *Client) SetRecLookbackPeriod(period string) {
 	c.recLookbackPeriod = period
 }
@@ -150,18 +151,7 @@ func (c *Client) GetRecommendations(ctx context.Context, params *common.Recommen
 		return nil, err
 	}
 
-	// An unrecognized value would be omitted from the request and Cost Explorer
-	// would apply its own defaults, while the parser labels every rec with the
-	// requested strings. Fail loud instead of storing a mislabelled commitment.
-	paymentOption, err := convertPaymentOptionE(params.PaymentOption)
-	if err != nil {
-		return nil, fmt.Errorf("invalid RI recommendation params: %w", err)
-	}
-	termInYears, err := convertTermInYearsE(params.Term)
-	if err != nil {
-		return nil, fmt.Errorf("invalid RI recommendation params: %w", err)
-	}
-	lookback, err := convertLookbackPeriodE(params.LookbackPeriod)
+	paymentOption, termInYears, lookback, err := convertRIParams(params)
 	if err != nil {
 		return nil, fmt.Errorf("invalid RI recommendation params: %w", err)
 	}
@@ -186,6 +176,36 @@ func (c *Client) GetRecommendations(ctx context.Context, params *common.Recommen
 	}
 
 	return c.parseRecommendations(ctx, allRecs, *params)
+}
+
+// convertRIParams converts the RI request fields to Cost Explorer enums. An
+// unset ("") field stays the zero value, which the SDK omits so Cost Explorer
+// applies its own default. A non-empty unrecognized value would be omitted the
+// same way while the parser labels every rec with the requested string, so it
+// fails loud.
+func convertRIParams(params *common.RecommendationParams) (types.PaymentOption, types.TermInYears, types.LookbackPeriodInDays, error) {
+	var (
+		payment  types.PaymentOption
+		term     types.TermInYears
+		lookback types.LookbackPeriodInDays
+		err      error
+	)
+	if params.PaymentOption != "" {
+		if payment, err = convertPaymentOptionE(params.PaymentOption); err != nil {
+			return "", "", "", err
+		}
+	}
+	if params.Term != "" {
+		if term, err = convertTermInYearsE(params.Term); err != nil {
+			return "", "", "", err
+		}
+	}
+	if params.LookbackPeriod != "" {
+		if lookback, err = convertLookbackPeriodE(params.LookbackPeriod); err != nil {
+			return "", "", "", err
+		}
+	}
+	return payment, term, lookback, nil
 }
 
 // ec2RecommendationOfferingClass is the EC2 offering class the recommendation
