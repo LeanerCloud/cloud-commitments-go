@@ -47,15 +47,17 @@ type RecommenderClient interface {
 }
 
 // Client handles GCP Cloud SQL commitments.
-type Client struct { //nolint:govet // fieldalignment: file owned by open PR #471
-	skuMu           sync.Mutex
+type Client struct {
 	skuCache        *cloudbilling.ListSkusResponse
 	ctx             context.Context
 	projectID       string
 	region          string
-	clientOpts      []option.ClientOption
 	sqlAdminService SQLAdminService
 	billingService  BillingService
+	clientOpts      []option.ClientOption
+	// skuMu guards skuCache. It sits last because it holds no pointers
+	// (govet fieldalignment).
+	skuMu sync.Mutex
 }
 
 // NewClient creates a new GCP Cloud SQL client.
@@ -258,11 +260,11 @@ func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 }
 
 // SQLPricing contains pricing information for Cloud SQL.
-type SQLPricing struct { //nolint:govet // fieldalignment: file owned by open PR #471
+type SQLPricing struct {
+	Currency          string
 	HourlyRate        float64
 	CommitmentPrice   float64
 	OnDemandPrice     float64
-	Currency          string
 	SavingsPercentage float64
 }
 
@@ -324,6 +326,7 @@ func (c *Client) getOrCreateBillingService(ctx context.Context) (BillingService,
 // extractSQLPricingFromSKUs extracts on-demand and commitment pricing from the SKU list.
 // Cloud SQL committed-use discounts are SKUs whose Category.UsageType is Commit1Yr or Commit3Yr.
 func extractSQLPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string) (onDemand, commitment float64, currency string, err error) {
+	var prices skumatch.SlotPrices
 	for _, sku := range skus {
 		if !skuMatchesTier(sku, tier, region) {
 			continue
@@ -343,15 +346,12 @@ func extractSQLPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string) (o
 		if slotErr != nil {
 			return 0, 0, "", slotErr
 		}
-		switch slot {
-		case skumatch.SlotCommitment:
-			commitment = price
-		case skumatch.SlotOnDemand:
-			onDemand = price
+		if err := prices.Add(slot, sku, price); err != nil {
+			return 0, 0, "", err
 		}
 	}
 
-	return onDemand, commitment, currency, nil
+	return prices.OnDemand, prices.Commitment, currency, nil
 }
 
 // extractSQLPriceFromSKU extracts the unit price from a SKU.
