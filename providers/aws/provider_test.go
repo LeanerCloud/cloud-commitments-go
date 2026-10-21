@@ -84,7 +84,7 @@ func TestNewAWSProvider(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name            string
-		config          *provider.ProviderConfig
+		config          *provider.Config
 		expectedProfile string
 		expectedRegion  string
 	}{
@@ -96,7 +96,7 @@ func TestNewAWSProvider(t *testing.T) {
 		},
 		{
 			name: "With region only",
-			config: &provider.ProviderConfig{
+			config: &provider.Config{
 				Region: "us-west-2",
 			},
 			expectedProfile: "",
@@ -104,7 +104,7 @@ func TestNewAWSProvider(t *testing.T) {
 		},
 		{
 			name: "With profile only",
-			config: &provider.ProviderConfig{
+			config: &provider.Config{
 				Profile: "my-profile",
 			},
 			expectedProfile: "my-profile",
@@ -112,7 +112,7 @@ func TestNewAWSProvider(t *testing.T) {
 		},
 		{
 			name: "With both profile and region",
-			config: &provider.ProviderConfig{
+			config: &provider.Config{
 				Profile: "production",
 				Region:  "eu-west-1",
 			},
@@ -121,7 +121,7 @@ func TestNewAWSProvider(t *testing.T) {
 		},
 		{
 			name: "Typed AWSProfile takes precedence over deprecated Profile",
-			config: &provider.ProviderConfig{
+			config: &provider.Config{
 				AWSProfile: "typed-profile",
 				Profile:    "deprecated-profile",
 			},
@@ -130,7 +130,7 @@ func TestNewAWSProvider(t *testing.T) {
 		},
 		{
 			name: "Typed AWSProfile alone (no Profile fallback needed)",
-			config: &provider.ProviderConfig{
+			config: &provider.Config{
 				AWSProfile: "only-typed",
 			},
 			expectedProfile: "only-typed",
@@ -1020,7 +1020,7 @@ func TestProviderRegistration(t *testing.T) {
 	t.Run("AWS provider can be created with config via registry", func(t *testing.T) {
 		registry := provider.GetRegistry()
 
-		config := &provider.ProviderConfig{
+		config := &provider.Config{
 			Profile: "test-profile",
 			Region:  "us-west-2",
 		}

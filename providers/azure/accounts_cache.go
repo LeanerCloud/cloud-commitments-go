@@ -20,7 +20,7 @@ import (
 const accountsCacheSFKeyPrefix = "accounts-gen-"
 
 // azureSubscriptionIDEnv is the environment variable that pins the default
-// subscription when ProviderConfig carries none. Named rather than repeated
+// subscription when Config carries none. Named rather than repeated
 // as a literal because both resolveDefaultSubscription (which consumes it)
 // and GetRecommendationsClient (which reports it back in an error) depend on
 // it being the same variable.
@@ -269,7 +269,7 @@ func (p *Provider) fetchAccounts(ctx context.Context) ([]common.Account, error) 
 // resolveDefaultSubscription sets IsDefault on the matching account in-place.
 //
 // Priority:
-//  1. explicitSubID (from ProviderConfig.AzureSubscriptionID / Profile).
+//  1. explicitSubID (from Config.AzureSubscriptionID / Profile).
 //  2. AZURE_SUBSCRIPTION_ID environment variable.
 //  3. When exactly one subscription is visible, mark it default (mirrors AWS
 //     behavior where the STS-identified account is always the default).

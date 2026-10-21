@@ -113,7 +113,7 @@ func TestNewAzureProvider(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name           string
-		config         *provider.ProviderConfig
+		config         *provider.Config
 		expectedRegion string
 		expectedSubID  string
 	}{
@@ -125,7 +125,7 @@ func TestNewAzureProvider(t *testing.T) {
 		},
 		{
 			name: "With region only",
-			config: &provider.ProviderConfig{
+			config: &provider.Config{
 				Region: "westus2",
 			},
 			expectedRegion: "westus2",
@@ -133,7 +133,7 @@ func TestNewAzureProvider(t *testing.T) {
 		},
 		{
 			name: "With profile (subscription ID)",
-			config: &provider.ProviderConfig{
+			config: &provider.Config{
 				Profile: "subscription-id-123",
 			},
 			expectedRegion: "",
@@ -141,7 +141,7 @@ func TestNewAzureProvider(t *testing.T) {
 		},
 		{
 			name: "With both region and profile",
-			config: &provider.ProviderConfig{
+			config: &provider.Config{
 				Region:  "eastus",
 				Profile: "my-subscription",
 			},
@@ -150,7 +150,7 @@ func TestNewAzureProvider(t *testing.T) {
 		},
 		{
 			name: "Typed AzureSubscriptionID takes precedence over deprecated Profile",
-			config: &provider.ProviderConfig{
+			config: &provider.Config{
 				AzureSubscriptionID: "typed-sub-id",
 				Profile:             "deprecated-sub-id",
 			},
@@ -159,7 +159,7 @@ func TestNewAzureProvider(t *testing.T) {
 		},
 		{
 			name: "Typed AzureSubscriptionID alone (no Profile fallback needed)",
-			config: &provider.ProviderConfig{
+			config: &provider.Config{
 				AzureSubscriptionID: "only-typed",
 			},
 			expectedRegion: "",
@@ -186,7 +186,7 @@ func TestNewAzureProvider(t *testing.T) {
 func TestNewAzureProvider_TokenCredentialInjection(t *testing.T) {
 	t.Parallel()
 	t.Run("Nil credential leaves cred unset", func(t *testing.T) {
-		p, err := NewAzureProvider(&provider.ProviderConfig{
+		p, err := NewAzureProvider(&provider.Config{
 			AzureSubscriptionID: "sub-1",
 		})
 		require.NoError(t, err)
@@ -195,7 +195,7 @@ func TestNewAzureProvider_TokenCredentialInjection(t *testing.T) {
 
 	t.Run("Non-nil credential is stored on the provider", func(t *testing.T) {
 		fake := &mockTokenCredential{}
-		p, err := NewAzureProvider(&provider.ProviderConfig{
+		p, err := NewAzureProvider(&provider.Config{
 			AzureSubscriptionID:  "sub-1",
 			AzureTokenCredential: fake,
 		})
@@ -209,7 +209,7 @@ func TestNewAzureProvider_TokenCredentialInjection(t *testing.T) {
 		// "ADC unavailable" error. We don't capture the log output here
 		// (the project has no log-capture harness); the behavioral assertion
 		// is unchanged: p.cred stays nil and NewAzureProvider doesn't error.
-		p, err := NewAzureProvider(&provider.ProviderConfig{
+		p, err := NewAzureProvider(&provider.Config{
 			AzureSubscriptionID:  "sub-1",
 			AzureTokenCredential: "not-a-credential",
 		})
@@ -1971,7 +1971,7 @@ func TestAzureProvider_ResolveSubscription_InvisibleConfiguredTargetErrors(t *te
 		assert.Contains(t, err.Error(), "not among the 1 subscriptions visible")
 	})
 
-	// The same guard has to cover the ProviderConfig axis, not just the
+	// The same guard has to cover the Config axis, not just the
 	// environment variable: resolveDefaultSubscription's rule 1 reads
 	// p.subscriptionID and falls through to rule 3 identically when it misses.
 	t.Run("GetRegions errors on a config target the principal cannot see", func(t *testing.T) {

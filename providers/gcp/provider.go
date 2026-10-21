@@ -111,7 +111,7 @@ type Provider struct {
 // oauth2.TokenSource, it is installed via option.WithTokenSource so all
 // downstream clients use those credentials. Otherwise, clients fall back
 // to Application Default Credentials.
-func NewProvider(config *provider.ProviderConfig) (*Provider, error) {
+func NewProvider(config *provider.Config) (*Provider, error) {
 	ctx := context.Background()
 
 	projectID := resolveGCPProjectID(config)
@@ -146,7 +146,7 @@ func NewProvider(config *provider.ProviderConfig) (*Provider, error) {
 // resolveGCPProjectID picks the project ID from the typed field, falling
 // back to the deprecated Profile field. Returns "" if neither is set, which
 // signals the caller to consult ADC.
-func resolveGCPProjectID(config *provider.ProviderConfig) string {
+func resolveGCPProjectID(config *provider.Config) string {
 	if config == nil {
 		return ""
 	}
@@ -549,7 +549,7 @@ func findActiveProjectInPage(out *string, page *cloudresourcemanager.ListProject
 
 func init() {
 	// Register GCP provider in the global registry
-	if err := provider.RegisterProvider("gcp", func(config *provider.ProviderConfig) (provider.Provider, error) {
+	if err := provider.RegisterProvider("gcp", func(config *provider.Config) (provider.Provider, error) {
 		return NewProvider(config)
 	}); err != nil {
 		panic("failed to register GCP provider: " + err.Error())
