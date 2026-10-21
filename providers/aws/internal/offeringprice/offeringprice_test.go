@@ -58,3 +58,10 @@ func TestCurrency(t *testing.T) {
 	_, err = AssumedUSD("S", "cn-north-1")
 	require.Error(t, err)
 }
+
+func TestCheckUpfront_BoundaryIsTheCeilingInCents(t *testing.T) {
+	t.Parallel()
+	require.NoError(t, CheckUpfront("EC2", 1050, 1000))
+	require.ErrorContains(t, CheckUpfront("EC2", 1050.01, 1000), "exceeds the approved upfront")
+	require.NoError(t, CheckUpfront("EC2", 0, 1000))
+}

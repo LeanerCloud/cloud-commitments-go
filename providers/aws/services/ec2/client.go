@@ -167,6 +167,11 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		return result, result.Error
 	}
 
+	if err = checkApprovedUpfront(rec, offering); err != nil {
+		result.Error = err
+		return result, result.Error
+	}
+
 	// Create the purchase request
 	input := &ec2.PurchaseReservedInstancesOfferingInput{
 		ReservedInstancesOfferingId: offering.ReservedInstancesOfferingId,
@@ -215,6 +220,35 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	}
 
 	return result, nil
+}
+
+// checkApprovedUpfront refuses an offering whose total upfront exceeds the
+// approved recommendation's upfront by more than offeringprice.UpfrontTolerance,
+// or whose price cannot be compared with it. The API's LimitPrice is not used:
+// AWS documents it for Marketplace offerings only, and findOffering excludes
+// them.
+func checkApprovedUpfront(rec common.Recommendation, offering *types.ReservedInstancesOffering) error {
+	approved := rec.CommitmentCost
+	// Zero means no upfront or no figure (the MCP EC2 tool never sets it), so
+	// there is nothing to compare; refusing would break those purchases.
+	if approved <= 0 {
+		return nil
+	}
+	id := aws.ToString(offering.ReservedInstancesOfferingId)
+	if cur := rec.CommitmentCurrency; cur != "" && !strings.EqualFold(cur, "USD") {
+		return fmt.Errorf("EC2 recommendation upfront is in %s; the approved upfront check supports USD only", cur)
+	}
+	if offering.FixedPrice == nil {
+		return fmt.Errorf("EC2 offering %s has no FixedPrice; cannot compare it with the approved upfront %.2f", id, approved)
+	}
+	if cc := offering.CurrencyCode; cc != "" && cc != types.CurrencyCodeValuesUsd {
+		return fmt.Errorf("EC2 offering %s is priced in %s; the approved upfront check supports USD only", id, cc)
+	}
+	total := fixedPriceCents(*offering.FixedPrice) * float64(rec.Count) / 100
+	if err := offeringprice.CheckUpfront("EC2", total, approved); err != nil {
+		return fmt.Errorf("EC2 offering %s: %w", id, err)
+	}
+	return nil
 }
 
 // findRIByIdempotencyToken looks for an active or payment-pending Reserved
