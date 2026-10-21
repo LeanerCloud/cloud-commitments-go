@@ -806,6 +806,8 @@ func TestFindOfferingID_HappyPath(t *testing.T) {
 				{
 					ReservedCacheNodesOfferingId: aws.String("offering-ok"),
 					CacheNodeType:                aws.String("cache.r6g.large"),
+					Duration:                     aws.Int32(31536000),
+					ProductDescription:           aws.String("redis"),
 					OfferingType:                 aws.String("No Upfront"),
 				},
 			},
