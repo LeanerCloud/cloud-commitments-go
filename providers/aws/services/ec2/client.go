@@ -167,8 +167,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		return result, result.Error
 	}
 
-	limit, err := upfrontLimit(rec, offering)
-	if err != nil {
+	if err = checkApprovedUpfront(rec, offering); err != nil {
 		result.Error = err
 		return result, result.Error
 	}
@@ -177,7 +176,6 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	input := &ec2.PurchaseReservedInstancesOfferingInput{
 		ReservedInstancesOfferingId: offering.ReservedInstancesOfferingId,
 		InstanceCount:               aws.Int32(int32(rec.Count)), // #nosec G115 -- Count from CE recommendation; AWS RI purchase limits keep this far below math.MaxInt32
-		LimitPrice:                  limit,
 	}
 
 	// Execute the purchase. A single attempt: the API has no ClientToken, so an
@@ -224,32 +222,33 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	return result, nil
 }
 
-// upfrontLimit checks the resolved offering's total upfront against the
-// approved recommendation's upfront and returns the server-side LimitPrice that
-// caps the order at the same ceiling. It returns nil, nil when the
-// recommendation has no positive upfront to cap (no-upfront options, or a
-// missing figure). An offering that exceeds the ceiling, or that is priced in a
-// currency LimitPrice cannot express, is refused.
-func upfrontLimit(rec common.Recommendation, offering *types.ReservedInstancesOffering) (*types.ReservedInstanceLimitPrice, error) {
+// checkApprovedUpfront refuses an offering whose total upfront exceeds the
+// approved recommendation's upfront by more than offeringprice.UpfrontTolerance,
+// or whose price cannot be compared with it. The API's LimitPrice is not used:
+// AWS documents it for Marketplace offerings only, and findOffering excludes
+// them.
+func checkApprovedUpfront(rec common.Recommendation, offering *types.ReservedInstancesOffering) error {
 	approved := rec.CommitmentCost
+	// Zero means no upfront or no figure (the MCP EC2 tool never sets it), so
+	// there is nothing to compare; refusing would break those purchases.
 	if approved <= 0 {
-		return nil, nil
+		return nil
 	}
 	id := aws.ToString(offering.ReservedInstancesOfferingId)
+	if cur := rec.CommitmentCurrency; cur != "" && !strings.EqualFold(cur, "USD") {
+		return fmt.Errorf("EC2 recommendation upfront is in %s; the approved upfront check supports USD only", cur)
+	}
 	if offering.FixedPrice == nil {
-		return nil, fmt.Errorf("EC2 offering %s has no FixedPrice; cannot compare it with the approved upfront %.2f", id, approved)
+		return fmt.Errorf("EC2 offering %s has no FixedPrice; cannot compare it with the approved upfront %.2f", id, approved)
 	}
 	if cc := offering.CurrencyCode; cc != "" && cc != types.CurrencyCodeValuesUsd {
-		return nil, fmt.Errorf("EC2 offering %s is priced in %s; the approved upfront cap supports USD only", id, cc)
+		return fmt.Errorf("EC2 offering %s is priced in %s; the approved upfront check supports USD only", id, cc)
 	}
 	total := fixedPriceCents(*offering.FixedPrice) * float64(rec.Count) / 100
 	if err := offeringprice.CheckUpfront("EC2", total, approved); err != nil {
-		return nil, fmt.Errorf("EC2 offering %s: %w", id, err)
+		return fmt.Errorf("EC2 offering %s: %w", id, err)
 	}
-	return &types.ReservedInstanceLimitPrice{
-		Amount:       aws.Float64(math.Round(offeringprice.UpfrontCeiling(approved)*100) / 100),
-		CurrencyCode: types.CurrencyCodeValuesUsd,
-	}, nil
+	return nil
 }
 
 // findRIByIdempotencyToken looks for an active or payment-pending Reserved
