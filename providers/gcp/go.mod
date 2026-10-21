@@ -1,6 +1,6 @@
 module github.com/LeanerCloud/cloud-commitments-go/providers/gcp
 
-go 1.26.9
+go 1.26.10
 
 require (
 	cloud.google.com/go/compute v1.54.0
