@@ -41,47 +41,46 @@ func TestPurchaseCommitment_RefusesOfferingAboveApprovedUpfront(t *testing.T) {
 	m.AssertNotCalled(t, "PurchaseReservedInstancesOffering", mock.Anything, mock.Anything)
 }
 
-func TestPurchaseCommitment_SetsLimitPriceAtApprovedCeiling(t *testing.T) {
+func TestPurchaseCommitment_BuysAtApprovedUpfront(t *testing.T) {
 	t.Parallel()
-	var got *ec2.PurchaseReservedInstancesOfferingInput
-	m := offeringsMock(pricedOffering(500)) // 2 x 500 = 1000 == approved
-	m.ExpectedCalls = m.ExpectedCalls[:1]   // drop the permissive Purchase stub
-	m.On("PurchaseReservedInstancesOffering", mock.Anything, mock.MatchedBy(func(in *ec2.PurchaseReservedInstancesOfferingInput) bool {
-		got = in
-		return true
-	})).Return(&ec2.PurchaseReservedInstancesOfferingOutput{ReservedInstancesId: aws.String("ri-x")}, nil)
-	m.On("CreateTags", mock.Anything, mock.Anything).Return(&ec2.CreateTagsOutput{}, nil).Maybe()
-	_, err := (&Client{client: m, region: "us-east-1"}).PurchaseCommitment(context.Background(), pricedRec(), common.PurchaseOptions{})
+	m := offeringsMock(pricedOffering(500)) // 2 x 500 == approved 1000
+	res, err := (&Client{client: m, region: "us-east-1"}).PurchaseCommitment(context.Background(), pricedRec(), common.PurchaseOptions{})
 	require.NoError(t, err)
-	require.NotNil(t, got.LimitPrice)
-	assert.InDelta(t, 1050.0, aws.ToFloat64(got.LimitPrice.Amount), 0.001)
-	assert.Equal(t, types.CurrencyCodeValuesUsd, got.LimitPrice.CurrencyCode)
+	assert.True(t, res.Success)
+	m.AssertCalled(t, "PurchaseReservedInstancesOffering", mock.Anything, mock.MatchedBy(func(in *ec2.PurchaseReservedInstancesOfferingInput) bool {
+		return in.LimitPrice == nil
+	}), mock.Anything)
 }
 
-func TestPurchaseCommitment_NoLimitPriceWithoutApprovedUpfront(t *testing.T) {
+// The MCP EC2 tool never sets CommitmentCost; zero must not block the buy.
+func TestPurchaseCommitment_NoApprovedUpfrontIsNotChecked(t *testing.T) {
 	t.Parallel()
-	var got *ec2.PurchaseReservedInstancesOfferingInput
-	m := &MockEC2Client{}
-	m.On("DescribeReservedInstancesOfferings", mock.Anything, mock.Anything).
-		Return(&ec2.DescribeReservedInstancesOfferingsOutput{ReservedInstancesOfferings: []types.ReservedInstancesOffering{fullOffering("n", "")}}, nil)
-	m.On("PurchaseReservedInstancesOffering", mock.Anything, mock.MatchedBy(func(in *ec2.PurchaseReservedInstancesOfferingInput) bool {
-		got = in
-		return true
-	})).Return(&ec2.PurchaseReservedInstancesOfferingOutput{ReservedInstancesId: aws.String("ri-x")}, nil)
-	m.On("CreateTags", mock.Anything, mock.Anything).Return(&ec2.CreateTagsOutput{}, nil).Maybe()
-	_, err := (&Client{client: m, region: "us-east-1"}).PurchaseCommitment(context.Background(), matchRec(), common.PurchaseOptions{})
+	m := offeringsMock(pricedOffering(9000))
+	rec := pricedRec()
+	rec.CommitmentCost = 0
+	_, err := (&Client{client: m, region: "us-east-1"}).PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
 	require.NoError(t, err)
-	assert.Nil(t, got.LimitPrice)
 }
 
-func TestUpfrontLimit_RefusesMissingPriceAndNonUSD(t *testing.T) {
+func TestCheckApprovedUpfront_Currency(t *testing.T) {
+	t.Parallel()
+	off := pricedOffering(500)
+	for _, cur := range []string{"", "USD", "usd"} {
+		rec := pricedRec()
+		rec.CommitmentCurrency = cur
+		require.NoError(t, checkApprovedUpfront(rec, &off), "currency %q", cur)
+	}
+	rec := pricedRec()
+	rec.CommitmentCurrency = "EUR"
+	require.ErrorContains(t, checkApprovedUpfront(rec, &off), "EUR")
+}
+
+func TestCheckApprovedUpfront_RefusesMissingPriceAndNonUSDOffering(t *testing.T) {
 	t.Parallel()
 	noPrice := fullOffering("p", "")
-	_, err := upfrontLimit(pricedRec(), &noPrice)
-	require.ErrorContains(t, err, "no FixedPrice")
+	require.ErrorContains(t, checkApprovedUpfront(pricedRec(), &noPrice), "no FixedPrice")
 
 	eur := pricedOffering(500)
 	eur.CurrencyCode = types.CurrencyCodeValues("EUR")
-	_, err = upfrontLimit(pricedRec(), &eur)
-	require.ErrorContains(t, err, "USD only")
+	require.ErrorContains(t, checkApprovedUpfront(pricedRec(), &eur), "USD only")
 }
