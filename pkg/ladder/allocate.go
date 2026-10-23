@@ -103,10 +103,18 @@ type Allocation struct {
 // no-op if and only if Allocations and Reshapes are both empty (see IsNoOp);
 // in that case Holds carries the explanation (baseline unavailable, gap below
 // the minimum threshold, or every split amount below the minimum).
+//
+// NetExistingUSDPerHour is the net existing commitment E that Allocate sized
+// the gap against: the sum over layers of ExistingUSDPerHour minus
+// ExpiringUSDPerHour, in the same on-demand-equivalent USD/hr unit as the
+// inputs. It is set on every successful result, including the hold-only
+// early exits, so callers report the figure the engine used instead of
+// recomputing a gross one from the layer states.
 type AllocateResult struct {
-	Allocations []Allocation
-	Reshapes    []PlannedAction
-	Holds       []PlannedAction
+	NetExistingUSDPerHour *big.Rat
+	Allocations           []Allocation
+	Reshapes              []PlannedAction
+	Holds                 []PlannedAction
 }
 
 // IsNoOp reports whether the result proposes no state-changing actions:
@@ -121,7 +129,10 @@ func (r *AllocateResult) IsNoOp() bool {
 // arithmetic; float64 inputs are converted at the boundary via ratFromFloat.
 //
 // Steps (see inline comments):
-//  1. Validate config, layers (enums + topology), and layer states.
+//  1. Validate config, layers (enums + topology), and layer states, then
+//     compute net existing commitment (reported on every result as
+//     NetExistingUSDPerHour; an inconsistent snapshot is an error even when
+//     the baseline is unavailable).
 //  2. Detect under-utilized buffer layers (reshape, or informational hold
 //     when utilization is unknown on a non-empty buffer layer). This runs
 //     INDEPENDENTLY of the purchase gap: an over-committed account is exactly
@@ -148,6 +159,23 @@ func Allocate(in *AllocationInput) (*AllocateResult, error) {
 	if err := validateAllocateInput(in); err != nil {
 		return nil, err
 	}
+	nets, existingTotal, err := computeNetExisting(in.Layers, in.LayerStates)
+	if err != nil {
+		return nil, err
+	}
+	result, err := allocate(in, nets, existingTotal)
+	if err != nil {
+		return nil, err
+	}
+	result.NetExistingUSDPerHour = new(big.Rat).Set(existingTotal)
+	return result, nil
+}
+
+// allocate runs steps 2-8 of Allocate on validated input. nets and
+// existingTotal are the per-layer and total net existing commitment from
+// computeNetExisting, computed by Allocate before any early exit so every
+// result can report the E the gap is sized against.
+func allocate(in *AllocationInput, nets map[LayerType]*big.Rat, existingTotal *big.Rat) (*AllocateResult, error) {
 	rates, err := parseCommitmentRates(in.CommitmentRates)
 	if err != nil {
 		return nil, err
@@ -159,10 +187,6 @@ func Allocate(in *AllocationInput) (*AllocateResult, error) {
 	reshapes, maintHolds := detectReshapes(in.Layers, in.LayerStates, in.Config.BufferUtilizationThresholdPct, in.DataSources)
 	if in.Baseline.LowWaterUSDPerHour == nil {
 		return withMaintenance(baselineUnavailableHold(in), reshapes, maintHolds), nil
-	}
-	nets, existingTotal, err := computeNetExisting(in.Layers, in.LayerStates)
-	if err != nil {
-		return nil, err
 	}
 	lowWater, target, err := computeBaselineAndTarget(in)
 	if err != nil {

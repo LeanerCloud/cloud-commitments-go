@@ -32,6 +32,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **`ladder.AllocateResult.NetExistingUSDPerHour`:** the net existing
+  commitment (existing minus expiring, summed over layers) that `Allocate`
+  sized the gap against, set on every successful result including the
+  hold-only exits. Callers can report it instead of recomputing a gross
+  figure from the layer states, so a plan's existing figure reconciles with
+  its gap. `Allocate` now checks the snapshot before the baseline-unavailable
+  hold, so expiring above existing is an error there too (#83).
 - **`exchange.WithOfferedInstanceTypes` / `RunAutoExchangeParams.OfferedInstanceTypes`:**
   restrict RI reshape targets to the instance types the region offers.
   `AnalyzeReshaping` and `AnalyzeReshapingWithRecs` take it as a variadic

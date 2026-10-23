@@ -86,11 +86,12 @@ type LadderCapability interface {
 // is needed; NaN/Inf/non-positive values are rejected wherever these caps
 // are validated.
 type BufferReshapeConfig struct { //nolint:govet // fieldalignment: file owned by open PR #441
-	// MaxPaymentPerExchangeUSD caps the payment for a single exchange. nil
-	// means no per-exchange cap is applied.
+	// MaxPaymentPerExchangeUSD caps the payment for a single exchange. It is
+	// required: nil is an error, never "no cap" (reshape executes exchanges
+	// immediately, so an omitted cap must not mean unlimited spend).
 	MaxPaymentPerExchangeUSD *float64
 	// MaxPaymentDailyUSD caps the total exchange payments for the current day.
-	// nil means no daily cap is applied.
+	// It is required on the same terms as MaxPaymentPerExchangeUSD.
 	MaxPaymentDailyUSD *float64
 	// UtilizationThresholdPct triggers a reshape when commitment utilization
 	// drops below this percentage.
