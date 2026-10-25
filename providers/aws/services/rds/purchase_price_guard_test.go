@@ -2,6 +2,7 @@ package rds
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -132,4 +133,60 @@ func TestPurchaseCommitment_ExistingRIWinsOverRepricedOffering(t *testing.T) {
 	assert.True(t, res.ExistingCommitment)
 	assert.Equal(t, derivedID, res.CommitmentID)
 	m.AssertNotCalled(t, "PurchaseReservedDBInstancesOffering", mock.Anything, mock.Anything)
+}
+
+// byIDMock serves the exact-match page lookup, then answers the by-ID price
+// read with the given offerings or error.
+func byIDMock(byID []types.ReservedDBInstancesOffering, byIDErr error) *MockRDSClient {
+	m := &MockRDSClient{}
+	isByID := func(in *rds.DescribeReservedDBInstancesOfferingsInput) bool {
+		return aws.ToString(in.ReservedDBInstancesOfferingId) == "offering-1"
+	}
+	m.On("DescribeReservedDBInstancesOfferings", mock.Anything, mock.MatchedBy(isByID)).
+		Return(&rds.DescribeReservedDBInstancesOfferingsOutput{ReservedDBInstancesOfferings: byID}, byIDErr)
+	m.On("DescribeReservedDBInstancesOfferings", mock.Anything, mock.MatchedBy(func(in *rds.DescribeReservedDBInstancesOfferingsInput) bool { return !isByID(in) })).
+		Return(&rds.DescribeReservedDBInstancesOfferingsOutput{ReservedDBInstancesOfferings: []types.ReservedDBInstancesOffering{exactOffering("offering-1")}}, nil)
+	m.On("PurchaseReservedDBInstancesOffering", mock.Anything, mock.Anything).
+		Return(&rds.PurchaseReservedDBInstancesOfferingOutput{ReservedDBInstance: &types.ReservedDBInstance{ReservedDBInstanceId: aws.String("ri-1")}}, nil)
+	return m
+}
+
+func TestPurchaseCommitment_RefusesWhenPriceReadFails(t *testing.T) {
+	t.Parallel()
+	m := byIDMock(nil, errors.New("throttled"))
+	res, err := buy(m, guardRec())
+	require.ErrorContains(t, err, "approved upfront check")
+	assert.ErrorContains(t, err, "throttled")
+	assert.False(t, res.Success)
+	m.AssertNotCalled(t, "PurchaseReservedDBInstancesOffering", mock.Anything, mock.Anything)
+}
+
+func TestPurchaseCommitment_RefusesWhenPriceReadIsNotOneOffering(t *testing.T) {
+	t.Parallel()
+	two := []types.ReservedDBInstancesOffering{exactOffering("offering-1"), exactOffering("offering-1")}
+	for _, n := range [][]types.ReservedDBInstancesOffering{two, nil} {
+		m := byIDMock(n, nil)
+		_, err := buy(m, guardRec())
+		require.ErrorContains(t, err, "expected 1 offering")
+		m.AssertNotCalled(t, "PurchaseReservedDBInstancesOffering", mock.Anything, mock.Anything)
+	}
+}
+
+func TestPurchaseCommitment_RefusesOfferingWithoutFixedPrice(t *testing.T) {
+	t.Parallel()
+	m := byIDMock([]types.ReservedDBInstancesOffering{exactOffering("offering-1")}, nil) // FixedPrice nil
+	_, err := buy(m, guardRec())
+	require.ErrorContains(t, err, "no FixedPrice")
+	m.AssertNotCalled(t, "PurchaseReservedDBInstancesOffering", mock.Anything, mock.Anything)
+}
+
+func TestPurchaseCommitment_LowercaseUSDBuys(t *testing.T) {
+	t.Parallel()
+	rec := guardRec()
+	rec.CommitmentCurrency = "usd"
+	m := guardMock(500, "usd")
+	res, err := buy(m, rec)
+	require.NoError(t, err)
+	assert.True(t, res.Success)
+	m.AssertCalled(t, "PurchaseReservedDBInstancesOffering", mock.Anything, mock.Anything)
 }
