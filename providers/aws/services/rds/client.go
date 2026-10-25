@@ -221,7 +221,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 // (the MCP never sets it), so there is nothing to compare.
 func (c *Client) checkApprovedUpfront(ctx context.Context, rec common.Recommendation, offeringID string) error {
 	approved := rec.CommitmentCost
-	if approved <= 0 {
+	if offeringprice.NoUpfrontApproved(approved) {
 		return nil
 	}
 	if cur := rec.CommitmentCurrency; cur != "" && !strings.EqualFold(cur, "USD") {

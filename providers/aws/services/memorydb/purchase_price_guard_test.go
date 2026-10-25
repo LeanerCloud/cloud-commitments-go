@@ -3,6 +3,7 @@ package memorydb
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -171,5 +172,58 @@ func TestPurchaseCommitment_RefusesWhenPriceReadIsNotOneOffering(t *testing.T) {
 		_, err := buy(m, guardRec())
 		require.ErrorContains(t, err, "expected 1 offering")
 		m.AssertNotCalled(t, "PurchaseReservedNodesOffering", mock.Anything, mock.Anything)
+	}
+}
+
+func TestPurchaseCommitment_RefusesNonFiniteApprovedUpfront(t *testing.T) {
+	t.Parallel()
+	for _, approved := range []float64{math.NaN(), math.Inf(1), math.Inf(-1)} {
+		m := guardMock(400)
+		rec := guardRec()
+		rec.CommitmentCost = approved
+		res, err := buy(m, rec)
+		require.ErrorContains(t, err, "not a finite amount", "%v", approved)
+		assert.False(t, res.Success)
+		m.AssertNotCalled(t, "PurchaseReservedNodesOffering", mock.Anything, mock.Anything)
+	}
+}
+
+func buyIn(region string, m *MockMemoryDBClient, rec common.Recommendation) (common.PurchaseResult, error) {
+	return (&Client{client: m, region: region}).PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
+}
+
+func TestPurchaseCommitment_ChinaRegionRefusesApprovedUpfront(t *testing.T) {
+	t.Parallel()
+	for _, region := range []string{"cn-north-1", "cn-northwest-1"} {
+		m := guardMock(400)
+		res, err := buyIn(region, m, guardRec())
+		require.ErrorContains(t, err, "not billed in USD", region)
+		assert.False(t, res.Success)
+		m.AssertNotCalled(t, "PurchaseReservedNodesOffering", mock.Anything, mock.Anything)
+	}
+}
+
+func TestPurchaseCommitment_ChinaRegionZeroApprovedStillBuys(t *testing.T) {
+	t.Parallel()
+	m := guardMock(400)
+	rec := guardRec()
+	rec.CommitmentCost = 0
+	_, err := buyIn("cn-north-1", m, rec)
+	require.NoError(t, err)
+	m.AssertCalled(t, "PurchaseReservedNodesOffering", mock.Anything, mock.Anything)
+}
+
+// A No Upfront offering is exempt from the zero-FixedPrice refusal and the
+// China-region refusal even when the rec carries a positive approved upfront.
+func TestPurchaseCommitment_NoUpfrontOfferingWithApprovedUpfrontBuys(t *testing.T) {
+	t.Parallel()
+	for _, region := range []string{"us-east-1", "cn-north-1"} {
+		off := guardOffering(0)
+		off.OfferingType = aws.String("No Upfront")
+		m := byIDMock([]types.ReservedNodesOffering{off}, nil)
+		res, err := buyIn(region, m, guardRec())
+		require.NoError(t, err, region)
+		assert.True(t, res.Success)
+		m.AssertCalled(t, "PurchaseReservedNodesOffering", mock.Anything, mock.Anything)
 	}
 }

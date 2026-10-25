@@ -225,7 +225,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 // field, so only the recommendation's currency can be checked.
 func (c *Client) checkApprovedUpfront(ctx context.Context, rec common.Recommendation, offeringID string) error {
 	approved := rec.CommitmentCost
-	if approved <= 0 {
+	if offeringprice.NoUpfrontApproved(approved) {
 		return nil
 	}
 	if cur := rec.CommitmentCurrency; cur != "" && !strings.EqualFold(cur, "USD") {
@@ -246,7 +246,23 @@ func (c *Client) checkApprovedUpfront(ctx context.Context, rec common.Recommenda
 	if off.FixedPrice == 0 && aws.ToString(off.OfferingType) != "No Upfront" {
 		return fmt.Errorf("MemoryDB offering %s: upfront offering has no FixedPrice; refusing to buy against an approved upfront of %.2f", offeringID, approved)
 	}
+	if err := c.checkAssumedUSD(off, offeringID); err != nil {
+		return err
+	}
 	if err := offeringprice.CheckUpfront("MemoryDB", off.FixedPrice*float64(rec.Count), approved); err != nil {
+		return fmt.Errorf("MemoryDB offering %s: %w", offeringID, err)
+	}
+	return nil
+}
+
+// checkAssumedUSD refuses a priced offering in a region not billed in USD: the
+// offering has no currency field, so the region decides it. No Upfront has no
+// price to compare.
+func (c *Client) checkAssumedUSD(off types.ReservedNodesOffering, offeringID string) error {
+	if aws.ToString(off.OfferingType) == "No Upfront" {
+		return nil
+	}
+	if _, err := offeringprice.AssumedUSD("MemoryDB", c.region); err != nil {
 		return fmt.Errorf("MemoryDB offering %s: %w", offeringID, err)
 	}
 	return nil

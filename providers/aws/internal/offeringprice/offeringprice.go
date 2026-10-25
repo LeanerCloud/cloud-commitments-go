@@ -149,10 +149,22 @@ func UpfrontCeiling(approved float64) float64 {
 	return approved * (1 + UpfrontTolerance)
 }
 
+// NoUpfrontApproved reports whether approved gives no ceiling to check: zero
+// or negative means a no-upfront option or a missing figure. NaN and +-Inf are
+// not "no figure" (a corrupt one), so they return false and CheckUpfront
+// refuses them.
+func NoUpfrontApproved(approved float64) bool {
+	return approved <= 0 && !math.IsInf(approved, -1)
+}
+
 // CheckUpfront fails when offeredTotal exceeds UpfrontCeiling(approved), both
-// compared in whole cents. approved must be positive: a zero upfront is either
-// a no-upfront option or a missing figure, and neither gives a ceiling.
+// compared in whole cents, and when approved is NaN or infinite (every
+// comparison against those is false, so they would pass). Callers skip the
+// call when NoUpfrontApproved(approved).
 func CheckUpfront(service string, offeredTotal, approved float64) error {
+	if math.IsNaN(approved) || math.IsInf(approved, 0) {
+		return fmt.Errorf("%s approved upfront %v is not a finite amount; refusing to purchase", service, approved)
+	}
 	if math.Round(offeredTotal*100) > math.Round(UpfrontCeiling(approved)*100) {
 		return fmt.Errorf("%s offering upfront %.2f exceeds the approved upfront %.2f by more than %.0f%%; refusing to purchase (re-approve at the current price)",
 			service, offeredTotal, approved, UpfrontTolerance*100)

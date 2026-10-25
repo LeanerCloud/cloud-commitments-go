@@ -231,7 +231,7 @@ func checkApprovedUpfront(rec common.Recommendation, offering *types.ReservedIns
 	approved := rec.CommitmentCost
 	// Zero means no upfront or no figure (the MCP EC2 tool never sets it), so
 	// there is nothing to compare; refusing would break those purchases.
-	if approved <= 0 {
+	if offeringprice.NoUpfrontApproved(approved) {
 		return nil
 	}
 	id := aws.ToString(offering.ReservedInstancesOfferingId)
