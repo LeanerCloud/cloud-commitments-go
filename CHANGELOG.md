@@ -216,6 +216,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Fixed
 
 - **AWS/OpenSearch:** the STS account-ID lookup used for post-purchase tagging caches only a successful result, so one throttled or timed-out `GetCallerIdentity` no longer disables tagging for the client's lifetime (#53).
+- **AWS/recommendations:** `normalizeRegionName` maps the current `Europe (Ireland|Frankfurt|London|Paris|Stockholm)` Cost Explorer display names to region codes, so coverage lookups keyed by region code match those recommendations (#53).
 - **AWS/RDS:** `PurchaseCommitment` refuses an offering whose upfront (`FixedPrice` x count) exceeds the approved recommendation upfront by more than 5%, or that is priced in a non-USD currency; a zero approved upfront is not checked (#53).
 - Bump Go to 1.26.10 to pick up the fix for GO-2026-6809 (crypto/x509), which `govulncheck` now reports against 1.26.9.
 - **AWS/MemoryDB, OpenSearch, Redshift:** `PurchaseCommitment` refuses an offering whose upfront (`FixedPrice` x count) exceeds the approved recommendation upfront by more than 5%, or that is priced in a non-USD currency (MemoryDB offerings carry no currency, so only the recommendation's currency is checked there), or, for MemoryDB, an upfront offering with a zero price or one bought in a China region (cn-north-1, cn-northwest-1), where the assumed USD price is wrong; a zero approved upfront is not checked. All AWS RI price guards (EC2, RDS, MemoryDB, OpenSearch, Redshift) also refuse a NaN or infinite approved upfront (#53).

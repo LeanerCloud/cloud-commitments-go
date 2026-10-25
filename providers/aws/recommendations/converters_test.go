@@ -553,6 +553,11 @@ func TestNormalizeRegionName(t *testing.T) {
 			region:   "il-central-1",
 			expected: "il-central-1",
 		},
+		{name: "Europe (Ireland)", region: "Europe (Ireland)", expected: "eu-west-1"},
+		{name: "Europe (Frankfurt)", region: "Europe (Frankfurt)", expected: "eu-central-1"},
+		{name: "Europe (London)", region: "Europe (London)", expected: "eu-west-2"},
+		{name: "Europe (Paris)", region: "Europe (Paris)", expected: "eu-west-3"},
+		{name: "Europe (Stockholm)", region: "Europe (Stockholm)", expected: "eu-north-1"},
 		{
 			name:     "Unknown region returns as-is",
 			region:   "Unknown Region",
