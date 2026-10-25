@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -145,6 +146,13 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		}
 	}
 
+	// After the dedupe: a re-drive that already bought must not be refused for a
+	// later price rise (ec2/client.go does the same).
+	if err = c.checkApprovedUpfront(ctx, rec, offeringID); err != nil {
+		result.Error = err
+		return result, result.Error
+	}
+
 	input := &redshift.PurchaseReservedNodeOfferingInput{
 		ReservedNodeOfferingId: aws.String(offeringID),
 		NodeCount:              aws.Int32(int32(rec.Count)), // #nosec G115 -- Count from CE recommendation; AWS RI purchase limits keep this far below math.MaxInt32
@@ -164,11 +172,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	if response.ReservedNode != nil {
 		result.Success = true
 		result.CommitmentID = aws.ToString(response.ReservedNode.ReservedNodeId)
-		// FixedPrice is per node; the reservation total is FixedPrice x count.
-		if rn := response.ReservedNode; rn.FixedPrice != nil && rn.NodeCount != nil {
-			total := *rn.FixedPrice * float64(*rn.NodeCount)
-			result.Cost = &total
-		}
+		result.Cost = reservedNodeTotal(response.ReservedNode)
 	} else {
 		// A 200 without a node: the buy most likely happened.
 		result.Error = fmt.Errorf("purchase response was empty: %w", common.ErrOutcomeUnknown)
@@ -179,6 +183,54 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	}
 
 	return result, nil
+}
+
+// reservedNodeTotal is the reservation's upfront total: FixedPrice is per node,
+// so it is FixedPrice x NodeCount, or nil when either is missing.
+func reservedNodeTotal(rn *redshifttypes.ReservedNode) *float64 {
+	if rn.FixedPrice == nil || rn.NodeCount == nil {
+		return nil
+	}
+	total := *rn.FixedPrice * float64(*rn.NodeCount)
+	return &total
+}
+
+// checkApprovedUpfront refuses an offering whose total upfront (FixedPrice, per
+// node, x count) exceeds the approved recommendation's upfront by more than
+// offeringprice.UpfrontTolerance, or whose price cannot be compared with it.
+// Mirrors rds.checkApprovedUpfront (same semantics; keep them in step). The
+// shared comparison is offeringprice.CheckUpfront. Redshift has no server-side
+// price cap, so this is the only guard. The offering is read back by ID, and
+// only when an upfront was approved: CommitmentCost 0 means no upfront or no
+// figure, so there is nothing to compare.
+func (c *Client) checkApprovedUpfront(ctx context.Context, rec common.Recommendation, offeringID string) error {
+	approved := rec.CommitmentCost
+	if approved <= 0 {
+		return nil
+	}
+	if cur := rec.CommitmentCurrency; cur != "" && !strings.EqualFold(cur, "USD") {
+		return fmt.Errorf("redshift recommendation upfront is in %s; the approved upfront check supports USD only", cur)
+	}
+	out, err := c.client.DescribeReservedNodeOfferings(ctx, &redshift.DescribeReservedNodeOfferingsInput{
+		ReservedNodeOfferingId: aws.String(offeringID),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to read Redshift offering %s for the approved upfront check: %w", offeringID, err)
+	}
+	if len(out.ReservedNodeOfferings) != 1 {
+		return fmt.Errorf("redshift offering %s: expected 1 offering for the approved upfront check, got %d", offeringID, len(out.ReservedNodeOfferings))
+	}
+	offering := out.ReservedNodeOfferings[0]
+	if offering.FixedPrice == nil {
+		return fmt.Errorf("redshift offering %s has no FixedPrice; cannot compare it with the approved upfront %.2f", offeringID, approved)
+	}
+	if cc := aws.ToString(offering.CurrencyCode); cc != "" && !strings.EqualFold(cc, "USD") {
+		return fmt.Errorf("redshift offering %s is priced in %s; the approved upfront check supports USD only", offeringID, cc)
+	}
+	if err := offeringprice.CheckUpfront("Redshift", *offering.FixedPrice*float64(rec.Count), approved); err != nil {
+		return fmt.Errorf("redshift offering %s: %w", offeringID, err)
+	}
+	return nil
 }
 
 // maxOfferingPages is the maximum number of DescribeReservedNodeOfferings

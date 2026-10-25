@@ -217,6 +217,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - **AWS/RDS:** `PurchaseCommitment` refuses an offering whose upfront (`FixedPrice` x count) exceeds the approved recommendation upfront by more than 5%, or that is priced in a non-USD currency; a zero approved upfront is not checked (#53).
 - Bump Go to 1.26.10 to pick up the fix for GO-2026-6809 (crypto/x509), which `govulncheck` now reports against 1.26.9.
+- **AWS/MemoryDB, OpenSearch, Redshift:** `PurchaseCommitment` refuses an offering whose upfront (`FixedPrice` x count) exceeds the approved recommendation upfront by more than 5%, or that is priced in a non-USD currency; a zero approved upfront is not checked (#53).
 - AWS ElastiCache purchases refuse a recommendation with no engine instead of
   sending an empty `ProductDescription` filter, send the engine lowercased as
   ElastiCache reports it, and verify the chosen offering's node type, duration
