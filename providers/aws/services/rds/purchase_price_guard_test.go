@@ -114,3 +114,22 @@ func TestPurchaseCommitment_NoUpfrontUnaffected(t *testing.T) {
 	require.NoError(t, err)
 	m.AssertNumberOfCalls(t, "DescribeReservedDBInstancesOfferings", 1)
 }
+
+// A re-drive whose RI already exists must return it even after the offering
+// was repriced above the approved upfront: nothing is bought, so no refusal.
+func TestPurchaseCommitment_ExistingRIWinsOverRepricedOffering(t *testing.T) {
+	t.Parallel()
+	m := guardMock(600, "USD") // 2 x 600 = 1200 against an approved 1000
+	token := common.DeriveIdempotencyToken("exec-53", 0)
+	derivedID := common.IdempotentReservationID("rds-id-", token)
+	m.On("DescribeReservedDBInstances", mock.Anything, mock.Anything).
+		Return(&rds.DescribeReservedDBInstancesOutput{ReservedDBInstances: []types.ReservedDBInstance{
+			{ReservedDBInstanceId: aws.String(derivedID), State: aws.String("active")},
+		}}, nil)
+	res, err := (&Client{client: m, region: "us-east-1"}).PurchaseCommitment(context.Background(), guardRec(), common.PurchaseOptions{IdempotencyToken: token})
+	require.NoError(t, err)
+	assert.True(t, res.Success)
+	assert.True(t, res.ExistingCommitment)
+	assert.Equal(t, derivedID, res.CommitmentID)
+	m.AssertNotCalled(t, "PurchaseReservedDBInstancesOffering", mock.Anything, mock.Anything)
+}

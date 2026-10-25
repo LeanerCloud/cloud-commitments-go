@@ -148,11 +148,6 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		return result, result.Error
 	}
 
-	if err = c.checkApprovedUpfront(ctx, rec, offeringID); err != nil {
-		result.Error = err
-		return result, result.Error
-	}
-
 	reservationID := c.deriveReservationID(rec, opts)
 
 	// Idempotency dedupe guard (issue #641). When a token is supplied, look for a
@@ -167,6 +162,13 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		result.ExistingCommitment = true
 		result.CommitmentID = existingID
 		return result, nil
+	}
+
+	// After the dedupe: a re-drive that already bought must not be refused for a
+	// later price rise (ec2/client.go does the same).
+	if err = c.checkApprovedUpfront(ctx, rec, offeringID); err != nil {
+		result.Error = err
+		return result, result.Error
 	}
 
 	// Create the purchase request
