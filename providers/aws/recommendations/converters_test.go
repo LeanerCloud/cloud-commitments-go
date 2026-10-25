@@ -558,6 +558,10 @@ func TestNormalizeRegionName(t *testing.T) {
 		{name: "Europe (London)", region: "Europe (London)", expected: "eu-west-2"},
 		{name: "Europe (Paris)", region: "Europe (Paris)", expected: "eu-west-3"},
 		{name: "Europe (Stockholm)", region: "Europe (Stockholm)", expected: "eu-north-1"},
+		{name: "Asia Pacific (Malaysia)", region: "Asia Pacific (Malaysia)", expected: "ap-southeast-5"},
+		{name: "Asia Pacific (Thailand)", region: "Asia Pacific (Thailand)", expected: "ap-southeast-7"},
+		{name: "Canada West (Calgary)", region: "Canada West (Calgary)", expected: "ca-west-1"},
+		{name: "Mexico (Central)", region: "Mexico (Central)", expected: "mx-central-1"},
 		{
 			name:     "Unknown region returns as-is",
 			region:   "Unknown Region",
@@ -570,5 +574,29 @@ func TestNormalizeRegionName(t *testing.T) {
 			result := normalizeRegionName(tt.region)
 			assert.Equal(t, tt.expected, result)
 		})
+	}
+}
+
+// TestNormalizeRegionName_NoCollisions pins that distinct display names map to
+// distinct region codes, so a new alias cannot silently shadow another region.
+func TestNormalizeRegionName_NoCollisions(t *testing.T) {
+	t.Parallel()
+	byCode := map[string]string{}
+	for name, code := range map[string]string{
+		"Asia Pacific (Malaysia)":  "ap-southeast-5",
+		"Asia Pacific (Thailand)":  "ap-southeast-7",
+		"Canada West (Calgary)":    "ca-west-1",
+		"Mexico (Central)":         "mx-central-1",
+		"Canada (Central)":         "ca-central-1",
+		"Asia Pacific (Jakarta)":   "ap-southeast-3",
+		"Asia Pacific (Singapore)": "ap-southeast-1",
+		"Asia Pacific (Sydney)":    "ap-southeast-2",
+		"Asia Pacific (Melbourne)": "ap-southeast-4",
+	} {
+		got := normalizeRegionName(name)
+		assert.Equal(t, code, got, name)
+		prev, dup := byCode[got]
+		assert.False(t, dup, "%q and %q both map to %q", prev, name, got)
+		byCode[got] = name
 	}
 }

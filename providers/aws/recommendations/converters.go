@@ -132,6 +132,10 @@ func normalizeRegionName(region string) string {
 		"Europe (Zurich)":           "eu-central-2",
 		"Asia Pacific (Melbourne)":  "ap-southeast-4",
 		"Israel (Tel Aviv)":         "il-central-1",
+		"Asia Pacific (Malaysia)":   "ap-southeast-5",
+		"Asia Pacific (Thailand)":   "ap-southeast-7",
+		"Canada West (Calgary)":     "ca-west-1",
+		"Mexico (Central)":          "mx-central-1",
 	}
 
 	if normalized, ok := regionMap[region]; ok {
