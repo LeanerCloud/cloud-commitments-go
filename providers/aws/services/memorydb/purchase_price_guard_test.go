@@ -87,6 +87,16 @@ func TestPurchaseCommitment_ZeroApprovedUpfrontIsNotChecked(t *testing.T) {
 	m.AssertNumberOfCalls(t, "DescribeReservedNodesOfferings", 1)
 }
 
+func TestPurchaseCommitment_RefusesZeroPricedUpfrontOffering(t *testing.T) {
+	t.Parallel()
+	m := guardMock(0)
+	res, err := buy(m, guardRec())
+	require.ErrorContains(t, err, "offering-1")
+	assert.ErrorContains(t, err, "no FixedPrice")
+	assert.False(t, res.Success)
+	m.AssertNotCalled(t, "PurchaseReservedNodesOffering", mock.Anything, mock.Anything)
+}
+
 func TestPurchaseCommitment_RefusesNonUSDRec(t *testing.T) {
 	t.Parallel()
 	m := guardMock(400)

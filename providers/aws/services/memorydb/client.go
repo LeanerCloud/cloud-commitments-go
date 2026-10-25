@@ -240,7 +240,13 @@ func (c *Client) checkApprovedUpfront(ctx context.Context, rec common.Recommenda
 	if len(out.ReservedNodesOfferings) != 1 {
 		return fmt.Errorf("MemoryDB offering %s: expected 1 offering for the approved upfront check, got %d", offeringID, len(out.ReservedNodesOfferings))
 	}
-	if err := offeringprice.CheckUpfront("MemoryDB", out.ReservedNodesOfferings[0].FixedPrice*float64(rec.Count), approved); err != nil {
+	off := out.ReservedNodesOfferings[0]
+	// FixedPrice is a plain float64, so 0 on an upfront offering means the price
+	// is missing (other services refuse a nil price); No Upfront is legitimately 0.
+	if off.FixedPrice == 0 && aws.ToString(off.OfferingType) != "No Upfront" {
+		return fmt.Errorf("MemoryDB offering %s: upfront offering has no FixedPrice; refusing to buy against an approved upfront of %.2f", offeringID, approved)
+	}
+	if err := offeringprice.CheckUpfront("MemoryDB", off.FixedPrice*float64(rec.Count), approved); err != nil {
 		return fmt.Errorf("MemoryDB offering %s: %w", offeringID, err)
 	}
 	return nil
