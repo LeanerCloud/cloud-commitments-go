@@ -163,7 +163,11 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 		}
 
 		for i := range result.SavingsPlans {
-			if commitment, ok := c.toCommitment(result.SavingsPlans[i], service); ok {
+			commitment, ok, err := c.toCommitment(result.SavingsPlans[i], service)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
 				commitments = append(commitments, commitment)
 			}
 		}
@@ -181,13 +185,14 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 // common.Commitment, returning ok=false for entries that should be skipped
 // (missing ID, or a plan type that does not match this client's scope). It is
 // split out of GetExistingCommitments to keep that function under the
-// cyclomatic limit.
-func (c *Client) toCommitment(sp types.SavingsPlan, service common.ServiceType) (common.Commitment, bool) {
+// cyclomatic limit. A start or end date that is present but not RFC3339 is an
+// error naming the plan ID and the bad value.
+func (c *Client) toCommitment(sp types.SavingsPlan, service common.ServiceType) (common.Commitment, bool, error) {
 	if sp.SavingsPlanId == nil {
-		return common.Commitment{}, false
+		return common.Commitment{}, false, nil
 	}
 	if c.planType != "" && sp.SavingsPlanType != c.planType {
-		return common.Commitment{}, false
+		return common.Commitment{}, false, nil
 	}
 
 	commitment := common.Commitment{
@@ -202,17 +207,21 @@ func (c *Client) toCommitment(sp types.SavingsPlan, service common.ServiceType) 
 	}
 
 	if sp.Start != nil {
-		if startTime, err := time.Parse(time.RFC3339, *sp.Start); err == nil {
-			commitment.StartDate = startTime
+		startTime, err := time.Parse(time.RFC3339, *sp.Start)
+		if err != nil {
+			return common.Commitment{}, false, fmt.Errorf("savings plan %s: invalid start date %q: %w", *sp.SavingsPlanId, *sp.Start, err)
 		}
+		commitment.StartDate = startTime
 	}
 	if sp.End != nil {
-		if endTime, err := time.Parse(time.RFC3339, *sp.End); err == nil {
-			commitment.EndDate = endTime
+		endTime, err := time.Parse(time.RFC3339, *sp.End)
+		if err != nil {
+			return common.Commitment{}, false, fmt.Errorf("savings plan %s: invalid end date %q: %w", *sp.SavingsPlanId, *sp.End, err)
 		}
+		commitment.EndDate = endTime
 	}
 
-	return commitment, true
+	return commitment, true, nil
 }
 
 // PurchaseCommitment purchases a Savings Plan.

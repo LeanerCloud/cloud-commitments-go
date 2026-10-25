@@ -169,7 +169,7 @@ func TestClient_GetExistingCommitments(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name:       "handles invalid date formats gracefully",
+			name:       "invalid date formats return an error",
 			clientType: types.SavingsPlanTypeCompute,
 			setupMocks: func(m *MockSavingsPlansClient) {
 				m.On("DescribeSavingsPlans", mock.Anything, mock.Anything).
@@ -185,8 +185,8 @@ func TestClient_GetExistingCommitments(t *testing.T) {
 						},
 					}, nil).Once()
 			},
-			expectedLen: 1,
-			expectError: false,
+			expectedLen: 0,
+			expectError: true,
 		},
 		{
 			name:       "API error",
@@ -221,6 +221,28 @@ func TestClient_GetExistingCommitments(t *testing.T) {
 			}
 
 			mockClient.AssertExpectations(t)
+		})
+	}
+}
+
+// TestClient_GetExistingCommitments_InvalidDateNamesPlanAndValue pins that the
+// error identifies the offending plan and the unparseable value.
+func TestClient_GetExistingCommitments_InvalidDateNamesPlanAndValue(t *testing.T) {
+	t.Parallel()
+	for field, plan := range map[string]types.SavingsPlan{
+		"start": {SavingsPlanId: aws.String("sp-bad"), SavingsPlanType: types.SavingsPlanTypeCompute, Start: aws.String("not-a-date")},
+		"end":   {SavingsPlanId: aws.String("sp-bad"), SavingsPlanType: types.SavingsPlanTypeCompute, End: aws.String("not-a-date")},
+	} {
+		t.Run(field, func(t *testing.T) {
+			m := &MockSavingsPlansClient{}
+			m.On("DescribeSavingsPlans", mock.Anything, mock.Anything).
+				Return(&savingsplans.DescribeSavingsPlansOutput{SavingsPlans: []types.SavingsPlan{plan}}, nil).Once()
+			c := &Client{client: m, region: "us-east-1", planType: types.SavingsPlanTypeCompute}
+			_, err := c.GetExistingCommitments(context.Background())
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "sp-bad")
+			assert.Contains(t, err.Error(), field+" date")
+			assert.Contains(t, err.Error(), "not-a-date")
 		})
 	}
 }
