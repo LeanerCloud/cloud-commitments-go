@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -166,6 +167,13 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		return result, nil
 	}
 
+	// After the dedupe: a re-drive that already bought must not be refused for a
+	// later price rise (ec2/client.go does the same).
+	if err = c.checkApprovedUpfront(ctx, rec, offeringID); err != nil {
+		result.Error = err
+		return result, result.Error
+	}
+
 	input := &memorydb.PurchaseReservedNodesOfferingInput{
 		ReservedNodesOfferingId: aws.String(offeringID),
 		ReservationId:           aws.String(reservationID),
@@ -204,6 +212,38 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	}
 
 	return result, nil
+}
+
+// checkApprovedUpfront refuses an offering whose total upfront (FixedPrice, per
+// node, x count) exceeds the approved recommendation's upfront by more than
+// offeringprice.UpfrontTolerance, or whose price cannot be compared with it.
+// Mirrors rds.checkApprovedUpfront (same semantics; keep them in step). The
+// shared comparison is offeringprice.CheckUpfront. MemoryDB has no server-side
+// price cap, so this is the only guard. The offering is read back by ID, and
+// only when an upfront was approved: CommitmentCost 0 means no upfront or no
+// figure, so there is nothing to compare. The offering carries no currency
+// field, so only the recommendation's currency can be checked.
+func (c *Client) checkApprovedUpfront(ctx context.Context, rec common.Recommendation, offeringID string) error {
+	approved := rec.CommitmentCost
+	if approved <= 0 {
+		return nil
+	}
+	if cur := rec.CommitmentCurrency; cur != "" && !strings.EqualFold(cur, "USD") {
+		return fmt.Errorf("MemoryDB recommendation upfront is in %s; the approved upfront check supports USD only", cur)
+	}
+	out, err := c.client.DescribeReservedNodesOfferings(ctx, &memorydb.DescribeReservedNodesOfferingsInput{
+		ReservedNodesOfferingId: aws.String(offeringID),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to read MemoryDB offering %s for the approved upfront check: %w", offeringID, err)
+	}
+	if len(out.ReservedNodesOfferings) != 1 {
+		return fmt.Errorf("MemoryDB offering %s: expected 1 offering for the approved upfront check, got %d", offeringID, len(out.ReservedNodesOfferings))
+	}
+	if err := offeringprice.CheckUpfront("MemoryDB", out.ReservedNodesOfferings[0].FixedPrice*float64(rec.Count), approved); err != nil {
+		return fmt.Errorf("MemoryDB offering %s: %w", offeringID, err)
+	}
+	return nil
 }
 
 // findReservationByID looks for a nonterminal MemoryDB reserved
