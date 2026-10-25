@@ -43,8 +43,8 @@ type Client struct {
 	client    API
 	stsClient STSAPI
 	region    string
-	accountMu sync.Mutex
 	accountID string
+	accountMu sync.Mutex
 }
 
 // NewClient creates a new OpenSearch client with purchase-path retry/timeout
