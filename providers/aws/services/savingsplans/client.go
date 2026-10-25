@@ -185,8 +185,9 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 // common.Commitment, returning ok=false for entries that should be skipped
 // (missing ID, or a plan type that does not match this client's scope). It is
 // split out of GetExistingCommitments to keep that function under the
-// cyclomatic limit. A start or end date that is present but not RFC3339 is an
-// error naming the plan ID and the bad value.
+// cyclomatic limit. A start or end date that is missing or not RFC3339 is an
+// error naming the plan ID (and the bad value); a zero StartDate would never
+// count as recent in the purchase dedupe.
 func (c *Client) toCommitment(sp types.SavingsPlan, service common.ServiceType) (common.Commitment, bool, error) {
 	if sp.SavingsPlanId == nil {
 		return common.Commitment{}, false, nil
@@ -206,20 +207,22 @@ func (c *Client) toCommitment(sp types.SavingsPlan, service common.ServiceType) 
 		State:          common.CommitmentState(sp.State),
 	}
 
-	if sp.Start != nil {
-		startTime, err := time.Parse(time.RFC3339, *sp.Start)
-		if err != nil {
-			return common.Commitment{}, false, fmt.Errorf("savings plan %s: invalid start date %q: %w", *sp.SavingsPlanId, *sp.Start, err)
-		}
-		commitment.StartDate = startTime
+	if sp.Start == nil {
+		return common.Commitment{}, false, fmt.Errorf("savings plan %s: missing start date", *sp.SavingsPlanId)
 	}
-	if sp.End != nil {
-		endTime, err := time.Parse(time.RFC3339, *sp.End)
-		if err != nil {
-			return common.Commitment{}, false, fmt.Errorf("savings plan %s: invalid end date %q: %w", *sp.SavingsPlanId, *sp.End, err)
-		}
-		commitment.EndDate = endTime
+	startTime, err := time.Parse(time.RFC3339, *sp.Start)
+	if err != nil {
+		return common.Commitment{}, false, fmt.Errorf("savings plan %s: invalid start date %q: %w", *sp.SavingsPlanId, *sp.Start, err)
 	}
+	commitment.StartDate = startTime
+	if sp.End == nil {
+		return common.Commitment{}, false, fmt.Errorf("savings plan %s: missing end date", *sp.SavingsPlanId)
+	}
+	endTime, err := time.Parse(time.RFC3339, *sp.End)
+	if err != nil {
+		return common.Commitment{}, false, fmt.Errorf("savings plan %s: invalid end date %q: %w", *sp.SavingsPlanId, *sp.End, err)
+	}
+	commitment.EndDate = endTime
 
 	return commitment, true, nil
 }

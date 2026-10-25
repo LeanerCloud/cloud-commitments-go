@@ -156,6 +156,8 @@ func TestClient_GetExistingCommitments(t *testing.T) {
 								SavingsPlanId:   aws.String("sp-123"),
 								SavingsPlanType: types.SavingsPlanTypeCompute,
 								State:           types.SavingsPlanStateActive,
+								Start:           aws.String("2024-01-01T00:00:00Z"),
+								End:             aws.String("2027-01-01T00:00:00Z"),
 							},
 							{
 								// No SavingsPlanId - should be skipped
@@ -230,8 +232,8 @@ func TestClient_GetExistingCommitments(t *testing.T) {
 func TestClient_GetExistingCommitments_InvalidDateNamesPlanAndValue(t *testing.T) {
 	t.Parallel()
 	for field, plan := range map[string]types.SavingsPlan{
-		"start": {SavingsPlanId: aws.String("sp-bad"), SavingsPlanType: types.SavingsPlanTypeCompute, Start: aws.String("not-a-date")},
-		"end":   {SavingsPlanId: aws.String("sp-bad"), SavingsPlanType: types.SavingsPlanTypeCompute, End: aws.String("not-a-date")},
+		"start": {SavingsPlanId: aws.String("sp-bad"), SavingsPlanType: types.SavingsPlanTypeCompute, Start: aws.String("not-a-date"), End: aws.String("2027-01-01T00:00:00Z")},
+		"end":   {SavingsPlanId: aws.String("sp-bad"), SavingsPlanType: types.SavingsPlanTypeCompute, Start: aws.String("2024-01-01T00:00:00Z"), End: aws.String("not-a-date")},
 	} {
 		t.Run(field, func(t *testing.T) {
 			m := &MockSavingsPlansClient{}
@@ -243,6 +245,28 @@ func TestClient_GetExistingCommitments_InvalidDateNamesPlanAndValue(t *testing.T
 			assert.Contains(t, err.Error(), "sp-bad")
 			assert.Contains(t, err.Error(), field+" date")
 			assert.Contains(t, err.Error(), "not-a-date")
+		})
+	}
+}
+
+// TestClient_GetExistingCommitments_MissingDateNamesPlan pins that a plan with
+// no start or end date is an error, not a zero date that the purchase dedupe
+// would never treat as recent.
+func TestClient_GetExistingCommitments_MissingDateNamesPlan(t *testing.T) {
+	t.Parallel()
+	for field, plan := range map[string]types.SavingsPlan{
+		"start": {SavingsPlanId: aws.String("sp-nodate"), SavingsPlanType: types.SavingsPlanTypeCompute, End: aws.String("2027-01-01T00:00:00Z")},
+		"end":   {SavingsPlanId: aws.String("sp-nodate"), SavingsPlanType: types.SavingsPlanTypeCompute, Start: aws.String("2024-01-01T00:00:00Z")},
+	} {
+		t.Run(field, func(t *testing.T) {
+			m := &MockSavingsPlansClient{}
+			m.On("DescribeSavingsPlans", mock.Anything, mock.Anything).
+				Return(&savingsplans.DescribeSavingsPlansOutput{SavingsPlans: []types.SavingsPlan{plan}}, nil).Once()
+			c := &Client{client: m, region: "us-east-1", planType: types.SavingsPlanTypeCompute}
+			_, err := c.GetExistingCommitments(context.Background())
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "sp-nodate")
+			assert.Contains(t, err.Error(), "missing "+field+" date")
 		})
 	}
 }
@@ -263,16 +287,22 @@ func TestClient_GetExistingCommitments_UmbrellaMode(t *testing.T) {
 					SavingsPlanId:   aws.String("sp-compute"),
 					SavingsPlanType: types.SavingsPlanTypeCompute,
 					State:           types.SavingsPlanStateActive,
+					Start:           aws.String("2024-01-01T00:00:00Z"),
+					End:             aws.String("2027-01-01T00:00:00Z"),
 				},
 				{
 					SavingsPlanId:   aws.String("sp-sagemaker"),
 					SavingsPlanType: types.SavingsPlanTypeSagemaker,
 					State:           types.SavingsPlanStateActive,
+					Start:           aws.String("2024-01-01T00:00:00Z"),
+					End:             aws.String("2027-01-01T00:00:00Z"),
 				},
 				{
 					SavingsPlanId:   aws.String("sp-database"),
 					SavingsPlanType: types.SavingsPlanTypeDatabase,
 					State:           types.SavingsPlanStateActive,
+					Start:           aws.String("2024-01-01T00:00:00Z"),
+					End:             aws.String("2027-01-01T00:00:00Z"),
 				},
 			},
 		}, nil).Once()
@@ -309,6 +339,8 @@ func TestClient_GetExistingCommitments_Pagination(t *testing.T) {
 				SavingsPlanId:   aws.String("sp-page1"),
 				SavingsPlanType: types.SavingsPlanTypeCompute,
 				State:           types.SavingsPlanStateActive,
+				Start:           aws.String("2024-01-01T00:00:00Z"),
+				End:             aws.String("2027-01-01T00:00:00Z"),
 				Region:          aws.String("us-east-1"),
 			},
 		},
@@ -324,6 +356,8 @@ func TestClient_GetExistingCommitments_Pagination(t *testing.T) {
 				SavingsPlanId:   aws.String("sp-page2"),
 				SavingsPlanType: types.SavingsPlanTypeCompute,
 				State:           types.SavingsPlanStateActive,
+				Start:           aws.String("2024-01-01T00:00:00Z"),
+				End:             aws.String("2027-01-01T00:00:00Z"),
 				Region:          aws.String("us-west-2"),
 			},
 		},
@@ -366,6 +400,8 @@ func TestClient_GetExistingCommitments_CtxCancellation(t *testing.T) {
 				SavingsPlanId:   aws.String("sp-1"),
 				SavingsPlanType: types.SavingsPlanTypeCompute,
 				State:           types.SavingsPlanStateActive,
+				Start:           aws.String("2024-01-01T00:00:00Z"),
+				End:             aws.String("2027-01-01T00:00:00Z"),
 			},
 		},
 		NextToken: aws.String("token-page2"),
@@ -1728,6 +1764,8 @@ func TestClient_GetExistingCommitments_RequestsPaymentPending(t *testing.T) {
 			SavingsPlanId:   aws.String("sp-pending"),
 			SavingsPlanType: types.SavingsPlanTypeCompute,
 			State:           types.SavingsPlanStatePaymentPending,
+			Start:           aws.String("2024-01-01T00:00:00Z"),
+			End:             aws.String("2027-01-01T00:00:00Z"),
 		}},
 	}, nil).Once()
 	t.Cleanup(func() { mockClient.AssertExpectations(t) })
