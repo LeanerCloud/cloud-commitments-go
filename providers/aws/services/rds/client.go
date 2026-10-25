@@ -148,6 +148,11 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		return result, result.Error
 	}
 
+	if err = c.checkApprovedUpfront(ctx, rec, offeringID); err != nil {
+		result.Error = err
+		return result, result.Error
+	}
+
 	reservationID := c.deriveReservationID(rec, opts)
 
 	// Idempotency dedupe guard (issue #641). When a token is supplied, look for a
@@ -202,6 +207,44 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	}
 
 	return result, nil
+}
+
+// checkApprovedUpfront refuses an offering whose total upfront (FixedPrice x
+// count) exceeds the approved recommendation's upfront by more than
+// offeringprice.UpfrontTolerance, or whose price cannot be compared with it.
+// Mirrors ec2.checkApprovedUpfront (same semantics; keep them in step). The
+// shared comparison is offeringprice.CheckUpfront. RDS has no server-side price
+// cap, so this is the only guard. The offering is read back by ID, and only
+// when an upfront was approved: CommitmentCost 0 means no upfront or no figure
+// (the MCP never sets it), so there is nothing to compare.
+func (c *Client) checkApprovedUpfront(ctx context.Context, rec common.Recommendation, offeringID string) error {
+	approved := rec.CommitmentCost
+	if approved <= 0 {
+		return nil
+	}
+	if cur := rec.CommitmentCurrency; cur != "" && !strings.EqualFold(cur, "USD") {
+		return fmt.Errorf("RDS recommendation upfront is in %s; the approved upfront check supports USD only", cur)
+	}
+	out, err := c.client.DescribeReservedDBInstancesOfferings(ctx, &rds.DescribeReservedDBInstancesOfferingsInput{
+		ReservedDBInstancesOfferingId: aws.String(offeringID),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to read RDS offering %s for the approved upfront check: %w", offeringID, err)
+	}
+	if len(out.ReservedDBInstancesOfferings) != 1 {
+		return fmt.Errorf("RDS offering %s: expected 1 offering for the approved upfront check, got %d", offeringID, len(out.ReservedDBInstancesOfferings))
+	}
+	offering := out.ReservedDBInstancesOfferings[0]
+	if offering.FixedPrice == nil {
+		return fmt.Errorf("RDS offering %s has no FixedPrice; cannot compare it with the approved upfront %.2f", offeringID, approved)
+	}
+	if cc := aws.ToString(offering.CurrencyCode); cc != "" && !strings.EqualFold(cc, "USD") {
+		return fmt.Errorf("RDS offering %s is priced in %s; the approved upfront check supports USD only", offeringID, cc)
+	}
+	if err := offeringprice.CheckUpfront("RDS", *offering.FixedPrice*float64(rec.Count), approved); err != nil {
+		return fmt.Errorf("RDS offering %s: %w", offeringID, err)
+	}
+	return nil
 }
 
 // deriveReservationID returns the ReservedDBInstanceId to use. When an

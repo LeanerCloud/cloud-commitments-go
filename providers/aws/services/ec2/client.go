@@ -226,7 +226,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 // approved recommendation's upfront by more than offeringprice.UpfrontTolerance,
 // or whose price cannot be compared with it. The API's LimitPrice is not used:
 // AWS documents it for Marketplace offerings only, and findOffering excludes
-// them.
+// them. rds.Client.checkApprovedUpfront mirrors this (keep them in step).
 func checkApprovedUpfront(rec common.Recommendation, offering *types.ReservedInstancesOffering) error {
 	approved := rec.CommitmentCost
 	// Zero means no upfront or no figure (the MCP EC2 tool never sets it), so
