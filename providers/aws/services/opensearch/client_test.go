@@ -3,6 +3,7 @@ package opensearch
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -1393,4 +1394,28 @@ func TestClient_PurchaseCommitment_Idempotent_RejectedNotFlagged(t *testing.T) {
 	assert.Error(t, err)
 	assert.False(t, result.Success)
 	assert.False(t, result.ExistingCommitment)
+}
+
+func TestResolveAccountID_RetriesAfterTransientFailure(t *testing.T) {
+	mockSTS := &MockOpenSearchSTSClient{}
+	client := &Client{stsClient: mockSTS, region: "us-east-1"}
+	acct := "123456789012"
+
+	mockSTS.On("GetCallerIdentity", mock.Anything, mock.Anything).
+		Return(nil, errors.New("throttled")).Once()
+	mockSTS.On("GetCallerIdentity", mock.Anything, mock.Anything).
+		Return(&sts.GetCallerIdentityOutput{Account: &acct}, nil).Once()
+
+	_, err := client.resolveAccountID(context.Background())
+	require.Error(t, err)
+
+	got, err := client.resolveAccountID(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, acct, got)
+
+	// A successful lookup is cached: no third STS call.
+	got, err = client.resolveAccountID(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, acct, got)
+	mockSTS.AssertNumberOfCalls(t, "GetCallerIdentity", 2)
 }

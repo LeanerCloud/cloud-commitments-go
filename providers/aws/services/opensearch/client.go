@@ -40,12 +40,11 @@ type STSAPI interface {
 
 // Client handles AWS OpenSearch Reserved Instances.
 type Client struct {
-	client      API
-	stsClient   STSAPI
-	accountErr  error
-	accountID   string
-	region      string
-	accountOnce sync.Once
+	client    API
+	stsClient STSAPI
+	region    string
+	accountMu sync.Mutex
+	accountID string
 }
 
 // NewClient creates a new OpenSearch client with purchase-path retry/timeout
@@ -358,22 +357,23 @@ func (c *Client) recoverAlreadyExists(ctx context.Context, token, reservationNam
 	})
 }
 
-// resolveAccountID fetches the caller's AWS account ID via STS and caches it.
+// resolveAccountID fetches the caller's AWS account ID via STS. Only a
+// successful lookup is cached, so a transient failure (throttle, timeout) is
+// retried on the next call instead of sticking for the client's lifetime.
 func (c *Client) resolveAccountID(ctx context.Context) (string, error) {
-	c.accountOnce.Do(func() {
-		if c.stsClient == nil {
-			return
-		}
-		out, err := c.stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
-		if err != nil {
-			c.accountErr = err
-			return
-		}
-		if out != nil && out.Account != nil {
-			c.accountID = *out.Account
-		}
-	})
-	return c.accountID, c.accountErr
+	c.accountMu.Lock()
+	defer c.accountMu.Unlock()
+	if c.accountID != "" || c.stsClient == nil {
+		return c.accountID, nil
+	}
+	out, err := c.stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return "", err
+	}
+	if out != nil && out.Account != nil {
+		c.accountID = *out.Account
+	}
+	return c.accountID, nil
 }
 
 // tagReservedInstance constructs the reserved-instance ARN and calls
