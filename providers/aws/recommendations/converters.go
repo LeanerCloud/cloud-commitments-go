@@ -2,7 +2,6 @@ package recommendations
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 
@@ -94,61 +93,67 @@ func convertSavingsPlansLookbackPeriod(period string) (types.LookbackPeriodInDay
 	return convertLookbackPeriodE(period)
 }
 
-// normalizeRegionName converts AWS region display names to region codes.
-func normalizeRegionName(region string) string {
-	// AWS Cost Explorer sometimes returns region names like "US East (N. Virginia)"
-	// Convert these to standard region codes
-	regionMap := map[string]string{
-		"US East (N. Virginia)":     "us-east-1",
-		"US East (Ohio)":            "us-east-2",
-		"US West (N. California)":   "us-west-1",
-		"US West (Oregon)":          "us-west-2",
-		"EU (Ireland)":              "eu-west-1",
-		"EU (Frankfurt)":            "eu-central-1",
-		"EU (London)":               "eu-west-2",
-		"EU (Paris)":                "eu-west-3",
-		"EU (Stockholm)":            "eu-north-1",
-		"Asia Pacific (Singapore)":  "ap-southeast-1",
-		"Asia Pacific (Sydney)":     "ap-southeast-2",
-		"Asia Pacific (Tokyo)":      "ap-northeast-1",
-		"Asia Pacific (Seoul)":      "ap-northeast-2",
-		"Asia Pacific (Mumbai)":     "ap-south-1",
-		"South America (Sao Paulo)": "sa-east-1",
-		"Canada (Central)":          "ca-central-1",
-		"Middle East (Bahrain)":     "me-south-1",
-		"Africa (Cape Town)":        "af-south-1",
-		"Asia Pacific (Hong Kong)":  "ap-east-1",
-		"Asia Pacific (Osaka)":      "ap-northeast-3",
-		"Asia Pacific (Jakarta)":    "ap-southeast-3",
-		"Europe (Ireland)":          "eu-west-1",
-		"Europe (Frankfurt)":        "eu-central-1",
-		"Europe (London)":           "eu-west-2",
-		"Europe (Paris)":            "eu-west-3",
-		"Europe (Stockholm)":        "eu-north-1",
-		"Europe (Milan)":            "eu-south-1",
-		"Middle East (UAE)":         "me-central-1",
-		"Asia Pacific (Hyderabad)":  "ap-south-2",
-		"Europe (Spain)":            "eu-south-2",
-		"Europe (Zurich)":           "eu-central-2",
-		"Asia Pacific (Melbourne)":  "ap-southeast-4",
-		"Israel (Tel Aviv)":         "il-central-1",
-		"Asia Pacific (Malaysia)":   "ap-southeast-5",
-		"Asia Pacific (Thailand)":   "ap-southeast-7",
-		"Canada West (Calgary)":     "ca-west-1",
-		"Mexico (Central)":          "mx-central-1",
-	}
+// regionAliases maps Cost Explorer location display names to region codes.
+// Descriptions come from aws-sdk-go-v2 internal/endpoints/awsrulesfn/partitions.json.
+var regionAliases = map[string]string{
+	"US East (N. Virginia)":                  "us-east-1",
+	"US East (Ohio)":                         "us-east-2",
+	"US West (N. California)":                "us-west-1",
+	"US West (Oregon)":                       "us-west-2",
+	"EU (Ireland)":                           "eu-west-1",
+	"EU (Frankfurt)":                         "eu-central-1",
+	"EU (London)":                            "eu-west-2",
+	"EU (Paris)":                             "eu-west-3",
+	"EU (Stockholm)":                         "eu-north-1",
+	"Asia Pacific (Singapore)":               "ap-southeast-1",
+	"Asia Pacific (Sydney)":                  "ap-southeast-2",
+	"Asia Pacific (Tokyo)":                   "ap-northeast-1",
+	"Asia Pacific (Seoul)":                   "ap-northeast-2",
+	"Asia Pacific (Mumbai)":                  "ap-south-1",
+	"South America (Sao Paulo)":              "sa-east-1",
+	"Canada (Central)":                       "ca-central-1",
+	"Middle East (Bahrain)":                  "me-south-1",
+	"Africa (Cape Town)":                     "af-south-1",
+	"Asia Pacific (Hong Kong)":               "ap-east-1",
+	"Asia Pacific (Osaka)":                   "ap-northeast-3",
+	"Asia Pacific (Jakarta)":                 "ap-southeast-3",
+	"Europe (Ireland)":                       "eu-west-1",
+	"Europe (Frankfurt)":                     "eu-central-1",
+	"Europe (London)":                        "eu-west-2",
+	"Europe (Paris)":                         "eu-west-3",
+	"Europe (Stockholm)":                     "eu-north-1",
+	"Europe (Milan)":                         "eu-south-1",
+	"Middle East (UAE)":                      "me-central-1",
+	"Asia Pacific (Hyderabad)":               "ap-south-2",
+	"Europe (Spain)":                         "eu-south-2",
+	"Europe (Zurich)":                        "eu-central-2",
+	"Asia Pacific (Melbourne)":               "ap-southeast-4",
+	"Israel (Tel Aviv)":                      "il-central-1",
+	"Asia Pacific (Malaysia)":                "ap-southeast-5",
+	"Asia Pacific (Thailand)":                "ap-southeast-7",
+	"Canada West (Calgary)":                  "ca-west-1",
+	"Mexico (Central)":                       "mx-central-1",
+	"Asia Pacific (Taipei)":                  "ap-east-2",
+	"Asia Pacific (New Zealand)":             "ap-southeast-6",
+	"China (Beijing)":                        "cn-north-1",
+	"China (Ningxia)":                        "cn-northwest-1",
+	"AWS European Sovereign Cloud (Germany)": "eusc-de-east-1",
+	"US ISO East":                            "us-iso-east-1",
+	"US ISO WEST":                            "us-iso-west-1",
+	"US ISOB East (Ohio)":                    "us-isob-east-1",
+	"US ISOB West":                           "us-isob-west-1",
+	"EU ISOE West":                           "eu-isoe-west-1",
+	"US ISOF EAST":                           "us-isof-east-1",
+	"US ISOF SOUTH":                          "us-isof-south-1",
+	"AWS GovCloud (US-East)":                 "us-gov-east-1",
+	"AWS GovCloud (US-West)":                 "us-gov-west-1",
+}
 
-	if normalized, ok := regionMap[region]; ok {
+// normalizeRegionName converts AWS region display names to region codes.
+// Anything that is not a known display name (including region codes) is returned as-is.
+func normalizeRegionName(region string) string {
+	if normalized, ok := regionAliases[region]; ok {
 		return normalized
 	}
-
-	// If already a region code, return as-is
-	if strings.HasPrefix(region, "us-") || strings.HasPrefix(region, "eu-") ||
-		strings.HasPrefix(region, "ap-") || strings.HasPrefix(region, "sa-") ||
-		strings.HasPrefix(region, "ca-") || strings.HasPrefix(region, "me-") ||
-		strings.HasPrefix(region, "af-") || strings.HasPrefix(region, "il-") {
-		return region
-	}
-
 	return region
 }
