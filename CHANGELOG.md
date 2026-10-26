@@ -32,6 +32,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Azure `NewPartialSubscriptionFailure` constructor:** builds a
+  `PartialSubscriptionFailureError`, optionally with skip reasons readable
+  through `Skips()`, so code outside the module can construct one, for example
+  in tests.
 - **Azure currency refusals wrap `common.ErrCurrencyNotAccepted`:** reservation
   purchase, savings plan purchase and reservation exchange refusals can now be
   detected with `errors.Is`; each existing message gains a

@@ -445,6 +445,17 @@ func newPartialSubscriptionFailure(attempted int, failed []SubscriptionFailure, 
 	return e
 }
 
+// NewPartialSubscriptionFailure builds a PartialSubscriptionFailureError for
+// callers that need to construct one, for example in tests of code that
+// handles it. attempted is how many subscriptions the sweep covered and failed
+// lists those that errored; Succeeded is derived as attempted minus
+// len(failed). skipReasons are the recommendations that reachable subscriptions
+// dropped: empty or nil leaves Skips() nil, otherwise Skips() reports them. The
+// slice is copied.
+func NewPartialSubscriptionFailure(attempted int, failed []SubscriptionFailure, skipReasons []string) *PartialSubscriptionFailureError {
+	return newPartialSubscriptionFailure(attempted, failed, append([]string(nil), skipReasons...))
+}
+
 // GetRecommendationsForService retrieves recommendations for a single
 // service across every subscription.
 func (m *MultiSubscriptionRecommendationsClient) GetRecommendationsForService(ctx context.Context, service common.ServiceType) ([]common.Recommendation, error) {
