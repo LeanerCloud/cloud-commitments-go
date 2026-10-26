@@ -36,6 +36,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   `PartialResultError` types now expose `SkippedCount() int` and
   `SkipReasons() []string` (a copy), so callers can match one interface
   through `errors.As` instead of parsing the message text.
+- **`common.ErrCurrencyNotAccepted`:** a sentinel error for operations refused
+  because the billing currency is missing or not the requested one, so
+  callers can tell a refusal from an API failure with `errors.Is`.
 - **`ladder.AllocateResult.NetExistingUSDPerHour`:** the net existing
   commitment (existing minus expiring, summed over layers) that `Allocate`
   sized the gap against, set on every successful result including the

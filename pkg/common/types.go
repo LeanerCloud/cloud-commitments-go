@@ -18,6 +18,12 @@ import (
 // infrastructure. Callers can detect it with errors.Is(err, ErrCommitmentPurchaseNotSupported).
 var ErrCommitmentPurchaseNotSupported = errors.New("commitment purchase not supported for this service")
 
+// ErrCurrencyNotAccepted marks an operation refused because the billing
+// currency is missing or differs from the currency the caller asked for. The
+// refusal happens before anything is purchased or exchanged, so it is distinct
+// from an API failure. Detect it with errors.Is(err, ErrCurrencyNotAccepted).
+var ErrCurrencyNotAccepted = errors.New("currency not accepted")
+
 // ErrOutcomeUnknown marks a purchase whose request may have reached the cloud
 // provider but whose result is not known: the commitment may already exist.
 // Services whose purchase API has no idempotency token or caller-chosen ID
