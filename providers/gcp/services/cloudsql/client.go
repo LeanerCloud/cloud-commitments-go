@@ -293,7 +293,7 @@ func (c *Client) getSQLPricing(ctx context.Context, tier, region string, termYea
 		return nil, fmt.Errorf("no commitment pricing found for Cloud SQL tier %s in region %s: catalog has no CUD SKU; cannot compute savings percentage", tier, region)
 	}
 
-	hoursInTerm := 8760.0 * float64(termYears)
+	hoursInTerm := common.HoursPerYear * float64(termYears)
 	// Scale the per-hour commitment price to a term total so it is on the
 	// same basis as onDemandPrice * hoursInTerm. Without this, the savings
 	// percentage would be nearly 100% (per-hour price vs term total).
@@ -403,10 +403,13 @@ func (c *Client) listSKUs(svc BillingService) (*cloudbilling.ListSkusResponse, e
 	if c.skuCache != nil {
 		return c.skuCache, nil
 	}
-	skus, err := svc.ListSKUs("services/9662-B51E-5089")
+	skus, err := svc.ListSKUs(cloudSQLServiceID)
 	if err != nil {
 		return nil, err
 	}
 	c.skuCache = skus
 	return skus, nil
 }
+
+// cloudSQLServiceID is the Cloud Billing service for Cloud SQL.
+const cloudSQLServiceID = "services/9662-B51E-5089"

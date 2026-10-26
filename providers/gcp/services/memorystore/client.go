@@ -256,7 +256,7 @@ func (c *Client) getRedisPricing(ctx context.Context, tier, region string, termY
 		return nil, fmt.Errorf("no commitment pricing found for Memorystore tier %s in region %s: catalog has no CUD SKU; cannot compute savings percentage", tier, region)
 	}
 
-	hoursInTerm := 8760.0 * float64(termYears)
+	hoursInTerm := common.HoursPerYear * float64(termYears)
 	// Scale the per-hour commitment price to a term total so it is on the
 	// same basis as onDemandPrice * hoursInTerm. Without this, the savings
 	// percentage would be nearly 100% (per-hour price vs term total).
