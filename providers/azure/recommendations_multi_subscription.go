@@ -56,6 +56,8 @@ var ErrSubscriptionNotAccessible = errors.New("subscription is not accessible to
 // PartialResultError reports that a collection dropped recommendations it
 // could not scale or price (non-USD currency, unpriceable SKU, truncated
 // Advisor walk) while returning the rest. Use AsPartialResult to detect it.
+// In a sweep where a subscription also failed, the skips are on
+// PartialSubscriptionFailureError.Skips instead, not in the error chain.
 type PartialResultError = azrecs.PartialResultError
 
 // AsPartialResult returns the *PartialResultError in err's chain, or nil.
@@ -93,6 +95,12 @@ func AsPartialResult(err error) *PartialResultError {
 // Failing the whole sweep on one transient subscription error would be worse
 // than a partial result, which is why the successful data is still returned.
 type PartialSubscriptionFailureError struct {
+	// skipped holds the recommendations other, reachable subscriptions
+	// dropped, so a mixed sweep does not lose them. Exposed through Skips() and
+	// deliberately not through Unwrap, so a failure can never match a partial-result
+	// check.
+	skipped *PartialResultError
+
 	// Failed carries every subscription that errored, with its cause.
 	Failed []SubscriptionFailure
 
@@ -107,6 +115,13 @@ type PartialSubscriptionFailureError struct {
 	// an all-failed sweep is a plain error, not a partial one.
 	Succeeded int
 }
+
+// Skips returns the recommendations that reachable subscriptions dropped in the
+// same sweep, or nil when none were. It is a method rather than part of Unwrap
+// and the type has no Partial() method, so errors.As for a partial-result
+// interface never matches a subscription failure; callers read the skips here
+// after AsPartialSubscriptionFailure.
+func (e *PartialSubscriptionFailureError) Skips() *PartialResultError { return e.skipped }
 
 func (e *PartialSubscriptionFailureError) Error() string {
 	// Failed is exported and the zero value is constructible, so an
@@ -415,11 +430,19 @@ func mergeSubscriptionResults(subs []subscriptionClient, results [][]common.Reco
 	// Partial sweep: hand back what succeeded AND a typed error saying what
 	// did not, so the caller can tell an incomplete sweep from a complete one
 	// that happened to find nothing. See PartialSubscriptionFailureError.
-	return out, &PartialSubscriptionFailureError{
+	return out, newPartialSubscriptionFailure(attempted, failed, skipped)
+}
+
+func newPartialSubscriptionFailure(attempted int, failed []SubscriptionFailure, skipped []string) *PartialSubscriptionFailureError {
+	e := &PartialSubscriptionFailureError{
 		Attempted: attempted,
 		Succeeded: attempted - len(failed),
 		Failed:    failed,
 	}
+	if len(skipped) > 0 {
+		e.skipped = &PartialResultError{Skipped: skipped}
+	}
+	return e
 }
 
 // GetRecommendationsForService retrieves recommendations for a single
