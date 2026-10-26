@@ -512,7 +512,8 @@ func TestMultiSubscriptionRecommendationsClient_FailureAndSkipsBothReachable(t *
 	require.NotNil(t, failure)
 	assert.Equal(t, []string{"sub-2"}, failure.FailedSubscriptionIDs())
 	assert.Equal(t, 1, failure.Succeeded)
-	assert.True(t, failure.Partial())
+	_, failureIsPartial := err.(interface{ Partial() bool })
+	assert.False(t, failureIsPartial, "the failure type must not answer Partial()")
 }
 
 // Pure failure carries no skip error; pure skips carry no failure error.

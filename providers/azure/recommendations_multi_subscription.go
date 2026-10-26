@@ -112,11 +112,10 @@ type PartialSubscriptionFailureError struct {
 	Succeeded int
 }
 
-// Partial marks the error as one that accompanies usable recommendations (those
-// of the subscriptions that succeeded); the cross-provider partial-result check
-// matches on this method.
-func (e *PartialSubscriptionFailureError) Partial() bool { return true }
-
+// Deliberately has no Partial() method: a subscription failure (existing data
+// for the failed subscriptions is stale, not invalid) must not be mistaken for
+// the skipped-recommendation signal (*PartialResultError). Check
+// AsPartialSubscriptionFailure before any partial-result check.
 func (e *PartialSubscriptionFailureError) Error() string {
 	// Failed is exported and the zero value is constructible, so an
 	// externally-built or zero-valued instance must format rather than panic
