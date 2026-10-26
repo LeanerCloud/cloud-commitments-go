@@ -620,3 +620,9 @@ func TestCommitment_EC2DimensionsJSON(t *testing.T) {
 	assert.Empty(t, old.Platform)
 	assert.Empty(t, old.AvailabilityZone)
 }
+
+func TestErrCurrencyNotAccepted(t *testing.T) {
+	wrapped := fmt.Errorf("refusing to purchase: %w", ErrCurrencyNotAccepted)
+	assert.ErrorIs(t, wrapped, ErrCurrencyNotAccepted)
+	assert.NotErrorIs(t, errors.New("currency not accepted"), ErrCurrencyNotAccepted)
+}
