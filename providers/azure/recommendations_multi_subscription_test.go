@@ -484,6 +484,51 @@ func TestMultiSubscriptionRecommendationsClient_PartialResultKeepsRecommendation
 	assert.Nil(t, AsPartialSubscriptionFailure(err), "a partial result is not a failed subscription")
 }
 
+// Mixed sweep: one subscription fails, another skips a recommendation. The good
+// recommendations come back, and both the failure and the skips stay reachable.
+func TestMultiSubscriptionRecommendationsClient_FailureAndSkipsBothReachable(t *testing.T) {
+	withFakeSubscriptionClients(t, map[string]*fakeRecommendationsClient{
+		"sub-1": {recs: []common.Recommendation{{Account: "sub-1"}}, err: &PartialResultError{Skipped: []string{"compute: EUR"}}},
+		"sub-2": {err: errors.New("sub-2 unreachable")},
+	})
+	client, err := NewMultiSubscriptionRecommendationsClient(&mockAzureTokenCredential{}, twoTestAccounts())
+	require.NoError(t, err)
+
+	recs, err := client.GetAllRecommendations(context.Background())
+	require.Error(t, err)
+	assert.Equal(t, []common.Recommendation{{Account: "sub-1"}}, recs)
+
+	var skips interface {
+		Partial() bool
+		SkippedCount() int
+		SkipReasons() []string
+	}
+	require.ErrorAs(t, err, &skips)
+	assert.True(t, skips.Partial())
+	assert.Equal(t, 1, skips.SkippedCount())
+	assert.Equal(t, []string{"sub-1: compute: EUR"}, skips.SkipReasons())
+
+	failure := AsPartialSubscriptionFailure(err)
+	require.NotNil(t, failure)
+	assert.Equal(t, []string{"sub-2"}, failure.FailedSubscriptionIDs())
+	assert.Equal(t, 1, failure.Succeeded)
+	assert.True(t, failure.Partial())
+}
+
+// Pure failure carries no skip error; pure skips carry no failure error.
+func TestMultiSubscriptionRecommendationsClient_FailureWithoutSkipsHasNoSkipError(t *testing.T) {
+	withFakeSubscriptionClients(t, map[string]*fakeRecommendationsClient{
+		"sub-1": {recs: []common.Recommendation{{Account: "sub-1"}}},
+		"sub-2": {err: errors.New("sub-2 unreachable")},
+	})
+	client, err := NewMultiSubscriptionRecommendationsClient(&mockAzureTokenCredential{}, twoTestAccounts())
+	require.NoError(t, err)
+
+	_, err = client.GetAllRecommendations(context.Background())
+	require.NotNil(t, AsPartialSubscriptionFailure(err))
+	assert.Nil(t, AsPartialResult(err))
+}
+
 // The same subscription ID passed twice to the constructor must yield one
 // client: queried once, results not doubled, Attempted not inflated.
 func TestNewMultiSubscriptionRecommendationsClient_DeduplicatesAccounts(t *testing.T) {

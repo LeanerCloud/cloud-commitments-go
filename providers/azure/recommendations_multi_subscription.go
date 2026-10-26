@@ -93,6 +93,10 @@ func AsPartialResult(err error) *PartialResultError {
 // Failing the whole sweep on one transient subscription error would be worse
 // than a partial result, which is why the successful data is still returned.
 type PartialSubscriptionFailureError struct {
+	// skipped holds the recommendations other, reachable subscriptions
+	// dropped, so a mixed sweep does not lose them. Exposed through Unwrap.
+	skipped *PartialResultError
+
 	// Failed carries every subscription that errored, with its cause.
 	Failed []SubscriptionFailure
 
@@ -107,6 +111,11 @@ type PartialSubscriptionFailureError struct {
 	// an all-failed sweep is a plain error, not a partial one.
 	Succeeded int
 }
+
+// Partial marks the error as one that accompanies usable recommendations (those
+// of the subscriptions that succeeded); the cross-provider partial-result check
+// matches on this method.
+func (e *PartialSubscriptionFailureError) Partial() bool { return true }
 
 func (e *PartialSubscriptionFailureError) Error() string {
 	// Failed is exported and the zero value is constructible, so an
@@ -126,10 +135,15 @@ func (e *PartialSubscriptionFailureError) Error() string {
 
 // Unwrap exposes the per-subscription causes so errors.Is/errors.As can match
 // against any of them (e.g. checking whether a throttling error is in play).
+// When reachable subscriptions also skipped recommendations, the
+// *PartialResultError describing them is included, so errors.As finds both.
 func (e *PartialSubscriptionFailureError) Unwrap() []error {
-	errs := make([]error, 0, len(e.Failed))
+	errs := make([]error, 0, len(e.Failed)+1)
 	for _, f := range e.Failed {
 		errs = append(errs, f.Err)
+	}
+	if e.skipped != nil {
+		errs = append(errs, e.skipped)
 	}
 	return errs
 }
@@ -415,11 +429,19 @@ func mergeSubscriptionResults(subs []subscriptionClient, results [][]common.Reco
 	// Partial sweep: hand back what succeeded AND a typed error saying what
 	// did not, so the caller can tell an incomplete sweep from a complete one
 	// that happened to find nothing. See PartialSubscriptionFailureError.
-	return out, &PartialSubscriptionFailureError{
+	return out, newPartialSubscriptionFailure(attempted, failed, skipped)
+}
+
+func newPartialSubscriptionFailure(attempted int, failed []SubscriptionFailure, skipped []string) *PartialSubscriptionFailureError {
+	e := &PartialSubscriptionFailureError{
 		Attempted: attempted,
 		Succeeded: attempted - len(failed),
 		Failed:    failed,
 	}
+	if len(skipped) > 0 {
+		e.skipped = &PartialResultError{Skipped: skipped}
+	}
+	return e
 }
 
 // GetRecommendationsForService retrieves recommendations for a single
