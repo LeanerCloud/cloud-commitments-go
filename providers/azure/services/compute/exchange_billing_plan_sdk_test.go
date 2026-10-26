@@ -47,7 +47,7 @@ func (t *exchangeSDKTransport) Do(req *http.Request) (*http.Response, error) {
 	t.requests = append(t.requests, exchangeSDKRequest{method: req.Method, path: req.URL.Path, body: string(body)})
 	t.mu.Unlock()
 
-	resp := `{"status":"Succeeded","properties":{"sessionId":"session-abc"}}`
+	resp := `{"status":"Succeeded","properties":{"sessionId":"session-abc","netPayable":{"amount":0,"currencyCode":"USD"}}}`
 	return &http.Response{
 		StatusCode: http.StatusOK,
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
