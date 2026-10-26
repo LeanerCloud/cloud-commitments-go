@@ -31,6 +31,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/retry"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skulist"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skumatch"
 )
 
 // maxRecsPages caps GCP Recommender API iteration to avoid burning a Lambda
@@ -44,23 +45,21 @@ const maxCommitmentsPages = 50
 const maxMachineTypeItems = 20
 
 // termPlan converts a commitment term string to the canonical GCP Compute API
-// commitment plan value derived from the SDK enum constants.
-//
-// Accepted forms:
-//   - 1-year: "1yr", "1", "12mo"
-//   - 3-year: "3yr", "3", "36mo"
-//
-// An empty or unrecognized term returns an error rather than silently defaulting
-// to 12 months; a silent mis-default can purchase the wrong term and waste money.
+// commitment plan value derived from the SDK enum constants. Term parsing is
+// delegated to skumatch.TermYears; unlike it, an empty term is an error here
+// because a purchase must name its plan explicitly.
 func termPlan(term string) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(term)) {
-	case "3yr", "3", "36mo":
-		return computepb.Commitment_THIRTY_SIX_MONTH.String(), nil
-	case "1yr", "1", "12mo":
-		return computepb.Commitment_TWELVE_MONTH.String(), nil
-	default:
-		return "", fmt.Errorf("termPlan: unrecognized commitment term %q (accepted: 1yr/1/12mo or 3yr/3/36mo)", term)
+	if strings.TrimSpace(term) == "" {
+		return "", fmt.Errorf("termPlan: unrecognized commitment term %q (empty)", term)
 	}
+	years, err := skumatch.TermYears(term)
+	if err != nil {
+		return "", fmt.Errorf("termPlan: unrecognized commitment term %q: %w", term, err)
+	}
+	if years == 3 {
+		return computepb.Commitment_THIRTY_SIX_MONTH.String(), nil
+	}
+	return computepb.Commitment_TWELVE_MONTH.String(), nil
 }
 
 // machineFamilyCommitmentType maps a GCP machine series (the segment of a
@@ -200,17 +199,6 @@ func commitmentTypeForMachineType(machineType string) (computepb.Commitment_Type
 			"commitmentTypeForMachineType: no GCP commitment type is known for machine family %q (machine type %q); refusing to purchase rather than defaulting to GENERAL_PURPOSE, which only discounts the N1 series (issue #1538)", family, machineType)
 	}
 	return commitType, nil
-}
-
-// termYearsFromTerm returns the commitment length in years for a term label,
-// defaulting to 1 for any 1-year or unrecognized value and 3 for 3-year labels.
-func termYearsFromTerm(term string) int {
-	switch strings.ToLower(strings.TrimSpace(term)) {
-	case "3yr", "3", "36mo":
-		return 3
-	default:
-		return 1
-	}
 }
 
 // CommitmentsService interface for commitments operations (enables mocking).
@@ -897,9 +885,9 @@ func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation
 
 // GetOfferingDetails retrieves CUD offering details from GCP Billing API.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
-	termYears := 1
-	if rec.Term == "3yr" || rec.Term == "3" {
-		termYears = 3
+	termYears, err := skumatch.TermYears(rec.Term)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pricing: %w", err)
 	}
 
 	res, err := resourcesFromRecommendation(rec)
@@ -1079,7 +1067,11 @@ func (c *Client) enrichRecWithPricing(ctx context.Context, rec *common.Recommend
 	if rec.ResourceType == "" {
 		return
 	}
-	termYears := termYearsFromTerm(rec.Term)
+	termYears, err := skumatch.TermYears(rec.Term)
+	if err != nil {
+		log.Printf("computeengine: pricing unavailable for %s in %s: %v", rec.ResourceType, c.region, err)
+		return
+	}
 	res, err := resourcesFromRecommendation(*rec)
 	if err != nil {
 		log.Printf("computeengine: pricing unavailable for %s in %s: %v", rec.ResourceType, c.region, err)
