@@ -10,6 +10,7 @@ import (
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skumatch"
 )
 
 func planClient(t *testing.T, recs ...*recommenderpb.Recommendation) (*Client, *MockCommitmentsService) {
@@ -142,7 +143,9 @@ func TestExplicitTermIsCanonicalized(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, recs, 1)
 			assert.Equal(t, "3yr", recs[0].Term, "raw %q plan %q", raw, plan)
-			assert.Equal(t, 3, termYearsFromTerm(recs[0].Term))
+			years, yErr := skumatch.TermYears(recs[0].Term)
+			require.NoError(t, yErr)
+			assert.Equal(t, 3, years)
 		}
 	}
 	assert.Equal(t, "3yr", canonicalTerm("36mo"))

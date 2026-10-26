@@ -140,6 +140,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **GCP: one strict commitment term parser** (#15). Compute Engine now uses
+  `skumatch.TermYears` like Cloud SQL, Memorystore and Cloud Storage; it accepts
+  `1yr`/`1`/`12mo`/`3yr`/`3`/`36mo` case-insensitively. An unrecognized term
+  now errors in `GetOfferingDetails` and skips pricing in `enrichRecWithPricing`
+  instead of being priced as one year.
 - **`aws/recommendations`:** the four Cost Explorer coverage and utilization page fetchers share one generic `fetchWithRetry` helper (rate limiter plus concurrency cap); behaviour and error messages are unchanged (#120).
 - **`aws/rds`:** the RDS purchase path uses the shared `purchaseguard` idempotency guard and AlreadyExists recovery, like ElastiCache. Behavior for valid purchases is unchanged (#10).
 - **`aws/memorydb`:** the MemoryDB purchase path uses the shared `purchaseguard` idempotency guard and AlreadyExists recovery, like ElastiCache. Behavior for valid purchases is unchanged; only the lookup-failure error wording changes to "before MemoryDB reservation purchase" (#10).

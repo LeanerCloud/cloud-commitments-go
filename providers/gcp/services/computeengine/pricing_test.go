@@ -168,6 +168,33 @@ func TestEnrichRecWithPricing_MonthlyFiguresPerTerm(t *testing.T) {
 	}
 }
 
+func TestEnrichRecWithPricing_TermSpellingsAndUnknown(t *testing.T) {
+	t.Parallel()
+	price := func(term string) *float64 {
+		client, _ := NewClient("p", "us-central1")
+		client.SetBillingService(&MockBillingService{skus: &cloudbilling.ListSkusResponse{Skus: n2AmericasSKUs()}})
+		rec := newRec("n2-standard-8", 8, 32)
+		rec.Term = term
+		client.enrichRecWithPricing(context.Background(), &rec)
+		return rec.RecurringMonthlyCost
+	}
+	one, three := price("1yr"), price("3yr")
+	require.NotNil(t, one)
+	require.NotNil(t, three)
+	for _, term := range []string{"12mo", "12MO", " 1 "} {
+		got := price(term)
+		require.NotNil(t, got, term)
+		assert.InDelta(t, *one, *got, 1e-9, term)
+	}
+	for _, term := range []string{"36mo", "36MO", " 3 "} {
+		got := price(term)
+		require.NotNil(t, got, term)
+		assert.InDelta(t, *three, *got, 1e-9, term)
+	}
+	assert.Nil(t, price("2yr"), "unknown term must not be priced as 1yr")
+	assert.Nil(t, price("24mo"), "unknown term must not be priced as 1yr")
+}
+
 func TestEnrichRecWithPricing_InvalidCurrency(t *testing.T) {
 	t.Parallel()
 	for _, currency := range []string{"", "EUR"} {

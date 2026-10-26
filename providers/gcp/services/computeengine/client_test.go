@@ -1035,6 +1035,38 @@ func TestComputeEngineClient_GetOfferingDetails_WithMock(t *testing.T) {
 	assert.InDelta(t, details.TotalCost/12, details.RecurringCost, 1e-6)
 }
 
+func TestComputeEngineClient_GetOfferingDetails_Terms(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	client, _ := NewClient("test-project", "us-central1")
+	client.SetBillingService(mockBillingWithCommitment())
+	rec := common.Recommendation{ResourceType: "n1-standard-4", Count: 4, Details: common.ComputeDetails{MemoryGB: 15}}
+
+	rec.Term = "1yr"
+	one, err := client.GetOfferingDetails(ctx, rec)
+	require.NoError(t, err)
+	for _, term := range []string{"12mo", "12MO", "1"} {
+		rec.Term = term
+		got, err := client.GetOfferingDetails(ctx, rec)
+		require.NoError(t, err, term)
+		assert.InDelta(t, one.TotalCost, got.TotalCost, 1e-6, term)
+	}
+	// The fixture has no 3-year SKUs, so a recognized 3-year label fails on
+	// missing pricing, not on the term (3-year pricing is covered by the enrich test).
+	for _, term := range []string{"36mo", "36MO", " 3 ", "3yr"} {
+		rec.Term = term
+		_, err := client.GetOfferingDetails(ctx, rec)
+		require.Error(t, err, term)
+		assert.NotContains(t, err.Error(), "unsupported commitment term", term)
+	}
+	for _, term := range []string{"2yr", "24mo", "P1Y"} {
+		rec.Term = term
+		_, err := client.GetOfferingDetails(ctx, rec)
+		require.Error(t, err, term)
+		assert.Contains(t, err.Error(), "unsupported commitment term", term)
+	}
+}
+
 func TestComputeEngineClient_GetOfferingDetails_NoPricing(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
