@@ -776,7 +776,7 @@ func (m *MockTokenCredential) GetToken(ctx context.Context, options policy.Token
 // given reservationOrderId. Used by PurchaseCommitment tests that need the
 // two-step calculatePrice->purchase flow.
 func calcPriceRespJSON(orderID string) string {
-	return `{"properties":{"reservationOrderId":"` + orderID + `"}}`
+	return `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"` + orderID + `"}}`
 }
 
 // capacityProviderRegistered is the JSON response that satisfies

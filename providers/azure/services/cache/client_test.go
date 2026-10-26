@@ -1084,7 +1084,7 @@ func (m *MockTokenCredential) GetToken(ctx context.Context, options policy.Token
 
 // calcPriceRespJSON returns a minimal calculatePrice response JSON for tests.
 func calcPriceRespJSON(orderID string) string {
-	return `{"properties":{"reservationOrderId":"` + orderID + `"}}`
+	return `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"` + orderID + `"}}`
 }
 
 func TestCacheClient_PurchaseCommitment_Success(t *testing.T) {

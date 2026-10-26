@@ -719,7 +719,7 @@ func TestGetOfferingDetails_Paginated(t *testing.T) {
 
 // calcPriceRespJSON returns a minimal calculatePrice response JSON for tests.
 func calcPriceRespJSON(orderID string) string {
-	return `{"properties":{"reservationOrderId":"` + orderID + `"}}`
+	return `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"` + orderID + `"}}`
 }
 
 func TestPurchaseCommitment_Success(t *testing.T) {

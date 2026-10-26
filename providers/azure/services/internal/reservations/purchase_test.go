@@ -75,7 +75,7 @@ func TestDoPurchaseTwoStep_HappyPath(t *testing.T) {
 	ctx := context.Background()
 
 	// calculatePrice returns a valid order ID.
-	calcResp := `{"properties":{"reservationOrderId":"azure-order-abc123","paymentSchedule":{}}}`
+	calcResp := `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"azure-order-abc123","paymentSchedule":{}}}`
 	calculateResp1 := fakeResp(http.StatusOK, calcResp)
 	calcBody := &closeTrackingBody{ReadCloser: calculateResp1.Body}
 	calculateResp1.Body = calcBody
@@ -111,7 +111,7 @@ func TestDoPurchaseTwoStep_PurchaseAccepted(t *testing.T) {
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
-	calcResp := `{"properties":{"reservationOrderId":"order-202"}}`
+	calcResp := `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"order-202"}}`
 	calculateResp3 := fakeResp(http.StatusOK, calcResp)
 	t.Cleanup(func() {
 		require.NoError(t, calculateResp3.Body.Close())
@@ -144,7 +144,7 @@ func TestDoPurchaseTwoStep_SessionTimeoutThenSuccess(t *testing.T) {
 	sessionTimeoutBody := `{"error":{"code":"BadRequest","message":"Session timed out - Call CalculatePrice again and provide the new Reservation Order ID for purchase"}}`
 
 	// First calculatePrice call -- returns order ID "order-first".
-	retryResp5 := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"order-first"}}`)
+	retryResp5 := fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"order-first"}}`)
 	firstCalculateBody := &closeTrackingBody{ReadCloser: retryResp5.Body}
 	retryResp5.Body = firstCalculateBody
 	t.Cleanup(func() {
@@ -166,7 +166,7 @@ func TestDoPurchaseTwoStep_SessionTimeoutThenSuccess(t *testing.T) {
 	})).Return(retryResp6, nil).Once()
 
 	// Second calculatePrice call -- returns order ID "order-second".
-	retryResp7 := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"order-second"}}`)
+	retryResp7 := fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"order-second"}}`)
 	secondCalculateBody := &closeTrackingBody{ReadCloser: retryResp7.Body}
 	retryResp7.Body = secondCalculateBody
 	t.Cleanup(func() {
@@ -227,7 +227,7 @@ func TestDoPurchaseTwoStep_PurchaseNonTimeoutFailure(t *testing.T) {
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
-	calculateResp10 := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"ord-x"}}`)
+	calculateResp10 := fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"ord-x"}}`)
 	t.Cleanup(func() {
 		require.NoError(t, calculateResp10.Body.Close())
 	})
@@ -272,7 +272,7 @@ func TestDoPurchaseTwoStep_PurchaseHTTPError(t *testing.T) {
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
-	calculateResp12 := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"ord-y"}}`)
+	calculateResp12 := fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"ord-y"}}`)
 	t.Cleanup(func() {
 		require.NoError(t, calculateResp12.Body.Close())
 	})
@@ -296,7 +296,7 @@ func TestDoPurchaseTwoStep_EmptyOrderID(t *testing.T) {
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
-	calculateResp13 := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":""}}`)
+	calculateResp13 := fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":""}}`)
 	calculateBody := &closeTrackingBody{ReadCloser: calculateResp13.Body}
 	calculateResp13.Body = calculateBody
 	t.Cleanup(func() {
@@ -845,7 +845,7 @@ func TestDoIdempotentPurchaseTwoStep_EmptyToken_NoLookup(t *testing.T) {
 	ctx := context.Background()
 
 	// Only the standard calculatePrice + purchase calls -- no list call.
-	calculateResp21 := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"order-no-tok"}}`)
+	calculateResp21 := fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"order-no-tok"}}`)
 	t.Cleanup(func() {
 		require.NoError(t, calculateResp21.Body.Close())
 	})
@@ -887,7 +887,7 @@ func TestDoIdempotentPurchaseTwoStep_NoMatch_FallsThroughToPurchase(t *testing.T
 		return r.Method == http.MethodGet && r.URL.String() == listURL
 	})).Return(lookupResp23, nil).Once()
 	// Step 2: calculatePrice.
-	calculateResp24 := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"order-fresh"}}`)
+	calculateResp24 := fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"order-fresh"}}`)
 	t.Cleanup(func() {
 		require.NoError(t, calculateResp24.Body.Close())
 	})
@@ -1001,7 +1001,7 @@ func TestDoIdempotentPurchaseTwoStep_DifferentTokens_DistinctReservations(t *tes
 			return r.Method == http.MethodGet && r.URL.String() == listURL
 		})).Return(lookupResp28, nil).Once()
 		// calculatePrice mints the order ID.
-		calculateResp29 := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"`+mintedOrderID+`"}}`)
+		calculateResp29 := fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"`+mintedOrderID+`"}}`)
 		t.Cleanup(func() {
 			require.NoError(t, calculateResp29.Body.Close())
 		})
@@ -1064,7 +1064,7 @@ func TestDoIdempotentPurchaseTwoStep_PreservesTwoStepFlow(t *testing.T) {
 		})).Return(lookupResp31, nil).Once()
 	}
 	// calculatePrice #1.
-	calculateResp32 := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"first"}}`)
+	calculateResp32 := fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"first"}}`)
 	t.Cleanup(func() {
 		require.NoError(t, calculateResp32.Body.Close())
 	})
@@ -1080,7 +1080,7 @@ func TestDoIdempotentPurchaseTwoStep_PreservesTwoStepFlow(t *testing.T) {
 		return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/first/purchase"
 	})).Return(purchaseResp33, nil).Once()
 	// calculatePrice #2 (retry).
-	calculateResp34 := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"second"}}`)
+	calculateResp34 := fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"second"}}`)
 	t.Cleanup(func() {
 		require.NoError(t, calculateResp34.Body.Close())
 	})
@@ -1325,7 +1325,7 @@ func (c *countingPurchaseClient) Do(req *http.Request) (*http.Response, error) {
 		c.purchases++
 		return c.purchaseResp(), nil
 	}
-	return fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"order-1"}}`), nil
+	return fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"order-1"}}`), nil
 }
 
 // TestDoPurchaseTwoStep_TruncatedSessionTimeoutStillRetries is the regression
@@ -1476,7 +1476,7 @@ func (c *idempotencyRetryClient) Do(req *http.Request) (*http.Response, error) {
 		return c.listResp(c.lists)
 	case req.URL.String() == calcURL:
 		c.calcs++
-		return fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"order-`+itoa(c.calcs)+`"}}`), nil
+		return fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"order-`+itoa(c.calcs)+`"}}`), nil
 	default:
 		c.purchases++
 		return c.purchase(c.purchases), nil
@@ -1630,7 +1630,7 @@ func TestDoIdempotentPurchaseTwoStep_PurchaseFailure_NotFlagged(t *testing.T) {
 	t.Parallel()
 	m := &mockHTTPClient{}
 	lookup := fakeResp(http.StatusOK, `{"value":[]}`)
-	calc := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"order-x"}}`)
+	calc := fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"order-x"}}`)
 	purchase := fakeResp(http.StatusInternalServerError, `{}`)
 	t.Cleanup(func() {
 		require.NoError(t, lookup.Body.Close())

@@ -46,7 +46,7 @@ func (h *existingCommitmentHTTP) Do(req *http.Request) (*http.Response, error) {
 		return respond(http.StatusOK, `{"registrationState":"Registered"}`)
 	case strings.HasSuffix(path, "/calculatePrice"):
 		h.posts++
-		return respond(http.StatusOK, `{"properties":{"reservationOrderId":"minted-order"}}`)
+		return respond(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"minted-order"}}`)
 	case strings.HasSuffix(path, "/purchase"):
 		h.posts++
 		return respond(h.purchaseStatus, `{}`)

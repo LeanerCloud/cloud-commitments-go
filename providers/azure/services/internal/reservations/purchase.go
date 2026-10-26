@@ -224,7 +224,33 @@ func ApplyPurchaseTags(body map[string]interface{}, source, idempotencyToken str
 type calculatePriceResponse struct {
 	Properties struct {
 		ReservationOrderID string `json:"reservationOrderId"`
+		// BillingCurrencyTotal is the amount Azure will bill, in the billing
+		// account's currency.
+		BillingCurrencyTotal struct {
+			CurrencyCode string `json:"currencyCode"`
+		} `json:"billingCurrencyTotal"`
 	} `json:"properties"`
+}
+
+// defaultCommitmentCurrency is what an empty Recommendation.CommitmentCurrency
+// means, matching the AWS purchase paths.
+const defaultCommitmentCurrency = "USD"
+
+// checkBillingCurrency refuses a purchase whose calculatePrice billing currency
+// is missing or differs from the recommendation's commitment currency (USD when
+// that is empty). It runs after calculatePrice and before the purchase PUT.
+func checkBillingCurrency(billing, commitmentCurrency string) error {
+	if billing == "" {
+		return errors.New("calculatePrice reported no billing currency code; refusing to purchase")
+	}
+	want := commitmentCurrency
+	if want == "" {
+		want = defaultCommitmentCurrency
+	}
+	if !strings.EqualFold(billing, want) {
+		return fmt.Errorf("calculatePrice bills in %s but the recommendation currency is %s; refusing to purchase", billing, want)
+	}
+	return nil
 }
 
 // sessionTimeoutFragment is the substring Azure includes in the 400 error
@@ -302,7 +328,7 @@ func DoPurchaseTwoStep(ctx context.Context, httpClient HTTPClient, calcURL strin
 	// No idempotency token, so no re-check is possible between attempts. This
 	// entry point is retained for callers that have none; every service executor
 	// goes through DoIdempotentPurchaseTwoStep.
-	orderID, _, err := purchaseTwoStepGuarded(ctx, httpClient, calcURL, bodyBytes, bearerToken, "")
+	orderID, _, err := purchaseTwoStepGuarded(ctx, httpClient, calcURL, bodyBytes, bearerToken, "", "")
 	return orderID, err
 }
 
@@ -370,7 +396,7 @@ func recheckAlreadyPurchased(ctx context.Context, httpClient HTTPClient, bearerT
 //
 // Ordering matters: the check runs before doCalculatePrice, so a purchase that
 // already exists short-circuits without minting yet another order ID.
-func purchaseTwoStepGuarded(ctx context.Context, httpClient HTTPClient, calcURL string, bodyBytes []byte, bearerToken, idempotencyToken string) (orderID string, existing bool, err error) {
+func purchaseTwoStepGuarded(ctx context.Context, httpClient HTTPClient, calcURL string, bodyBytes []byte, bearerToken, idempotencyToken, commitmentCurrency string) (orderID string, existing bool, err error) {
 	for attempt := 1; attempt <= purchaseMaxAttempts; attempt++ {
 		existingID, found, err := recheckAlreadyPurchased(ctx, httpClient, bearerToken, idempotencyToken, attempt)
 		if err != nil {
@@ -380,7 +406,7 @@ func purchaseTwoStepGuarded(ctx context.Context, httpClient HTTPClient, calcURL 
 			return existingID, true, nil
 		}
 		// Step 1: calculatePrice -- mint a session-bound reservationOrderId.
-		orderID, err := doCalculatePrice(ctx, httpClient, calcURL, bodyBytes, bearerToken)
+		orderID, err := doCalculatePrice(ctx, httpClient, calcURL, bodyBytes, bearerToken, commitmentCurrency)
 		if err != nil {
 			return "", false, fmt.Errorf("calculatePrice (attempt %d/%d): %w", attempt, purchaseMaxAttempts, err)
 		}
@@ -408,8 +434,9 @@ func purchaseTwoStepGuarded(ctx context.Context, httpClient HTTPClient, calcURL 
 }
 
 // doCalculatePrice calls the calculatePrice endpoint and returns the
-// Azure-minted reservationOrderId from the response.
-func doCalculatePrice(ctx context.Context, httpClient HTTPClient, calcURL string, bodyBytes []byte, bearerToken string) (string, error) {
+// Azure-minted reservationOrderId from the response, after checking the billing
+// currency against commitmentCurrency (see checkBillingCurrency).
+func doCalculatePrice(ctx context.Context, httpClient HTTPClient, calcURL string, bodyBytes []byte, bearerToken, commitmentCurrency string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, calcURL, bytes.NewReader(bodyBytes))
 	if err != nil {
 		return "", fmt.Errorf("build calculatePrice request: %w", err)
@@ -437,6 +464,9 @@ func doCalculatePrice(ctx context.Context, httpClient HTTPClient, calcURL string
 	}
 	if result.Properties.ReservationOrderID == "" {
 		return "", fmt.Errorf("calculatePrice returned empty reservationOrderId (body: %s)", string(body))
+	}
+	if err := checkBillingCurrency(result.Properties.BillingCurrencyTotal.CurrencyCode, commitmentCurrency); err != nil {
+		return "", err
 	}
 	return result.Properties.ReservationOrderID, nil
 }
@@ -677,6 +707,13 @@ func matchReservationOrderInPage(page *reservationOrdersListResponse, idempotenc
 // lookup or the in-loop re-check) instead of purchasing, so callers can set
 // PurchaseResult.ExistingCommitment (issue #211).
 func DoIdempotentPurchaseTwoStep(ctx context.Context, httpClient HTTPClient, calcURL string, bodyBytes []byte, bearerToken, idempotencyToken string) (orderID string, existing bool, err error) {
+	return DoIdempotentPurchaseTwoStepCurrency(ctx, httpClient, calcURL, bodyBytes, bearerToken, idempotencyToken, "")
+}
+
+// DoIdempotentPurchaseTwoStepCurrency is DoIdempotentPurchaseTwoStep with the
+// recommendation's commitment currency, which the calculatePrice billing
+// currency must match (empty means USD).
+func DoIdempotentPurchaseTwoStepCurrency(ctx context.Context, httpClient HTTPClient, calcURL string, bodyBytes []byte, bearerToken, idempotencyToken, commitmentCurrency string) (orderID string, existing bool, err error) {
 	if idempotencyToken != "" {
 		existingID, found, err := FindReservationOrderByIdempotencyToken(ctx, httpClient, bearerToken, idempotencyToken)
 		if err != nil {
@@ -687,7 +724,7 @@ func DoIdempotentPurchaseTwoStep(ctx context.Context, httpClient HTTPClient, cal
 			return existingID, true, nil
 		}
 	}
-	return purchaseTwoStepGuarded(ctx, httpClient, calcURL, bodyBytes, bearerToken, idempotencyToken)
+	return purchaseTwoStepGuarded(ctx, httpClient, calcURL, bodyBytes, bearerToken, idempotencyToken, commitmentCurrency)
 }
 
 // doPurchase calls the purchase endpoint with the given body.
