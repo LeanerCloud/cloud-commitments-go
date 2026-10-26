@@ -399,16 +399,38 @@ func TestCalculateExchange_PolicyErrorsWithoutMessageStillSurface(t *testing.T) 
 func TestCalculateExchange_NilVsZeroMoneyFields(t *testing.T) {
 	t.Parallel()
 	c := compute.NewClient(nil, "sub-1", "")
+	usd := func(v *float64) *armreservations.Price {
+		return &armreservations.Price{Amount: v, CurrencyCode: to.Ptr("USD")}
+	}
 	c.SetCalculateExchangeCaller(func(_ context.Context, _ armreservations.CalculateExchangeRequest) (armreservations.CalculateExchangeOperationResultResponse, error) {
-		return succeededResult(&armreservations.CalculateExchangeResponseProperties{
-			SessionID:  to.Ptr("session-zero-net-payable"),
-			NetPayable: &armreservations.Price{Amount: to.Ptr(0.0), CurrencyCode: to.Ptr("USD")},
+		return succeededResultRaw(&armreservations.CalculateExchangeResponseProperties{
+			SessionID: to.Ptr("session-absent-money"),
+			// Only the currency is reported (the check needs it); every amount
+			// and the refunds and purchases totals are absent.
+			NetPayable: &armreservations.Price{CurrencyCode: to.Ptr("USD")},
 		}), nil
 	})
+
 	preview, _, err := c.CalculateExchange(context.Background(), []compute.ExchangeableReservation{validSource()}, []compute.ExchangeTarget{validTarget()})
 	require.NoError(t, err)
-	require.NotNil(t, preview.NetPayable, "an explicit 0.0 amount must be preserved, not treated the same as absent")
-	assert.InDelta(t, 0.0, *preview.NetPayable, 0.0001)
+	assert.Nil(t, preview.NetPayable, "absent NetPayable amount must stay nil, never coerced to 0")
+	assert.Nil(t, preview.RefundsTotal, "absent RefundsTotal must stay nil, never coerced to 0")
+	assert.Nil(t, preview.PurchasesTotal, "absent PurchasesTotal must stay nil, never coerced to 0")
+
+	c.SetCalculateExchangeCaller(func(_ context.Context, _ armreservations.CalculateExchangeRequest) (armreservations.CalculateExchangeOperationResultResponse, error) {
+		return succeededResult(&armreservations.CalculateExchangeResponseProperties{
+			SessionID:      to.Ptr("session-zero-money"),
+			NetPayable:     usd(to.Ptr(0.0)),
+			RefundsTotal:   usd(to.Ptr(0.0)),
+			PurchasesTotal: usd(to.Ptr(0.0)),
+		}), nil
+	})
+	preview, _, err = c.CalculateExchange(context.Background(), []compute.ExchangeableReservation{validSource()}, []compute.ExchangeTarget{validTarget()})
+	require.NoError(t, err)
+	for name, v := range map[string]*float64{"NetPayable": preview.NetPayable, "RefundsTotal": preview.RefundsTotal, "PurchasesTotal": preview.PurchasesTotal} {
+		require.NotNil(t, v, "an explicit 0.0 %s must be preserved, not treated the same as absent", name)
+		assert.InDelta(t, 0.0, *v, 0.0001)
+	}
 	assert.Equal(t, "USD", preview.NetPayableCurrency)
 }
 
