@@ -485,8 +485,9 @@ func TestMultiSubscriptionRecommendationsClient_PartialResultKeepsRecommendation
 }
 
 // Mixed sweep: one subscription fails, another skips a recommendation. The good
-// recommendations come back, and both the failure and the skips stay reachable.
-func TestMultiSubscriptionRecommendationsClient_FailureAndSkipsBothReachable(t *testing.T) {
+// recommendations come back; the failure is found first-class and the skips are
+// on Skips(), never matchable as a partial result from the error chain.
+func TestMultiSubscriptionRecommendationsClient_FailureAndSkipsMixed(t *testing.T) {
 	withFakeSubscriptionClients(t, map[string]*fakeRecommendationsClient{
 		"sub-1": {recs: []common.Recommendation{{Account: "sub-1"}}, err: &PartialResultError{Skipped: []string{"compute: EUR"}}},
 		"sub-2": {err: errors.New("sub-2 unreachable")},
@@ -498,26 +499,23 @@ func TestMultiSubscriptionRecommendationsClient_FailureAndSkipsBothReachable(t *
 	require.Error(t, err)
 	assert.Equal(t, []common.Recommendation{{Account: "sub-1"}}, recs)
 
-	var skips interface {
-		Partial() bool
-		SkippedCount() int
-		SkipReasons() []string
-	}
-	require.ErrorAs(t, err, &skips)
-	assert.True(t, skips.Partial())
-	assert.Equal(t, 1, skips.SkippedCount())
-	assert.Equal(t, []string{"sub-1: compute: EUR"}, skips.SkipReasons())
-
 	failure := AsPartialSubscriptionFailure(err)
 	require.NotNil(t, failure)
 	assert.Equal(t, []string{"sub-2"}, failure.FailedSubscriptionIDs())
 	assert.Equal(t, 1, failure.Succeeded)
-	_, failureIsPartial := err.(interface{ Partial() bool })
-	assert.False(t, failureIsPartial, "the failure type must not answer Partial()")
+
+	skips := failure.Skips()
+	require.NotNil(t, skips)
+	assert.Equal(t, 1, skips.SkippedCount())
+	assert.Equal(t, []string{"sub-1: compute: EUR"}, skips.SkipReasons())
+
+	var partial interface{ Partial() bool }
+	assert.False(t, errors.As(err, &partial), "a failure error must not match a partial-result check")
+	assert.Nil(t, AsPartialResult(err))
 }
 
-// Pure failure carries no skip error; pure skips carry no failure error.
-func TestMultiSubscriptionRecommendationsClient_FailureWithoutSkipsHasNoSkipError(t *testing.T) {
+// Pure failure has no skips; pure skips (above) carry no failure error.
+func TestMultiSubscriptionRecommendationsClient_FailureWithoutSkips(t *testing.T) {
 	withFakeSubscriptionClients(t, map[string]*fakeRecommendationsClient{
 		"sub-1": {recs: []common.Recommendation{{Account: "sub-1"}}},
 		"sub-2": {err: errors.New("sub-2 unreachable")},
@@ -526,8 +524,9 @@ func TestMultiSubscriptionRecommendationsClient_FailureWithoutSkipsHasNoSkipErro
 	require.NoError(t, err)
 
 	_, err = client.GetAllRecommendations(context.Background())
-	require.NotNil(t, AsPartialSubscriptionFailure(err))
-	assert.Nil(t, AsPartialResult(err))
+	failure := AsPartialSubscriptionFailure(err)
+	require.NotNil(t, failure)
+	assert.Nil(t, failure.Skips())
 }
 
 // The same subscription ID passed twice to the constructor must yield one

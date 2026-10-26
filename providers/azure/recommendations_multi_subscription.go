@@ -56,6 +56,8 @@ var ErrSubscriptionNotAccessible = errors.New("subscription is not accessible to
 // PartialResultError reports that a collection dropped recommendations it
 // could not scale or price (non-USD currency, unpriceable SKU, truncated
 // Advisor walk) while returning the rest. Use AsPartialResult to detect it.
+// In a sweep where a subscription also failed, the skips are on
+// PartialSubscriptionFailureError.Skips instead, not in the error chain.
 type PartialResultError = azrecs.PartialResultError
 
 // AsPartialResult returns the *PartialResultError in err's chain, or nil.
@@ -112,10 +114,13 @@ type PartialSubscriptionFailureError struct {
 	Succeeded int
 }
 
-// Deliberately has no Partial() method: a subscription failure (existing data
-// for the failed subscriptions is stale, not invalid) must not be mistaken for
-// the skipped-recommendation signal (*PartialResultError). Check
-// AsPartialSubscriptionFailure before any partial-result check.
+// Skips returns the recommendations that reachable subscriptions dropped in the
+// same sweep, or nil when none were. It is a method rather than part of Unwrap
+// and the type has no Partial() method, so errors.As for a partial-result
+// interface never matches a subscription failure; callers read the skips here
+// after AsPartialSubscriptionFailure.
+func (e *PartialSubscriptionFailureError) Skips() *PartialResultError { return e.skipped }
+
 func (e *PartialSubscriptionFailureError) Error() string {
 	// Failed is exported and the zero value is constructible, so an
 	// externally-built or zero-valued instance must format rather than panic
@@ -134,15 +139,10 @@ func (e *PartialSubscriptionFailureError) Error() string {
 
 // Unwrap exposes the per-subscription causes so errors.Is/errors.As can match
 // against any of them (e.g. checking whether a throttling error is in play).
-// When reachable subscriptions also skipped recommendations, the
-// *PartialResultError describing them is included, so errors.As finds both.
 func (e *PartialSubscriptionFailureError) Unwrap() []error {
-	errs := make([]error, 0, len(e.Failed)+1)
+	errs := make([]error, 0, len(e.Failed))
 	for _, f := range e.Failed {
 		errs = append(errs, f.Err)
-	}
-	if e.skipped != nil {
-		errs = append(errs, e.skipped)
 	}
 	return errs
 }

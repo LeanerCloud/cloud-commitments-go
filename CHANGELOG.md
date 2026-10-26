@@ -145,10 +145,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Changed
 
 - Azure multi-subscription collection keeps skipped recommendations when a
-  subscription also fails. The returned `PartialSubscriptionFailureError` now
-  wraps the `*PartialResultError` (reachable with `errors.As`); its fields and
-  message are unchanged. It does not implement `Partial() bool`: check
-  `AsPartialSubscriptionFailure` before any partial-result check.
+  subscription also fails. They are returned by the new
+  `PartialSubscriptionFailureError.Skips()` (a `*PartialResultError`, or nil)
+  and are deliberately not in the error chain, so a partial-result check never
+  matches a subscription failure. Fields, `Unwrap` and message are unchanged.
 - GCP reports the recommendations it skips. Compute Engine recommendations
   dropped for a non-USD amount, a malformed amount or an unrecognized term are
   now returned as a partial-result error (`Partial() bool`) alongside the
