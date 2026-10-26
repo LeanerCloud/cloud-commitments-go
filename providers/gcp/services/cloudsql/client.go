@@ -19,16 +19,14 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skumatch"
 )
 
+// BillingService lists SKUs of one Cloud Billing service (enables mocking).
+type BillingService = skulist.BillingService
+
 // SQLAdminService interface for SQL admin operations (enables mocking).
 type SQLAdminService interface {
 	ListInstances(projectID string) (*sqladmin.InstancesListResponse, error)
 	InsertInstance(projectID string, instance *sqladmin.DatabaseInstance) (*sqladmin.Operation, error)
 	ListTiers(projectID string) (*sqladmin.TiersListResponse, error)
-}
-
-// BillingService interface for billing operations (enables mocking).
-type BillingService interface {
-	ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error)
 }
 
 // RecommenderIterator preserves the legacy iteration API for source compatibility.
@@ -100,19 +98,6 @@ func (r *realSQLAdminService) InsertInstance(projectID string, instance *sqladmi
 
 func (r *realSQLAdminService) ListTiers(projectID string) (*sqladmin.TiersListResponse, error) {
 	return r.service.Tiers.List(projectID).Do()
-}
-
-// realBillingService wraps the real cloudbilling.APIService.
-type realBillingService struct {
-	service *cloudbilling.APIService
-}
-
-func (r *realBillingService) ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error) {
-	skus, err := skulist.All(context.Background(), r.service.Services.Skus.List(serviceID), skulist.DefaultMaxPages)
-	if err != nil {
-		return nil, fmt.Errorf("%s: list SKUs for %s: %w", "cloudsql", serviceID, err)
-	}
-	return &cloudbilling.ListSkusResponse{Skus: skus}, nil
 }
 
 // GetServiceType returns the service type.
@@ -272,7 +257,7 @@ type SQLPricing struct {
 // It returns an error when commitment pricing is absent from the catalog rather
 // than fabricating a price from a hardcoded discount factor (issue #1020).
 func (c *Client) getSQLPricing(ctx context.Context, tier, region string, termYears int) (*SQLPricing, error) {
-	svc, err := c.getOrCreateBillingService(ctx)
+	svc, err := skulist.Resolve(ctx, c.billingService, "cloudsql", c.clientOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -307,20 +292,6 @@ func (c *Client) getSQLPricing(ctx context.Context, tier, region string, termYea
 		Currency:          currency,
 		SavingsPercentage: savingsPercentage,
 	}, nil
-}
-
-// getOrCreateBillingService returns the billing service, creating it if needed.
-func (c *Client) getOrCreateBillingService(ctx context.Context) (BillingService, error) {
-	if c.billingService != nil {
-		return c.billingService, nil
-	}
-
-	service, err := cloudbilling.NewService(ctx, c.clientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create billing service: %w", err)
-	}
-
-	return &realBillingService{service: service}, nil
 }
 
 // extractSQLPricingFromSKUs extracts on-demand and commitment pricing from the SKU list.

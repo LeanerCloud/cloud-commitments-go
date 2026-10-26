@@ -19,6 +19,9 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skumatch"
 )
 
+// BillingService lists SKUs of one Cloud Billing service (enables mocking).
+type BillingService = skulist.BillingService
+
 // RedisService interface for Redis operations.
 type RedisService interface {
 	ListInstances(ctx context.Context, req *redispb.ListInstancesRequest) RedisIterator
@@ -34,11 +37,6 @@ type RedisIterator interface {
 // CreateInstanceOperation interface for create instance operation.
 type CreateInstanceOperation interface {
 	Wait(ctx context.Context, opts ...gax.CallOption) (*redispb.Instance, error)
-}
-
-// BillingService interface for Cloud Billing operations.
-type BillingService interface {
-	ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error)
 }
 
 // RecommenderIterator interface for iterating recommendations.
@@ -90,19 +88,6 @@ func (c *Client) SetBillingService(svc BillingService) {
 //
 // Deprecated: Memorystore has no project-scoped commitment recommender (issue #294).
 func (c *Client) SetRecommenderClient(_ RecommenderClient) {}
-
-// realBillingService wraps the actual Cloud Billing service.
-type realBillingService struct {
-	service *cloudbilling.APIService
-}
-
-func (r *realBillingService) ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error) {
-	skus, err := skulist.All(context.Background(), r.service.Services.Skus.List(serviceID), skulist.DefaultMaxPages)
-	if err != nil {
-		return nil, fmt.Errorf("%s: list SKUs for %s: %w", "memorystore", serviceID, err)
-	}
-	return &cloudbilling.ListSkusResponse{Skus: skus}, nil
-}
 
 // GetServiceType returns the service type.
 func (c *Client) GetServiceType() common.ServiceType {
@@ -235,7 +220,7 @@ type RedisPricing struct {
 // It returns an error when commitment pricing is absent from the catalog rather
 // than fabricating a price from a hardcoded discount factor (issue #1020).
 func (c *Client) getRedisPricing(ctx context.Context, tier, region string, termYears int) (*RedisPricing, error) {
-	billingSvc, err := c.getOrCreateBillingService(ctx)
+	billingSvc, err := skulist.Resolve(ctx, c.billingService, "memorystore", c.clientOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -270,20 +255,6 @@ func (c *Client) getRedisPricing(ctx context.Context, tier, region string, termY
 		Currency:          currency,
 		SavingsPercentage: savingsPercentage,
 	}, nil
-}
-
-// getOrCreateBillingService returns the billing service, creating it if needed.
-func (c *Client) getOrCreateBillingService(ctx context.Context) (BillingService, error) {
-	if c.billingService != nil {
-		return c.billingService, nil
-	}
-
-	service, err := cloudbilling.NewService(ctx, c.clientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create billing service: %w", err)
-	}
-
-	return &realBillingService{service: service}, nil
 }
 
 // extractPricingFromSKUs extracts on-demand and commitment pricing from SKU list.
