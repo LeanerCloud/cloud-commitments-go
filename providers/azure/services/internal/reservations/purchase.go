@@ -236,21 +236,28 @@ type calculatePriceResponse struct {
 // means, matching the AWS purchase paths.
 const defaultCommitmentCurrency = "USD"
 
-// checkBillingCurrency refuses a purchase whose calculatePrice billing currency
-// is missing or differs from the recommendation's commitment currency (USD when
-// that is empty). It runs after calculatePrice and before the purchase PUT.
-func checkBillingCurrency(billing, commitmentCurrency string) error {
-	if billing == "" {
-		return errors.New("calculatePrice reported no billing currency code; refusing to purchase")
+// CheckCurrency refuses an operation whose Azure-reported currency is missing
+// or differs (case-insensitive) from the expected currency (USD when that is
+// empty). source names the Azure response and action the refused operation,
+// for the error text. Shared by purchases and compute exchanges.
+func CheckCurrency(source, reported, expected, action string) error {
+	if reported == "" {
+		return fmt.Errorf("%s reported no billing currency code; refusing to %s", source, action)
 	}
-	want := commitmentCurrency
+	want := expected
 	if want == "" {
 		want = defaultCommitmentCurrency
 	}
-	if !strings.EqualFold(billing, want) {
-		return fmt.Errorf("calculatePrice bills in %s but the recommendation currency is %s; refusing to purchase", billing, want)
+	if !strings.EqualFold(reported, want) {
+		return fmt.Errorf("%s bills in %s but the expected currency is %s; refusing to %s", source, reported, want, action)
 	}
 	return nil
+}
+
+// checkBillingCurrency is CheckCurrency for a calculatePrice response. It runs
+// after calculatePrice and before the purchase PUT.
+func checkBillingCurrency(billing, commitmentCurrency string) error {
+	return CheckCurrency("calculatePrice", billing, commitmentCurrency, "purchase")
 }
 
 // sessionTimeoutFragment is the substring Azure includes in the 400 error

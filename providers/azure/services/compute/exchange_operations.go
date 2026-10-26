@@ -28,6 +28,8 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
+
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
 )
 
 // CompatibleOffering describes one candidate target SKU that Azure priced as
@@ -275,7 +277,13 @@ func (c *Client) CalculateExchange(
 	if err != nil {
 		return nil, nil, err
 	}
-	return extractExchangePreview(props), extractCompatibleOfferings(props), nil
+	preview := extractExchangePreview(props)
+	// Exchanges carry no recommendation currency, so the expected one is USD.
+	// Refusing here means no session ID is returned, so nothing can be executed.
+	if err := reservations.CheckCurrency("calculateExchange", preview.NetPayableCurrency, "", "exchange"); err != nil {
+		return nil, nil, fmt.Errorf("azure: CalculateExchange: %w", err)
+	}
+	return preview, extractCompatibleOfferings(props), nil
 }
 
 // isTerminalCtxErr reports whether err is a context cancellation or deadline

@@ -197,6 +197,43 @@ func TestDoPurchaseTwoStep_SessionTimeoutThenSuccess(t *testing.T) {
 	m.AssertExpectations(t)
 }
 
+// TestDoPurchaseTwoStep_RetryCalculateCurrencyChangedRefuses checks that the
+// currency is re-checked on the session-timeout retry: the first calculatePrice
+// bills in USD, the retry's in EUR, and the second purchase is never sent.
+func TestDoPurchaseTwoStep_RetryCalculateCurrencyChangedRefuses(t *testing.T) {
+	t.Parallel()
+	m := &mockHTTPClient{}
+	sessionTimeoutBody := `{"error":{"code":"BadRequest","message":"Session timed out - Call CalculatePrice again and provide the new Reservation Order ID for purchase"}}`
+	r1 := fakeResp(http.StatusOK, calcWithCurrencyAndOrder("USD", "order-first"))
+	r2 := fakeResp(http.StatusBadRequest, sessionTimeoutBody)
+	r3 := fakeResp(http.StatusOK, calcWithCurrencyAndOrder("EUR", "order-second"))
+	t.Cleanup(func() {
+		require.NoError(t, r1.Body.Close())
+		require.NoError(t, r2.Body.Close())
+		require.NoError(t, r3.Body.Close())
+	})
+
+	m.On("Do", mock.MatchedBy(func(r *http.Request) bool {
+		return r.Method == http.MethodPost && r.URL.String() == calcURL
+	})).Return(r1, nil).Once()
+	m.On("Do", mock.MatchedBy(func(r *http.Request) bool {
+		return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/order-first/purchase"
+	})).Return(r2, nil).Once()
+	m.On("Do", mock.MatchedBy(func(r *http.Request) bool {
+		return r.Method == http.MethodPost && r.URL.String() == calcURL
+	})).Return(r3, nil).Once()
+
+	_, err := DoPurchaseTwoStep(context.Background(), m, calcURL, []byte(testBody), "tok")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "bills in EUR")
+	for _, call := range m.Calls {
+		req := call.Arguments.Get(0).(*http.Request)
+		assert.NotContains(t, req.URL.Path, "order-second", "no purchase request for the refused retry")
+	}
+	m.AssertExpectations(t)
+	m.AssertNumberOfCalls(t, "Do", 3)
+}
+
 // TestDoPurchaseTwoStep_CalculateFailure tests that a calculatePrice 4xx is
 // returned immediately without retrying.
 func TestDoPurchaseTwoStep_CalculateFailure(t *testing.T) {

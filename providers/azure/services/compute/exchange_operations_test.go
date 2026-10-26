@@ -41,7 +41,19 @@ func validTarget() compute.ExchangeTarget {
 	}
 }
 
+// succeededResult wraps props in a Succeeded result. A nil NetPayable is
+// filled with a USD zero so tests not about currency pass the currency check;
+// use succeededResultRaw to keep it absent.
 func succeededResult(props *armreservations.CalculateExchangeResponseProperties) armreservations.CalculateExchangeOperationResultResponse {
+	if props != nil && props.NetPayable == nil {
+		p := *props
+		p.NetPayable = &armreservations.Price{Amount: to.Ptr(0.0), CurrencyCode: to.Ptr("USD")}
+		props = &p
+	}
+	return succeededResultRaw(props)
+}
+
+func succeededResultRaw(props *armreservations.CalculateExchangeResponseProperties) armreservations.CalculateExchangeOperationResultResponse {
 	return armreservations.CalculateExchangeOperationResultResponse{
 		Status:     to.Ptr(armreservations.CalculateExchangeOperationResultStatusSucceeded),
 		Properties: props,
@@ -389,22 +401,11 @@ func TestCalculateExchange_NilVsZeroMoneyFields(t *testing.T) {
 	c := compute.NewClient(nil, "sub-1", "")
 	c.SetCalculateExchangeCaller(func(_ context.Context, _ armreservations.CalculateExchangeRequest) (armreservations.CalculateExchangeOperationResultResponse, error) {
 		return succeededResult(&armreservations.CalculateExchangeResponseProperties{
-			SessionID: to.Ptr("session-no-net-payable"),
-			// NetPayable intentionally omitted -- Azure did not report one.
-		}), nil
-	})
-
-	preview, _, err := c.CalculateExchange(context.Background(), []compute.ExchangeableReservation{validSource()}, []compute.ExchangeTarget{validTarget()})
-	require.NoError(t, err)
-	assert.Nil(t, preview.NetPayable, "absent NetPayable must stay nil, never coerced to 0")
-
-	c.SetCalculateExchangeCaller(func(_ context.Context, _ armreservations.CalculateExchangeRequest) (armreservations.CalculateExchangeOperationResultResponse, error) {
-		return succeededResult(&armreservations.CalculateExchangeResponseProperties{
 			SessionID:  to.Ptr("session-zero-net-payable"),
 			NetPayable: &armreservations.Price{Amount: to.Ptr(0.0), CurrencyCode: to.Ptr("USD")},
 		}), nil
 	})
-	preview, _, err = c.CalculateExchange(context.Background(), []compute.ExchangeableReservation{validSource()}, []compute.ExchangeTarget{validTarget()})
+	preview, _, err := c.CalculateExchange(context.Background(), []compute.ExchangeableReservation{validSource()}, []compute.ExchangeTarget{validTarget()})
 	require.NoError(t, err)
 	require.NotNil(t, preview.NetPayable, "an explicit 0.0 amount must be preserved, not treated the same as absent")
 	assert.InDelta(t, 0.0, *preview.NetPayable, 0.0001)
@@ -610,4 +611,55 @@ func TestExecuteExchange_HappyPath(t *testing.T) {
 	assert.InDelta(t, 42.5, *res.NetPayable, 0.0001)
 	assert.Equal(t, "USD", res.NetPayableCurrency)
 	assert.Equal(t, string(armreservations.ExchangeOperationResultStatusSucceeded), res.Status)
+}
+
+// TestExchange_RefusesBeforeExecuteOnCurrency drives the calculate-then-execute
+// flow: when the net payable currency is missing or not USD, CalculateExchange
+// refuses, so no session ID exists and no exchange request is sent.
+func TestExchange_RefusesBeforeExecuteOnCurrency(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name       string
+		netPayable *armreservations.Price
+		wantErr    string
+	}{
+		{"EUR refuses", &armreservations.Price{Amount: to.Ptr(1.0), CurrencyCode: to.Ptr("EUR")}, "bills in EUR"},
+		{"missing currency code refuses", &armreservations.Price{Amount: to.Ptr(1.0)}, "no billing currency"},
+		{"missing net payable refuses", nil, "no billing currency"},
+		{"lowercase usd proceeds", &armreservations.Price{Amount: to.Ptr(1.0), CurrencyCode: to.Ptr("usd")}, ""},
+		{"USD proceeds", &armreservations.Price{Amount: to.Ptr(1.0), CurrencyCode: to.Ptr("USD")}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c := compute.NewClient(nil, "sub-1", "")
+			c.SetCalculateExchangeCaller(func(_ context.Context, _ armreservations.CalculateExchangeRequest) (armreservations.CalculateExchangeOperationResultResponse, error) {
+				return succeededResultRaw(&armreservations.CalculateExchangeResponseProperties{
+					SessionID:  to.Ptr("session-1"),
+					NetPayable: tt.netPayable,
+				}), nil
+			})
+			exchangePosts := 0
+			c.SetDoExchangeCaller(func(_ context.Context, _ string) (armreservations.ExchangeOperationResultResponse, error) {
+				exchangePosts++
+				return armreservations.ExchangeOperationResultResponse{
+					Status:     to.Ptr(armreservations.ExchangeOperationResultStatusSucceeded),
+					Properties: &armreservations.ExchangeResponseProperties{},
+				}, nil
+			})
+
+			preview, _, err := c.CalculateExchange(context.Background(), []compute.ExchangeableReservation{validSource()}, []compute.ExchangeTarget{validTarget()})
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				assert.Nil(t, preview, "no preview, so no session ID to execute")
+				assert.Zero(t, exchangePosts, "no exchange request after a currency refusal")
+				return
+			}
+			require.NoError(t, err)
+			_, err = c.ExecuteExchange(context.Background(), preview.SessionID)
+			require.NoError(t, err)
+			assert.Equal(t, 1, exchangePosts)
+		})
+	}
 }
