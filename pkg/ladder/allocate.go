@@ -541,6 +541,7 @@ func buildResult(in *AllocationInput, lowWater, target, existingTotal, gap *big.
 	if err != nil {
 		return nil, err
 	}
+	allocs, reshapeHolds := holdReshapedBufferAllocations(allocs, reshapes, in.Layers, in.DataSources)
 	allocs, rateHolds := convertAllocations(allocs, rates, in.DataSources)
 	allocs, err = applyCapGuardrail(allocs, in.Config.MaxHourlyCommitPerRun)
 	if err != nil {
@@ -548,8 +549,9 @@ func buildResult(in *AllocationInput, lowWater, target, existingTotal, gap *big.
 	}
 	allocs, skipHolds := dropSubMinimumAllocations(allocs, in.DataSources)
 	allocs, reshapes, truncHolds := truncateToMaxActions(allocs, reshapes, in.Config.MaxActionsPerRun, in.LayerStates, in.DataSources)
-	holds := make([]PlannedAction, 0, len(maintHolds)+len(rateHolds)+len(skipHolds)+len(truncHolds))
+	holds := make([]PlannedAction, 0, len(maintHolds)+len(reshapeHolds)+len(rateHolds)+len(skipHolds)+len(truncHolds))
 	holds = append(holds, maintHolds...)
+	holds = append(holds, reshapeHolds...)
 	holds = append(holds, rateHolds...)
 	holds = append(holds, skipHolds...)
 	holds = append(holds, truncHolds...)
@@ -558,6 +560,43 @@ func buildResult(in *AllocationInput, lowWater, target, existingTotal, gap *big.
 		Reshapes:    reshapes,
 		Holds:       holds,
 	}, nil
+}
+
+// holdReshapedBufferAllocations turns the purchase for a buffer layer into an
+// informational Hold when the same run recommends reshaping that layer:
+// buying more of an under-utilized layer contradicts the reshape. Only
+// buffer-only layers are held; a layer that also carries the base role
+// (the merged Azure reservation) keeps its allocation because it is not purely
+// a buffer purchase. Must run before convertAllocations, while only
+// OnDemandEquivalentUSDPerHour is populated.
+func holdReshapedBufferAllocations(allocs []Allocation, reshapes []PlannedAction, layers []LayerSpec, dataSources []string) ([]Allocation, []PlannedAction) {
+	if len(reshapes) == 0 {
+		return allocs, nil
+	}
+	bufferOnly := make(map[LayerType]bool, len(layers))
+	for _, ls := range layers {
+		bufferOnly[ls.Type] = slices.Contains(ls.Roles, RoleBuffer) && !slices.Contains(ls.Roles, RoleBase)
+	}
+	reshaped := make(map[LayerType]bool, len(reshapes))
+	for _, r := range reshapes {
+		reshaped[r.Layer] = bufferOnly[r.Layer]
+	}
+	var kept []Allocation
+	var holds []PlannedAction
+	for _, a := range allocs {
+		if !reshaped[a.Layer] {
+			kept = append(kept, a)
+			continue
+		}
+		holds = append(holds, PlannedAction{
+			Action: ActionHold,
+			Layer:  a.Layer,
+			Rationale: fmt.Sprintf("buffer purchase of %s on layer %s withheld: the layer has a pending reshape recommendation, so buying more of an under-utilized layer is deferred",
+				fmtRatUSD(a.OnDemandEquivalentUSDPerHour), a.Layer),
+			DataSources: dataSources,
+		})
+	}
+	return kept, holds
 }
 
 // dropSubMinimumAllocations removes allocations whose amount fell below the
