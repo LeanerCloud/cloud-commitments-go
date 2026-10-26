@@ -518,6 +518,15 @@ func TestWithSkips(t *testing.T) {
 		assert.Contains(t, err.Error(), "non-USD amount")
 		assert.Contains(t, err.Error(), "malformed amount")
 	})
+	t.Run("reasons are sorted regardless of recording order", func(t *testing.T) {
+		t.Parallel()
+		_, err := withSkips(recs, nil, newLog("zzz reason", "aaa reason"))
+		var pe *recskip.PartialResultError
+		require.ErrorAs(t, err, &pe)
+		require.Len(t, pe.Skipped, 2)
+		assert.Contains(t, pe.Skipped[0], "aaa reason")
+		assert.Contains(t, pe.Skipped[1], "zzz reason")
+	})
 	t.Run("a hard error wins over skips", func(t *testing.T) {
 		t.Parallel()
 		hard := errors.New("quota exceeded")
@@ -527,4 +536,50 @@ func TestWithSkips(t *testing.T) {
 		var p interface{ Partial() bool }
 		assert.False(t, errors.As(err, &p))
 	})
+}
+
+// Drives the provider end to end over the SDK harness: the EUR recommendation
+// is dropped, the USD one is returned, and the skip surfaces as a partial error.
+func TestGetRecommendations_ReportsSkippedRecommendationAsPartial(t *testing.T) {
+	t.Parallel()
+	regions := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"items":[{"name":"us-central1","status":"UP"}]}`)
+	}))
+	t.Cleanup(regions.Close)
+	listener := bufconn.Listen(1024 * 1024)
+	server := grpc.NewServer()
+	recommenderpb.RegisterRecommenderServer(server, &recommendationSDKServer{
+		list: func(context.Context, *recommenderpb.ListRecommendationsRequest) (*recommenderpb.ListRecommendationsResponse, error) {
+			good := sdkCostRecommendation(10, recommenderpb.RecommendationStateInfo_ACTIVE)
+			good.Name = "good-rec"
+			good.Content = sdkResourceAmounts([]string{"VCPU", "MEMORY"}, false, "us-central1")
+			eur := sdkCostRecommendation(20, recommenderpb.RecommendationStateInfo_ACTIVE)
+			eur.Name = "eur-rec"
+			eur.Content = sdkResourceAmounts([]string{"VCPU", "MEMORY"}, false, "us-central1")
+			eur.PrimaryImpact.GetCostProjection().Cost.CurrencyCode = "EUR"
+			return &recommenderpb.ListRecommendationsResponse{Recommendations: []*recommenderpb.Recommendation{good, eur}}, nil
+		},
+	})
+	go func() { _ = server.Serve(listener) }()
+	t.Cleanup(server.Stop)
+	adapter, err := NewProviderWithProject(context.Background(), "recommendation-project",
+		option.WithoutAuthentication(),
+		option.WithEndpoint(regions.URL),
+		option.WithGRPCDialOption(grpc.WithTransportCredentials(insecure.NewCredentials())),
+		option.WithGRPCDialOption(grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return listener.DialContext(ctx)
+		})),
+	).GetRecommendationsClient(context.Background())
+	require.NoError(t, err)
+
+	recs, err := adapter.GetRecommendations(context.Background(), &common.RecommendationParams{Service: common.ServiceCompute})
+
+	require.Len(t, recs, 1)
+	var p interface{ Partial() bool }
+	require.ErrorAs(t, err, &p)
+	assert.True(t, p.Partial())
+	assert.Contains(t, err.Error(), "1 recommendation(s) skipped")
+	assert.Contains(t, err.Error(), "EUR")
+	assert.Contains(t, err.Error(), "eur-rec")
 }

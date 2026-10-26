@@ -2639,3 +2639,20 @@ func TestGetRecommendations_RecordsSkippedRecommendations(t *testing.T) {
 	assert.Contains(t, strings.Join(entries, "\n"), "EUR")
 	assert.Contains(t, strings.Join(entries, "\n"), `"malformed"`)
 }
+
+func TestGetRecommendations_RecordsUnrecognizedTermSkip(t *testing.T) {
+	t.Parallel()
+	client, _ := NewClient("test-project", "us-central1")
+	client.SetRecommenderClient(&MockRecommenderClient{iterator: &MockRecommenderIterator{
+		recommendations: []*recommenderpb.Recommendation{badAmountRecommendation("rec-5yr", "4", "6144")},
+	}})
+	ctx, skips := recskip.WithLog(context.Background())
+
+	recs, err := client.GetRecommendations(ctx, &common.RecommendationParams{Term: "5yr"})
+	require.NoError(t, err)
+	assert.Empty(t, recs)
+	entries := skips.Entries()
+	require.Len(t, entries, 1)
+	assert.Contains(t, entries[0], `"rec-5yr"`)
+	assert.Contains(t, entries[0], `"5yr"`)
+}
