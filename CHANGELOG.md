@@ -32,6 +32,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Azure currency refusals wrap `common.ErrCurrencyNotAccepted`:** reservation
+  purchase, savings plan purchase and reservation exchange refusals can now be
+  detected with `errors.Is`; the message text is unchanged.
 - **Typed accessors on partial recommendation results:** the Azure and GCP
   `PartialResultError` types now expose `SkippedCount() int` and
   `SkipReasons() []string` (a copy), so callers can match one interface
