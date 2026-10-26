@@ -565,18 +565,17 @@ func buildResult(in *AllocationInput, lowWater, target, existingTotal, gap *big.
 // holdReshapedBufferAllocations turns the purchase for a buffer layer into an
 // informational Hold when the same run recommends reshaping that layer:
 // buying more of an under-utilized layer contradicts the reshape. Only
-// buffer-only layers are held; a layer that also carries the base or flex role
+// buffer-only layers are held; a layer that also carries the base role
 // (the merged Azure reservation) keeps its allocation because it is not purely
-// a buffer purchase. Must run before convertAllocations so GapUSDPerHour is
-// only OnDemandEquivalentUSDPerHour is populated.
+// a buffer purchase. Must run before convertAllocations, while only
+// OnDemandEquivalentUSDPerHour is populated.
 func holdReshapedBufferAllocations(allocs []Allocation, reshapes []PlannedAction, layers []LayerSpec, dataSources []string) ([]Allocation, []PlannedAction) {
 	if len(reshapes) == 0 {
 		return allocs, nil
 	}
 	bufferOnly := make(map[LayerType]bool, len(layers))
 	for _, ls := range layers {
-		bufferOnly[ls.Type] = slices.Contains(ls.Roles, RoleBuffer) &&
-			!slices.Contains(ls.Roles, RoleBase) && !slices.Contains(ls.Roles, RoleFlex)
+		bufferOnly[ls.Type] = slices.Contains(ls.Roles, RoleBuffer) && !slices.Contains(ls.Roles, RoleBase)
 	}
 	reshaped := make(map[LayerType]bool, len(reshapes))
 	for _, r := range reshapes {
