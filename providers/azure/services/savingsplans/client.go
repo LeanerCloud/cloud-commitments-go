@@ -604,11 +604,11 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	var termStr string
 	switch azTerm {
 	case armbillingbenefits.TermP1Y:
-		hoursInTerm, termStr = 8760.0, "1yr"
+		hoursInTerm, termStr = common.HoursPerYear, "1yr"
 	case armbillingbenefits.TermP3Y:
-		hoursInTerm, termStr = 26280.0, "3yr"
+		hoursInTerm, termStr = 3*common.HoursPerYear, "3yr"
 	case armbillingbenefits.TermP5Y:
-		hoursInTerm, termStr = 43800.0, "5yr"
+		hoursInTerm, termStr = 5*common.HoursPerYear, "5yr"
 	default:
 		return nil, fmt.Errorf("unsupported savings plan term: %s", rec.Term)
 	}

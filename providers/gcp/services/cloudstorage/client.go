@@ -18,9 +18,6 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skumatch"
 )
 
-// Match the annual-average convention used for term totals, not calendar-month lengths.
-const averageHoursPerMonth = 8760.0 / 12
-
 // StorageService interface for storage operations (enables mocking).
 type StorageService interface {
 	Buckets(ctx context.Context, projectID string) BucketIterator
@@ -236,7 +233,7 @@ func (c *Client) getStoragePricing(ctx context.Context, storageClass, region str
 		return nil, err
 	}
 
-	skus, err := svc.ListSKUs("services/95FF-2EF5-5EA1")
+	skus, err := svc.ListSKUs(cloudStorageServiceID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list SKUs: %w", err)
 	}
@@ -252,7 +249,7 @@ func (c *Client) getStoragePricing(ctx context.Context, storageClass, region str
 		return nil, fmt.Errorf("no commitment pricing found for Cloud Storage class %s in region %s: catalog has no CUD SKU; cannot compute savings percentage", storageClass, region)
 	}
 
-	hoursInTerm := 8760.0 * float64(termYears)
+	hoursInTerm := common.HoursPerYear * float64(termYears)
 	commitmentPriceTerm := commitmentPrice * hoursInTerm
 	savingsPercentage := calculateStorageSavingsPercentage(onDemandPrice, hoursInTerm, commitmentPriceTerm)
 
@@ -332,7 +329,7 @@ func extractStoragePriceFromSKU(sku *cloudbilling.Sku) (price float64, currency 
 	price = float64(rate.UnitPrice.Units) + float64(rate.UnitPrice.Nanos)/1e9
 	switch unit := pricingInfo.PricingExpression.UsageUnit; unit {
 	case "GiBy.mo":
-		price /= averageHoursPerMonth
+		price /= common.HoursPerMonth
 	case "GiBy.h":
 	default:
 		return 0, "", fmt.Errorf("unsupported Cloud Storage usage unit %q for SKU %q (%s)", unit, sku.SkuId, sku.Description)
@@ -357,3 +354,6 @@ func skuMatchesStorageClass(sku *cloudbilling.Sku, storageClass, region string) 
 
 	return skumatch.InRegion(sku, region)
 }
+
+// cloudStorageServiceID is the Cloud Billing service for Cloud Storage.
+const cloudStorageServiceID = "services/95FF-2EF5-5EA1"

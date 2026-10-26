@@ -3,6 +3,7 @@ package cloudstorage
 import (
 	"testing"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/cloudbilling/v1"
@@ -45,8 +46,8 @@ func TestExtractStoragePricing_RegionAndAmbiguity(t *testing.T) {
 				storageSKU("cud", "Standard Storage Netherlands commitment", "Commit1Yr", here, 15000000),
 				storageSKU("cud-nil", "Standard Storage Taiwan commitment", "Commit1Yr", nil, 25000000),
 			},
-			wantOnDemand:   0.02 / averageHoursPerMonth,
-			wantCommitment: 0.015 / averageHoursPerMonth,
+			wantOnDemand:   0.02 / common.HoursPerMonth,
+			wantCommitment: 0.015 / common.HoursPerMonth,
 		},
 		{
 			name: "region-less SKU alone yields no price",
@@ -69,7 +70,7 @@ func TestExtractStoragePricing_RegionAndAmbiguity(t *testing.T) {
 				storageSKU("od-a", "Standard Storage Netherlands", "OnDemand", here, 20000000),
 				storageSKU("od-b", "Standard Storage Netherlands", "OnDemand", here, 20000000),
 			},
-			wantOnDemand: 0.02 / averageHoursPerMonth,
+			wantOnDemand: 0.02 / common.HoursPerMonth,
 		},
 	}
 	for _, tt := range tests {
