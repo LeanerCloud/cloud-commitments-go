@@ -49,7 +49,9 @@ func minAllocatableGap() *big.Rat {
 // mixed. It is required non-nil (fail loud): callers must always explicitly
 // account for in-flight commitment; pass an empty non-nil slice for none.
 // Subtracting in-flight from the gap prevents new runs from re-planning
-// commitment that is already scheduled.
+// commitment that is already scheduled. For a residual baseline InFlight
+// must also cover active commitment not yet reflected in the observed series
+// (see BaselineBasis).
 //
 // CommitmentRates holds, per layer, the commitment dollars needed per OD
 // dollar covered for a NEW purchase (in (0, 1]). It is required non-nil and
@@ -140,9 +142,12 @@ func (r *AllocateResult) IsNoOp() bool {
 //     mask it. Reshape detection needs only valid layer states.
 //  3. Nil baseline -> Hold (explainable no-op, not an error), plus any
 //     buffer maintenance from step 2.
-//  4. Compute net existing per layer; derive gap.
+//  4. Compute net existing per layer; derive gap (existing is not subtracted
+//     from a residual baseline, which already excludes it; see BaselineBasis).
 //  5. Gap <= minimum threshold -> Hold with numbers in rationale, plus any
 //     buffer maintenance from step 2.
+//     A residual baseline with a partial target and existing commitment is
+//     held (the gap needs the covered usage the residual excludes).
 //  6. Split the OD gap across base, flex, and buffer roles, then convert each
 //     allocation to commitment dollars with its layer's rate (a layer without
 //     a rate is held, never bought 1:1).
@@ -192,7 +197,10 @@ func allocate(in *AllocationInput, nets map[LayerType]*big.Rat, existingTotal *b
 	if err != nil {
 		return nil, err
 	}
-	// gap = min(target-E, lowWater-E) - inFlight.
+	// gap = min(target-E, lowWater-E) - inFlight, where E is zero for a
+	// residual baseline: its series already excludes existing coverage, so
+	// subtracting E again would under-buy and falsely report the target met
+	// (go#282; see BaselineBasis).
 	// The two-arm min is defensive: it guards against future target derivations
 	// exceeding the observed floor (today target<=lowWater always holds because
 	// TargetCoveragePct is validated to be <=100). Subtracting inFlight nets
@@ -201,12 +209,16 @@ func allocate(in *AllocationInput, nets map[LayerType]*big.Rat, existingTotal *b
 	// Only scheduled (not-yet-fired) tranches are netted here; fired tranches
 	// are already reflected in existingTotal (E), so netting them too would
 	// double-count and under-commit.
-	preInflightGap := minRat(new(big.Rat).Sub(target, existingTotal), new(big.Rat).Sub(lowWater, existingTotal))
+	gapExisting, gapNets := existingForBasis(in.Baseline.Basis, nets, existingTotal)
+	preInflightGap := minRat(new(big.Rat).Sub(target, gapExisting), new(big.Rat).Sub(lowWater, gapExisting))
 	gap := new(big.Rat).Sub(preInflightGap, inFlight)
 	if gap.Cmp(minAllocatableGap()) <= 0 {
 		return withMaintenance(gapBelowMinHold(gap, lowWater, target, existingTotal, inFlight, in), reshapes, maintHolds), nil
 	}
-	return buildResult(in, lowWater, target, existingTotal, gap, nets, inFlightByLayer, rates, reshapes, maintHolds)
+	if hold := residualPartialTargetHold(in, lowWater, gap); hold != nil {
+		return withMaintenance(hold, reshapes, maintHolds), nil
+	}
+	return buildResult(in, lowWater, target, existingTotal, gap, gapNets, inFlightByLayer, rates, reshapes, maintHolds)
 }
 
 // withMaintenance merges independently detected buffer maintenance actions
@@ -261,6 +273,9 @@ func validateAllocateInput(in *AllocationInput) error {
 	}
 	if err := in.Config.Validate(); err != nil {
 		return fmt.Errorf("config: %w", err)
+	}
+	if err := in.Baseline.Basis.Validate(); err != nil {
+		return fmt.Errorf("baseline: %w", err)
 	}
 	if len(in.Layers) == 0 {
 		return fmt.Errorf("layers must not be empty")
@@ -501,9 +516,9 @@ func baselineUnavailableHold(in *AllocationInput) *AllocateResult {
 func gapBelowMinHold(gap, lowWater, target, existingTotal, inFlight *big.Rat, in *AllocationInput) *AllocateResult {
 	flexLayer, _ := findLayerForRole(in.Layers, RoleFlex)
 	rationale := fmt.Sprintf(
-		"target already met: low_water=%s, target=%.2f%%, existing=%s, in_flight=%s, target_od=%s, gap=%s <= min_allocatable=%s",
+		"target already met: low_water=%s, target=%.2f%%, existing=%s, in_flight=%s, target_od=%s, gap=%s <= min_allocatable=%s%s",
 		fmtRatUSD(lowWater), in.Config.TargetCoveragePct, fmtRatUSD(existingTotal), fmtRatUSD(inFlight),
-		fmtRatUSD(target), fmtRatUSD(gap), fmtRatUSD(minAllocatableGap()),
+		fmtRatUSD(target), fmtRatUSD(gap), fmtRatUSD(minAllocatableGap()), basisNote(in.Baseline.Basis),
 	)
 	return &AllocateResult{
 		Holds: []PlannedAction{
@@ -728,6 +743,7 @@ func splitGap(in *AllocationInput, gap *big.Rat, nets, inFlight map[LayerType]*b
 		existing:    existingTotal,
 		gap:         gap,
 		baseNote:    baseNote,
+		basisNote:   basisNote(in.Baseline.Basis),
 		dataSources: in.DataSources,
 		cfg:         in.Config,
 	}
@@ -742,6 +758,7 @@ type allocationContext struct {
 	existing    *big.Rat
 	gap         *big.Rat
 	baseNote    string
+	basisNote   string
 	dataSources []string
 	cfg         LadderConfig
 }
@@ -832,7 +849,7 @@ func mkAllocation(ctx *allocationContext, layer LayerType, layerGap *big.Rat, ro
 		detail = "; " + extraNote
 	}
 	rationale := fmt.Sprintf(
-		"%s layer: low_water=%s, target=%.2f%%, existing=%s, target_od=%s, total_gap=%s, %s_gap=%s, buffer_fraction=%.2f%s",
+		"%s layer: low_water=%s, target=%.2f%%, existing=%s, target_od=%s, total_gap=%s, %s_gap=%s, buffer_fraction=%.2f%s%s",
 		role,
 		fmtRatUSD(ctx.lowWater),
 		ctx.cfg.TargetCoveragePct,
@@ -843,6 +860,7 @@ func mkAllocation(ctx *allocationContext, layer LayerType, layerGap *big.Rat, ro
 		fmtRatUSD(layerGap),
 		ctx.cfg.BufferFraction,
 		detail,
+		ctx.basisNote,
 	)
 	return Allocation{
 		Layer:                        layer,

@@ -53,7 +53,8 @@ func TestGetExistingCommitments_SDKPaginationCompleteness(t *testing.T) {
 						if ambiguous {
 							scope = "/providers/Microsoft.Billing/billingAccounts/ba-1"
 						}
-						_, err := fmt.Fprintf(w, `{"value":[{"id":"second","properties":{"billingScopeId":%q,"appliedScopeType":"Shared"}}]}`, scope)
+						_, err := fmt.Fprintf(w, `{"value":[{"id":"second","sku":{"name":"Compute_Savings_Plan"},"properties":{"billingScopeId":%q,"appliedScopeType":"Shared","effectiveDateTime":%q}}]}`,
+							scope, time.Now().UTC().Format(time.RFC3339))
 						assert.NoError(t, err)
 					default:
 						t.Errorf("unexpected page: %s", r.URL.RawQuery)

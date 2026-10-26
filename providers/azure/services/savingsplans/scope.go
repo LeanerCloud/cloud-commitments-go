@@ -1,19 +1,23 @@
 package savingsplans
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"unicode"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/billingbenefits/armbillingbenefits"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 type planDisposition int
 
 const (
-	planNotOurs       planDisposition = iota // billed to another subscription
-	planOwned                                // belongs in this subscription's inventory
-	planSkippedSingle                        // account-billed Single plan applied to another subscription
+	planNotOurs           planDisposition = iota // unresolved; returned only with an error
+	planOwned                                    // belongs in this subscription's inventory
+	planSkippedSingle                            // account-billed Single plan applied to another subscription
+	planOtherSubscription                        // billed to another subscription; may still apply to this one
 )
 
 const billingAccountPrefix = "/providers/Microsoft.Billing/billingAccounts/"
@@ -41,7 +45,7 @@ func subscriptionBilledPlan(sp *armbillingbenefits.SavingsPlanModel, billingScop
 		return planNotOurs, fmt.Errorf("malformed billing subscription scope")
 	}
 	if !strings.EqualFold(billingScope, subscriptionScopePrefix+ownSub) {
-		return planNotOurs, nil
+		return planOtherSubscription, nil
 	}
 	return ownedWithID(sp)
 }
@@ -53,9 +57,48 @@ func ownedWithID(sp *armbillingbenefits.SavingsPlanModel) (planDisposition, erro
 	return planOwned, nil
 }
 
+// GetCoveringCommitments returns GetExistingCommitments plus the plans billed
+// to another subscription that may apply to this one, for the duplicate check
+// only (#466). Account stays the payer, so such a plan is still owned only by
+// the subscription that pays for it.
+func (c *Client) GetCoveringCommitments(ctx context.Context) ([]common.Commitment, error) {
+	return c.listCommitments(ctx, true)
+}
+
+// appendCoveringForeignPlan appends a plan billed to another subscription
+// unless it provably cannot cover ownSub.
+func appendCoveringForeignPlan(dst []common.Commitment, sp *armbillingbenefits.SavingsPlanModel, ownSub string) ([]common.Commitment, error) {
+	if !foreignPlanMayCover(sp.Properties, ownSub) {
+		return dst, nil
+	}
+	if _, err := ownedWithID(sp); err != nil {
+		return nil, fmt.Errorf("covering savings plan has no ID")
+	}
+	payer := (*sp.Properties.BillingScopeID)[len(subscriptionScopePrefix):]
+	commitment, err := convertSavingsPlan(sp, payer)
+	if err != nil {
+		return nil, err
+	}
+	return append(dst, *commitment), nil
+}
+
+// foreignPlanMayCover reports whether a plan billed to another subscription
+// may apply to ownSub. Only a Single scope that resolves to a different
+// subscription rules it out. Shared and management-group scopes cover
+// subscriptions this client cannot enumerate, so like unknown or unresolvable
+// scopes they count as covering: skipping a purchase is recoverable, a
+// duplicate commitment is not.
+func foreignPlanMayCover(props *armbillingbenefits.SavingsPlanModelProperties, ownSub string) bool {
+	if props.AppliedScopeType == nil || *props.AppliedScopeType != armbillingbenefits.AppliedScopeTypeSingle {
+		return true
+	}
+	applied, err := singleScopeSubscription(props.AppliedScopeProperties)
+	return err != nil || strings.EqualFold(applied, ownSub)
+}
+
 // accountBilledPlan attributes a Single plan to the subscription it names,
 // because no subscription pays for it. Plans billed to another subscription
-// but applied to this one are tracked in #466 and are not handled here.
+// but applied to this one are handled by GetCoveringCommitments.
 func accountBilledPlan(sp *armbillingbenefits.SavingsPlanModel, ownSub string) (planDisposition, error) {
 	if sp.Properties.AppliedScopeType == nil || *sp.Properties.AppliedScopeType != armbillingbenefits.AppliedScopeTypeSingle {
 		return planNotOurs, fmt.Errorf("billing-account plan is not single-subscription scoped")

@@ -44,7 +44,9 @@ type LadderCapability interface {
 	GetLayerStates(ctx context.Context, scope Scope) (map[LayerType]LayerState, error)
 
 	// GetUsageBaseline computes a statistical baseline from historical
-	// on-demand usage over the given lookback window and percentile.
+	// on-demand usage over the given lookback window and percentile. A
+	// provider whose series counts only usage left uncovered by existing
+	// commitments must set Basis to BaselineBasisResidual.
 	GetUsageBaseline(ctx context.Context, scope Scope, lookbackDays int, percentile float64) (UsageBaseline, error)
 
 	// PurchaseLayer buys commitments for the given layer using the provided
