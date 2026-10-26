@@ -140,6 +140,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- GCP reports the recommendations it skips. Compute Engine recommendations
+  dropped for a non-USD amount, a malformed amount or an unrecognized term are
+  now returned as a partial-result error (`Partial() bool`) alongside the
+  recommendations that succeeded, mirroring Azure, instead of only being logged.
 - **GCP: one strict commitment term parser** (#15). Compute Engine now uses
   `skumatch.TermYears` like Cloud SQL, Memorystore and Cloud Storage; it accepts
   `1yr`/`1`/`12mo`/`3yr`/`3`/`36mo` case-insensitively. An unrecognized term

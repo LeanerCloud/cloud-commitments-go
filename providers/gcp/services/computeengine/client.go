@@ -30,6 +30,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/retry"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/recskip"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skulist"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skumatch"
 )
@@ -460,14 +461,15 @@ func (c *Client) GetRecommendations(ctx context.Context, p *common.Recommendatio
 	}
 }
 
-// convertOrSkipBadAmount converts rec, returning nil with a logged warning when
-// its amount is malformed so one bad row does not discard the rest of the
+// convertOrSkipBadAmount converts rec, returning nil with a logged and recorded
+// skip (see recskip) when its amount is malformed so one bad row does not
+// discard the rest of the
 // project's recommendations (same policy as the AWS and Azure paths).
 // Structural payload errors are still returned and abort the batch.
 func (c *Client) convertOrSkipBadAmount(ctx context.Context, rec *recommenderpb.Recommendation, params common.RecommendationParams) (*common.Recommendation, error) {
 	converted, err := c.convertGCPRecommendation(ctx, rec, params)
 	if errors.Is(err, errBadAmount) || errors.Is(err, errBadPlan) {
-		log.Printf("computeengine: skipping recommendation %q: %v", rec.GetName(), err)
+		recskip.Record(ctx, "computeengine "+c.region, fmt.Errorf("recommendation %q: %w", rec.GetName(), err))
 		return nil, nil
 	}
 	return converted, err
@@ -1022,7 +1024,7 @@ func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommend
 		log.Printf("computeengine: EXPERIMENTAL plan-term path: term %q for %q; root plan payload shape is unverified", term, gcpRec.GetName())
 	}
 	if _, err := termPlan(term); err != nil {
-		log.Printf("computeengine: skipping recommendation with unrecognized term %q: %v", term, err)
+		recskip.Record(ctx, "computeengine "+c.region, fmt.Errorf("recommendation %q has unrecognized term %q: %w", gcpRec.GetName(), term, err))
 		return nil, nil
 	}
 

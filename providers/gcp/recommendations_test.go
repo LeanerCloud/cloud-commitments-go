@@ -26,6 +26,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/recskip"
 )
 
 func TestShouldIncludeService(t *testing.T) {
@@ -488,4 +489,42 @@ func TestGetRecommendations_RegionLookupErrorClassification(t *testing.T) {
 			assert.Empty(t, recs)
 		})
 	}
+}
+
+func TestWithSkips(t *testing.T) {
+	t.Parallel()
+	recs := []common.Recommendation{{Region: "us-central1"}}
+	newLog := func(reasons ...string) *recskip.Log {
+		ctx, l := recskip.WithLog(context.Background())
+		for _, r := range reasons {
+			recskip.Record(ctx, "computeengine us-central1", errors.New(r))
+		}
+		return l
+	}
+	t.Run("no skips returns a nil error", func(t *testing.T) {
+		t.Parallel()
+		got, err := withSkips(recs, nil, newLog())
+		require.NoError(t, err)
+		assert.Equal(t, recs, got)
+	})
+	t.Run("skips return the recs with a partial error listing every reason", func(t *testing.T) {
+		t.Parallel()
+		got, err := withSkips(recs, nil, newLog("non-USD amount", "malformed amount"))
+		assert.Equal(t, recs, got)
+		var p interface{ Partial() bool }
+		require.ErrorAs(t, err, &p)
+		assert.True(t, p.Partial())
+		assert.Contains(t, err.Error(), "2 recommendation(s) skipped")
+		assert.Contains(t, err.Error(), "non-USD amount")
+		assert.Contains(t, err.Error(), "malformed amount")
+	})
+	t.Run("a hard error wins over skips", func(t *testing.T) {
+		t.Parallel()
+		hard := errors.New("quota exceeded")
+		got, err := withSkips(recs, hard, newLog("non-USD amount"))
+		assert.Nil(t, got)
+		require.ErrorIs(t, err, hard)
+		var p interface{ Partial() bool }
+		assert.False(t, errors.As(err, &p))
+	})
 }

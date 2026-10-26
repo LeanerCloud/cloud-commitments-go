@@ -16,6 +16,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/recskip"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/services/cloudsql"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/services/cloudstorage"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/services/computeengine"
@@ -120,6 +121,8 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 		return r.collectUnsupportedRecs(ctx, params)
 	}
 
+	ctx, skips := recskip.WithLog(ctx)
+
 	// Get list of regions to check
 	regions, err := r.getRegions(ctx)
 	if err != nil {
@@ -177,7 +180,23 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 	}
 	sort.Strings(sortedRegions)
 
-	return mergeRegionResults(sortedRegions, results)
+	merged, mergeErr := mergeRegionResults(sortedRegions, results)
+	return withSkips(merged, mergeErr, skips)
+}
+
+// withSkips attaches the recommendations the collection dropped (non-USD
+// currency, malformed amount, unrecognized term) to a merge result as a
+// *recskip.PartialResultError returned alongside the recommendations that did
+// succeed. A hard error wins and returns no recommendations, as before.
+func withSkips(recs []common.Recommendation, err error, skips *recskip.Log) ([]common.Recommendation, error) {
+	if err != nil {
+		return nil, err
+	}
+	if skipped := skips.Entries(); len(skipped) > 0 {
+		sort.Strings(skipped)
+		return recs, &recskip.PartialResultError{Skipped: skipped}
+	}
+	return recs, nil
 }
 
 // mergeRegionResults appends each region's recommendations in the

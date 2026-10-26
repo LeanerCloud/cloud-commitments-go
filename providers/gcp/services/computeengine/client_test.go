@@ -30,6 +30,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/scorer"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/recskip"
 )
 
 func TestRootCUDTypeValidationAndFallback(t *testing.T) {
@@ -2613,4 +2614,28 @@ func TestIdempotentCommitmentName_TruncatesFullDigest(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, name, 36)
 	assert.True(t, strings.HasPrefix(name, "cud-"))
+}
+
+func TestGetRecommendations_RecordsSkippedRecommendations(t *testing.T) {
+	t.Parallel()
+	eur := badAmountRecommendation("non-usd", "4", "6144")
+	eur.PrimaryImpact.GetCostProjection().Cost.CurrencyCode = "EUR"
+	client, _ := NewClient("test-project", "us-central1")
+	client.SetRecommenderClient(&MockRecommenderClient{iterator: &MockRecommenderIterator{
+		recommendations: []*recommenderpb.Recommendation{
+			badAmountRecommendation("good", "4", "6144"),
+			eur,
+			badAmountRecommendation("malformed", "abc", "6144"),
+		},
+	}})
+	ctx, skips := recskip.WithLog(context.Background())
+
+	recs, err := client.GetRecommendations(ctx, &common.RecommendationParams{})
+	require.NoError(t, err)
+	require.Len(t, recs, 1)
+	entries := skips.Entries()
+	require.Len(t, entries, 2)
+	assert.Contains(t, strings.Join(entries, "\n"), `"non-usd"`)
+	assert.Contains(t, strings.Join(entries, "\n"), "EUR")
+	assert.Contains(t, strings.Join(entries, "\n"), `"malformed"`)
 }
