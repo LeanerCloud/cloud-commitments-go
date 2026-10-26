@@ -55,6 +55,19 @@ func TestGetRecommendations_NonUSDSkipIsSurfaced(t *testing.T) {
 	require.True(t, errors.As(err, &partial))
 	assert.Len(t, partial.Skipped, 1)
 
+	var typed interface {
+		Partial() bool
+		SkippedCount() int
+		SkipReasons() []string
+	}
+	require.True(t, errors.As(err, &typed))
+	reasons := typed.SkipReasons()
+	assert.Equal(t, 1, typed.SkippedCount())
+	assert.Len(t, reasons, typed.SkippedCount())
+	assert.Contains(t, reasons[0], "EUR")
+	reasons[0] = "mutated"
+	assert.Contains(t, typed.SkipReasons()[0], "EUR", "SkipReasons must return a copy")
+
 	recs, err = run(usd)
 	require.NoError(t, err)
 	assert.Len(t, recs, 1)

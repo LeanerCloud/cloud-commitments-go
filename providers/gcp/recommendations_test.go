@@ -582,4 +582,17 @@ func TestGetRecommendations_ReportsSkippedRecommendationAsPartial(t *testing.T) 
 	assert.Contains(t, err.Error(), "1 recommendation(s) skipped")
 	assert.Contains(t, err.Error(), "EUR")
 	assert.Contains(t, err.Error(), "eur-rec")
+
+	var typed interface {
+		Partial() bool
+		SkippedCount() int
+		SkipReasons() []string
+	}
+	require.ErrorAs(t, err, &typed)
+	reasons := typed.SkipReasons()
+	assert.Equal(t, 1, typed.SkippedCount())
+	assert.Len(t, reasons, typed.SkippedCount())
+	assert.Contains(t, reasons[0], "eur-rec")
+	reasons[0] = "mutated"
+	assert.Contains(t, typed.SkipReasons()[0], "eur-rec", "SkipReasons must return a copy")
 }

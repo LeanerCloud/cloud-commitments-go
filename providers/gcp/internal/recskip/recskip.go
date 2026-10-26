@@ -55,6 +55,13 @@ type PartialResultError struct {
 // cross-provider partial-result check matches on this method.
 func (e *PartialResultError) Partial() bool { return true }
 
+// SkippedCount returns the number of skipped recommendations, so callers can
+// match an interface instead of parsing the message.
+func (e *PartialResultError) SkippedCount() int { return len(e.Skipped) }
+
+// SkipReasons returns a copy of the per-recommendation skip reasons.
+func (e *PartialResultError) SkipReasons() []string { return append([]string(nil), e.Skipped...) }
+
 func (e *PartialResultError) Error() string {
 	return fmt.Sprintf("gcp recommendations: %d recommendation(s) skipped: %s", len(e.Skipped), strings.Join(e.Skipped, "; "))
 }
