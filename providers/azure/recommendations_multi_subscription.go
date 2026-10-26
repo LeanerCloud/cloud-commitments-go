@@ -96,7 +96,9 @@ func AsPartialResult(err error) *PartialResultError {
 // than a partial result, which is why the successful data is still returned.
 type PartialSubscriptionFailureError struct {
 	// skipped holds the recommendations other, reachable subscriptions
-	// dropped, so a mixed sweep does not lose them. Exposed through Unwrap.
+	// dropped, so a mixed sweep does not lose them. Exposed through Skips() and
+	// deliberately not through Unwrap, so a failure can never match a partial-result
+	// check.
 	skipped *PartialResultError
 
 	// Failed carries every subscription that errored, with its cause.
