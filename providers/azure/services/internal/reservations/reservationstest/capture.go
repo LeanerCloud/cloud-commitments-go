@@ -75,7 +75,7 @@ func (c *Capture) Do(req *http.Request) (*http.Response, error) {
 		payload = `{"registrationState":"Registered"}`
 	case strings.HasSuffix(req.URL.Path, "/calculatePrice"):
 		c.BodyBytes = reqBody
-		payload = `{"properties":{"reservationOrderId":"captured-order"}}`
+		payload = `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"captured-order"}}`
 	}
 	return &http.Response{
 		StatusCode: http.StatusOK,

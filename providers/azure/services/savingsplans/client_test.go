@@ -789,6 +789,7 @@ func TestAzureSavingsPlanState(t *testing.T) {
 func currencyRec(currency string) common.Recommendation {
 	rec := makeRec("1yr")
 	rec.Details = &common.SavingsPlanDetails{PlanType: "Compute", HourlyCommitment: 12, Currency: currency}
+	rec.CommitmentCurrency = currency
 	return rec
 }
 
@@ -854,4 +855,43 @@ func TestFetchOnDemandRate_RejectsInjectedPlanType(t *testing.T) {
 	_, err := c.fetchOnDemandRate(context.Background(), "x' or armSkuName ne '")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Retail Prices filter")
+}
+
+func TestPurchaseCommitment_RecommendationCurrencyCheck(t *testing.T) {
+	t.Parallel()
+	orderID := "/subscriptions/sub/providers/Microsoft.BillingBenefits/savingsPlanOrders/order1"
+	resp := armbillingbenefits.SavingsPlanOrderAliasClientCreateResponse{
+		SavingsPlanOrderAliasModel: armbillingbenefits.SavingsPlanOrderAliasModel{ID: &orderID},
+	}
+	tests := []struct {
+		name, recCurrency, detailsCurrency string
+		wantErr                            bool
+	}{
+		{name: "empty and USD buys", recCurrency: "", detailsCurrency: "USD"},
+		{name: "empty and EUR refuses", recCurrency: "", detailsCurrency: "EUR", wantErr: true},
+		{name: "match", recCurrency: "USD", detailsCurrency: "USD"},
+		{name: "match ignoring case", recCurrency: "eur", detailsCurrency: "EUR"},
+		{name: "mismatch refuses", recCurrency: "USD", detailsCurrency: "EUR", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			alias := &mockOrderAliasClient{createPoller: &mockPoller{resp: resp}}
+			c := NewClient(nil, "sub", "eastus")
+			c.SetOrderAliasClient(alias)
+			rec := currencyRec(tt.detailsCurrency)
+			rec.CommitmentCurrency = tt.recCurrency
+
+			result, err := c.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "refusing to purchase")
+				assert.False(t, result.Success)
+				assert.Zero(t, alias.calls, "no order alias PUT")
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, 1, alias.calls)
+		})
+	}
 }

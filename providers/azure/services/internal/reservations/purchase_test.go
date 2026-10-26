@@ -75,7 +75,7 @@ func TestDoPurchaseTwoStep_HappyPath(t *testing.T) {
 	ctx := context.Background()
 
 	// calculatePrice returns a valid order ID.
-	calcResp := `{"properties":{"reservationOrderId":"azure-order-abc123","paymentSchedule":{}}}`
+	calcResp := `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"azure-order-abc123","paymentSchedule":{}}}`
 	calculateResp1 := fakeResp(http.StatusOK, calcResp)
 	calcBody := &closeTrackingBody{ReadCloser: calculateResp1.Body}
 	calculateResp1.Body = calcBody
@@ -111,7 +111,7 @@ func TestDoPurchaseTwoStep_PurchaseAccepted(t *testing.T) {
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
-	calcResp := `{"properties":{"reservationOrderId":"order-202"}}`
+	calcResp := `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"order-202"}}`
 	calculateResp3 := fakeResp(http.StatusOK, calcResp)
 	t.Cleanup(func() {
 		require.NoError(t, calculateResp3.Body.Close())
@@ -144,7 +144,7 @@ func TestDoPurchaseTwoStep_SessionTimeoutThenSuccess(t *testing.T) {
 	sessionTimeoutBody := `{"error":{"code":"BadRequest","message":"Session timed out - Call CalculatePrice again and provide the new Reservation Order ID for purchase"}}`
 
 	// First calculatePrice call -- returns order ID "order-first".
-	retryResp5 := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"order-first"}}`)
+	retryResp5 := fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"order-first"}}`)
 	firstCalculateBody := &closeTrackingBody{ReadCloser: retryResp5.Body}
 	retryResp5.Body = firstCalculateBody
 	t.Cleanup(func() {
@@ -166,7 +166,7 @@ func TestDoPurchaseTwoStep_SessionTimeoutThenSuccess(t *testing.T) {
 	})).Return(retryResp6, nil).Once()
 
 	// Second calculatePrice call -- returns order ID "order-second".
-	retryResp7 := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"order-second"}}`)
+	retryResp7 := fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"order-second"}}`)
 	secondCalculateBody := &closeTrackingBody{ReadCloser: retryResp7.Body}
 	retryResp7.Body = secondCalculateBody
 	t.Cleanup(func() {
@@ -227,7 +227,7 @@ func TestDoPurchaseTwoStep_PurchaseNonTimeoutFailure(t *testing.T) {
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
-	calculateResp10 := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"ord-x"}}`)
+	calculateResp10 := fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"ord-x"}}`)
 	t.Cleanup(func() {
 		require.NoError(t, calculateResp10.Body.Close())
 	})
@@ -272,7 +272,7 @@ func TestDoPurchaseTwoStep_PurchaseHTTPError(t *testing.T) {
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
-	calculateResp12 := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"ord-y"}}`)
+	calculateResp12 := fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"ord-y"}}`)
 	t.Cleanup(func() {
 		require.NoError(t, calculateResp12.Body.Close())
 	})
@@ -296,7 +296,7 @@ func TestDoPurchaseTwoStep_EmptyOrderID(t *testing.T) {
 	m := &mockHTTPClient{}
 	ctx := context.Background()
 
-	calculateResp13 := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":""}}`)
+	calculateResp13 := fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":""}}`)
 	calculateBody := &closeTrackingBody{ReadCloser: calculateResp13.Body}
 	calculateResp13.Body = calculateBody
 	t.Cleanup(func() {
@@ -651,7 +651,7 @@ func TestDoIdempotentPurchaseTwoStep_UnrecognizedState_DoesNotPurchase(t *testin
 		return r.Method == http.MethodGet && r.URL.String() == listURL
 	})).Return(resp, nil).Once()
 
-	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), m, calcURL, []byte(testBody), "tok", "redrive-tok")
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), m, calcURL, []byte(testBody), "tok", "redrive-tok", "")
 	require.ErrorIs(t, err, ErrReservationOrderBlocked)
 	assert.False(t, existing)
 	assert.Empty(t, orderID)
@@ -707,7 +707,7 @@ func TestDoIdempotentPurchaseTwoStep_BillingFailed_NeitherAdoptsNorPurchases(t *
 		return r.Method == http.MethodGet && r.URL.String() == listURL
 	})).Return(resp, nil).Once()
 
-	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), m, calcURL, []byte(testBody), "tok", "redrive-tok")
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), m, calcURL, []byte(testBody), "tok", "redrive-tok", "")
 	require.ErrorIs(t, err, ErrReservationOrderBlocked)
 	assert.False(t, existing)
 	assert.Empty(t, orderID)
@@ -845,7 +845,7 @@ func TestDoIdempotentPurchaseTwoStep_EmptyToken_NoLookup(t *testing.T) {
 	ctx := context.Background()
 
 	// Only the standard calculatePrice + purchase calls -- no list call.
-	calculateResp21 := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"order-no-tok"}}`)
+	calculateResp21 := fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"order-no-tok"}}`)
 	t.Cleanup(func() {
 		require.NoError(t, calculateResp21.Body.Close())
 	})
@@ -860,7 +860,7 @@ func TestDoIdempotentPurchaseTwoStep_EmptyToken_NoLookup(t *testing.T) {
 		return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/order-no-tok/purchase"
 	})).Return(purchaseResp22, nil).Once()
 
-	orderID, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "")
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "", "")
 	require.NoError(t, err)
 	assert.False(t, existing)
 	assert.Equal(t, "order-no-tok", orderID)
@@ -887,7 +887,7 @@ func TestDoIdempotentPurchaseTwoStep_NoMatch_FallsThroughToPurchase(t *testing.T
 		return r.Method == http.MethodGet && r.URL.String() == listURL
 	})).Return(lookupResp23, nil).Once()
 	// Step 2: calculatePrice.
-	calculateResp24 := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"order-fresh"}}`)
+	calculateResp24 := fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"order-fresh"}}`)
 	t.Cleanup(func() {
 		require.NoError(t, calculateResp24.Body.Close())
 	})
@@ -903,7 +903,7 @@ func TestDoIdempotentPurchaseTwoStep_NoMatch_FallsThroughToPurchase(t *testing.T
 		return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/order-fresh/purchase"
 	})).Return(purchaseResp25, nil).Once()
 
-	orderID, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "fresh-tok-1")
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "fresh-tok-1", "")
 	require.NoError(t, err)
 	assert.False(t, existing, "a fresh purchase is not an existing commitment")
 	assert.Equal(t, "order-fresh", orderID)
@@ -936,7 +936,7 @@ func TestDoIdempotentPurchaseTwoStep_Match_ShortCircuits(t *testing.T) {
 		return r.Method == http.MethodGet && r.URL.String() == listURL
 	})).Return(lookupResp26, nil).Once()
 
-	orderID, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "redrive-tok")
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "redrive-tok", "")
 	require.NoError(t, err)
 	assert.True(t, existing, "a tagged order was adopted, so this is an existing commitment")
 	assert.Equal(t, "order-already-bought", orderID)
@@ -965,7 +965,7 @@ func TestDoIdempotentPurchaseTwoStep_LookupFailure_DoesNotPurchase(t *testing.T)
 		return r.Method == http.MethodGet
 	})).Return(lookupResp27, nil).Once()
 
-	_, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "tok-failing")
+	_, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "tok-failing", "")
 	require.Error(t, err)
 	assert.False(t, existing, "a failed lookup must not be reported as an adoption")
 	assert.Contains(t, err.Error(), "idempotency lookup failed")
@@ -1001,7 +1001,7 @@ func TestDoIdempotentPurchaseTwoStep_DifferentTokens_DistinctReservations(t *tes
 			return r.Method == http.MethodGet && r.URL.String() == listURL
 		})).Return(lookupResp28, nil).Once()
 		// calculatePrice mints the order ID.
-		calculateResp29 := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"`+mintedOrderID+`"}}`)
+		calculateResp29 := fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"`+mintedOrderID+`"}}`)
 		t.Cleanup(func() {
 			require.NoError(t, calculateResp29.Body.Close())
 		})
@@ -1017,7 +1017,7 @@ func TestDoIdempotentPurchaseTwoStep_DifferentTokens_DistinctReservations(t *tes
 			return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/"+mintedOrderID+"/purchase"
 		})).Return(purchaseResp30, nil).Once()
 
-		got, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", idemTok)
+		got, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", idemTok, "")
 		require.NoError(t, err)
 		assert.False(t, existing)
 		m.AssertExpectations(t)
@@ -1064,7 +1064,7 @@ func TestDoIdempotentPurchaseTwoStep_PreservesTwoStepFlow(t *testing.T) {
 		})).Return(lookupResp31, nil).Once()
 	}
 	// calculatePrice #1.
-	calculateResp32 := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"first"}}`)
+	calculateResp32 := fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"first"}}`)
 	t.Cleanup(func() {
 		require.NoError(t, calculateResp32.Body.Close())
 	})
@@ -1080,7 +1080,7 @@ func TestDoIdempotentPurchaseTwoStep_PreservesTwoStepFlow(t *testing.T) {
 		return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/first/purchase"
 	})).Return(purchaseResp33, nil).Once()
 	// calculatePrice #2 (retry).
-	calculateResp34 := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"second"}}`)
+	calculateResp34 := fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"second"}}`)
 	t.Cleanup(func() {
 		require.NoError(t, calculateResp34.Body.Close())
 	})
@@ -1096,7 +1096,7 @@ func TestDoIdempotentPurchaseTwoStep_PreservesTwoStepFlow(t *testing.T) {
 		return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/second/purchase"
 	})).Return(purchaseResp35, nil).Once()
 
-	orderID, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "retry-tok")
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "retry-tok", "")
 	require.NoError(t, err)
 	assert.False(t, existing)
 	assert.Equal(t, "second", orderID)
@@ -1325,7 +1325,7 @@ func (c *countingPurchaseClient) Do(req *http.Request) (*http.Response, error) {
 		c.purchases++
 		return c.purchaseResp(), nil
 	}
-	return fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"order-1"}}`), nil
+	return fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"order-1"}}`), nil
 }
 
 // TestDoPurchaseTwoStep_TruncatedSessionTimeoutStillRetries is the regression
@@ -1476,7 +1476,7 @@ func (c *idempotencyRetryClient) Do(req *http.Request) (*http.Response, error) {
 		return c.listResp(c.lists)
 	case req.URL.String() == calcURL:
 		c.calcs++
-		return fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"order-`+itoa(c.calcs)+`"}}`), nil
+		return fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"order-`+itoa(c.calcs)+`"}}`), nil
 	default:
 		c.purchases++
 		return c.purchase(c.purchases), nil
@@ -1520,7 +1520,7 @@ func TestPurchaseRetry_DoesNotDoubleBuyWhenFirstAttemptCommitted(t *testing.T) {
 		purchase: func(int) *http.Response { return fakeResp(http.StatusBadRequest, sessionTimeout) },
 	}
 
-	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token)
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token, "")
 	require.NoError(t, err, "the committed order must be adopted, not treated as a failure")
 	assert.True(t, existing, "adopting an order the first attempt committed is an existing commitment")
 	assert.Equal(t, "committed-order", orderID)
@@ -1552,7 +1552,7 @@ func TestPurchaseRetry_StillRecoversWhenFirstAttemptGenuinelyFailed(t *testing.T
 		},
 	}
 
-	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token)
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token, "")
 	require.NoError(t, err, "a genuine session timeout must still be recovered by the retry")
 	assert.False(t, existing, "a retry that purchased after a genuine failure is a fresh purchase")
 	assert.Equal(t, "order-2", orderID, "the second attempt's freshly minted order ID must be returned")
@@ -1579,7 +1579,7 @@ func TestPurchaseRetry_RefusesRetryWhenRecheckLookupFails(t *testing.T) {
 		purchase: func(int) *http.Response { return fakeResp(http.StatusBadRequest, sessionTimeout) },
 	}
 
-	_, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token)
+	_, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token, "")
 	require.Error(t, err)
 	assert.False(t, existing, "a refused re-check is a failure, not an adoption")
 	assert.Contains(t, err.Error(), "refusing to retry",
@@ -1615,7 +1615,7 @@ func TestPurchaseRetry_RefusesRetryWhenRecheckFindsBillingFailedOrder(t *testing
 		purchase: func(int) *http.Response { return fakeResp(http.StatusBadRequest, sessionTimeout) },
 	}
 
-	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token)
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token, "")
 	require.ErrorIs(t, err, ErrReservationOrderBlocked)
 	assert.Contains(t, err.Error(), "order-bf")
 	assert.Contains(t, err.Error(), "BillingFailed")
@@ -1630,7 +1630,7 @@ func TestDoIdempotentPurchaseTwoStep_PurchaseFailure_NotFlagged(t *testing.T) {
 	t.Parallel()
 	m := &mockHTTPClient{}
 	lookup := fakeResp(http.StatusOK, `{"value":[]}`)
-	calc := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"order-x"}}`)
+	calc := fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"order-x"}}`)
 	purchase := fakeResp(http.StatusInternalServerError, `{}`)
 	t.Cleanup(func() {
 		require.NoError(t, lookup.Body.Close())
@@ -1647,7 +1647,7 @@ func TestDoIdempotentPurchaseTwoStep_PurchaseFailure_NotFlagged(t *testing.T) {
 		return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/order-x/purchase"
 	})).Return(purchase, nil).Once()
 
-	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), m, calcURL, []byte(testBody), "tok", "fail-tok")
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), m, calcURL, []byte(testBody), "tok", "fail-tok", "")
 	require.Error(t, err)
 	assert.Empty(t, orderID)
 	assert.False(t, existing)

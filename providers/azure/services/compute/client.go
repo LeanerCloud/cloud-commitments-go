@@ -524,7 +524,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	// Ensure Microsoft.Capacity provider is registered (cached after first call).
 	c.ensureCapacityProviderRegistered(ctx)
 
-	reservationOrderID, existing, err := reservations.Submit(ctx, c.cred, c.httpClient, bodyBytes, opts)
+	reservationOrderID, existing, err := reservations.Submit(ctx, c.cred, c.httpClient, bodyBytes, opts, rec.CommitmentCurrency)
 	if err != nil {
 		result.Error = err
 		return result, result.Error

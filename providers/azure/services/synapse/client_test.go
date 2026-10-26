@@ -656,7 +656,7 @@ func TestGetOfferingDetails_CapturedDW100cAndTerms(t *testing.T) {
 // calcPriceRespJSON returns a minimal calculatePrice JSON response with the
 // given Azure-minted reservationOrderId.
 func calcPriceRespJSON(orderID string) string {
-	return `{"properties":{"reservationOrderId":"` + orderID + `"}}`
+	return `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"` + orderID + `"}}`
 }
 
 // ---- PurchaseCommitment ---------------------------------------------------

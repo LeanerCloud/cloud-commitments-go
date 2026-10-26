@@ -46,7 +46,7 @@ func (h *existingCommitmentHTTP) Do(req *http.Request) (*http.Response, error) {
 		return respond(http.StatusOK, `{"registrationState":"Registered"}`)
 	case strings.HasSuffix(path, "/calculatePrice"):
 		h.posts++
-		return respond(http.StatusOK, `{"properties":{"reservationOrderId":"minted-order"}}`)
+		return respond(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"minted-order"}}`)
 	case strings.HasSuffix(path, "/purchase"):
 		h.posts++
 		return respond(h.purchaseStatus, `{}`)
@@ -56,6 +56,11 @@ func (h *existingCommitmentHTTP) Do(req *http.Request) (*http.Response, error) {
 
 func existingCommitmentRun(t *testing.T, h *existingCommitmentHTTP) (common.PurchaseResult, error) {
 	t.Helper()
+	return existingCommitmentRunCurrency(t, h, "")
+}
+
+func existingCommitmentRunCurrency(t *testing.T, h *existingCommitmentHTTP, currency string) (common.PurchaseResult, error) {
+	t.Helper()
 	c := NewClientWithHTTP(existingCommitmentCred{}, "sub", "eastus", h)
 	rec := common.Recommendation{
 		ResourceType:   "GP_Gen5_8",
@@ -63,6 +68,8 @@ func existingCommitmentRun(t *testing.T, h *existingCommitmentHTTP) (common.Purc
 		Count:          1,
 		CommitmentCost: 1000.0,
 		PaymentOption:  "no-upfront",
+
+		CommitmentCurrency: currency,
 	}
 	return c.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{Source: common.PurchaseSourceCLI, IdempotencyToken: "tok-211"})
 }
@@ -113,4 +120,16 @@ func TestPurchaseCommitment_ExistingCommitment_FailedOrderNotAdopted(t *testing.
 	require.NoError(t, err)
 	assert.False(t, result.ExistingCommitment)
 	assert.Equal(t, "minted-order", result.CommitmentID)
+}
+
+// The recommendation currency must reach the shared purchase check: a EUR
+// recommendation against a USD calculatePrice is refused before the purchase.
+func TestPurchaseCommitment_RecommendationCurrencyMismatchRefused(t *testing.T) {
+	t.Parallel()
+	h := &existingCommitmentHTTP{listBody: `{"value":[]}`, purchaseStatus: http.StatusOK}
+	result, err := existingCommitmentRunCurrency(t, h, "EUR")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refusing to purchase")
+	assert.False(t, result.Success)
+	assert.Equal(t, 1, h.posts, "only calculatePrice; no purchase request")
 }

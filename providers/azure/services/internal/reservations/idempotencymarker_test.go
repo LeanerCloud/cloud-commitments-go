@@ -69,7 +69,7 @@ func TestDoIdempotentPurchaseTwoStep_UntaggedOrderMatchedByDisplayName(t *testin
 
 	// Purchase calls stay mocked so a regression fails on the assertions
 	// below rather than on an unexpected mock call.
-	calcResp := fakeResp(http.StatusOK, `{"properties":{"reservationOrderId":"order-duplicate"}}`)
+	calcResp := fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"order-duplicate"}}`)
 	t.Cleanup(func() { require.NoError(t, calcResp.Body.Close()) })
 	m.On("Do", mock.MatchedBy(func(r *http.Request) bool {
 		return r.Method == http.MethodPost && r.URL.String() == calcURL
@@ -88,7 +88,7 @@ func TestDoIdempotentPurchaseTwoStep_UntaggedOrderMatchedByDisplayName(t *testin
 	})
 	require.NoError(t, err)
 
-	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), m, calcURL, redriveBody, "bearer", token)
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), m, calcURL, redriveBody, "bearer", token, "")
 	require.NoError(t, err)
 	assert.True(t, existing, "the order bought by the first attempt must be adopted")
 	assert.Equal(t, "order-bought-earlier", orderID)

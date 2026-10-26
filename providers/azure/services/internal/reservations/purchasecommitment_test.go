@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
@@ -57,7 +58,7 @@ func TestSubmit_EmptyTokenSkipsLookup(t *testing.T) {
 	t.Parallel()
 	capt := &reservationstest.Capture{}
 	cred := &reservationstest.CountingCred{}
-	id, existing, err := Submit(context.Background(), cred, capt, []byte(`{}`), common.PurchaseOptions{})
+	id, existing, err := Submit(context.Background(), cred, capt, []byte(`{}`), common.PurchaseOptions{}, "")
 	require.NoError(t, err)
 	assert.Equal(t, "captured-order", id)
 	assert.False(t, existing)
@@ -71,7 +72,7 @@ func TestSubmit_TokenFailureWrapped(t *testing.T) {
 	t.Parallel()
 	boom := errors.New("boom")
 	capt := &reservationstest.Capture{}
-	_, _, err := Submit(context.Background(), &reservationstest.CountingCred{Err: boom}, capt, []byte(`{}`), common.PurchaseOptions{})
+	_, _, err := Submit(context.Background(), &reservationstest.CountingCred{Err: boom}, capt, []byte(`{}`), common.PurchaseOptions{}, "")
 	require.ErrorIs(t, err, boom)
 	assert.EqualError(t, err, "failed to get access token: boom")
 	assert.Zero(t, capt.Calls)
@@ -81,8 +82,19 @@ func TestSubmit_TwoStepErrorUnwrapped(t *testing.T) {
 	t.Parallel()
 	boom := errors.New("lookup down")
 	capt := &reservationstest.Capture{FailWhen: func(*reservationstest.Request) error { return boom }}
-	_, _, err := Submit(context.Background(), &reservationstest.CountingCred{}, capt, []byte(`{}`), common.PurchaseOptions{IdempotencyToken: "tok"})
+	_, _, err := Submit(context.Background(), &reservationstest.CountingCred{}, capt, []byte(`{}`), common.PurchaseOptions{IdempotencyToken: "tok"}, "")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "refusing to purchase to avoid a possible double-buy")
 	assert.NotContains(t, err.Error(), "failed to get access token")
+}
+
+func TestSubmit_CommitmentCurrencyMismatchRefusesBeforePurchase(t *testing.T) {
+	t.Parallel()
+	capt := &reservationstest.Capture{}
+	_, _, err := Submit(context.Background(), &reservationstest.CountingCred{}, capt, []byte(`{}`), common.PurchaseOptions{}, "EUR")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "refusing to purchase")
+	for _, r := range capt.Requests {
+		assert.False(t, strings.HasSuffix(r.URL, "/purchase"), "no purchase request: %s", r.URL)
+	}
 }

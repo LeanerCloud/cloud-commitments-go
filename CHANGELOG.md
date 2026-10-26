@@ -227,6 +227,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Azure purchases check the recommendation currency.** Azure reservation purchases
+  compare the calculatePrice billing currency with the recommendation currency
+  (empty means USD) and refuse before purchasing when it is missing or differs.
+  Azure Savings Plan purchases refuse when the recommendation currency (empty
+  means USD) differs from the plan commitment currency.
 - **`gcp`:** the Cloud SQL, Memorystore and Cloud Storage price extractors keep 1-year and 3-year commitment SKUs in separate slots and return the price for the requested term, so a catalog that lists both terms no longer fails as ambiguous (#254). Two SKUs of the same term at different prices still fail closed, and a recommendation term other than 1yr or 3yr (for example "2yr") now errors instead of being priced as one year.
 - **`ladder`:** a run no longer emits a buffer-layer purchase for a layer it also recommends reshaping. The buffer allocation becomes an informational Hold naming the pending reshape; the reshape and all other allocations are unchanged. A layer that also carries the base or flex role (merged Azure reservation) is not held (#30).
 - **`ladder`:** a run no longer emits a buffer-layer purchase for a layer it also recommends reshaping. The buffer allocation becomes an informational Hold naming the pending reshape; the reshape stays. Other allocations are not edited, but with the held buffer removed a binding `MaxHourlyCommitPerRun` can give base/flex a larger share of the cap (total spend never higher), and a freed max-actions slot can let a deferred purchase through. A layer that also carries the base role (merged Azure reservation) is not held (#30).
