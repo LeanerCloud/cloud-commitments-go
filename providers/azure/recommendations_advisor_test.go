@@ -200,3 +200,17 @@ func TestConvertAdvisor_RejectsBadSavingsAmounts(t *testing.T) {
 	require.NotNil(t, zero, "a real zero saving is kept")
 	assert.Equal(t, 0.0, zero.EstimatedSavings)
 }
+
+// The Advisor payload carries only a USD-checked savings figure, no commitment
+// amounts, so no payment leg is proven USD and the currency stays unknown.
+func TestConvertAdvisor_LeavesCommitmentCurrencyEmpty(t *testing.T) {
+	t.Parallel()
+	a := &RecommendationsClientAdapter{subscriptionID: "sub"}
+	rec := a.convertAdvisorRecommendation(context.Background(), advisorRec(subscriptionScope, reservationExt(nil)))
+	require.NotNil(t, rec)
+	variants := azrecs.ExpandPaymentVariants(*rec)
+	require.NotEmpty(t, variants)
+	for _, v := range variants {
+		assert.Empty(t, v.CommitmentCurrency, v.PaymentOption)
+	}
+}
