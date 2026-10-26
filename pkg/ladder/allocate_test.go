@@ -750,9 +750,10 @@ func TestAllocate_MaxActions_ReshapeRetained(t *testing.T) {
 		t.Errorf("surviving purchase must be the largest-gap layer EC2InstanceSP, got %s",
 			result.Allocations[0].Layer)
 	}
-	// Exactly the two smaller purchases were dropped with holds.
+	// ComputeSP was dropped by truncation; the ConvertibleRI buffer purchase
+	// never reached truncation because its layer has the pending reshape.
 	held := truncatedHoldLayers(result.Holds)
-	wantHeld := map[LayerType]bool{LayerComputeSP: true, LayerConvertibleRI: true}
+	wantHeld := map[LayerType]bool{LayerComputeSP: true}
 	if !maps.Equal(held, wantHeld) {
 		t.Errorf("dropped-purchase hold layers = %v, want %v", held, wantHeld)
 	}
@@ -765,8 +766,9 @@ func TestAllocate_MaxActions_ReshapeRetained(t *testing.T) {
 // its layer + amount in a max_actions_per_run hold.
 //
 // Fixture matches TestAllocate_MaxActions_ReshapeRetained but with cap=1: the
-// single reshape (ConvertibleRI) consumes the only slot, so all three purchases
-// (EC2InstanceSP $4/hr, ComputeSP $0.5/hr, ConvertibleRI $0.5/hr) are dropped.
+// single reshape (ConvertibleRI) consumes the only slot, so the remaining
+// purchases (EC2InstanceSP $4/hr, ComputeSP $0.5/hr) are dropped; the
+// ConvertibleRI buffer purchase is held earlier because of the reshape.
 func TestAllocate_MaxActions_ReshapesFillCap(t *testing.T) {
 	t.Parallel()
 	cfg := validConfigAWS()
@@ -805,7 +807,6 @@ func TestAllocate_MaxActions_ReshapesFillCap(t *testing.T) {
 	wantHeld := map[LayerType]bool{
 		LayerEC2InstanceSP: true,
 		LayerComputeSP:     true,
-		LayerConvertibleRI: true,
 	}
 	if !maps.Equal(held, wantHeld) {
 		t.Errorf("dropped-purchase hold layers = %v, want %v", held, wantHeld)
@@ -827,8 +828,9 @@ func TestAllocate_MaxActions_ReshapesFillCap(t *testing.T) {
 			t.Errorf("hold rationale must name the dropped amount: %q", h.Rationale)
 		}
 	}
-	if truncHolds != 3 {
-		t.Errorf("want 3 truncation holds (one per dropped purchase), got %d", truncHolds)
+	// The buffer purchase is held earlier (pending reshape), not truncated.
+	if truncHolds != 2 {
+		t.Errorf("want 2 truncation holds (one per dropped purchase), got %d", truncHolds)
 	}
 }
 
@@ -1915,5 +1917,90 @@ func TestAllocate_NilInFlightRejected(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "InFlight must not be nil") {
 		t.Errorf("error %q does not name InFlight", err)
+	}
+}
+
+func reshapeHoldInput(bufferUtil float64) *AllocationInput {
+	layers := awsLayers()
+	states := withBufferUtilization(withExisting(zeroStates(layers), LayerConvertibleRI, 2.0), bufferUtil)
+	return &AllocationInput{
+		Config:      validConfigAWS(),
+		Layers:      layers,
+		Baseline:    UsageBaseline{LowWaterUSDPerHour: ptr(10.0), StableUSDPerHour: ptr(4.0)},
+		LayerStates: states,
+		Now:         nowFixed(),
+		InFlight:    noInFlight(), CommitmentRates: unitRates(),
+	}
+}
+
+func hasAllocOn(r *AllocateResult, l LayerType) bool {
+	for _, a := range r.Allocations {
+		if a.Layer == l {
+			return true
+		}
+	}
+	return false
+}
+
+func TestAllocate_BufferHeldWhenLayerHasReshape(t *testing.T) {
+	t.Parallel()
+	result, err := Allocate(reshapeHoldInput(70.0))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if hasAllocOn(result, LayerConvertibleRI) {
+		t.Errorf("buffer purchase must be held, got %+v", result.Allocations)
+	}
+	if !hasAllocOn(result, LayerComputeSP) || !hasAllocOn(result, LayerEC2InstanceSP) {
+		t.Errorf("non-buffer allocations must be unchanged, got %+v", result.Allocations)
+	}
+	if len(result.Reshapes) != 1 || result.Reshapes[0].Layer != LayerConvertibleRI {
+		t.Fatalf("reshape must still appear, got %+v", result.Reshapes)
+	}
+	var held bool
+	for _, h := range result.Holds {
+		if h.Action == ActionHold && h.Layer == LayerConvertibleRI && strings.Contains(h.Rationale, "pending reshape") {
+			held = true
+		}
+	}
+	if !held {
+		t.Errorf("want a buffer Hold naming the pending reshape, got %+v", result.Holds)
+	}
+}
+
+func TestAllocate_BufferBoughtWhenNoReshape(t *testing.T) {
+	t.Parallel()
+	result, err := Allocate(reshapeHoldInput(95.0))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result.Reshapes) != 0 {
+		t.Fatalf("want no reshape, got %+v", result.Reshapes)
+	}
+	if !hasAllocOn(result, LayerConvertibleRI) {
+		t.Errorf("buffer must still be bought, got %+v", result.Allocations)
+	}
+}
+
+// A reshape on another layer must not suppress the buffer purchase. Valid
+// topologies allow one buffer layer, so this exercises the helper directly.
+func TestHoldReshapedBufferAllocations_OtherLayerUnaffected(t *testing.T) {
+	t.Parallel()
+	allocs := []Allocation{{Layer: LayerConvertibleRI, OnDemandEquivalentUSDPerHour: big.NewRat(1, 1)}}
+	reshapes := []PlannedAction{{Action: ActionReshape, Layer: LayerComputeSP}}
+	kept, holds := holdReshapedBufferAllocations(allocs, reshapes, awsLayers(), nil)
+	if len(kept) != 1 || len(holds) != 0 {
+		t.Errorf("want buffer kept and no holds, got kept=%+v holds=%+v", kept, holds)
+	}
+}
+
+// The merged Azure reservation also carries the base role; it is not held.
+func TestHoldReshapedBufferAllocations_MergedBaseBufferKept(t *testing.T) {
+	t.Parallel()
+	allocs := []Allocation{{Layer: LayerAzureReservation, OnDemandEquivalentUSDPerHour: big.NewRat(1, 1)}}
+	reshapes := []PlannedAction{{Action: ActionReshape, Layer: LayerAzureReservation}}
+	kept, holds := holdReshapedBufferAllocations(allocs, reshapes, azureLayers(), nil)
+	if len(kept) != 1 || len(holds) != 0 {
+		t.Errorf("want merged allocation kept, got kept=%+v holds=%+v", kept, holds)
 	}
 }
