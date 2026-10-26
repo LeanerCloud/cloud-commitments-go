@@ -28,3 +28,21 @@ func TestSQLClient_GetOfferingDetails_3yrWithOnly1yrCatalogErrors(t *testing.T) 
 	assert.Contains(t, err.Error(), "no commitment pricing found")
 	assert.Nil(t, details)
 }
+
+// An unsupported term must error instead of being priced as one year (#254).
+func TestSQLClient_GetOfferingDetails_UnsupportedTermErrors(t *testing.T) {
+	t.Parallel()
+	const region = "europe-west1"
+	ctx := context.Background()
+	client, _ := NewClient(ctx, "test-project", region)
+	client.SetBillingService(&MockBillingService{skus: &cloudbilling.ListSkusResponse{Skus: []*cloudbilling.Sku{
+		currencySKU("od", "db-n1-standard-1 Cloud SQL", "OnDemand", region, "EUR", 200000000),
+		currencySKU("cud", "db-n1-standard-1 Cloud SQL commitment 1yr", "Commit1Yr", region, "EUR", 137000000),
+		currencySKU("cud-3y", "db-n1-standard-1 Cloud SQL commitment 3yr", "Commit3Yr", region, "EUR", 100000000),
+	}}})
+
+	details, err := client.GetOfferingDetails(ctx, common.Recommendation{ResourceType: "db-n1-standard-1", Region: region, Term: "2yr", PaymentOption: "monthly"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported commitment term")
+	assert.Nil(t, details)
+}

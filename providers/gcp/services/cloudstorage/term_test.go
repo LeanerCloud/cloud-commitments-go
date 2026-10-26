@@ -7,6 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/cloudbilling/v1"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // TestExtractStoragePricing_CommitmentTerm covers issue #254: 1-year and
@@ -49,4 +51,22 @@ func TestExtractStoragePricing_CommitmentTerm(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unsupported commitment term")
 	})
+}
+
+// An unsupported term must error instead of being priced as one year (#254).
+func TestCloudStorageClient_GetOfferingDetails_UnsupportedTermErrors(t *testing.T) {
+	t.Parallel()
+	skus := storageMockSkus("STANDARD", 26000000, 19500000)
+	commit3 := *skus[1]
+	commit3.Category = &cloudbilling.Category{UsageType: "Commit3Yr"}
+	commit3.PricingInfo = []*cloudbilling.PricingInfo{{PricingExpression: &cloudbilling.PricingExpression{
+		UsageUnit:   "GiBy.mo",
+		TieredRates: []*cloudbilling.TierRate{{UnitPrice: &cloudbilling.Money{CurrencyCode: "USD", Nanos: 15000000}}},
+	}}}
+	client := storageCatalogClient(t, append(skus, &commit3))
+
+	details, err := client.GetOfferingDetails(t.Context(), common.Recommendation{ResourceType: "STANDARD", Term: "2yr", PaymentOption: "monthly"})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported commitment term")
+	assert.Nil(t, details)
 }

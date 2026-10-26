@@ -222,7 +222,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
-- **`gcp`:** the Cloud SQL, Memorystore and Cloud Storage price extractors keep 1-year and 3-year commitment SKUs in separate slots and return the price for the requested term, so a catalog that lists both terms no longer fails as ambiguous (#254). Two SKUs of the same term at different prices, and any term other than 1 or 3 years, still fail closed.
+- **`gcp`:** the Cloud SQL, Memorystore and Cloud Storage price extractors keep 1-year and 3-year commitment SKUs in separate slots and return the price for the requested term, so a catalog that lists both terms no longer fails as ambiguous (#254). Two SKUs of the same term at different prices still fail closed, and a recommendation term other than 1yr or 3yr (for example "2yr") now errors instead of being priced as one year.
 - **`azure`:** recommendations from the Consumption path (compute, database, cache, cosmosdb, managedredis, synapse) and the Savings Plan benefit path now set `CommitmentCurrency` to `USD`, because their commitment amounts come from sources already required to be USD. The Advisor and legacy paths carry no checked commitment amounts and stay empty (#623).
 - **AWS/OpenSearch:** the STS account-ID lookup used for post-purchase tagging caches only a successful result, so one throttled or timed-out `GetCallerIdentity` no longer disables tagging for the client's lifetime (#53).
 - **AWS/recommendations:** `normalizeRegionName` maps the current `Europe (Ireland|Frankfurt|London|Paris|Stockholm)` Cost Explorer display names to region codes, so coverage lookups keyed by region code match those recommendations (#53).

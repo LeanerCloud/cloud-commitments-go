@@ -174,9 +174,9 @@ func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation
 
 // GetOfferingDetails retrieves Memorystore offering details from GCP Billing API.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
-	termYears := 1
-	if rec.Term == "3yr" || rec.Term == "3" {
-		termYears = 3
+	termYears, err := skumatch.TermYears(rec.Term)
+	if err != nil {
+		return nil, err
 	}
 
 	pricing, err := c.getRedisPricing(ctx, rec.ResourceType, c.region, termYears)
