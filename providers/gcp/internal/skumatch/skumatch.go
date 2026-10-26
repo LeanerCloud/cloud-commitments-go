@@ -29,6 +29,12 @@ func InRegion(sku *cloudbilling.Sku, region string) bool {
 	return false
 }
 
+// MatchesTier reports whether the SKU description names tier as a whole token
+// and the SKU applies in region.
+func MatchesTier(sku *cloudbilling.Sku, tier, region string) bool {
+	return HasToken(sku.Description, tier) && InRegion(sku, region)
+}
+
 // HasToken reports whether the SKU description contains token as a whole
 // identifier, case-insensitively. "db-n1-standard-1" does not match inside
 // "db-n1-standard-16" and "STANDARD" does not match inside "STANDARD_HA".

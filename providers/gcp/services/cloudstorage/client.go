@@ -251,7 +251,7 @@ func (c *Client) getStoragePricing(ctx context.Context, storageClass, region str
 
 	hoursInTerm := common.HoursPerYear * float64(termYears)
 	commitmentPriceTerm := commitmentPrice * hoursInTerm
-	savingsPercentage := calculateStorageSavingsPercentage(onDemandPrice, hoursInTerm, commitmentPriceTerm)
+	savingsPercentage := skumatch.SavingsPercent(onDemandPrice, hoursInTerm, commitmentPriceTerm)
 
 	return &StoragePricing{
 		HourlyRate:        commitmentPrice,
@@ -335,12 +335,6 @@ func extractStoragePriceFromSKU(sku *cloudbilling.Sku) (price float64, currency 
 		return 0, "", fmt.Errorf("unsupported Cloud Storage usage unit %q for SKU %q (%s)", unit, sku.SkuId, sku.Description)
 	}
 	return price, rate.UnitPrice.CurrencyCode, nil
-}
-
-// calculateStorageSavingsPercentage calculates the savings percentage.
-func calculateStorageSavingsPercentage(onDemandPrice, hoursInTerm, commitmentPrice float64) float64 {
-	onDemandTotal := onDemandPrice * hoursInTerm
-	return ((onDemandTotal - commitmentPrice) / onDemandTotal) * 100
 }
 
 // skuMatchesStorageClass checks that the SKU is the capacity SKU of storageClass

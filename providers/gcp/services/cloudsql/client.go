@@ -298,7 +298,7 @@ func (c *Client) getSQLPricing(ctx context.Context, tier, region string, termYea
 	// same basis as onDemandPrice * hoursInTerm. Without this, the savings
 	// percentage would be nearly 100% (per-hour price vs term total).
 	commitmentPriceTerm := commitmentPrice * hoursInTerm
-	savingsPercentage := calculateSQLSavingsPercentage(onDemandPrice, hoursInTerm, commitmentPriceTerm)
+	savingsPercentage := skumatch.SavingsPercent(onDemandPrice, hoursInTerm, commitmentPriceTerm)
 
 	return &SQLPricing{
 		HourlyRate:        commitmentPrice,
@@ -328,7 +328,7 @@ func (c *Client) getOrCreateBillingService(ctx context.Context) (BillingService,
 func extractSQLPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string, termYears int) (onDemand, commitment float64, currency string, err error) {
 	var prices skumatch.SlotPrices
 	for _, sku := range skus {
-		if !skuMatchesTier(sku, tier, region) {
+		if !skumatch.MatchesTier(sku, tier, region) {
 			continue
 		}
 
@@ -372,17 +372,6 @@ func extractSQLPriceFromSKU(sku *cloudbilling.Sku) (price float64, currency stri
 
 	price = float64(rate.UnitPrice.Units) + float64(rate.UnitPrice.Nanos)/1e9
 	return price, rate.UnitPrice.CurrencyCode
-}
-
-// calculateSQLSavingsPercentage calculates the savings percentage.
-func calculateSQLSavingsPercentage(onDemandPrice, hoursInTerm, commitmentPrice float64) float64 {
-	onDemandTotal := onDemandPrice * hoursInTerm
-	return ((onDemandTotal - commitmentPrice) / onDemandTotal) * 100
-}
-
-// skuMatchesTier checks if a SKU matches the tier and region.
-func skuMatchesTier(sku *cloudbilling.Sku, tier, region string) bool {
-	return skumatch.HasToken(sku.Description, tier) && skumatch.InRegion(sku, region)
 }
 
 // contains checks if a slice contains a string.
