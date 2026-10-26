@@ -18,9 +18,6 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skumatch"
 )
 
-// Match the annual-average convention used for term totals, not calendar-month lengths.
-const averageHoursPerMonth = common.HoursPerYear / 12
-
 // StorageService interface for storage operations (enables mocking).
 type StorageService interface {
 	Buckets(ctx context.Context, projectID string) BucketIterator
@@ -332,7 +329,7 @@ func extractStoragePriceFromSKU(sku *cloudbilling.Sku) (price float64, currency 
 	price = float64(rate.UnitPrice.Units) + float64(rate.UnitPrice.Nanos)/1e9
 	switch unit := pricingInfo.PricingExpression.UsageUnit; unit {
 	case "GiBy.mo":
-		price /= averageHoursPerMonth
+		price /= common.HoursPerMonth
 	case "GiBy.h":
 	default:
 		return 0, "", fmt.Errorf("unsupported Cloud Storage usage unit %q for SKU %q (%s)", unit, sku.SkuId, sku.Description)

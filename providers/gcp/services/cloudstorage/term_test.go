@@ -31,8 +31,8 @@ func TestExtractStoragePricing_CommitmentTerm(t *testing.T) {
 			t.Run(fmt.Sprintf("%s/%dyr", order, tc.term), func(t *testing.T) {
 				onDemand, commitment, _, err := extractStoragePricingFromSKUs(skus, class, region, tc.term)
 				require.NoError(t, err)
-				assert.InDelta(t, 0.02/averageHoursPerMonth, onDemand, 1e-15)
-				assert.InDelta(t, tc.want/averageHoursPerMonth, commitment, 1e-15)
+				assert.InDelta(t, 0.02/common.HoursPerMonth, onDemand, 1e-15)
+				assert.InDelta(t, tc.want/common.HoursPerMonth, commitment, 1e-15)
 			})
 		}
 	}

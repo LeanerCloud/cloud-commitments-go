@@ -30,3 +30,22 @@ func TestListSKUs_CachedPerClient(t *testing.T) {
 	}
 	assert.Equal(t, 1, b.calls)
 }
+
+type idRecordingBilling struct {
+	BillingService
+	id string
+}
+
+func (b *idRecordingBilling) ListSKUs(id string) (*cloudbilling.ListSkusResponse, error) {
+	b.id = id
+	return b.BillingService.ListSKUs(id)
+}
+
+func TestListSKUs_UsesCloudSQLBillingService(t *testing.T) {
+	t.Parallel()
+	b := &idRecordingBilling{BillingService: &MockBillingService{skus: &cloudbilling.ListSkusResponse{}}}
+	c, _ := NewClient(context.Background(), "p", "us-central1")
+	_, err := c.listSKUs(b)
+	require.NoError(t, err)
+	assert.Equal(t, "services/9662-B51E-5089", b.id)
+}

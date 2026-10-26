@@ -3,6 +3,7 @@ package cloudstorage
 import (
 	"testing"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/cloudbilling/v1"
@@ -23,7 +24,7 @@ func TestExtractStoragePricing_FreeFirstTierUsesPaidTier(t *testing.T) {
 
 	price, currency, err := extractStoragePriceFromSKU(od)
 	require.NoError(t, err)
-	assert.InDelta(t, 0.02/averageHoursPerMonth, price, 1e-15)
+	assert.InDelta(t, 0.02/common.HoursPerMonth, price, 1e-15)
 	assert.Equal(t, "USD", currency)
 
 	onDemand, commitment, currency, err := extractStoragePricingFromSKUs([]*cloudbilling.Sku{
@@ -31,8 +32,8 @@ func TestExtractStoragePricing_FreeFirstTierUsesPaidTier(t *testing.T) {
 		freeFirstTierStorageSKU("STANDARD Storage in us-central1 Committed Use Discount", "Commit1Yr", 16000000),
 	}, "STANDARD", "us-central1", 1)
 	require.NoError(t, err)
-	assert.InDelta(t, 0.02/averageHoursPerMonth, onDemand, 1e-15)
-	assert.InDelta(t, 0.016/averageHoursPerMonth, commitment, 1e-15)
+	assert.InDelta(t, 0.02/common.HoursPerMonth, onDemand, 1e-15)
+	assert.InDelta(t, 0.016/common.HoursPerMonth, commitment, 1e-15)
 	assert.Equal(t, "USD", currency)
 }
 
