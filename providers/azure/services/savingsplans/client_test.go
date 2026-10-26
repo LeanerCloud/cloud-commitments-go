@@ -789,6 +789,7 @@ func TestAzureSavingsPlanState(t *testing.T) {
 func currencyRec(currency string) common.Recommendation {
 	rec := makeRec("1yr")
 	rec.Details = &common.SavingsPlanDetails{PlanType: "Compute", HourlyCommitment: 12, Currency: currency}
+	rec.CommitmentCurrency = currency
 	return rec
 }
 
@@ -866,7 +867,8 @@ func TestPurchaseCommitment_RecommendationCurrencyCheck(t *testing.T) {
 		name, recCurrency, detailsCurrency string
 		wantErr                            bool
 	}{
-		{name: "empty keeps behavior", recCurrency: "", detailsCurrency: "USD"},
+		{name: "empty and USD buys", recCurrency: "", detailsCurrency: "USD"},
+		{name: "empty and EUR refuses", recCurrency: "", detailsCurrency: "EUR", wantErr: true},
 		{name: "match", recCurrency: "USD", detailsCurrency: "USD"},
 		{name: "match ignoring case", recCurrency: "eur", detailsCurrency: "EUR"},
 		{name: "mismatch refuses", recCurrency: "USD", detailsCurrency: "EUR", wantErr: true},

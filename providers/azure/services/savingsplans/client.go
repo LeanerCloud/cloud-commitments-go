@@ -440,7 +440,11 @@ func (c *Client) purchaseOrderBody(rec common.Recommendation, spDetails *common.
 	if err != nil {
 		return armbillingbenefits.SavingsPlanOrderAliasModel{}, err
 	}
-	if rc := rec.CommitmentCurrency; rc != "" && !strings.EqualFold(rc, currency) {
+	rc := rec.CommitmentCurrency
+	if rc == "" {
+		rc = "USD" // empty means USD, as on the reservation and AWS paths
+	}
+	if !strings.EqualFold(rc, currency) {
 		return armbillingbenefits.SavingsPlanOrderAliasModel{}, fmt.Errorf(
 			"azure savings plan recommendation currency %s differs from the commitment currency %s; refusing to purchase", rc, currency)
 	}

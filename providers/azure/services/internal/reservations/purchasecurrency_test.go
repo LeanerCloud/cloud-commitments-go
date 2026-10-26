@@ -52,7 +52,7 @@ func TestPurchaseChecksBillingCurrency(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			c := &currencyClient{calcBody: calcWithCurrency(tt.billing)}
-			id, _, err := DoIdempotentPurchaseTwoStepCurrency(context.Background(), c, calcURL, []byte(testBody), "tok", "", tt.rec)
+			id, _, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", "", tt.rec)
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)

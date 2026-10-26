@@ -706,14 +706,10 @@ func matchReservationOrderInPage(page *reservationOrdersListResponse, idempotenc
 // existing is true only when an already-tagged order was adopted (the pre-loop
 // lookup or the in-loop re-check) instead of purchasing, so callers can set
 // PurchaseResult.ExistingCommitment (issue #211).
-func DoIdempotentPurchaseTwoStep(ctx context.Context, httpClient HTTPClient, calcURL string, bodyBytes []byte, bearerToken, idempotencyToken string) (orderID string, existing bool, err error) {
-	return DoIdempotentPurchaseTwoStepCurrency(ctx, httpClient, calcURL, bodyBytes, bearerToken, idempotencyToken, "")
-}
-
-// DoIdempotentPurchaseTwoStepCurrency is DoIdempotentPurchaseTwoStep with the
-// recommendation's commitment currency, which the calculatePrice billing
-// currency must match (empty means USD).
-func DoIdempotentPurchaseTwoStepCurrency(ctx context.Context, httpClient HTTPClient, calcURL string, bodyBytes []byte, bearerToken, idempotencyToken, commitmentCurrency string) (orderID string, existing bool, err error) {
+//
+// commitmentCurrency is the recommendation currency the calculatePrice billing
+// currency must match; empty means USD (see checkBillingCurrency).
+func DoIdempotentPurchaseTwoStep(ctx context.Context, httpClient HTTPClient, calcURL string, bodyBytes []byte, bearerToken, idempotencyToken, commitmentCurrency string) (orderID string, existing bool, err error) {
 	if idempotencyToken != "" {
 		existingID, found, err := FindReservationOrderByIdempotencyToken(ctx, httpClient, bearerToken, idempotencyToken)
 		if err != nil {

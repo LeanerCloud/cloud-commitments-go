@@ -55,7 +55,7 @@ func BuildPurchaseBody(p PurchaseParams, rec common.Recommendation, opts common.
 }
 
 // Submit fetches an ARM token and runs the idempotent two-step purchase. The
-// error of DoIdempotentPurchaseTwoStepCurrency is returned unwrapped.
+// error of DoIdempotentPurchaseTwoStep is returned unwrapped.
 // commitmentCurrency is the recommendation's CommitmentCurrency.
 func Submit(ctx context.Context, cred azcore.TokenCredential, httpc HTTPClient, body []byte, opts common.PurchaseOptions, commitmentCurrency string) (orderID string, existing bool, err error) {
 	token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
@@ -64,5 +64,5 @@ func Submit(ctx context.Context, cred azcore.TokenCredential, httpc HTTPClient, 
 	if err != nil {
 		return "", false, fmt.Errorf("failed to get access token: %w", err)
 	}
-	return DoIdempotentPurchaseTwoStepCurrency(ctx, httpc, CalculatePriceURL(), body, token.Token, opts.IdempotencyToken, commitmentCurrency)
+	return DoIdempotentPurchaseTwoStep(ctx, httpc, CalculatePriceURL(), body, token.Token, opts.IdempotencyToken, commitmentCurrency)
 }

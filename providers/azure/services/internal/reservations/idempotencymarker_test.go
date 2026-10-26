@@ -88,7 +88,7 @@ func TestDoIdempotentPurchaseTwoStep_UntaggedOrderMatchedByDisplayName(t *testin
 	})
 	require.NoError(t, err)
 
-	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), m, calcURL, redriveBody, "bearer", token)
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), m, calcURL, redriveBody, "bearer", token, "")
 	require.NoError(t, err)
 	assert.True(t, existing, "the order bought by the first attempt must be adopted")
 	assert.Equal(t, "order-bought-earlier", orderID)
