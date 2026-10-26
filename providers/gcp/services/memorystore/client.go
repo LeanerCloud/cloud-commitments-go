@@ -265,7 +265,7 @@ func extractPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string, termY
 			continue
 		}
 
-		price, curr := extractPriceFromSKU(sku)
+		price, curr := skumatch.UnitPrice(sku)
 		if price == 0 {
 			continue
 		}
@@ -289,22 +289,6 @@ func extractPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string, termY
 		return 0, 0, "", termErr
 	}
 	return prices.OnDemand, commitmentPrice, currency, nil
-}
-
-// extractPriceFromSKU extracts the unit price from a SKU.
-func extractPriceFromSKU(sku *cloudbilling.Sku) (price float64, currency string) {
-	if len(sku.PricingInfo) == 0 {
-		return 0, ""
-	}
-
-	pricingInfo := sku.PricingInfo[0]
-	rate := skumatch.PaidRate(pricingInfo.PricingExpression)
-	if rate == nil {
-		return 0, ""
-	}
-
-	price = float64(rate.UnitPrice.Units) + float64(rate.UnitPrice.Nanos)/1e9
-	return price, rate.UnitPrice.CurrencyCode
 }
 
 // memorystoreRedisServiceID is the Cloud Billing service for Cloud Memorystore for Redis.
