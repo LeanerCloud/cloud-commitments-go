@@ -13,7 +13,6 @@ import (
 	"google.golang.org/api/option"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
-	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/billingcurrency"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skulist"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skumatch"
 )
@@ -249,63 +248,26 @@ func (c *Client) getStoragePricing(ctx context.Context, storageClass, region str
 
 // extractStoragePricingFromSKUs extracts on-demand and commitment pricing from SKU list.
 func extractStoragePricingFromSKUs(skus []*cloudbilling.Sku, storageClass, region string, termYears int) (onDemand, commitment float64, currency string, err error) {
-	var prices skumatch.SlotPrices
-
-	for _, sku := range skus {
-		if !skuMatchesStorageClass(sku, storageClass, region) {
-			continue
-		}
-
-		price, curr, err := extractStoragePriceFromSKU(sku)
-		if err != nil {
-			return 0, 0, "", err
-		}
-		if price == 0 {
-			continue
-		}
-
-		currency, err = billingcurrency.Unify(currency, curr, sku.SkuId)
-		if err != nil {
-			return 0, 0, "", err
-		}
-
-		slot, slotErr := skumatch.Slot(sku)
-		if slotErr != nil {
-			return 0, 0, "", slotErr
-		}
-		if err := prices.Add(slot, sku, price); err != nil {
-			return 0, 0, "", err
-		}
-	}
-
-	commitmentPrice, termErr := prices.Commitment(termYears)
-	if termErr != nil {
-		return 0, 0, "", termErr
-	}
-	return prices.OnDemand, commitmentPrice, currency, nil
+	return skumatch.ExtractPricing(skus, func(sku *cloudbilling.Sku) bool {
+		return skuMatchesStorageClass(sku, storageClass, region)
+	}, extractStoragePriceFromSKU, termYears)
 }
 
 // extractStoragePriceFromSKU returns a per-GiB-hour rate regardless of the catalog unit.
 func extractStoragePriceFromSKU(sku *cloudbilling.Sku) (price float64, currency string, err error) {
-	if len(sku.PricingInfo) == 0 {
+	price, currency = skumatch.UnitPrice(sku)
+	if price == 0 {
 		return 0, "", nil
 	}
 
-	pricingInfo := sku.PricingInfo[0]
-	rate := skumatch.PaidRate(pricingInfo.PricingExpression)
-	if rate == nil {
-		return 0, "", nil
-	}
-
-	price = float64(rate.UnitPrice.Units) + float64(rate.UnitPrice.Nanos)/1e9
-	switch unit := pricingInfo.PricingExpression.UsageUnit; unit {
+	switch unit := sku.PricingInfo[0].PricingExpression.UsageUnit; unit {
 	case "GiBy.mo":
 		price /= common.HoursPerMonth
 	case "GiBy.h":
 	default:
 		return 0, "", fmt.Errorf("unsupported Cloud Storage usage unit %q for SKU %q (%s)", unit, sku.SkuId, sku.Description)
 	}
-	return price, rate.UnitPrice.CurrencyCode, nil
+	return price, currency, nil
 }
 
 // skuMatchesStorageClass checks that the SKU is the capacity SKU of storageClass

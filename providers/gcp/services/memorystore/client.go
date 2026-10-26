@@ -4,7 +4,6 @@ package memorystore
 import (
 	"context"
 	"fmt"
-	"sync"
 	"time"
 
 	"cloud.google.com/go/recommender/apiv1/recommenderpb"
@@ -14,7 +13,6 @@ import (
 	"google.golang.org/api/option"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
-	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/billingcurrency"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skulist"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skumatch"
 )
@@ -52,16 +50,13 @@ type RecommenderClient interface {
 
 // Client handles GCP Memorystore (Redis) commitments.
 type Client struct {
-	skuCache       *cloudbilling.ListSkusResponse
+	skus           skulist.Cache
 	ctx            context.Context
 	projectID      string
 	region         string
 	redisService   RedisService
 	billingService BillingService
 	clientOpts     []option.ClientOption
-	// skuMu guards skuCache. It sits last because it holds no pointers
-	// (govet fieldalignment).
-	skuMu sync.Mutex
 }
 
 // NewClient creates a new GCP Memorystore client.
@@ -259,36 +254,9 @@ func (c *Client) getRedisPricing(ctx context.Context, tier, region string, termY
 
 // extractPricingFromSKUs extracts on-demand and commitment pricing from SKU list.
 func extractPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string, termYears int) (onDemand, commitment float64, currency string, err error) {
-	var prices skumatch.SlotPrices
-	for _, sku := range skus {
-		if !skumatch.MatchesTier(sku, tier, region) {
-			continue
-		}
-
-		price, curr := skumatch.UnitPrice(sku)
-		if price == 0 {
-			continue
-		}
-
-		currency, err = billingcurrency.Unify(currency, curr, sku.SkuId)
-		if err != nil {
-			return 0, 0, "", err
-		}
-
-		slot, slotErr := skumatch.Slot(sku)
-		if slotErr != nil {
-			return 0, 0, "", slotErr
-		}
-		if err := prices.Add(slot, sku, price); err != nil {
-			return 0, 0, "", err
-		}
-	}
-
-	commitmentPrice, termErr := prices.Commitment(termYears)
-	if termErr != nil {
-		return 0, 0, "", termErr
-	}
-	return prices.OnDemand, commitmentPrice, currency, nil
+	return skumatch.ExtractPricing(skus, func(sku *cloudbilling.Sku) bool {
+		return skumatch.MatchesTier(sku, tier, region)
+	}, skumatch.HourlyUnitPrice, termYears)
 }
 
 // memorystoreRedisServiceID is the Cloud Billing service for Cloud Memorystore for Redis.
@@ -297,15 +265,5 @@ const memorystoreRedisServiceID = "services/5AF5-2C11-D467"
 // listSKUs returns the service's SKU catalog, listing it once per client so
 // that pricing N recommendations costs one catalog read instead of N.
 func (c *Client) listSKUs(svc BillingService) (*cloudbilling.ListSkusResponse, error) {
-	c.skuMu.Lock()
-	defer c.skuMu.Unlock()
-	if c.skuCache != nil {
-		return c.skuCache, nil
-	}
-	skus, err := svc.ListSKUs(memorystoreRedisServiceID)
-	if err != nil {
-		return nil, err
-	}
-	c.skuCache = skus
-	return skus, nil
+	return c.skus.Get(svc, memorystoreRedisServiceID)
 }
