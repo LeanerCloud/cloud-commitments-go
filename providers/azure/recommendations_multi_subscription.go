@@ -451,7 +451,9 @@ func newPartialSubscriptionFailure(attempted int, failed []SubscriptionFailure, 
 // lists those that errored; Succeeded is derived as attempted minus
 // len(failed). skipReasons are the recommendations that reachable subscriptions
 // dropped: empty or nil leaves Skips() nil, otherwise Skips() reports them. The
-// slice is copied.
+// slice is copied. Reasons are used as given, as final strings: the collection
+// path prefixes each with "<subscription ID>: ", so callers wanting that shape
+// must add it. attempted should be >= len(failed).
 func NewPartialSubscriptionFailure(attempted int, failed []SubscriptionFailure, skipReasons []string) *PartialSubscriptionFailureError {
 	return newPartialSubscriptionFailure(attempted, failed, append([]string(nil), skipReasons...))
 }
