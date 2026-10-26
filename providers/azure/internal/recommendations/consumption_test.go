@@ -156,6 +156,31 @@ func TestExpandConsumptionVariants_ScreenshotWorkedExample(t *testing.T) {
 	}
 }
 
+func TestExpandConsumptionVariants_CommitmentCurrency(t *testing.T) {
+	t.Parallel()
+	base := extractedBase(t, consumptionRecs(7, "P1Y")["modern"])
+	require.Empty(t, base.CommitmentCurrency, "the base carries no commitment amounts yet")
+
+	t.Run("USD price row labels both payment legs", func(t *testing.T) {
+		variants, err := ExpandConsumptionVariants(context.Background(), base, NewPricer("compute", newStub().lookup))
+		require.NoError(t, err)
+		require.Len(t, variants, 2)
+		for _, v := range variants {
+			assert.Equal(t, "USD", v.CommitmentCurrency, v.PaymentOption)
+		}
+	})
+	for _, cur := range []string{"", "EUR"} {
+		t.Run("price row currency "+cur+" yields no recommendation", func(t *testing.T) {
+			lookup := func(context.Context, string, string, int) (ReservationPrice, error) {
+				return ReservationPrice{Total: 494, Currency: cur}, nil
+			}
+			variants, err := ExpandConsumptionVariants(context.Background(), base, NewPricer("compute", lookup))
+			require.Error(t, err)
+			assert.Empty(t, variants)
+		})
+	}
+}
+
 func TestExpandConsumptionVariants_ThreeYearUpfrontExceedsOneYear(t *testing.T) {
 	t.Parallel()
 	for _, days := range []int{7, 30, 60} {

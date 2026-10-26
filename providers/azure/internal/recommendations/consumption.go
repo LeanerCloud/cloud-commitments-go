@@ -282,6 +282,10 @@ func ExpandConsumptionVariants(ctx context.Context, base common.Recommendation, 
 		savingsPct = base.EstimatedSavings / base.OnDemandCost * 100
 	}
 
+	// Pricer.resolve accepted the price only as USD, so both payment legs
+	// are USD amounts.
+	base.CommitmentCurrency = currencyUSD
+
 	upfront := base
 	upfront.PaymentOption = "upfront"
 	upfront.CommitmentCost = total

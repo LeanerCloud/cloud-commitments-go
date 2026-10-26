@@ -263,6 +263,7 @@ func convertBenefitRecommendation(r *benefitRecommendation, subscriptionID strin
 		PaymentOption:        "monthly",
 		OnDemandCost:         *p.CostWithoutBenefit * monthly,
 		CommitmentCost:       0,
+		CommitmentCurrency:   "USD", // validateBenefitRow required a USD currencyCode
 		EstimatedSavings:     *d.SavingsAmount * monthly,
 		RecurringMonthlyCost: &recurring,
 		SourceRecommendation: r.ID,

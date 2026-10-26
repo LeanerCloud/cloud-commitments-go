@@ -72,6 +72,7 @@ func TestGetRecommendations_MapsRow(t *testing.T) {
 	assert.Equal(t, "1yr", r.Term)
 	assert.Equal(t, "monthly", r.PaymentOption)
 	assert.Equal(t, 0.0, r.CommitmentCost)
+	assert.Equal(t, "USD", r.CommitmentCurrency)
 	require.NotNil(t, r.RecurringMonthlyCost)
 	assert.InDelta(t, 1.5*hoursPerMonth, *r.RecurringMonthlyCost, 1e-9)
 	assert.InDelta(t, 292*hoursPerMonth/1460, r.EstimatedSavings, 1e-9)
@@ -252,6 +253,15 @@ func TestGetRecommendations_NonUSDRowIsSkippedAndSurfaced(t *testing.T) {
 			assert.Contains(t, entries[0], recommendations.ErrNotUSD.Error())
 		})
 	}
+}
+
+func TestConvertBenefitRecommendation_MissingCurrencyIsRejectedNotLabelled(t *testing.T) {
+	t.Parallel()
+	var row benefitRecommendation
+	require.NoError(t, json.Unmarshal([]byte(strings.Replace(benefitRow("P1Y", nil), `"USD"`, `""`, 1)), &row))
+	rec, err := convertBenefitRecommendation(&row, "sub-1")
+	assert.Nil(t, rec)
+	assert.Error(t, err)
 }
 
 func TestConvertBenefitRecommendation_NonUSDWrapsSentinel(t *testing.T) {
