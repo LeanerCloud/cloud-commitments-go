@@ -234,10 +234,10 @@ func (c *Client) getRedisPricing(ctx context.Context, tier, region string, termY
 	if err != nil {
 		return nil, err
 	}
-	if onDemandPrice == 0 {
+	if onDemandPrice <= 0 {
 		return nil, fmt.Errorf("no pricing found for Memorystore tier %s", tier)
 	}
-	if commitmentPrice == 0 {
+	if commitmentPrice <= 0 {
 		return nil, fmt.Errorf("no commitment pricing found for Memorystore tier %s in region %s: catalog has no CUD SKU; cannot compute savings percentage", tier, region)
 	}
 

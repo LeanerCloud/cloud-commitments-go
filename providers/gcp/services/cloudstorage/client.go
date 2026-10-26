@@ -227,10 +227,10 @@ func (c *Client) getStoragePricing(ctx context.Context, storageClass, region str
 	if err != nil {
 		return nil, err
 	}
-	if onDemandPrice == 0 {
+	if onDemandPrice <= 0 {
 		return nil, fmt.Errorf("no pricing found for Cloud Storage class %s", storageClass)
 	}
-	if commitmentPrice == 0 {
+	if commitmentPrice <= 0 {
 		return nil, fmt.Errorf("no commitment pricing found for Cloud Storage class %s in region %s: catalog has no CUD SKU; cannot compute savings percentage", storageClass, region)
 	}
 

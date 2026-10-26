@@ -271,10 +271,10 @@ func (c *Client) getSQLPricing(ctx context.Context, tier, region string, termYea
 	if err != nil {
 		return nil, err
 	}
-	if onDemandPrice == 0 {
+	if onDemandPrice <= 0 {
 		return nil, fmt.Errorf("no pricing found for Cloud SQL tier %s", tier)
 	}
-	if commitmentPrice == 0 {
+	if commitmentPrice <= 0 {
 		return nil, fmt.Errorf("no commitment pricing found for Cloud SQL tier %s in region %s: catalog has no CUD SKU; cannot compute savings percentage", tier, region)
 	}
 
