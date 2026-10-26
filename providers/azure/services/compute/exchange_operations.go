@@ -244,8 +244,9 @@ func (c *Client) buildDoExchangeCaller() (DoExchangeCallerFunc, error) {
 // is a validation error, not a silently different exchange than the one
 // requested.
 //
-// Returns an error only when validation or the API call itself fails; a
-// priced-but-policy-rejected combination is a successful call whose
+// Returns an error when validation or the API call itself fails, and also
+// refuses (an error and no session) when the net payable currency is missing
+// or is not USD; a priced-but-policy-rejected combination is a successful call whose
 // ExchangePreview.PolicyErrors is non-empty -- callers must check that
 // before treating the preview as executable.
 func (c *Client) CalculateExchange(
@@ -326,6 +327,10 @@ func checkCalculateExchangeResult(result armreservations.CalculateExchangeOperat
 // sessionID must be non-empty. Azure's CalculateExchange session ID is the
 // idempotency mechanism for this call: replaying the same session ID after
 // the exchange completes has no further effect server-side.
+//
+// ExecuteExchange trusts that sessionID came from CalculateExchange, which is
+// where the net payable currency is checked. Azure offers no way to re-read a
+// session before executing it, so no currency check happens here.
 func (c *Client) ExecuteExchange(ctx context.Context, sessionID string) (*ExchangeResult, error) {
 	if sessionID == "" {
 		return nil, fmt.Errorf("azure: ExecuteExchange: session_id is required (obtain from CalculateExchange)")
