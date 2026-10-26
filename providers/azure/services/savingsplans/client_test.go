@@ -886,6 +886,7 @@ func TestPurchaseCommitment_RecommendationCurrencyCheck(t *testing.T) {
 			if tt.wantErr {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), "refusing to purchase")
+				assert.ErrorIs(t, err, common.ErrCurrencyNotAccepted)
 				assert.False(t, result.Success)
 				assert.Zero(t, alias.calls, "no order alias PUT")
 				return
@@ -894,4 +895,15 @@ func TestPurchaseCommitment_RecommendationCurrencyCheck(t *testing.T) {
 			assert.Equal(t, 1, alias.calls)
 		})
 	}
+}
+
+func TestPurchaseCommitment_NonCurrencyErrorIsNotCurrencyRefusal(t *testing.T) {
+	t.Parallel()
+	c := NewClient(nil, "sub", "eastus")
+	c.SetOrderAliasClient(&mockOrderAliasClient{})
+	rec := currencyRec("USD")
+	rec.Term = "bogus"
+	_, err := c.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, common.ErrCurrencyNotAccepted)
 }

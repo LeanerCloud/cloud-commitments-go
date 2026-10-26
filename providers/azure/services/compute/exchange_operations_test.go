@@ -11,6 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/compute"
 )
 
@@ -674,6 +676,7 @@ func TestExchange_RefusesBeforeExecuteOnCurrency(t *testing.T) {
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)
+				assert.ErrorIs(t, err, common.ErrCurrencyNotAccepted)
 				assert.Nil(t, preview, "no preview, so no session ID to execute")
 				assert.Zero(t, exchangePosts, "no exchange request after a currency refusal")
 				return
@@ -684,4 +687,15 @@ func TestExchange_RefusesBeforeExecuteOnCurrency(t *testing.T) {
 			assert.Equal(t, 1, exchangePosts)
 		})
 	}
+}
+
+func TestExchange_APIFailureIsNotCurrencyRefusal(t *testing.T) {
+	t.Parallel()
+	c := compute.NewClient(nil, "sub-1", "")
+	c.SetCalculateExchangeCaller(func(_ context.Context, _ armreservations.CalculateExchangeRequest) (armreservations.CalculateExchangeOperationResultResponse, error) {
+		return armreservations.CalculateExchangeOperationResultResponse{}, errors.New("azure down")
+	})
+	_, _, err := c.CalculateExchange(context.Background(), []compute.ExchangeableReservation{validSource()}, []compute.ExchangeTarget{validTarget()})
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, common.ErrCurrencyNotAccepted)
 }

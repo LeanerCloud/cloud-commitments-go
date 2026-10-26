@@ -446,7 +446,7 @@ func (c *Client) purchaseOrderBody(rec common.Recommendation, spDetails *common.
 	}
 	if !strings.EqualFold(rc, currency) {
 		return armbillingbenefits.SavingsPlanOrderAliasModel{}, fmt.Errorf(
-			"azure savings plan recommendation currency %s differs from the commitment currency %s; refusing to purchase", rc, currency)
+			"azure savings plan recommendation currency %s differs from the commitment currency %s; refusing to purchase: %w", rc, currency, common.ErrCurrencyNotAccepted)
 	}
 	skuName, err := savingsPlanSKUName(spDetails.PlanType)
 	if err != nil {

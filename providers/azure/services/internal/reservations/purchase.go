@@ -242,14 +242,14 @@ const defaultCommitmentCurrency = "USD"
 // for the error text. Shared by purchases and compute exchanges.
 func CheckCurrency(source, reported, expected, action string) error {
 	if reported == "" {
-		return fmt.Errorf("%s reported no billing currency code; refusing to %s", source, action)
+		return fmt.Errorf("%s reported no billing currency code; refusing to %s: %w", source, action, common.ErrCurrencyNotAccepted)
 	}
 	want := expected
 	if want == "" {
 		want = defaultCommitmentCurrency
 	}
 	if !strings.EqualFold(reported, want) {
-		return fmt.Errorf("%s bills in %s but the expected currency is %s; refusing to %s", source, reported, want, action)
+		return fmt.Errorf("%s bills in %s but the expected currency is %s; refusing to %s: %w", source, reported, want, action, common.ErrCurrencyNotAccepted)
 	}
 	return nil
 }

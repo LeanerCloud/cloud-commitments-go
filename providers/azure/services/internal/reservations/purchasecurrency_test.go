@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // currencyClient answers calculatePrice with a fixed body and records whether
@@ -60,6 +62,7 @@ func TestPurchaseChecksBillingCurrency(t *testing.T) {
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)
+				assert.ErrorIs(t, err, common.ErrCurrencyNotAccepted)
 				assert.Zero(t, c.purchased, "no purchase call after a currency refusal")
 				return
 			}
@@ -68,4 +71,17 @@ func TestPurchaseChecksBillingCurrency(t *testing.T) {
 			assert.Equal(t, 1, c.purchased)
 		})
 	}
+}
+
+func TestPurchaseAPIFailureIsNotCurrencyRefusal(t *testing.T) {
+	t.Parallel()
+	_, _, err := DoIdempotentPurchaseTwoStep(context.Background(), failingClient{}, calcURL, []byte(testBody), "tok", "", "USD")
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, common.ErrCurrencyNotAccepted)
+}
+
+type failingClient struct{}
+
+func (failingClient) Do(*http.Request) (*http.Response, error) {
+	return fakeResp(http.StatusInternalServerError, `{"error":"boom"}`), nil
 }
