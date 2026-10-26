@@ -3,6 +3,7 @@ package memorystore
 import (
 	"testing"
 
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skumatch"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/cloudbilling/v1"
@@ -28,7 +29,7 @@ func TestExtractPriceFromSKU_ValidPrice(t *testing.T) {
 		},
 	}
 
-	price, currency := extractPriceFromSKU(sku)
+	price, currency := skumatch.UnitPrice(sku)
 	assert.Equal(t, 1.5, price)
 	assert.Equal(t, "USD", currency)
 }
@@ -39,7 +40,7 @@ func TestExtractPriceFromSKU_NoPricingInfo(t *testing.T) {
 		PricingInfo: []*cloudbilling.PricingInfo{},
 	}
 
-	price, currency := extractPriceFromSKU(sku)
+	price, currency := skumatch.UnitPrice(sku)
 	assert.Equal(t, 0.0, price)
 	assert.Equal(t, "", currency)
 }
@@ -54,7 +55,7 @@ func TestExtractPriceFromSKU_NoPricingExpression(t *testing.T) {
 		},
 	}
 
-	price, currency := extractPriceFromSKU(sku)
+	price, currency := skumatch.UnitPrice(sku)
 	assert.Equal(t, 0.0, price)
 	assert.Equal(t, "", currency)
 }
@@ -71,7 +72,7 @@ func TestExtractPriceFromSKU_NoTieredRates(t *testing.T) {
 		},
 	}
 
-	price, currency := extractPriceFromSKU(sku)
+	price, currency := skumatch.UnitPrice(sku)
 	assert.Equal(t, 0.0, price)
 	assert.Equal(t, "", currency)
 }
@@ -92,7 +93,7 @@ func TestExtractPriceFromSKU_NoUnitPrice(t *testing.T) {
 		},
 	}
 
-	price, currency := extractPriceFromSKU(sku)
+	price, currency := skumatch.UnitPrice(sku)
 	assert.Equal(t, 0.0, price)
 	assert.Equal(t, "", currency)
 }

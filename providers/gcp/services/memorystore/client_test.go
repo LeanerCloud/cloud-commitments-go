@@ -15,6 +15,7 @@ import (
 	"google.golang.org/genproto/googleapis/type/money"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skumatch"
 )
 
 // Mock implementations
@@ -263,7 +264,7 @@ func TestSkuMatchesTier(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			result := skuMatchesTier(tt.sku, tt.tier, tt.region)
+			result := skumatch.MatchesTier(tt.sku, tt.tier, tt.region)
 			assert.Equal(t, tt.expected, result)
 		})
 	}

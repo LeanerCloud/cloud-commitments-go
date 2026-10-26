@@ -32,6 +32,10 @@ func calcWithCurrency(code string) string {
 	return `{"properties":{"billingCurrencyTotal":{"currencyCode":"` + code + `"},"reservationOrderId":"ord"}}`
 }
 
+func calcWithCurrencyAndOrder(code, order string) string {
+	return `{"properties":{"billingCurrencyTotal":{"currencyCode":"` + code + `"},"reservationOrderId":"` + order + `"}}`
+}
+
 func TestPurchaseChecksBillingCurrency(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

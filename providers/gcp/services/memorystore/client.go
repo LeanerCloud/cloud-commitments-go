@@ -19,6 +19,9 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skumatch"
 )
 
+// BillingService lists SKUs of one Cloud Billing service (enables mocking).
+type BillingService = skulist.BillingService
+
 // RedisService interface for Redis operations.
 type RedisService interface {
 	ListInstances(ctx context.Context, req *redispb.ListInstancesRequest) RedisIterator
@@ -34,11 +37,6 @@ type RedisIterator interface {
 // CreateInstanceOperation interface for create instance operation.
 type CreateInstanceOperation interface {
 	Wait(ctx context.Context, opts ...gax.CallOption) (*redispb.Instance, error)
-}
-
-// BillingService interface for Cloud Billing operations.
-type BillingService interface {
-	ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error)
 }
 
 // RecommenderIterator interface for iterating recommendations.
@@ -90,19 +88,6 @@ func (c *Client) SetBillingService(svc BillingService) {
 //
 // Deprecated: Memorystore has no project-scoped commitment recommender (issue #294).
 func (c *Client) SetRecommenderClient(_ RecommenderClient) {}
-
-// realBillingService wraps the actual Cloud Billing service.
-type realBillingService struct {
-	service *cloudbilling.APIService
-}
-
-func (r *realBillingService) ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error) {
-	skus, err := skulist.All(context.Background(), r.service.Services.Skus.List(serviceID), skulist.DefaultMaxPages)
-	if err != nil {
-		return nil, fmt.Errorf("%s: list SKUs for %s: %w", "memorystore", serviceID, err)
-	}
-	return &cloudbilling.ListSkusResponse{Skus: skus}, nil
-}
 
 // GetServiceType returns the service type.
 func (c *Client) GetServiceType() common.ServiceType {
@@ -235,7 +220,7 @@ type RedisPricing struct {
 // It returns an error when commitment pricing is absent from the catalog rather
 // than fabricating a price from a hardcoded discount factor (issue #1020).
 func (c *Client) getRedisPricing(ctx context.Context, tier, region string, termYears int) (*RedisPricing, error) {
-	billingSvc, err := c.getOrCreateBillingService(ctx)
+	billingSvc, err := skulist.Resolve(ctx, c.billingService, "memorystore", c.clientOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -249,10 +234,10 @@ func (c *Client) getRedisPricing(ctx context.Context, tier, region string, termY
 	if err != nil {
 		return nil, err
 	}
-	if onDemandPrice == 0 {
+	if onDemandPrice <= 0 {
 		return nil, fmt.Errorf("no pricing found for Memorystore tier %s", tier)
 	}
-	if commitmentPrice == 0 {
+	if commitmentPrice <= 0 {
 		return nil, fmt.Errorf("no commitment pricing found for Memorystore tier %s in region %s: catalog has no CUD SKU; cannot compute savings percentage", tier, region)
 	}
 
@@ -261,7 +246,7 @@ func (c *Client) getRedisPricing(ctx context.Context, tier, region string, termY
 	// same basis as onDemandPrice * hoursInTerm. Without this, the savings
 	// percentage would be nearly 100% (per-hour price vs term total).
 	commitmentPriceTerm := commitmentPrice * hoursInTerm
-	savingsPercentage := calculateSavingsPercentage(onDemandPrice, hoursInTerm, commitmentPriceTerm)
+	savingsPercentage := skumatch.SavingsPercent(onDemandPrice, hoursInTerm, commitmentPriceTerm)
 
 	return &RedisPricing{
 		HourlyRate:        commitmentPrice,
@@ -272,29 +257,15 @@ func (c *Client) getRedisPricing(ctx context.Context, tier, region string, termY
 	}, nil
 }
 
-// getOrCreateBillingService returns the billing service, creating it if needed.
-func (c *Client) getOrCreateBillingService(ctx context.Context) (BillingService, error) {
-	if c.billingService != nil {
-		return c.billingService, nil
-	}
-
-	service, err := cloudbilling.NewService(ctx, c.clientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create billing service: %w", err)
-	}
-
-	return &realBillingService{service: service}, nil
-}
-
 // extractPricingFromSKUs extracts on-demand and commitment pricing from SKU list.
 func extractPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string, termYears int) (onDemand, commitment float64, currency string, err error) {
 	var prices skumatch.SlotPrices
 	for _, sku := range skus {
-		if !skuMatchesTier(sku, tier, region) {
+		if !skumatch.MatchesTier(sku, tier, region) {
 			continue
 		}
 
-		price, curr := extractPriceFromSKU(sku)
+		price, curr := skumatch.UnitPrice(sku)
 		if price == 0 {
 			continue
 		}
@@ -318,33 +289,6 @@ func extractPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string, termY
 		return 0, 0, "", termErr
 	}
 	return prices.OnDemand, commitmentPrice, currency, nil
-}
-
-// extractPriceFromSKU extracts the unit price from a SKU.
-func extractPriceFromSKU(sku *cloudbilling.Sku) (price float64, currency string) {
-	if len(sku.PricingInfo) == 0 {
-		return 0, ""
-	}
-
-	pricingInfo := sku.PricingInfo[0]
-	rate := skumatch.PaidRate(pricingInfo.PricingExpression)
-	if rate == nil {
-		return 0, ""
-	}
-
-	price = float64(rate.UnitPrice.Units) + float64(rate.UnitPrice.Nanos)/1e9
-	return price, rate.UnitPrice.CurrencyCode
-}
-
-// calculateSavingsPercentage calculates the savings percentage.
-func calculateSavingsPercentage(onDemandPrice, hoursInTerm, commitmentPrice float64) float64 {
-	onDemandTotal := onDemandPrice * hoursInTerm
-	return ((onDemandTotal - commitmentPrice) / onDemandTotal) * 100
-}
-
-// skuMatchesTier checks if a SKU matches the tier and region.
-func skuMatchesTier(sku *cloudbilling.Sku, tier, region string) bool {
-	return skumatch.HasToken(sku.Description, tier) && skumatch.InRegion(sku, region)
 }
 
 // memorystoreRedisServiceID is the Cloud Billing service for Cloud Memorystore for Redis.

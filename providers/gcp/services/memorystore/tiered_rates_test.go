@@ -3,6 +3,7 @@ package memorystore
 import (
 	"testing"
 
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skumatch"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/cloudbilling/v1"
@@ -22,7 +23,7 @@ func TestExtractPricing_FreeFirstTierUsesPaidTier(t *testing.T) {
 	const tier, region = "STANDARD_HA", "us-central1"
 	od := freeFirstTierSKU("od", tier+" Memorystore", "OnDemand", region, 50000000)
 
-	price, currency := extractPriceFromSKU(od)
+	price, currency := skumatch.UnitPrice(od)
 	assert.InDelta(t, 0.05, price, 1e-12)
 	assert.Equal(t, "USD", currency)
 
@@ -39,6 +40,6 @@ func TestExtractPricing_FreeFirstTierUsesPaidTier(t *testing.T) {
 func TestExtractPricing_AllTiersFreeIsSkipped(t *testing.T) {
 	t.Parallel()
 	sku := freeFirstTierSKU("od", "STANDARD_HA Memorystore", "OnDemand", "us-central1", 0)
-	price, _ := extractPriceFromSKU(sku)
+	price, _ := skumatch.UnitPrice(sku)
 	assert.Zero(t, price)
 }

@@ -19,16 +19,14 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skumatch"
 )
 
+// BillingService lists SKUs of one Cloud Billing service (enables mocking).
+type BillingService = skulist.BillingService
+
 // SQLAdminService interface for SQL admin operations (enables mocking).
 type SQLAdminService interface {
 	ListInstances(projectID string) (*sqladmin.InstancesListResponse, error)
 	InsertInstance(projectID string, instance *sqladmin.DatabaseInstance) (*sqladmin.Operation, error)
 	ListTiers(projectID string) (*sqladmin.TiersListResponse, error)
-}
-
-// BillingService interface for billing operations (enables mocking).
-type BillingService interface {
-	ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error)
 }
 
 // RecommenderIterator preserves the legacy iteration API for source compatibility.
@@ -100,19 +98,6 @@ func (r *realSQLAdminService) InsertInstance(projectID string, instance *sqladmi
 
 func (r *realSQLAdminService) ListTiers(projectID string) (*sqladmin.TiersListResponse, error) {
 	return r.service.Tiers.List(projectID).Do()
-}
-
-// realBillingService wraps the real cloudbilling.APIService.
-type realBillingService struct {
-	service *cloudbilling.APIService
-}
-
-func (r *realBillingService) ListSKUs(serviceID string) (*cloudbilling.ListSkusResponse, error) {
-	skus, err := skulist.All(context.Background(), r.service.Services.Skus.List(serviceID), skulist.DefaultMaxPages)
-	if err != nil {
-		return nil, fmt.Errorf("%s: list SKUs for %s: %w", "cloudsql", serviceID, err)
-	}
-	return &cloudbilling.ListSkusResponse{Skus: skus}, nil
 }
 
 // GetServiceType returns the service type.
@@ -272,7 +257,7 @@ type SQLPricing struct {
 // It returns an error when commitment pricing is absent from the catalog rather
 // than fabricating a price from a hardcoded discount factor (issue #1020).
 func (c *Client) getSQLPricing(ctx context.Context, tier, region string, termYears int) (*SQLPricing, error) {
-	svc, err := c.getOrCreateBillingService(ctx)
+	svc, err := skulist.Resolve(ctx, c.billingService, "cloudsql", c.clientOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -286,10 +271,10 @@ func (c *Client) getSQLPricing(ctx context.Context, tier, region string, termYea
 	if err != nil {
 		return nil, err
 	}
-	if onDemandPrice == 0 {
+	if onDemandPrice <= 0 {
 		return nil, fmt.Errorf("no pricing found for Cloud SQL tier %s", tier)
 	}
-	if commitmentPrice == 0 {
+	if commitmentPrice <= 0 {
 		return nil, fmt.Errorf("no commitment pricing found for Cloud SQL tier %s in region %s: catalog has no CUD SKU; cannot compute savings percentage", tier, region)
 	}
 
@@ -298,7 +283,7 @@ func (c *Client) getSQLPricing(ctx context.Context, tier, region string, termYea
 	// same basis as onDemandPrice * hoursInTerm. Without this, the savings
 	// percentage would be nearly 100% (per-hour price vs term total).
 	commitmentPriceTerm := commitmentPrice * hoursInTerm
-	savingsPercentage := calculateSQLSavingsPercentage(onDemandPrice, hoursInTerm, commitmentPriceTerm)
+	savingsPercentage := skumatch.SavingsPercent(onDemandPrice, hoursInTerm, commitmentPriceTerm)
 
 	return &SQLPricing{
 		HourlyRate:        commitmentPrice,
@@ -309,30 +294,16 @@ func (c *Client) getSQLPricing(ctx context.Context, tier, region string, termYea
 	}, nil
 }
 
-// getOrCreateBillingService returns the billing service, creating it if needed.
-func (c *Client) getOrCreateBillingService(ctx context.Context) (BillingService, error) {
-	if c.billingService != nil {
-		return c.billingService, nil
-	}
-
-	service, err := cloudbilling.NewService(ctx, c.clientOpts...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create billing service: %w", err)
-	}
-
-	return &realBillingService{service: service}, nil
-}
-
 // extractSQLPricingFromSKUs extracts on-demand and commitment pricing from the SKU list.
 // Cloud SQL committed-use discounts are SKUs whose Category.UsageType is Commit1Yr or Commit3Yr.
 func extractSQLPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string, termYears int) (onDemand, commitment float64, currency string, err error) {
 	var prices skumatch.SlotPrices
 	for _, sku := range skus {
-		if !skuMatchesTier(sku, tier, region) {
+		if !skumatch.MatchesTier(sku, tier, region) {
 			continue
 		}
 
-		price, curr := extractSQLPriceFromSKU(sku)
+		price, curr := skumatch.UnitPrice(sku)
 		if price == 0 {
 			continue
 		}
@@ -356,33 +327,6 @@ func extractSQLPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string, te
 		return 0, 0, "", termErr
 	}
 	return prices.OnDemand, commitmentPrice, currency, nil
-}
-
-// extractSQLPriceFromSKU extracts the unit price from a SKU.
-func extractSQLPriceFromSKU(sku *cloudbilling.Sku) (price float64, currency string) {
-	if len(sku.PricingInfo) == 0 {
-		return 0, ""
-	}
-
-	pricingInfo := sku.PricingInfo[0]
-	rate := skumatch.PaidRate(pricingInfo.PricingExpression)
-	if rate == nil {
-		return 0, ""
-	}
-
-	price = float64(rate.UnitPrice.Units) + float64(rate.UnitPrice.Nanos)/1e9
-	return price, rate.UnitPrice.CurrencyCode
-}
-
-// calculateSQLSavingsPercentage calculates the savings percentage.
-func calculateSQLSavingsPercentage(onDemandPrice, hoursInTerm, commitmentPrice float64) float64 {
-	onDemandTotal := onDemandPrice * hoursInTerm
-	return ((onDemandTotal - commitmentPrice) / onDemandTotal) * 100
-}
-
-// skuMatchesTier checks if a SKU matches the tier and region.
-func skuMatchesTier(sku *cloudbilling.Sku, tier, region string) bool {
-	return skumatch.HasToken(sku.Description, tier) && skumatch.InRegion(sku, region)
 }
 
 // contains checks if a slice contains a string.

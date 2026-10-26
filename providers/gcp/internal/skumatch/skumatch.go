@@ -29,6 +29,12 @@ func InRegion(sku *cloudbilling.Sku, region string) bool {
 	return false
 }
 
+// MatchesTier reports whether the SKU description names tier as a whole token
+// and the SKU applies in region.
+func MatchesTier(sku *cloudbilling.Sku, tier, region string) bool {
+	return HasToken(sku.Description, tier) && InRegion(sku, region)
+}
+
 // HasToken reports whether the SKU description contains token as a whole
 // identifier, case-insensitively. "db-n1-standard-1" does not match inside
 // "db-n1-standard-16" and "STANDARD" does not match inside "STANDARD_HA".
@@ -117,4 +123,18 @@ func PaidRate(expr *cloudbilling.PricingExpression) *cloudbilling.TierRate {
 		}
 	}
 	return nil
+}
+
+// UnitPrice returns the first paid unit price of the SKU's first pricing info
+// and its currency, or 0 and "" when the SKU has no paid rate. It does not
+// convert usage units.
+func UnitPrice(sku *cloudbilling.Sku) (price float64, currency string) {
+	if len(sku.PricingInfo) == 0 {
+		return 0, ""
+	}
+	rate := PaidRate(sku.PricingInfo[0].PricingExpression)
+	if rate == nil {
+		return 0, ""
+	}
+	return float64(rate.UnitPrice.Units) + float64(rate.UnitPrice.Nanos)/1e9, rate.UnitPrice.CurrencyCode
 }
