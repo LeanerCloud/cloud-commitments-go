@@ -74,7 +74,7 @@ func TestExtractStoragePricing_RegionAndAmbiguity(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			onDemand, commitment, _, err := extractStoragePricingFromSKUs(tt.skus, class, region)
+			onDemand, commitment, _, err := extractStoragePricingFromSKUs(tt.skus, class, region, 1)
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)

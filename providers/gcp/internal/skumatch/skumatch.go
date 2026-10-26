@@ -61,7 +61,8 @@ type PriceSlot int
 
 const (
 	SlotOnDemand PriceSlot = iota
-	SlotCommitment
+	SlotCommit1Yr
+	SlotCommit3Yr
 	// SlotNone marks SKUs that are neither on-demand nor committed-use prices.
 	SlotNone
 )
@@ -81,9 +82,8 @@ const (
 // included) is an error rather than a guess, because a wrong slot silently
 // mislabels the commitment price.
 //
-// Known gap: Commit1Yr and Commit3Yr share SlotCommitment (#254). Callers
-// collect through SlotPrices, so a 1Yr and a 3Yr SKU at different prices make
-// the lookup fail as ambiguous instead of keeping whichever comes last.
+// Commit1Yr and Commit3Yr are separate slots so a catalog carrying both terms
+// prices each one on its own; SlotPrices.Commitment picks the requested term.
 func Slot(sku *cloudbilling.Sku) (PriceSlot, error) {
 	if sku.Category == nil {
 		return 0, fmt.Errorf("sku %s has no category, cannot tell commitment from on-demand", sku.SkuId)
@@ -91,8 +91,10 @@ func Slot(sku *cloudbilling.Sku) (PriceSlot, error) {
 	switch sku.Category.UsageType {
 	case usageOnDemand:
 		return SlotOnDemand, nil
-	case usageCommit1Yr, usageCommit3Yr:
-		return SlotCommitment, nil
+	case usageCommit1Yr:
+		return SlotCommit1Yr, nil
+	case usageCommit3Yr:
+		return SlotCommit3Yr, nil
 	case usagePreemptible, usageSpot:
 		return SlotNone, nil
 	}

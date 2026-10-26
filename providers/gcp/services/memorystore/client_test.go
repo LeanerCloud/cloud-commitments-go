@@ -662,6 +662,7 @@ func TestMemorystoreClient_GetOfferingDetails_RecurringMonthlyCost(t *testing.T)
 	client.SetBillingService(&MockBillingService{skus: &cloudbilling.ListSkusResponse{Skus: []*cloudbilling.Sku{
 		currencySKU("od", "redis-basic Cloud Memorystore Redis", "OnDemand", region, "EUR", int64(onDemandHourly*1e9)),
 		currencySKU("cud", "redis-basic Cloud Memorystore Redis commitment 1yr", "Commit1Yr", region, "EUR", int64(commitmentHourly*1e9)),
+		currencySKU("cud-3y", "redis-basic Cloud Memorystore Redis commitment 3yr", "Commit3Yr", region, "EUR", int64(commitmentHourly*1e9)),
 	}}})
 
 	for term, months := range map[string]float64{"1yr": 12, "3yr": 36} {

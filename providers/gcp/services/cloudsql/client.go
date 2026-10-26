@@ -282,7 +282,7 @@ func (c *Client) getSQLPricing(ctx context.Context, tier, region string, termYea
 		return nil, fmt.Errorf("failed to list SKUs: %w", err)
 	}
 
-	onDemandPrice, commitmentPrice, currency, err := extractSQLPricingFromSKUs(skus.Skus, tier, region)
+	onDemandPrice, commitmentPrice, currency, err := extractSQLPricingFromSKUs(skus.Skus, tier, region, termYears)
 	if err != nil {
 		return nil, err
 	}
@@ -325,7 +325,7 @@ func (c *Client) getOrCreateBillingService(ctx context.Context) (BillingService,
 
 // extractSQLPricingFromSKUs extracts on-demand and commitment pricing from the SKU list.
 // Cloud SQL committed-use discounts are SKUs whose Category.UsageType is Commit1Yr or Commit3Yr.
-func extractSQLPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string) (onDemand, commitment float64, currency string, err error) {
+func extractSQLPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string, termYears int) (onDemand, commitment float64, currency string, err error) {
 	var prices skumatch.SlotPrices
 	for _, sku := range skus {
 		if !skuMatchesTier(sku, tier, region) {
@@ -351,7 +351,11 @@ func extractSQLPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string) (o
 		}
 	}
 
-	return prices.OnDemand, prices.Commitment, currency, nil
+	commitmentPrice, termErr := prices.Commitment(termYears)
+	if termErr != nil {
+		return 0, 0, "", termErr
+	}
+	return prices.OnDemand, commitmentPrice, currency, nil
 }
 
 // extractSQLPriceFromSKU extracts the unit price from a SKU.

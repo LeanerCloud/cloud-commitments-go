@@ -245,7 +245,7 @@ func (c *Client) getRedisPricing(ctx context.Context, tier, region string, termY
 		return nil, fmt.Errorf("failed to list SKUs: %w", err)
 	}
 
-	onDemandPrice, commitmentPrice, currency, err := extractPricingFromSKUs(skus.Skus, tier, region)
+	onDemandPrice, commitmentPrice, currency, err := extractPricingFromSKUs(skus.Skus, tier, region, termYears)
 	if err != nil {
 		return nil, err
 	}
@@ -287,7 +287,7 @@ func (c *Client) getOrCreateBillingService(ctx context.Context) (BillingService,
 }
 
 // extractPricingFromSKUs extracts on-demand and commitment pricing from SKU list.
-func extractPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string) (onDemand, commitment float64, currency string, err error) {
+func extractPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string, termYears int) (onDemand, commitment float64, currency string, err error) {
 	var prices skumatch.SlotPrices
 	for _, sku := range skus {
 		if !skuMatchesTier(sku, tier, region) {
@@ -313,7 +313,11 @@ func extractPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string) (onDe
 		}
 	}
 
-	return prices.OnDemand, prices.Commitment, currency, nil
+	commitmentPrice, termErr := prices.Commitment(termYears)
+	if termErr != nil {
+		return 0, 0, "", termErr
+	}
+	return prices.OnDemand, commitmentPrice, currency, nil
 }
 
 // extractPriceFromSKU extracts the unit price from a SKU.

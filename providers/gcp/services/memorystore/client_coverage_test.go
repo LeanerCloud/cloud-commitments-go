@@ -148,7 +148,7 @@ func TestExtractPricingFromSKUs_ValidPricing(t *testing.T) {
 		},
 	}
 
-	onDemand, commitment, currency, err := extractPricingFromSKUs(skus, "M1", "us-central1")
+	onDemand, commitment, currency, err := extractPricingFromSKUs(skus, "M1", "us-central1", 1)
 	require.NoError(t, err)
 	assert.Greater(t, onDemand, 0.0)
 	assert.Greater(t, commitment, 0.0)
@@ -182,7 +182,7 @@ func TestExtractPricingFromSKUs_NoMatchingSKUs(t *testing.T) {
 		},
 	}
 
-	onDemand, commitment, currency, err := extractPricingFromSKUs(skus, "M1", "us-central1")
+	onDemand, commitment, currency, err := extractPricingFromSKUs(skus, "M1", "us-central1", 1)
 	require.NoError(t, err)
 	assert.Equal(t, 0.0, onDemand)
 	assert.Equal(t, 0.0, commitment)

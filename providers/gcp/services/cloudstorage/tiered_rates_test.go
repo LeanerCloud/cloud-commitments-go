@@ -29,7 +29,7 @@ func TestExtractStoragePricing_FreeFirstTierUsesPaidTier(t *testing.T) {
 	onDemand, commitment, currency, err := extractStoragePricingFromSKUs([]*cloudbilling.Sku{
 		od,
 		freeFirstTierStorageSKU("STANDARD Storage in us-central1 Committed Use Discount", "Commit1Yr", 16000000),
-	}, "STANDARD", "us-central1")
+	}, "STANDARD", "us-central1", 1)
 	require.NoError(t, err)
 	assert.InDelta(t, 0.02/averageHoursPerMonth, onDemand, 1e-15)
 	assert.InDelta(t, 0.016/averageHoursPerMonth, commitment, 1e-15)

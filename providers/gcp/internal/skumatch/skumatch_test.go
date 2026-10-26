@@ -63,8 +63,8 @@ func TestSlot(t *testing.T) {
 		wantErr string
 	}{
 		{name: "on demand", sku: &cloudbilling.Sku{Category: &cloudbilling.Category{UsageType: "OnDemand"}}, want: SlotOnDemand},
-		{name: "1 year commitment without the word in the description", sku: &cloudbilling.Sku{Description: "Committed Use Discount: Cloud SQL DB custom CORE", Category: &cloudbilling.Category{UsageType: "Commit1Yr"}}, want: SlotCommitment},
-		{name: "3 year commitment", sku: &cloudbilling.Sku{Category: &cloudbilling.Category{UsageType: "Commit3Yr"}}, want: SlotCommitment},
+		{name: "1 year commitment without the word in the description", sku: &cloudbilling.Sku{Description: "Committed Use Discount: Cloud SQL DB custom CORE", Category: &cloudbilling.Category{UsageType: "Commit1Yr"}}, want: SlotCommit1Yr},
+		{name: "3 year commitment", sku: &cloudbilling.Sku{Category: &cloudbilling.Category{UsageType: "Commit3Yr"}}, want: SlotCommit3Yr},
 		{name: "description saying commitment on an on-demand SKU", sku: &cloudbilling.Sku{Description: "No commitment required", Category: &cloudbilling.Category{UsageType: "OnDemand"}}, want: SlotOnDemand},
 		{name: "preemptible", sku: &cloudbilling.Sku{Category: &cloudbilling.Category{UsageType: "Preemptible"}}, want: SlotNone},
 		{name: "spot", sku: &cloudbilling.Sku{Category: &cloudbilling.Category{UsageType: "Spot"}}, want: SlotNone},

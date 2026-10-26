@@ -544,6 +544,11 @@ func TestCloudSQLClient_GetOfferingDetails_3Year(t *testing.T) {
 	mockService := &MockBillingService{
 		skus: &cloudbilling.ListSkusResponse{Skus: sqlMockSkus("db-n1-standard-1", "us-central1")},
 	}
+	for _, sku := range mockService.skus.Skus {
+		if sku.Category.UsageType == "Commit1Yr" {
+			sku.Category.UsageType = "Commit3Yr"
+		}
+	}
 	client.SetBillingService(mockService)
 
 	rec := common.Recommendation{
@@ -711,6 +716,7 @@ func TestCloudSQLClient_GetOfferingDetails_RecurringMonthlyCost(t *testing.T) {
 	client.SetBillingService(&MockBillingService{skus: &cloudbilling.ListSkusResponse{Skus: []*cloudbilling.Sku{
 		currencySKU("od", "db-n1-standard-1 Cloud SQL", "OnDemand", region, "EUR", int64(onDemandHourly*1e9)),
 		currencySKU("cud", "db-n1-standard-1 Cloud SQL commitment 1yr", "Commit1Yr", region, "EUR", int64(commitmentHourly*1e9)),
+		currencySKU("cud-3y", "db-n1-standard-1 Cloud SQL commitment 3yr", "Commit3Yr", region, "EUR", int64(commitmentHourly*1e9)),
 	}}})
 
 	for term, months := range map[string]float64{"1yr": 12, "3yr": 36} {
@@ -751,7 +757,7 @@ func TestExtractSQLPricingFromSKUs_IgnoresLargerTierAndRegionlessSKUs(t *testing
 		sku("db-n1-standard-1 Cloud SQL", nil, 99),
 	}
 
-	onDemand, _, _, err := extractSQLPricingFromSKUs(skus, "db-n1-standard-1", "europe-west4")
+	onDemand, _, _, err := extractSQLPricingFromSKUs(skus, "db-n1-standard-1", "europe-west4", 1)
 	require.NoError(t, err)
 	assert.Equal(t, 1.0, onDemand)
 }

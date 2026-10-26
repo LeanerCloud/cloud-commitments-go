@@ -441,6 +441,16 @@ func TestCloudStorageClient_DeprecatedRecommenderClientIsNotCalled(t *testing.T)
 // storageMockSkus returns a slice with both an on-demand and a commitment SKU for
 // the given storage class and region. Required by tests that exercise GetOfferingDetails
 // after the issue #1020 fix (fabricated commitment prices are no longer allowed).
+// as3Year relabels the 1-year commitment SKUs of skus as 3-year ones.
+func as3Year(skus []*cloudbilling.Sku) []*cloudbilling.Sku {
+	for _, sku := range skus {
+		if sku.Category.UsageType == "Commit1Yr" {
+			sku.Category.UsageType = "Commit3Yr"
+		}
+	}
+	return skus
+}
+
 func storageMockSkus(storageClass string, onDemandNanos, commitmentNanos int64) []*cloudbilling.Sku {
 	const region = "us-central1"
 	return []*cloudbilling.Sku{
@@ -526,7 +536,7 @@ func TestCloudStorageClient_GetOfferingDetails_3yr(t *testing.T) {
 	// Both on-demand and commitment SKUs required after the issue #1020 fix.
 	mockService := &MockBillingService{
 		skus: &cloudbilling.ListSkusResponse{
-			Skus: storageMockSkus("NEARLINE", 10000000, 7000000),
+			Skus: as3Year(storageMockSkus("NEARLINE", 10000000, 7000000)),
 		},
 	}
 	client.SetBillingService(mockService)
@@ -634,7 +644,7 @@ func TestCloudStorageClient_GetStoragePricing_3Year(t *testing.T) {
 	// without a commitment SKU, getStoragePricing returns an error.
 	mockService := &MockBillingService{
 		skus: &cloudbilling.ListSkusResponse{
-			Skus: storageMockSkus("STANDARD", 26000000, 18200000),
+			Skus: as3Year(storageMockSkus("STANDARD", 26000000, 18200000)),
 		},
 	}
 	client.SetBillingService(mockService)
@@ -703,6 +713,9 @@ func TestStoragePricingUnits_PublicConsumers(t *testing.T) {
 			skus[0].PricingInfo[0].PricingExpression.UsageUnit = tc.onDemandUnit
 			skus[1].PricingInfo[0].PricingExpression.UsageUnit = tc.commitmentUnit
 			skus[0].PricingInfo[0].PricingExpression.DisplayQuantity = 1000
+			commit3 := *skus[1]
+			commit3.Category = &cloudbilling.Category{UsageType: "Commit3Yr"}
+			skus = append(skus, &commit3)
 			unrelated := storageMockSkus("NEARLINE", 26000000, 20000000)[0]
 			unrelated.PricingInfo[0].PricingExpression.UsageUnit = "unknown"
 			skus = append(skus, unrelated)

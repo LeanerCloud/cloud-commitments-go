@@ -29,7 +29,7 @@ func TestExtractSQLPricing_FreeFirstTierUsesPaidTier(t *testing.T) {
 	onDemand, commitment, currency, err := extractSQLPricingFromSKUs([]*cloudbilling.Sku{
 		od,
 		freeFirstTierSKU("cud", tier+" Cloud SQL commitment 1yr", "Commit1Yr", region, 42000000),
-	}, tier, region)
+	}, tier, region, 1)
 	require.NoError(t, err)
 	assert.InDelta(t, 0.05, onDemand, 1e-12)
 	assert.InDelta(t, 0.042, commitment, 1e-12)

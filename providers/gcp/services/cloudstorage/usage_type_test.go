@@ -31,7 +31,7 @@ func TestExtractor_UsageTypeDecidesCommitmentSlot(t *testing.T) {
 		usageTypeSKU("STANDARD Storage in us-central1", "OnDemand", 50000000),
 		usageTypeSKU("STANDARD Storage in us-central1 Committed Use Discount", "Commit1Yr", 42000000),
 	}
-	onDemand, commitment, _, err := extractStoragePricingFromSKUs(skus, "STANDARD", "us-central1")
+	onDemand, commitment, _, err := extractStoragePricingFromSKUs(skus, "STANDARD", "us-central1", 1)
 	require.NoError(t, err)
 	assert.Greater(t, onDemand, commitment)
 	assert.Greater(t, commitment, 0.0)
@@ -40,7 +40,7 @@ func TestExtractor_UsageTypeDecidesCommitmentSlot(t *testing.T) {
 func TestExtractor_UnknownUsageTypeIsAnError(t *testing.T) {
 	t.Parallel()
 	skus := []*cloudbilling.Sku{usageTypeSKU("STANDARD Storage in us-central1", "Commit5Yr", 42000000)}
-	_, _, _, err := extractStoragePricingFromSKUs(skus, "STANDARD", "us-central1")
+	_, _, _, err := extractStoragePricingFromSKUs(skus, "STANDARD", "us-central1", 1)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unrecognized usage type")
 }

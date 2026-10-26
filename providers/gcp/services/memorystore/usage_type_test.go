@@ -30,7 +30,7 @@ func TestExtractor_UsageTypeDecidesCommitmentSlot(t *testing.T) {
 		usageTypeSKU("Memorystore Redis STANDARD_HA", "OnDemand", 50000000),
 		usageTypeSKU("Memorystore Redis STANDARD_HA Committed Use Discount", "Commit1Yr", 42000000),
 	}
-	onDemand, commitment, _, err := extractPricingFromSKUs(skus, "STANDARD_HA", "us-central1")
+	onDemand, commitment, _, err := extractPricingFromSKUs(skus, "STANDARD_HA", "us-central1", 1)
 	require.NoError(t, err)
 	assert.InDelta(t, 0.05, onDemand, 1e-9)
 	assert.InDelta(t, 0.042, commitment, 1e-9)
@@ -39,7 +39,7 @@ func TestExtractor_UsageTypeDecidesCommitmentSlot(t *testing.T) {
 func TestExtractor_UnknownUsageTypeIsAnError(t *testing.T) {
 	t.Parallel()
 	skus := []*cloudbilling.Sku{usageTypeSKU("Memorystore Redis STANDARD_HA", "Commit5Yr", 42000000)}
-	_, _, _, err := extractPricingFromSKUs(skus, "STANDARD_HA", "us-central1")
+	_, _, _, err := extractPricingFromSKUs(skus, "STANDARD_HA", "us-central1", 1)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unrecognized usage type")
 }

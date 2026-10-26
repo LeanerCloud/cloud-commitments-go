@@ -50,15 +50,10 @@ func TestExtractPricing_AmbiguousMatches(t *testing.T) {
 			skus:    []*cloudbilling.Sku{od("od-b", tier, 60000000), od("od-a", tier, 50000000), cud("cud", "Commit1Yr", 40000000)},
 			wantErr: "ambiguous catalog: on-demand SKU od-a",
 		},
-		{
-			name:    "1Yr and 3Yr commitment SKUs at different prices are ambiguous",
-			skus:    []*cloudbilling.Sku{od("od", tier, 50000000), cud("cud-1y", "Commit1Yr", 40000000), cud("cud-3y", "Commit3Yr", 30000000)},
-			wantErr: "ambiguous catalog: commitment SKU cud-3y",
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			onDemand, commitment, _, err := extractPricingFromSKUs(tt.skus, tier, region)
+			onDemand, commitment, _, err := extractPricingFromSKUs(tt.skus, tier, region, 1)
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)

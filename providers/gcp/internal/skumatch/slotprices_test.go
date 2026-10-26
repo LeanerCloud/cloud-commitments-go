@@ -26,17 +26,17 @@ func TestSlotPrices_Add(t *testing.T) {
 		wantCommitment float64
 		wantErr        string
 	}{
-		{name: "one price per slot", adds: []add{{SlotOnDemand, a, 0.05}, {SlotCommitment, b, 0.04}}, wantOnDemand: 0.05, wantCommitment: 0.04},
+		{name: "one price per slot", adds: []add{{SlotOnDemand, a, 0.05}, {SlotCommit1Yr, b, 0.04}}, wantOnDemand: 0.05, wantCommitment: 0.04},
 		{name: "agreeing duplicates are accepted", adds: []add{{SlotOnDemand, a, 0.05}, {SlotOnDemand, b, 0.05}}, wantOnDemand: 0.05},
 		{name: "conflicting on-demand is an error", adds: []add{{SlotOnDemand, a, 0.05}, {SlotOnDemand, b, 0.8}}, wantErr: "ambiguous catalog: on-demand SKU B"},
 		{name: "conflicting on-demand in reverse order is an error", adds: []add{{SlotOnDemand, b, 0.8}, {SlotOnDemand, a, 0.05}}, wantErr: "ambiguous catalog: on-demand SKU A"},
-		{name: "conflicting commitment is an error", adds: []add{{SlotCommitment, a, 0.04}, {SlotCommitment, b, 0.03}}, wantErr: "ambiguous catalog: commitment SKU B"},
+		{name: "conflicting commitment is an error", adds: []add{{SlotCommit1Yr, a, 0.04}, {SlotCommit1Yr, b, 0.03}}, wantErr: "ambiguous catalog: 1-year commitment SKU B"},
 		{name: "SlotNone is ignored", adds: []add{{SlotOnDemand, a, 0.05}, {SlotNone, b, 0.01}}, wantOnDemand: 0.05},
 		{name: "conflicting on-demand without SKU IDs is an error", adds: []add{{SlotOnDemand, noID1, 0.05}, {SlotOnDemand, noID2, 0.8}}, wantErr: "ambiguous catalog: on-demand SKU  (\"no id two\")"},
-		{name: "conflicting commitment without SKU IDs is an error", adds: []add{{SlotCommitment, noID1, 0.04}, {SlotCommitment, noID2, 0.03}}, wantErr: "ambiguous catalog: commitment SKU  (\"no id two\")"},
+		{name: "conflicting commitment without SKU IDs is an error", adds: []add{{SlotCommit1Yr, noID1, 0.04}, {SlotCommit1Yr, noID2, 0.03}}, wantErr: "ambiguous catalog: 1-year commitment SKU  (\"no id two\")"},
 		{name: "ID-less SKU then a conflicting SKU is an error", adds: []add{{SlotOnDemand, noID1, 0.05}, {SlotOnDemand, b, 0.8}}, wantErr: "ambiguous catalog: on-demand SKU B"},
 		{name: "agreeing duplicates without SKU IDs are accepted", adds: []add{{SlotOnDemand, noID1, 0.05}, {SlotOnDemand, noID2, 0.05}}, wantOnDemand: 0.05},
-		{name: "slots do not interfere", adds: []add{{SlotOnDemand, a, 0.05}, {SlotCommitment, a, 0.04}, {SlotCommitment, b, 0.04}}, wantOnDemand: 0.05, wantCommitment: 0.04},
+		{name: "slots do not interfere", adds: []add{{SlotOnDemand, a, 0.05}, {SlotCommit1Yr, a, 0.04}, {SlotCommit1Yr, b, 0.04}}, wantOnDemand: 0.05, wantCommitment: 0.04},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -54,7 +54,7 @@ func TestSlotPrices_Add(t *testing.T) {
 			}
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantOnDemand, p.OnDemand)
-			assert.Equal(t, tt.wantCommitment, p.Commitment)
+			assert.Equal(t, tt.wantCommitment, p.commit1Yr)
 		})
 	}
 }

@@ -241,7 +241,7 @@ func (c *Client) getStoragePricing(ctx context.Context, storageClass, region str
 		return nil, fmt.Errorf("failed to list SKUs: %w", err)
 	}
 
-	onDemandPrice, commitmentPrice, currency, err := extractStoragePricingFromSKUs(skus.Skus, storageClass, region)
+	onDemandPrice, commitmentPrice, currency, err := extractStoragePricingFromSKUs(skus.Skus, storageClass, region, termYears)
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +280,7 @@ func (c *Client) getOrCreateBillingService(ctx context.Context) (BillingService,
 }
 
 // extractStoragePricingFromSKUs extracts on-demand and commitment pricing from SKU list.
-func extractStoragePricingFromSKUs(skus []*cloudbilling.Sku, storageClass, region string) (onDemand, commitment float64, currency string, err error) {
+func extractStoragePricingFromSKUs(skus []*cloudbilling.Sku, storageClass, region string, termYears int) (onDemand, commitment float64, currency string, err error) {
 	var prices skumatch.SlotPrices
 
 	for _, sku := range skus {
@@ -310,7 +310,11 @@ func extractStoragePricingFromSKUs(skus []*cloudbilling.Sku, storageClass, regio
 		}
 	}
 
-	return prices.OnDemand, prices.Commitment, currency, nil
+	commitmentPrice, termErr := prices.Commitment(termYears)
+	if termErr != nil {
+		return 0, 0, "", termErr
+	}
+	return prices.OnDemand, commitmentPrice, currency, nil
 }
 
 // extractStoragePriceFromSKU returns a per-GiB-hour rate regardless of the catalog unit.
