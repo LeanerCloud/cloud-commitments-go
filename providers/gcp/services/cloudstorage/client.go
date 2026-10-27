@@ -4,6 +4,7 @@ package cloudstorage
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -139,10 +140,8 @@ func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation
 		return fmt.Errorf("failed to get valid storage classes: %w", err)
 	}
 
-	for _, class := range validClasses {
-		if class == rec.ResourceType {
-			return nil
-		}
+	if slices.Contains(validClasses, rec.ResourceType) {
+		return nil
 	}
 
 	return fmt.Errorf("invalid Cloud Storage class: %s", rec.ResourceType)
@@ -160,31 +159,8 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 		return nil, fmt.Errorf("failed to get pricing: %w", err)
 	}
 
-	var upfrontCost, recurringCost float64
-	totalCost := pricing.CommitmentPrice
-
-	switch rec.PaymentOption {
-	case "all-upfront", "upfront":
-		upfrontCost = totalCost
-		recurringCost = 0
-	case "monthly", "no-upfront":
-		upfrontCost = 0
-		recurringCost = totalCost / (float64(termYears) * 12)
-	default:
-		upfrontCost = totalCost
-	}
-
-	return &common.OfferingDetails{
-		OfferingID:          fmt.Sprintf("gcp-storage-%s-%s-%s", rec.ResourceType, c.region, rec.Term),
-		ResourceType:        rec.ResourceType,
-		Term:                rec.Term,
-		PaymentOption:       rec.PaymentOption,
-		UpfrontCost:         upfrontCost,
-		RecurringCost:       recurringCost,
-		TotalCost:           totalCost,
-		EffectiveHourlyRate: pricing.HourlyRate,
-		Currency:            pricing.Currency,
-	}, nil
+	offeringID := fmt.Sprintf("gcp-storage-%s-%s-%s", rec.ResourceType, c.region, rec.Term)
+	return skumatch.OfferingDetails(rec, offeringID, termYears, pricing.CommitmentPrice, pricing.HourlyRate, pricing.Currency), nil
 }
 
 // GetValidResourceTypes returns valid Cloud Storage classes.

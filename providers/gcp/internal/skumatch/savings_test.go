@@ -1,9 +1,11 @@
 package skumatch
 
 import (
+	"fmt"
 	"math"
 	"testing"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/api/cloudbilling/v1"
 )
@@ -100,6 +102,45 @@ func TestScaleToTerm(t *testing.T) {
 			assert.InDelta(t, tt.want.CommitmentPrice, got.CommitmentPrice, 1e-6)
 			assert.InDelta(t, tt.want.OnDemandPrice, got.OnDemandPrice, 1e-6)
 			assert.InDelta(t, tt.want.SavingsPercentage, got.SavingsPercentage, 1e-9)
+		})
+	}
+}
+
+func TestOfferingDetails(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		option        string
+		years         int
+		wantUpfront   float64
+		wantRecurring float64
+	}{
+		{"all-upfront", 1, 1200, 0},
+		{"upfront", 3, 1200, 0},
+		{"monthly", 1, 0, 100},
+		{"monthly", 3, 0, 1200.0 / 36},
+		{"no-upfront", 1, 0, 100},
+		{"no-upfront", 3, 0, 1200.0 / 36},
+		{"bogus", 1, 1200, 0},
+		{"bogus", 3, 1200, 0},
+		{"", 1, 1200, 0},
+		{"", 3, 1200, 0},
+	}
+	for _, tt := range tests {
+		t.Run(fmt.Sprintf("%q/%dyr", tt.option, tt.years), func(t *testing.T) {
+			t.Parallel()
+			rec := common.Recommendation{ResourceType: "rt", Term: "term-x", PaymentOption: tt.option}
+			got := OfferingDetails(rec, "id-1", tt.years, 1200, 0.5, "EUR")
+			assert.Equal(t, &common.OfferingDetails{
+				OfferingID:          "id-1",
+				ResourceType:        "rt",
+				Term:                "term-x",
+				PaymentOption:       tt.option,
+				UpfrontCost:         tt.wantUpfront,
+				RecurringCost:       tt.wantRecurring,
+				TotalCost:           1200,
+				EffectiveHourlyRate: 0.5,
+				Currency:            "EUR",
+			}, got)
 		})
 	}
 }

@@ -43,3 +43,31 @@ func ScaleToTerm(what, region string, onDemandHourly, commitmentHourly float64, 
 		SavingsPercentage: SavingsPercent(onDemandHourly, hoursInTerm, commitmentTotal),
 	}, nil
 }
+
+// OfferingDetails builds the offering for a commitment total, paying it up
+// front or spreading it monthly by payment option. An unknown option pays the
+// total up front.
+func OfferingDetails(rec common.Recommendation, offeringID string, termYears int, commitmentTotal, hourlyRate float64, currency string) *common.OfferingDetails {
+	var upfrontCost, recurringCost float64
+
+	switch rec.PaymentOption {
+	case "all-upfront", "upfront":
+		upfrontCost = commitmentTotal
+	case "monthly", "no-upfront":
+		recurringCost = commitmentTotal / (float64(termYears) * 12)
+	default:
+		upfrontCost = commitmentTotal
+	}
+
+	return &common.OfferingDetails{
+		OfferingID:          offeringID,
+		ResourceType:        rec.ResourceType,
+		Term:                rec.Term,
+		PaymentOption:       rec.PaymentOption,
+		UpfrontCost:         upfrontCost,
+		RecurringCost:       recurringCost,
+		TotalCost:           commitmentTotal,
+		EffectiveHourlyRate: hourlyRate,
+		Currency:            currency,
+	}
+}
