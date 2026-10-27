@@ -40,7 +40,6 @@ repos:
         exclude: '^\.github/golangci/'
       - id: check-yaml
         name: Check YAML syntax
-        exclude: '^\.github/workflows/.*$'
       - id: check-json
         name: Check JSON syntax
         exclude: '^\.github/golangci/'
