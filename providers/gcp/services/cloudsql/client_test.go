@@ -533,7 +533,9 @@ func TestCloudSQLClient_GetOfferingDetails_WithMock(t *testing.T) {
 	assert.Equal(t, "db-n1-standard-1", details.ResourceType)
 	assert.Equal(t, "1yr", details.Term)
 	assert.Equal(t, "USD", details.Currency)
-	assert.Greater(t, details.TotalCost, float64(0))
+	assert.Equal(t, "gcp-cloudsql-db-n1-standard-1-us-central1-1yr", details.OfferingID)
+	assert.InDelta(t, 0.042, details.EffectiveHourlyRate, 1e-9)
+	assert.InDelta(t, 0.042*8760, details.TotalCost, 1e-6)
 }
 
 func TestCloudSQLClient_GetOfferingDetails_3Year(t *testing.T) {

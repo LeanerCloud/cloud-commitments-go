@@ -523,7 +523,9 @@ func TestCloudStorageClient_GetOfferingDetails_WithMock(t *testing.T) {
 	assert.Equal(t, "STANDARD", details.ResourceType)
 	assert.Equal(t, "1yr", details.Term)
 	assert.Equal(t, "USD", details.Currency)
-	assert.Greater(t, details.TotalCost, float64(0))
+	assert.Equal(t, "gcp-storage-STANDARD-us-central1-1yr", details.OfferingID)
+	assert.InDelta(t, 0.0195/730, details.EffectiveHourlyRate, 1e-12)
+	assert.InDelta(t, 0.0195*12, details.TotalCost, 1e-9)
 	assert.Greater(t, details.UpfrontCost, float64(0))
 	assert.Equal(t, float64(0), details.RecurringCost)
 }

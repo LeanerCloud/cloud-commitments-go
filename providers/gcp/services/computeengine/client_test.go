@@ -1034,6 +1034,8 @@ func TestComputeEngineClient_GetOfferingDetails_WithMock(t *testing.T) {
 	// (4 vCPU * 0.019915 + 15 GiB * 0.002669) per hour over 8760 h.
 	assert.InDelta(t, (4*0.019915+15*0.002669)*8760, details.TotalCost, 1e-6)
 	assert.InDelta(t, details.TotalCost/12, details.RecurringCost, 1e-6)
+	assert.Equal(t, "gcp-compute-n1-standard-4-us-central1-1yr", details.OfferingID)
+	assert.InDelta(t, 4*0.019915+15*0.002669, details.EffectiveHourlyRate, 1e-9)
 }
 
 func TestComputeEngineClient_GetOfferingDetails_Terms(t *testing.T) {
