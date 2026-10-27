@@ -10,6 +10,7 @@ import (
 	"math"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -876,10 +877,8 @@ func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation
 		return fmt.Errorf("failed to get valid machine types: %w", err)
 	}
 
-	for _, machineType := range validTypes {
-		if machineType == rec.ResourceType {
-			return nil
-		}
+	if slices.Contains(validTypes, rec.ResourceType) {
+		return nil
 	}
 
 	return fmt.Errorf("invalid GCP machine type: %s", rec.ResourceType)
