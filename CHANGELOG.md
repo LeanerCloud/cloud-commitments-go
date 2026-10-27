@@ -155,6 +155,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- GCP Cloud Storage pricing lists the SKU catalog once per client, like Cloud
+  SQL and Memorystore.
 - Azure multi-subscription collection keeps skipped recommendations when a
   subscription also fails. They are returned by the new
   `PartialSubscriptionFailureError.Skips()` (a `*PartialResultError`, or nil)

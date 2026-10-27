@@ -54,6 +54,7 @@ type RecommenderIterator interface {
 
 // Client handles GCP Cloud Storage commitments.
 type Client struct {
+	skus           skulist.Cache
 	ctx            context.Context
 	projectID      string
 	region         string
@@ -217,7 +218,7 @@ func (c *Client) getStoragePricing(ctx context.Context, storageClass, region str
 		return nil, err
 	}
 
-	skus, err := svc.ListSKUs(cloudStorageServiceID)
+	skus, err := c.listSKUs(svc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list SKUs: %w", err)
 	}
@@ -274,6 +275,12 @@ func skuMatchesStorageClass(sku *cloudbilling.Sku, storageClass, region string) 
 	}
 
 	return skumatch.InRegion(sku, region)
+}
+
+// listSKUs returns the service's SKU catalog, listing it once per client so
+// that pricing N recommendations costs one catalog read instead of N.
+func (c *Client) listSKUs(svc BillingService) (*cloudbilling.ListSkusResponse, error) {
+	return c.skus.Get(svc, cloudStorageServiceID)
 }
 
 // cloudStorageServiceID is the Cloud Billing service for Cloud Storage.
