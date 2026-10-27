@@ -266,26 +266,17 @@ func (c *Client) getSQLPricing(ctx context.Context, tier, region string, termYea
 	if err != nil {
 		return nil, err
 	}
-	if onDemandPrice <= 0 {
-		return nil, fmt.Errorf("no pricing found for Cloud SQL tier %s", tier)
+	prices, err := skumatch.ScaleToTerm("Cloud SQL tier "+tier, region, onDemandPrice, commitmentPrice, termYears)
+	if err != nil {
+		return nil, err
 	}
-	if commitmentPrice <= 0 {
-		return nil, fmt.Errorf("no commitment pricing found for Cloud SQL tier %s in region %s: catalog has no CUD SKU; cannot compute savings percentage", tier, region)
-	}
-
-	hoursInTerm := common.HoursPerYear * float64(termYears)
-	// Scale the per-hour commitment price to a term total so it is on the
-	// same basis as onDemandPrice * hoursInTerm. Without this, the savings
-	// percentage would be nearly 100% (per-hour price vs term total).
-	commitmentPriceTerm := commitmentPrice * hoursInTerm
-	savingsPercentage := skumatch.SavingsPercent(onDemandPrice, hoursInTerm, commitmentPriceTerm)
 
 	return &SQLPricing{
-		HourlyRate:        commitmentPrice,
-		CommitmentPrice:   commitmentPriceTerm,
-		OnDemandPrice:     onDemandPrice * hoursInTerm,
+		HourlyRate:        prices.HourlyRate,
+		CommitmentPrice:   prices.CommitmentPrice,
+		OnDemandPrice:     prices.OnDemandPrice,
 		Currency:          currency,
-		SavingsPercentage: savingsPercentage,
+		SavingsPercentage: prices.SavingsPercentage,
 	}, nil
 }
 

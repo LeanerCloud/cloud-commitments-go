@@ -226,23 +226,17 @@ func (c *Client) getStoragePricing(ctx context.Context, storageClass, region str
 	if err != nil {
 		return nil, err
 	}
-	if onDemandPrice <= 0 {
-		return nil, fmt.Errorf("no pricing found for Cloud Storage class %s", storageClass)
+	prices, err := skumatch.ScaleToTerm("Cloud Storage class "+storageClass, region, onDemandPrice, commitmentPrice, termYears)
+	if err != nil {
+		return nil, err
 	}
-	if commitmentPrice <= 0 {
-		return nil, fmt.Errorf("no commitment pricing found for Cloud Storage class %s in region %s: catalog has no CUD SKU; cannot compute savings percentage", storageClass, region)
-	}
-
-	hoursInTerm := common.HoursPerYear * float64(termYears)
-	commitmentPriceTerm := commitmentPrice * hoursInTerm
-	savingsPercentage := skumatch.SavingsPercent(onDemandPrice, hoursInTerm, commitmentPriceTerm)
 
 	return &StoragePricing{
-		HourlyRate:        commitmentPrice,
-		CommitmentPrice:   commitmentPriceTerm,
-		OnDemandPrice:     onDemandPrice * hoursInTerm,
+		HourlyRate:        prices.HourlyRate,
+		CommitmentPrice:   prices.CommitmentPrice,
+		OnDemandPrice:     prices.OnDemandPrice,
 		Currency:          currency,
-		SavingsPercentage: savingsPercentage,
+		SavingsPercentage: prices.SavingsPercentage,
 	}, nil
 }
 

@@ -69,3 +69,37 @@ func TestMatchesTier(t *testing.T) {
 		})
 	}
 }
+
+func TestScaleToTerm(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name        string
+		onDemand    float64
+		commitment  float64
+		years       int
+		want        TermPrices
+		wantErrText string
+	}{
+		{name: "zero on-demand", onDemand: 0, commitment: 0.05, years: 1, wantErrText: "no pricing found for Thing x"},
+		{name: "negative on-demand", onDemand: -1, commitment: 0.05, years: 1, wantErrText: "no pricing found for Thing x"},
+		{name: "zero commitment", onDemand: 0.1, commitment: 0, years: 1, wantErrText: "no commitment pricing found for Thing x in region r1: catalog has no CUD SKU; cannot compute savings percentage"},
+		{name: "negative commitment", onDemand: 0.1, commitment: -0.05, years: 3, wantErrText: "no commitment pricing found for Thing x in region r1: catalog has no CUD SKU; cannot compute savings percentage"},
+		{name: "1 year", onDemand: 0.1, commitment: 0.05, years: 1, want: TermPrices{HourlyRate: 0.05, CommitmentPrice: 0.05 * 8760, OnDemandPrice: 0.1 * 8760, SavingsPercentage: 50}},
+		{name: "3 year", onDemand: 0.2, commitment: 0.1, years: 3, want: TermPrices{HourlyRate: 0.1, CommitmentPrice: 0.1 * 26280, OnDemandPrice: 0.2 * 26280, SavingsPercentage: 50}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := ScaleToTerm("Thing x", "r1", tt.onDemand, tt.commitment, tt.years)
+			if tt.wantErrText != "" {
+				assert.EqualError(t, err, tt.wantErrText)
+				return
+			}
+			assert.NoError(t, err)
+			assert.InDelta(t, tt.want.HourlyRate, got.HourlyRate, 1e-9)
+			assert.InDelta(t, tt.want.CommitmentPrice, got.CommitmentPrice, 1e-6)
+			assert.InDelta(t, tt.want.OnDemandPrice, got.OnDemandPrice, 1e-6)
+			assert.InDelta(t, tt.want.SavingsPercentage, got.SavingsPercentage, 1e-9)
+		})
+	}
+}
