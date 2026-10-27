@@ -32,6 +32,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Azure Advisor recommendations carry their currency (`CommitmentCurrency`),**
+  like the Consumption and Savings Plan recommendations.
 - **Azure `NewPartialSubscriptionFailure` constructor:** builds a
   `PartialSubscriptionFailureError`, optionally with skip reasons readable
   through `Skips()`, so code outside the module can construct one, for example

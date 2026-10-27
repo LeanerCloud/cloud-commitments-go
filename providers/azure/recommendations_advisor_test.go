@@ -3,6 +3,9 @@ package azure
 import (
 	"context"
 	"errors"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/advisor/armadvisor"
@@ -11,6 +14,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	azrecs "github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/recommendations"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/savingsplans"
 )
 
 // Fixture-based: payloads are shaped from armadvisor.ResourceRecommendationBase
@@ -56,6 +60,7 @@ func TestConvertAdvisor_DerivesFieldsFromPayload(t *testing.T) {
 	assert.Equal(t, "Standard_D2s_v3", ri.ResourceType)
 	assert.Equal(t, 2, ri.Count)
 	assert.Equal(t, 100.0, ri.EstimatedSavings)
+	assert.Equal(t, "USD", ri.CommitmentCurrency)
 	assert.Empty(t, ri.PaymentOption, "the payload carries no payment plan; variants are fanned out later")
 
 	sp := a.convertAdvisorRecommendation(context.Background(), advisorRec(subscriptionScope, map[string]*string{
@@ -68,6 +73,12 @@ func TestConvertAdvisor_DerivesFieldsFromPayload(t *testing.T) {
 	assert.Equal(t, common.CommitmentSavingsPlan, sp.CommitmentType)
 	assert.Equal(t, common.ServiceSavingsPlansAll, sp.Service)
 	assert.Equal(t, "1yr", sp.Term)
+	assert.Equal(t, "USD", sp.CommitmentCurrency)
+
+	// The canonical code is stored, not the payload's casing.
+	lower := a.convertAdvisorRecommendation(context.Background(), advisorRec(subscriptionScope, reservationExt(map[string]*string{"savingsCurrency": strPtr("usd")})))
+	require.NotNil(t, lower)
+	assert.Equal(t, "USD", lower.CommitmentCurrency)
 }
 
 func TestConvertAdvisor_NonPurchaseRecommendationsAreIgnored(t *testing.T) {
@@ -201,9 +212,9 @@ func TestConvertAdvisor_RejectsBadSavingsAmounts(t *testing.T) {
 	assert.Equal(t, 0.0, zero.EstimatedSavings)
 }
 
-// The Advisor payload carries only a USD-checked savings figure, no commitment
-// amounts, so no payment leg is proven USD and the currency stays unknown.
-func TestConvertAdvisor_LeavesCommitmentCurrencyEmpty(t *testing.T) {
+// The currency check passed, so the code is carried through the payment
+// variants.
+func TestConvertAdvisor_CarriesCommitmentCurrency(t *testing.T) {
 	t.Parallel()
 	a := &RecommendationsClientAdapter{subscriptionID: "sub"}
 	rec := a.convertAdvisorRecommendation(context.Background(), advisorRec(subscriptionScope, reservationExt(nil)))
@@ -211,6 +222,54 @@ func TestConvertAdvisor_LeavesCommitmentCurrencyEmpty(t *testing.T) {
 	variants := azrecs.ExpandPaymentVariants(*rec)
 	require.NotEmpty(t, variants)
 	for _, v := range variants {
-		assert.Empty(t, v.CommitmentCurrency, v.PaymentOption)
+		assert.Equal(t, "USD", v.CommitmentCurrency, v.PaymentOption)
 	}
+}
+
+type benefitHTTP struct{}
+
+func (benefitHTTP) Do(*http.Request) (*http.Response, error) {
+	const row = `{"id":"/subscriptions/sub/providers/Microsoft.CostManagement/benefitRecommendations/r1","kind":"SavingsPlan",
+"properties":{"totalHours":1460,"armSkuName":"Compute_Savings_Plan","term":"P1Y","commitmentGranularity":"Hourly",
+"currencyCode":"USD","costWithoutBenefit":2920,"scope":"Shared","lookBackPeriod":"Last60Days",
+"recommendationDetails":{"commitmentAmount":1.5,"savingsAmount":292,"savingsPercentage":10,"totalCost":2628}}}`
+	return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"value":[` + row + `]}`))}, nil
+}
+
+// consumptionPricedFake prices a Consumption-style recommendation through the
+// shared variant expansion, as the real service converters do.
+type consumptionPricedFake struct{}
+
+func (consumptionPricedFake) GetRecommendations(ctx context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
+	pricer := azrecs.NewPricer("compute", func(context.Context, string, string, int) (azrecs.ReservationPrice, error) {
+		return azrecs.ReservationPrice{Currency: "USD", Total: 1000}, nil
+	})
+	return azrecs.ExpandConsumptionVariants(ctx, common.Recommendation{
+		Provider: common.ProviderAzure, Service: common.ServiceCompute, CommitmentType: common.CommitmentReservedInstance,
+		Account: "sub", Region: "eastus", ResourceType: "Standard_D2s_v3", Count: 1, Term: "1yr",
+	}, pricer)
+}
+
+// Every source feeds the merge: Consumption, the Savings Plan benefit API and
+// Advisor each go through their real conversion.
+func TestGetRecommendations_EverySourceCarriesCommitmentCurrency(t *testing.T) {
+	overrideServiceClientFns(t, consumptionPricedFake{}, &fakeServiceClient{}, &fakeServiceClient{}, &fakeServiceClient{},
+		savingsplans.NewClientWithHTTP(&mockAzureTokenCredential{}, "sub", "", benefitHTTP{}))
+	a := &RecommendationsClientAdapter{cred: &mockAzureTokenCredential{}, subscriptionID: "sub"}
+	a.getAdvisorRecsFn = func(ctx context.Context, p common.RecommendationParams) ([]common.Recommendation, error) {
+		page := armadvisor.RecommendationsClientListResponse{ResourceRecommendationBaseListResult: armadvisor.ResourceRecommendationBaseListResult{
+			Value: []*armadvisor.ResourceRecommendationBase{advisorRec(subscriptionScope, reservationExt(map[string]*string{"region": strPtr("westeurope")}))},
+		}}
+		return a.appendAdvisorPageRecs(ctx, p, page, nil), nil
+	}
+
+	recs, err := a.GetRecommendations(context.Background(), &common.RecommendationParams{Term: "1yr", LookbackPeriod: "60d"})
+	require.NoError(t, err)
+
+	sources := map[string]bool{}
+	for _, r := range recs {
+		assert.Equal(t, "USD", r.CommitmentCurrency, "%s %s %s", r.Service, r.CommitmentType, r.PaymentOption)
+		sources[string(r.Service)+"/"+string(r.CommitmentType)+"/"+r.Region] = true
+	}
+	assert.Len(t, sources, 3, "a Consumption RI, a benefit Savings Plan and an Advisor RI are all present: %v", sources)
 }

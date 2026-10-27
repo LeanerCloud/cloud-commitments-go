@@ -569,6 +569,7 @@ func populateFromExtendedProperties(rec *common.Recommendation, ext map[string]*
 	if cur := extString(ext, advisorKeyCurrency, ""); !strings.EqualFold(cur, "USD") {
 		return fmt.Errorf("%s %q is not USD", advisorKeyCurrency, cur)
 	}
+	rec.CommitmentCurrency = "USD"
 	rec.EstimatedSavings = annualSavings / 12
 
 	if rec.Term, err = advisorTerm(ext); err != nil {
