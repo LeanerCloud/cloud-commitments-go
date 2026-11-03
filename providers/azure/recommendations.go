@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -222,6 +223,7 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 		return nil, err
 	}
 
+	consumptionRIs := slices.Concat(computeRecs, dbRecs, cacheRecs)
 	merged, err := mergeServiceResults(serviceResult{err: computeErr, name: "compute", recs: computeRecs, attempted: includeCompute},
 		serviceResult{err: dbErr, name: "database", recs: dbRecs, attempted: includeDB},
 		serviceResult{err: cacheErr, name: "cache", recs: cacheRecs, attempted: includeCache},
@@ -244,7 +246,7 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 		// credential failure -- the same hazard the savingsplans exclusion
 		// prevents. When getAdvisorRecommendations is changed to propagate
 		// hard errors, flip this flag back to true.
-		serviceResult{err: advisorErr, name: "advisor", recs: dropCoveredAdvisorSavingsPlans(advisorRecs, spRecs), attempted: false})
+		serviceResult{err: advisorErr, name: "advisor", recs: dropCoveredAdvisorReservations(dropCoveredAdvisorSavingsPlans(advisorRecs, spRecs), consumptionRIs), attempted: false})
 	return withSkips(merged, err, skips)
 }
 
@@ -285,6 +287,81 @@ func dropCoveredAdvisorSavingsPlans(advisor, sp []common.Recommendation) []commo
 			continue
 		}
 		out = append(out, advisor[i])
+	}
+	return out
+}
+
+// advisorNeed identifies one purchasable need: Consumption may key on the
+// normalized size, so covering is matched without the SKU.
+type advisorNeed struct {
+	account, region, term string
+	service               common.ServiceType
+}
+
+func advisorNeedOf(r *common.Recommendation) advisorNeed {
+	return advisorNeed{r.Account, strings.ToLower(r.Region), r.Term, r.Service}
+}
+
+// dropCoveredAdvisorReservations removes Advisor reservation rows that the
+// Consumption-based services already cover, matched on (account, service,
+// region, term) because a SKU match would miss duplicates of the same need,
+// then collapses same-SKU duplicates. Dropped rows are not skips.
+func dropCoveredAdvisorReservations(advisor, consumption []common.Recommendation) []common.Recommendation {
+	covered := make(map[advisorNeed]bool)
+	for i := range consumption {
+		if consumption[i].CommitmentType == common.CommitmentReservedInstance {
+			covered[advisorNeedOf(&consumption[i])] = true
+		}
+	}
+	out := make([]common.Recommendation, 0, len(advisor))
+	for i := range advisor {
+		if advisor[i].CommitmentType == common.CommitmentReservedInstance && covered[advisorNeedOf(&advisor[i])] {
+			continue
+		}
+		out = append(out, advisor[i])
+	}
+	if n := len(advisor) - len(out); n > 0 {
+		logging.Infof("azure advisor: dropped %d reservation row(s) covered by Consumption", n)
+	}
+	return collapseAdvisorDuplicates(out)
+}
+
+// collapseAdvisorDuplicates keeps, for rows sharing (account, service, region,
+// term, lowercase SKU), only the smallest count (the first on a tie, with its
+// payment variants): they are one need seen with different scope or lookback,
+// and the smallest never over-buys.
+func collapseAdvisorDuplicates(rows []common.Recommendation) []common.Recommendation {
+	type sameSKU struct {
+		advisorNeed
+		sku string
+	}
+	type variant struct {
+		sameSKU
+		payment string
+	}
+	keyOf := func(r *common.Recommendation) sameSKU {
+		return sameSKU{advisorNeedOf(r), strings.ToLower(r.ResourceType)}
+	}
+	smallest := make(map[sameSKU]int)
+	for i := range rows {
+		r := &rows[i]
+		if c, ok := smallest[keyOf(r)]; r.CommitmentType == common.CommitmentReservedInstance && (!ok || r.Count < c) {
+			smallest[keyOf(r)] = r.Count
+		}
+	}
+	seen := make(map[variant]bool)
+	out := make([]common.Recommendation, 0, len(rows))
+	for i := range rows {
+		r := &rows[i]
+		v := variant{keyOf(r), r.PaymentOption}
+		if r.CommitmentType == common.CommitmentReservedInstance && (r.Count != smallest[v.sameSKU] || seen[v]) {
+			continue
+		}
+		seen[v] = true
+		out = append(out, *r)
+	}
+	if n := len(rows) - len(out); n > 0 {
+		logging.Infof("azure advisor: collapsed %d duplicate reservation row(s) to the smallest count", n)
 	}
 	return out
 }
@@ -474,6 +551,16 @@ func (r *RecommendationsClientAdapter) appendAdvisorPageRecs(
 // embeds /locations/{region}/. Pulled out of convertAdvisorRecommendation
 // to keep that function under the cyclomatic limit.
 func resolveAdvisorRegion(advisorRec *armadvisor.ResourceRecommendationBase) string {
+	return armRegion(advisorRegionRaw(advisorRec))
+}
+
+// armRegion converts a display region ("East US") to the ARM form ("eastus")
+// that Retail Prices and the purchase body expect.
+func armRegion(s string) string {
+	return strings.ToLower(strings.ReplaceAll(s, " ", ""))
+}
+
+func advisorRegionRaw(advisorRec *armadvisor.ResourceRecommendationBase) string {
 	if ext := advisorRec.Properties.ExtendedProperties; ext != nil {
 		for _, key := range []string{"region", "location"} {
 			if v, ok := ext[key]; ok && v != nil && *v != "" {
