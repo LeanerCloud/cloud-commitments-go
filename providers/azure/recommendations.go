@@ -223,7 +223,7 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 		return nil, err
 	}
 
-	consumptionRIs := slices.Concat(computeRecs, dbRecs, cacheRecs)
+	consumptionRIs := slices.Concat(okRecs(computeRecs, computeErr), okRecs(dbRecs, dbErr), okRecs(cacheRecs, cacheErr))
 	merged, err := mergeServiceResults(serviceResult{err: computeErr, name: "compute", recs: computeRecs, attempted: includeCompute},
 		serviceResult{err: dbErr, name: "database", recs: dbRecs, attempted: includeDB},
 		serviceResult{err: cacheErr, name: "cache", recs: cacheRecs, attempted: includeCache},
@@ -289,6 +289,16 @@ func dropCoveredAdvisorSavingsPlans(advisor, sp []common.Recommendation) []commo
 		out = append(out, advisor[i])
 	}
 	return out
+}
+
+// okRecs returns recs only when the service succeeded. A failed service may
+// return partial rows beside its error, but the merge drops them, so they must
+// not count as coverage.
+func okRecs(recs []common.Recommendation, err error) []common.Recommendation {
+	if err != nil {
+		return nil
+	}
+	return recs
 }
 
 // advisorNeed identifies one purchasable need: Consumption may key on the

@@ -69,3 +69,18 @@ func TestGetRecommendations_AdvisorReservationCoveredByConsumption(t *testing.T)
 	assert.Equal(t, []common.Recommendation{advisor}, run(&fakeServiceClient{err: errors.New("boom")}, advisor),
 		"a failed compute service leaves the Advisor row as the only source")
 }
+
+func TestGetRecommendations_FailedServiceRowsDoNotCoverAdvisor(t *testing.T) {
+	consumption := riRow(common.ServiceCompute, "eastus", "1yr", "Standard_D4s_v3", 1, "upfront")
+	advisor := riRow(common.ServiceCompute, "eastus", "1yr", "Standard_D2s_v3", 2, "")
+	overrideServiceClientFns(t, &fakeServiceClient{recs: []common.Recommendation{consumption}, err: errors.New("mid-walk failure")},
+		&fakeServiceClient{}, &fakeServiceClient{}, &fakeServiceClient{}, &fakeServiceClient{})
+	a := &RecommendationsClientAdapter{cred: &mockAzureTokenCredential{}, subscriptionID: "sub",
+		getAdvisorRecsFn: func(context.Context, common.RecommendationParams) ([]common.Recommendation, error) {
+			return []common.Recommendation{advisor}, nil
+		}}
+
+	recs, _ := a.GetRecommendations(context.Background(), &common.RecommendationParams{})
+
+	assert.Equal(t, []common.Recommendation{advisor}, recs, "rows of a failed service are dropped, so they cover nothing")
+}
