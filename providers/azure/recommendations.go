@@ -122,8 +122,8 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 		computeErr, dbErr, cacheErr, cosmosErr, advisorErr, spErr, synapseErr        error
 	)
 
+	ctx, skips := azrecs.WithSkipLog(ctx)
 	g, gctx := errgroup.WithContext(ctx)
-	gctx, skips := azrecs.WithSkipLog(gctx)
 
 	// Each per-service goroutine runs a whole sweep (many pages plus lazily
 	// loaded catalogs), so it does not hold the shared CUDLY_MAX_PARALLELISM
@@ -224,6 +224,11 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 	}
 
 	consumptionRIs := slices.Concat(okRecs(computeRecs, computeErr), okRecs(dbRecs, dbErr), okRecs(cacheRecs, cacheErr))
+	// Priced with the parent ctx: gctx is canceled once Wait returns.
+	advisorRecs = r.priceAdvisor(ctx, dropCoveredAdvisorReservations(dropCoveredAdvisorSavingsPlans(advisorRecs, spRecs), consumptionRIs))
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	merged, err := mergeServiceResults(serviceResult{err: computeErr, name: "compute", recs: computeRecs, attempted: includeCompute},
 		serviceResult{err: dbErr, name: "database", recs: dbRecs, attempted: includeDB},
 		serviceResult{err: cacheErr, name: "cache", recs: cacheRecs, attempted: includeCache},
@@ -246,7 +251,7 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 		// credential failure -- the same hazard the savingsplans exclusion
 		// prevents. When getAdvisorRecommendations is changed to propagate
 		// hard errors, flip this flag back to true.
-		serviceResult{err: advisorErr, name: "advisor", recs: dropCoveredAdvisorReservations(dropCoveredAdvisorSavingsPlans(advisorRecs, spRecs), consumptionRIs), attempted: false})
+		serviceResult{err: advisorErr, name: "advisor", recs: advisorRecs, attempted: false})
 	return withSkips(merged, err, skips)
 }
 
@@ -314,8 +319,8 @@ func advisorNeedOf(r *common.Recommendation) advisorNeed {
 
 // dropCoveredAdvisorReservations removes Advisor reservation rows that the
 // Consumption-based services already cover, matched on (account, service,
-// region, term) because a SKU match would miss duplicates of the same need,
-// then collapses same-SKU duplicates. Dropped rows are not skips.
+// region, term) because a SKU match would miss duplicates of the same need.
+// Dropped rows are not skips.
 func dropCoveredAdvisorReservations(advisor, consumption []common.Recommendation) []common.Recommendation {
 	covered := make(map[advisorNeed]bool)
 	for i := range consumption {
@@ -332,46 +337,6 @@ func dropCoveredAdvisorReservations(advisor, consumption []common.Recommendation
 	}
 	if n := len(advisor) - len(out); n > 0 {
 		logging.Infof("azure advisor: dropped %d reservation row(s) covered by Consumption", n)
-	}
-	return collapseAdvisorDuplicates(out)
-}
-
-// collapseAdvisorDuplicates keeps, for rows sharing (account, service, region,
-// term, lowercase SKU), only the smallest count (the first on a tie, with its
-// payment variants): they are one need seen with different scope or lookback,
-// and the smallest never over-buys.
-func collapseAdvisorDuplicates(rows []common.Recommendation) []common.Recommendation {
-	type sameSKU struct {
-		advisorNeed
-		sku string
-	}
-	type variant struct {
-		sameSKU
-		payment string
-	}
-	keyOf := func(r *common.Recommendation) sameSKU {
-		return sameSKU{advisorNeedOf(r), strings.ToLower(r.ResourceType)}
-	}
-	smallest := make(map[sameSKU]int)
-	for i := range rows {
-		r := &rows[i]
-		if c, ok := smallest[keyOf(r)]; r.CommitmentType == common.CommitmentReservedInstance && (!ok || r.Count < c) {
-			smallest[keyOf(r)] = r.Count
-		}
-	}
-	seen := make(map[variant]bool)
-	out := make([]common.Recommendation, 0, len(rows))
-	for i := range rows {
-		r := &rows[i]
-		v := variant{keyOf(r), r.PaymentOption}
-		if r.CommitmentType == common.CommitmentReservedInstance && (r.Count != smallest[v.sameSKU] || seen[v]) {
-			continue
-		}
-		seen[v] = true
-		out = append(out, *r)
-	}
-	if n := len(rows) - len(out); n > 0 {
-		logging.Infof("azure advisor: collapsed %d duplicate reservation row(s) to the smallest count", n)
 	}
 	return out
 }
@@ -548,8 +513,11 @@ func (r *RecommendationsClientAdapter) appendAdvisorPageRecs(
 		}
 		rec := r.convertAdvisorRecommendation(ctx, advisorRec)
 		if rec != nil && shouldIncludeService(params, rec.Service) {
-			variants := azrecs.ExpandPaymentVariants(*rec)
-			recommendations = append(recommendations, variants...)
+			if rec.CommitmentType == common.CommitmentReservedInstance {
+				recommendations = append(recommendations, *rec) // priced after the drops
+				continue
+			}
+			recommendations = append(recommendations, azrecs.ExpandPaymentVariants(*rec)...)
 		}
 	}
 	return recommendations
@@ -627,8 +595,9 @@ func advisorPurchaseKind(ext map[string]*string) (common.CommitmentType, string,
 //
 // Payment option is left empty: the Advisor payload carries no payment-plan
 // or price field, and Azure charges the same total for upfront and monthly
-// billing, so ExpandPaymentVariants fans it out to both. CommitmentCost stays 0
-// and RecurringMonthlyCost nil (unknown) because the payload has no price.
+// billing. Reservation rows get their legs and price in priceAdvisorReservations;
+// Savings Plan rows are fanned out with ExpandPaymentVariants, with CommitmentCost
+// 0 and RecurringMonthlyCost nil (unknown) because the payload has no price.
 func (r *RecommendationsClientAdapter) convertAdvisorRecommendation(ctx context.Context, advisorRec *armadvisor.ResourceRecommendationBase) *common.Recommendation {
 	if advisorRec.Properties == nil {
 		return nil

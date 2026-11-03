@@ -104,23 +104,23 @@ func TestConvertAdvisor_UnknownOrMissingValuesAreSkippedLoudly(t *testing.T) {
 	}
 }
 
-func TestAppendAdvisorPageRecs_VariantsKeepCostUnknown(t *testing.T) {
+func TestAppendAdvisorPageRecs_ReservationRowIsBaseSavingsPlanIsExpanded(t *testing.T) {
 	t.Parallel()
 	a := &RecommendationsClientAdapter{subscriptionID: "sub"}
 	page := armadvisor.RecommendationsClientListResponse{ResourceRecommendationBaseListResult: armadvisor.ResourceRecommendationBaseListResult{
-		Value: []*armadvisor.ResourceRecommendationBase{advisorRec(subscriptionScope, reservationExt(nil))},
+		Value: []*armadvisor.ResourceRecommendationBase{advisorRec(subscriptionScope, reservationExt(nil)),
+			advisorRec(subscriptionScope, reservationExt(map[string]*string{"recommendationSubCategory": strPtr("SavingsPlan")}))},
 	}}
 	recs := a.appendAdvisorPageRecs(context.Background(), common.RecommendationParams{}, page, nil)
-	require.Len(t, recs, 2)
-	for i, payment := range []string{"upfront", "monthly"} {
-		assert.Equal(t, payment, recs[i].PaymentOption)
-		assert.Equal(t, 100.0, recs[i].EstimatedSavings)
-		assert.Nil(t, recs[i].RecurringMonthlyCost, "no price in the payload: unknown, not zero")
-	}
+	require.Len(t, recs, 3)
+	assert.Empty(t, recs[0].PaymentOption, "reservation rows stay base rows until priced")
+	assert.Equal(t, 100.0, recs[0].EstimatedSavings)
+	assert.Nil(t, recs[0].RecurringMonthlyCost, "no price in the payload: unknown, not zero")
+	assert.Equal(t, []string{"upfront", "monthly"}, []string{recs[1].PaymentOption, recs[2].PaymentOption})
 }
 
 func TestGetRecommendations_AdvisorTruncationIsSurfaced(t *testing.T) {
-	overrideServiceClientFns(t, &fakeServiceClient{}, &fakeServiceClient{}, &fakeServiceClient{}, &fakeServiceClient{}, &fakeServiceClient{})
+	overrideServiceClientFns(t, &pricedFake{}, &fakeServiceClient{}, &fakeServiceClient{}, &fakeServiceClient{}, &fakeServiceClient{})
 	a := &RecommendationsClientAdapter{cred: &mockAzureTokenCredential{}, subscriptionID: "sub"}
 	a.getAdvisorRecsFn = func(ctx context.Context, p common.RecommendationParams) ([]common.Recommendation, error) {
 		pager := &fakePager[armadvisor.RecommendationsClientListResponse]{limit: 10000, page: advisorPage}
@@ -140,7 +140,7 @@ func TestGetRecommendations_AdvisorSavingsPlanDedupedAgainstBenefitRecs(t *testi
 	}
 	benefit := sp("sub", "1yr", "benefit")
 	run := func(spRecs []common.Recommendation, advisor []common.Recommendation) []common.Recommendation {
-		overrideServiceClientFns(t, &fakeServiceClient{}, &fakeServiceClient{}, &fakeServiceClient{}, &fakeServiceClient{}, &fakeServiceClient{recs: spRecs})
+		overrideServiceClientFns(t, &pricedFake{}, &fakeServiceClient{}, &fakeServiceClient{}, &fakeServiceClient{}, &fakeServiceClient{recs: spRecs})
 		a := &RecommendationsClientAdapter{cred: &mockAzureTokenCredential{}, subscriptionID: "sub",
 			getAdvisorRecsFn: func(context.Context, common.RecommendationParams) ([]common.Recommendation, error) {
 				return advisor, nil
@@ -149,11 +149,13 @@ func TestGetRecommendations_AdvisorSavingsPlanDedupedAgainstBenefitRecs(t *testi
 		require.NoError(t, err)
 		return recs
 	}
-	advisorRI := common.Recommendation{CommitmentType: common.CommitmentReservedInstance, Account: "sub", Term: "1yr", Region: "advisor-ri"}
+	advisorRI := riRow(common.ServiceCompute, "advisor-ri", "1yr", "Standard_D2s_v3", 1, "")
+	advisorRI.Account = "sub"
 
 	got := run([]common.Recommendation{benefit}, []common.Recommendation{sp("sub", "1yr", "advisor"), sp("sub", "3yr", "advisor"), advisorRI})
-	assert.ElementsMatch(t, []common.Recommendation{benefit, sp("sub", "3yr", "advisor"), advisorRI}, got,
-		"the covered (account, term) Advisor SP row is dropped; other terms and RI rows stay")
+	assert.Len(t, got, 4, "the covered (account, term) Advisor SP row is dropped; other terms stay; the RI row becomes two priced legs")
+	assert.Contains(t, got, benefit)
+	assert.Contains(t, got, sp("sub", "3yr", "advisor"))
 
 	got = run(nil, []common.Recommendation{sp("sub", "1yr", "advisor")})
 	assert.Len(t, got, 1, "Advisor SP advice is kept when the benefit source returns nothing")

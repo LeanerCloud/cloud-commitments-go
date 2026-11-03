@@ -6,13 +6,22 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	azrecs "github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/recommendations"
 )
 
 func riRow(service common.ServiceType, region, term, sku string, count int, payment string) common.Recommendation {
 	return common.Recommendation{Provider: common.ProviderAzure, Service: service, CommitmentType: common.CommitmentReservedInstance,
 		Account: "sub", Region: region, Term: term, ResourceType: sku, Count: count, PaymentOption: payment}
+}
+
+// pricedFake is a service client that can also price Advisor rows at a flat USD 100 per unit.
+type pricedFake struct{ fakeServiceClient }
+
+func (*pricedFake) ReservationUnitPrice(context.Context, string, string, int) (azrecs.ReservationPrice, error) {
+	return usd(100), nil
 }
 
 func TestResolveAdvisorRegion_NormalizesToARMForm(t *testing.T) {
@@ -38,17 +47,6 @@ func TestDropCoveredAdvisorReservations(t *testing.T) {
 		sp := common.Recommendation{CommitmentType: common.CommitmentSavingsPlan, Service: vm, Account: "sub", Region: "eastus", Term: "1yr"}
 		assert.Equal(t, []common.Recommendation{sp}, dropCoveredAdvisorReservations([]common.Recommendation{sp}, consumption))
 	})
-
-	t.Run("same-SKU duplicates collapse to the smallest count, keeping its payment variants and ties to the first", func(t *testing.T) {
-		advisor := []common.Recommendation{
-			riRow(vm, "eastus", "1yr", "Standard_D2s_v3", 4, "upfront"), riRow(vm, "eastus", "1yr", "Standard_D2s_v3", 4, "monthly"),
-			riRow(vm, "eastus", "1yr", "standard_d2s_v3", 2, "upfront"), riRow(vm, "eastus", "1yr", "standard_d2s_v3", 2, "monthly"),
-			riRow(vm, "eastus", "1yr", "Standard_D2s_v3", 2, "upfront"), riRow(vm, "eastus", "1yr", "Standard_D2s_v3", 2, "monthly"),
-			riRow(vm, "eastus", "1yr", "Standard_D8s_v3", 9, "upfront"),
-		}
-		got := dropCoveredAdvisorReservations(advisor, nil)
-		assert.Equal(t, []common.Recommendation{advisor[2], advisor[3], advisor[6]}, got)
-	})
 }
 
 func TestGetRecommendations_AdvisorReservationCoveredByConsumption(t *testing.T) {
@@ -66,14 +64,15 @@ func TestGetRecommendations_AdvisorReservationCoveredByConsumption(t *testing.T)
 	advisor := riRow(vm, "eastus", "1yr", "Standard_D2s_v3", 2, "")
 
 	assert.Equal(t, []common.Recommendation{consumption}, run(&fakeServiceClient{recs: []common.Recommendation{consumption}}, advisor))
-	assert.Equal(t, []common.Recommendation{advisor}, run(&fakeServiceClient{err: errors.New("boom")}, advisor),
-		"a failed compute service leaves the Advisor row as the only source")
+	got := run(&pricedFake{fakeServiceClient{err: errors.New("boom")}}, advisor)
+	require.Len(t, got, 2, "a failed compute service leaves the Advisor row as the only source")
+	assert.Equal(t, "Standard_D2s_v3", got[0].ResourceType)
 }
 
 func TestGetRecommendations_FailedServiceRowsDoNotCoverAdvisor(t *testing.T) {
 	consumption := riRow(common.ServiceCompute, "eastus", "1yr", "Standard_D4s_v3", 1, "upfront")
 	advisor := riRow(common.ServiceCompute, "eastus", "1yr", "Standard_D2s_v3", 2, "")
-	overrideServiceClientFns(t, &fakeServiceClient{recs: []common.Recommendation{consumption}, err: errors.New("mid-walk failure")},
+	overrideServiceClientFns(t, &pricedFake{fakeServiceClient{recs: []common.Recommendation{consumption}, err: errors.New("mid-walk failure")}},
 		&fakeServiceClient{}, &fakeServiceClient{}, &fakeServiceClient{}, &fakeServiceClient{})
 	a := &RecommendationsClientAdapter{cred: &mockAzureTokenCredential{}, subscriptionID: "sub",
 		getAdvisorRecsFn: func(context.Context, common.RecommendationParams) ([]common.Recommendation, error) {
@@ -82,5 +81,60 @@ func TestGetRecommendations_FailedServiceRowsDoNotCoverAdvisor(t *testing.T) {
 
 	recs, _ := a.GetRecommendations(context.Background(), &common.RecommendationParams{})
 
-	assert.Equal(t, []common.Recommendation{advisor}, recs, "rows of a failed service are dropped, so they cover nothing")
+	require.Len(t, recs, 2, "rows of a failed service are dropped, so they cover nothing")
+	assert.Equal(t, "Standard_D2s_v3", recs[0].ResourceType)
+}
+
+type funcPriceFake struct {
+	fakeServiceClient
+	price azrecs.PriceFunc
+}
+
+func (f *funcPriceFake) ReservationUnitPrice(ctx context.Context, sku, region string, years int) (azrecs.ReservationPrice, error) {
+	return f.price(ctx, sku, region, years)
+}
+
+func advisorOnlyAdapter(t *testing.T, compute serviceRecsGetter, advisor ...common.Recommendation) *RecommendationsClientAdapter {
+	t.Helper()
+	overrideServiceClientFns(t, compute, &fakeServiceClient{}, &fakeServiceClient{}, &fakeServiceClient{}, &fakeServiceClient{})
+	return &RecommendationsClientAdapter{cred: &mockAzureTokenCredential{}, subscriptionID: "sub",
+		getAdvisorRecsFn: func(context.Context, common.RecommendationParams) ([]common.Recommendation, error) {
+			return advisor, nil
+		}}
+}
+
+func TestGetRecommendations_AdvisorPricingEndToEnd(t *testing.T) {
+	priced := riRow(common.ServiceCompute, "eastus", "1yr", "Standard_D2s_v3", 3, "")
+	unpriced := riRow(common.ServiceCompute, "westus", "1yr", "Standard_D2s_v3", 1, "")
+	noUnit := &funcPriceFake{price: func(_ context.Context, _, region string, _ int) (azrecs.ReservationPrice, error) {
+		if region == "westus" {
+			return azrecs.ReservationPrice{}, errors.New("no reservation pricing found")
+		}
+		return usd(120), nil
+	}}
+
+	recs, err := advisorOnlyAdapter(t, noUnit, priced, unpriced).GetRecommendations(context.Background(), &common.RecommendationParams{})
+
+	require.Len(t, recs, 2, "the priced row's two legs; the unpriceable row is absent")
+	assert.Equal(t, 360.0, recs[0].CommitmentCost)
+	assert.Equal(t, "USD", recs[0].CommitmentCurrency)
+	assert.Equal(t, "USD", recs[1].CommitmentCurrency)
+	var partial *azrecs.PartialResultError
+	require.True(t, errors.As(err, &partial))
+	assert.Len(t, partial.Skipped, 1)
+}
+
+func TestGetRecommendations_CancelDuringAdvisorPricingReturnsCtxError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	canceling := &funcPriceFake{price: func(context.Context, string, string, int) (azrecs.ReservationPrice, error) {
+		cancel()
+		return usd(100), nil
+	}}
+
+	recs, err := advisorOnlyAdapter(t, canceling, riRow(common.ServiceCompute, "eastus", "1yr", "Standard_D2s_v3", 1, "")).
+		GetRecommendations(ctx, &common.RecommendationParams{})
+
+	assert.Nil(t, recs)
+	assert.ErrorIs(t, err, context.Canceled)
 }

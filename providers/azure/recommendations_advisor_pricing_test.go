@@ -128,11 +128,12 @@ func TestPriceAdvisorReservations_CurrencyImpliesBothLegsPriced(t *testing.T) {
 	t.Parallel()
 	f := &fakePrices{prices: map[string]azrecs.ReservationPrice{"a": usd(100), "eur": {Total: 5, Currency: "EUR"}}}
 	got, _ := priceRows(t, f, vmBase("eastus", "a", 2), vmBase("eastus", "eur", 1), vmBase("westus", "a", 1))
-	require.NotEmpty(t, got)
+	var withCurrency int
 	for _, g := range got {
 		if g.CommitmentCurrency == "" {
 			continue
 		}
+		withCurrency++
 		switch g.PaymentOption {
 		case "upfront":
 			assert.Positive(t, g.CommitmentCost)
@@ -143,4 +144,17 @@ func TestPriceAdvisorReservations_CurrencyImpliesBothLegsPriced(t *testing.T) {
 			assert.Fail(t, "unexpected payment option", g.PaymentOption)
 		}
 	}
+	assert.Equal(t, 4, withCurrency, "two priced needs, two legs each")
+}
+
+func TestPriceAdvisorReservations_NonBaseRowIsSkipped(t *testing.T) {
+	t.Parallel()
+	f := &fakePrices{prices: map[string]azrecs.ReservationPrice{"a": usd(100)}}
+	row := vmBase("eastus", "a", 1)
+	row.PaymentOption = "upfront"
+	got, skips := priceRows(t, f, row)
+	assert.Empty(t, got)
+	assert.Zero(t, f.calls)
+	require.Len(t, skips.Entries(), 1)
+	assert.Contains(t, skips.Entries()[0], "not a base row")
 }
