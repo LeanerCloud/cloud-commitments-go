@@ -3,6 +3,7 @@ package azure
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -155,4 +156,21 @@ func TestGetRecommendations_FailedAdvisorCollectorRowsAreNotPriced(t *testing.T)
 	require.NoError(t, err, "no skip is recorded, so no partial-result error")
 	assert.Empty(t, recs)
 	assert.Zero(t, calls)
+}
+
+func TestGetRecommendations_AdvisorPricingUsesParentContext(t *testing.T) {
+	ctxAware := &funcPriceFake{price: func(ctx context.Context, _, _ string, _ int) (azrecs.ReservationPrice, error) {
+		if err := ctx.Err(); err != nil {
+			return azrecs.ReservationPrice{}, fmt.Errorf("lookup: %w", err)
+		}
+		return usd(100), nil
+	}}
+
+	recs, err := advisorOnlyAdapter(t, ctxAware, riRow(common.ServiceCompute, "eastus", "1yr", "Standard_D2s_v3", 2, "")).
+		GetRecommendations(context.Background(), &common.RecommendationParams{})
+
+	require.NoError(t, err, "no skip recorded: the errgroup context is canceled once Wait returns, so pricing must use the parent")
+	require.Len(t, recs, 2)
+	assert.Equal(t, "USD", recs[0].CommitmentCurrency)
+	assert.Positive(t, recs[0].CommitmentCost)
 }
