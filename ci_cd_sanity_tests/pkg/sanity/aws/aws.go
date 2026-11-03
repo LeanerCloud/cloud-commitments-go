@@ -1,5 +1,6 @@
-// Package aws implements read-only AWS sanity checks used in CI/CD to verify
-// that deploy credentials have sufficient IAM permissions before a real deploy.
+// Package aws implements read-only AWS sanity checks used in CI/CD: it checks
+// that a few read-only APIs (STS, EC2, RDS) answer under the CI read-only role.
+// It does not check the deploy role or its permissions.
 package aws
 
 import (
