@@ -225,7 +225,7 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 
 	consumptionRIs := slices.Concat(okRecs(computeRecs, computeErr), okRecs(dbRecs, dbErr), okRecs(cacheRecs, cacheErr))
 	// Priced with the parent ctx: gctx is canceled once Wait returns.
-	advisorRecs = r.priceAdvisor(ctx, dropCoveredAdvisorReservations(dropCoveredAdvisorSavingsPlans(advisorRecs, spRecs), consumptionRIs))
+	advisorRecs = r.priceAdvisor(ctx, dropCoveredAdvisorReservations(dropCoveredAdvisorSavingsPlans(advisorRecs, spRecs), consumptionRIs), advisorErr)
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

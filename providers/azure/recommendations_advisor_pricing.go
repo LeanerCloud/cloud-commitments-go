@@ -27,9 +27,10 @@ var (
 
 // priceAdvisor prices the Advisor reservation rows with the service clients'
 // lookups. A client that cannot price (a test fake) has no lookup, so its rows
-// are skipped and counted.
-func (r *RecommendationsClientAdapter) priceAdvisor(ctx context.Context, rows []common.Recommendation) []common.Recommendation {
-	if !slices.ContainsFunc(rows, func(rec common.Recommendation) bool { return rec.CommitmentType == common.CommitmentReservedInstance }) {
+// are skipped and counted. Rows of a failed collector are left alone: the merge
+// drops them, so pricing them would only issue lookups and record skips.
+func (r *RecommendationsClientAdapter) priceAdvisor(ctx context.Context, rows []common.Recommendation, collectErr error) []common.Recommendation {
+	if collectErr != nil || !slices.ContainsFunc(rows, func(rec common.Recommendation) bool { return rec.CommitmentType == common.CommitmentReservedInstance }) {
 		return rows
 	}
 	clients := map[common.ServiceType]serviceRecsGetter{

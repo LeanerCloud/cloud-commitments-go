@@ -138,3 +138,21 @@ func TestGetRecommendations_CancelDuringAdvisorPricingReturnsCtxError(t *testing
 	assert.Nil(t, recs)
 	assert.ErrorIs(t, err, context.Canceled)
 }
+
+func TestGetRecommendations_FailedAdvisorCollectorRowsAreNotPriced(t *testing.T) {
+	calls := 0
+	counting := &funcPriceFake{price: func(context.Context, string, string, int) (azrecs.ReservationPrice, error) {
+		calls++
+		return usd(100), nil
+	}}
+	a := advisorOnlyAdapter(t, counting)
+	a.getAdvisorRecsFn = func(context.Context, common.RecommendationParams) ([]common.Recommendation, error) {
+		return []common.Recommendation{riRow(common.ServiceCompute, "eastus", "1yr", "Standard_D2s_v3", 1, "")}, errors.New("advisor list failed")
+	}
+
+	recs, err := a.GetRecommendations(context.Background(), &common.RecommendationParams{})
+
+	require.NoError(t, err, "no skip is recorded, so no partial-result error")
+	assert.Empty(t, recs)
+	assert.Zero(t, calls)
+}
