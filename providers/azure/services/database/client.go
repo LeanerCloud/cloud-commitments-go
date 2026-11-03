@@ -210,13 +210,7 @@ type AzureRetailPrice = pricing.Page[pricing.RetailPriceItem]
 // GetRecommendations gets SQL Database reservation recommendations from Azure Consumption API.
 func (c *Client) GetRecommendations(ctx context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	recommendations := make([]common.Recommendation, 0)
-	pricer := azrecs.NewPricer("database", func(ctx context.Context, sku, region string, termYears int) (azrecs.ReservationPrice, error) {
-		p, err := c.getSQLPricing(ctx, sku, region, termYears)
-		if err != nil {
-			return azrecs.ReservationPrice{}, err
-		}
-		return azrecs.ReservationPrice{Total: p.ReservationPrice, Currency: p.Currency}, nil
-	})
+	pricer := azrecs.NewPricer("database", c.ReservationUnitPrice)
 
 	// Use injected pager if available (for testing)
 	var pager RecommendationsPager
@@ -594,6 +588,15 @@ type SQLPricing struct {
 	Currency         string
 	HourlyRate       float64
 	ReservationPrice float64
+}
+
+// ReservationUnitPrice returns the Retail Prices reservation total and currency for one unit of sku in region over termYears.
+func (c *Client) ReservationUnitPrice(ctx context.Context, sku, region string, termYears int) (azrecs.ReservationPrice, error) {
+	p, err := c.getSQLPricing(ctx, sku, region, termYears)
+	if err != nil {
+		return azrecs.ReservationPrice{}, err
+	}
+	return azrecs.ReservationPrice{Total: p.ReservationPrice, Currency: p.Currency}, nil
 }
 
 // getSQLPricing gets real pricing from Azure Retail Prices API.
