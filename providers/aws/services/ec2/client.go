@@ -1142,6 +1142,9 @@ func listOfferingsInput(want offeringWant, nextToken *string) *ec2.DescribeReser
 // InstanceType is intentionally left unset so AWS returns all instance types
 // matching the other constraints -- that is exactly the "valid targets" set for
 // a convertible RI exchange.
+//
+// After maxListPages pages with more still to read it returns
+// ErrTargetOfferingsTruncated and no list, never a partial one.
 func (c *Client) ListTargetOfferings(ctx context.Context, params ListTargetOfferingsParams) ([]TargetOffering, error) {
 	want, err := resolveListWant(params)
 	if err != nil {
