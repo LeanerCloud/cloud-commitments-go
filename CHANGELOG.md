@@ -32,6 +32,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **`common.ErrRefusedBeforePurchase`:** a sentinel for a purchase refused before
+  the call sent any purchase request, detectable with `errors.Is`.
 - **Azure `NewPartialSubscriptionFailure` constructor:** builds a
   `PartialSubscriptionFailureError`, optionally with skip reasons readable
   through `Skips()`, so code outside the module can construct one, for example
