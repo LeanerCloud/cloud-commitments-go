@@ -170,7 +170,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	// After the dedupe: a re-drive that already bought must not be refused for a
 	// later price rise (ec2/client.go does the same).
 	if err = c.checkApprovedUpfront(ctx, rec, offeringID); err != nil {
-		result.Error = err
+		result.Error = fmt.Errorf("%w: %w", common.ErrRefusedBeforePurchase, err)
 		return result, result.Error
 	}
 

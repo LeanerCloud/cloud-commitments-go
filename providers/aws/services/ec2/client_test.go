@@ -1724,6 +1724,7 @@ func TestPurchaseCommitment_ExistingCommitmentFlag(t *testing.T) {
 
 		result, err := client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{IdempotencyToken: token})
 		require.Error(t, err)
+		assert.NotErrorIs(t, err, common.ErrRefusedBeforePurchase)
 		assert.False(t, result.Success)
 		assert.False(t, result.ExistingCommitment)
 	})

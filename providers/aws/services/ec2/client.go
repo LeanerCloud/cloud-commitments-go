@@ -168,7 +168,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	}
 
 	if err = checkApprovedUpfront(rec, offering); err != nil {
-		result.Error = err
+		result.Error = fmt.Errorf("%w: %w", common.ErrRefusedBeforePurchase, err)
 		return result, result.Error
 	}
 

@@ -37,6 +37,8 @@ func TestPurchaseCommitment_RefusesOfferingAboveApprovedUpfront(t *testing.T) {
 	m := offeringsMock(pricedOffering(600))
 	res, err := (&Client{client: m, region: "us-east-1"}).PurchaseCommitment(context.Background(), pricedRec(), common.PurchaseOptions{})
 	require.ErrorContains(t, err, "exceeds the approved upfront")
+	assert.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
+	assert.ErrorIs(t, res.Error, common.ErrRefusedBeforePurchase)
 	assert.False(t, res.Success)
 	m.AssertNotCalled(t, "PurchaseReservedInstancesOffering", mock.Anything, mock.Anything)
 }
