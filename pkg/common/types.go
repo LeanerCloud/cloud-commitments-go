@@ -19,9 +19,14 @@ import (
 var ErrCommitmentPurchaseNotSupported = errors.New("commitment purchase not supported for this service")
 
 // ErrCurrencyNotAccepted marks an operation refused because the billing
-// currency is missing or differs from the currency the caller asked for. The
-// refusal happens before anything is purchased or exchanged, so it is distinct
-// from an API failure. Detect it with errors.Is(err, ErrCurrencyNotAccepted).
+// currency is missing or differs from the currency the caller asked for, as
+// distinct from an API failure. On its own it means the refusal came before
+// anything was purchased or exchanged. A refusal on a retry that follows a
+// purchase attempt which may have committed (Azure reservations, attempt 2 or
+// later) also carries ErrOutcomeUnknown: then the earlier purchase may exist,
+// so keep the money counted and reconcile. Check ErrOutcomeUnknown before
+// treating it as "nothing was bought". Detect it with
+// errors.Is(err, ErrCurrencyNotAccepted).
 var ErrCurrencyNotAccepted = errors.New("currency not accepted")
 
 // ErrOutcomeUnknown marks a purchase whose request may have reached the cloud

@@ -257,6 +257,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **`azure`:** an error from a reservation purchase retry (attempt 2 or later) now also wraps `common.ErrOutcomeUnknown`. That covers a currency refusal from the retry's calculatePrice, a failed idempotency re-check, a non-retryable purchase failure, a cancelled retry wait and exhausted attempts. A retry runs only after a purchase that failed retryably and may have committed, and the re-check can miss that order, so none of these errors may read as "nothing was bought". The cause stays in the chain, so `errors.Is(err, common.ErrCurrencyNotAccepted)` still matches. The `ErrCurrencyNotAccepted` doc now says it is pre-purchase only without `ErrOutcomeUnknown` (#671).
 - **Azure purchases check the recommendation currency.** Azure reservation purchases
   compare the calculatePrice billing currency with the recommendation currency
   (empty means USD) and refuse before purchasing when it is missing or differs.

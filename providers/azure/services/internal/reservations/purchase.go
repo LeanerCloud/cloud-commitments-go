@@ -407,7 +407,7 @@ func purchaseTwoStepGuarded(ctx context.Context, httpClient HTTPClient, calcURL 
 	for attempt := 1; attempt <= purchaseMaxAttempts; attempt++ {
 		existingID, found, err := recheckAlreadyPurchased(ctx, httpClient, bearerToken, idempotencyToken, attempt)
 		if err != nil {
-			return "", false, err
+			return "", false, afterUncertainAttempt(attempt, err)
 		}
 		if found {
 			return existingID, true, nil
@@ -415,7 +415,7 @@ func purchaseTwoStepGuarded(ctx context.Context, httpClient HTTPClient, calcURL 
 		// Step 1: calculatePrice -- mint a session-bound reservationOrderId.
 		orderID, err := doCalculatePrice(ctx, httpClient, calcURL, bodyBytes, bearerToken, commitmentCurrency)
 		if err != nil {
-			return "", false, fmt.Errorf("calculatePrice (attempt %d/%d): %w", attempt, purchaseMaxAttempts, err)
+			return "", false, afterUncertainAttempt(attempt, fmt.Errorf("calculatePrice (attempt %d/%d): %w", attempt, purchaseMaxAttempts, err))
 		}
 
 		// Step 2: purchase -- commit the order.
@@ -425,19 +425,35 @@ func purchaseTwoStepGuarded(ctx context.Context, httpClient HTTPClient, calcURL 
 		}
 
 		if !purchaseIsRetryable(purchaseErr, attempt) {
-			return "", false, purchaseErr
+			return "", false, afterUncertainAttempt(attempt, purchaseErr)
 		}
 		log.Printf("reservation purchase retryable (attempt %d/%d), re-running calculatePrice in %s",
 			attempt, purchaseMaxAttempts, purchaseRetryDelay)
 		if err := waitBeforeRetry(ctx); err != nil {
-			return "", false, err
+			// This attempt's purchase failed retryably and may have committed.
+			return "", false, afterUncertainAttempt(attempt+1, err)
 		}
 	}
 	// Unreachable: purchaseIsRetryable is false once attempt == purchaseMaxAttempts,
 	// so the final iteration always returns purchaseErr from inside the loop. Kept
 	// because the compiler cannot prove that, and worded generally rather than
 	// naming session timeout, which is now only one of two retry triggers.
-	return "", false, fmt.Errorf("reservation purchase exhausted %d attempts", purchaseMaxAttempts)
+	return "", false, afterUncertainAttempt(purchaseMaxAttempts, fmt.Errorf("reservation purchase exhausted %d attempts", purchaseMaxAttempts))
+}
+
+// afterUncertainAttempt marks an error returned on attempt 2 or later with
+// common.ErrOutcomeUnknown, keeping err in the chain. Attempt 2 only runs after
+// an earlier purchase failed retryably, and such a purchase may have committed
+// (#1774) while the re-check can miss it (eventual consistency, or no
+// idempotency token). So no error from a retry may read as "nothing was
+// bought", a currency refusal included (#671). Attempt 1 errors are returned
+// unchanged.
+func afterUncertainAttempt(attempt int, err error) error {
+	if attempt <= 1 {
+		return err
+	}
+	return fmt.Errorf("%w: attempt %d/%d failed after an earlier purchase attempt that may have committed: %w",
+		common.ErrOutcomeUnknown, attempt, purchaseMaxAttempts, err)
 }
 
 // doCalculatePrice calls the calculatePrice endpoint and returns the
