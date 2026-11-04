@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -776,4 +777,17 @@ func shouldIncludeService(params common.RecommendationParams, service common.Ser
 
 	// Check if this is the requested service
 	return params.Service == service
+}
+
+var vmFamilyRe = regexp.MustCompile(`(?i)^standard_([a-z]+)\d`)
+
+// vmFamily returns the series letters of a VM size ("Standard_D2s_v3" -> "d"),
+// or "" when unknown. Series letters never split an Azure ISF group, so the key
+// cannot turn one need into two rows; d, e and m merge several groups, which
+// only loses advice.
+func vmFamily(sku string) string {
+	if m := vmFamilyRe.FindStringSubmatch(sku); m != nil {
+		return strings.ToLower(m[1])
+	}
+	return ""
 }
