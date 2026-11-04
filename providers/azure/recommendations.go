@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -307,30 +308,42 @@ func okRecs(recs []common.Recommendation, err error) []common.Recommendation {
 }
 
 // advisorNeed identifies one purchasable need: Consumption may key on the
-// normalized size, so covering is matched without the SKU.
+// normalized size, so covering is matched without the SKU. family is the VM
+// series for compute rows and "" when unknown or not compute (coarse key).
 type advisorNeed struct {
-	account, region, term string
-	service               common.ServiceType
+	account, region, term, family string
+	service                       common.ServiceType
 }
 
 func advisorNeedOf(r *common.Recommendation) advisorNeed {
-	return advisorNeed{r.Account, strings.ToLower(r.Region), r.Term, r.Service}
+	n := advisorNeed{account: r.Account, region: strings.ToLower(r.Region), term: r.Term, service: r.Service}
+	if r.Service == common.ServiceCompute {
+		n.family = vmFamily(r.ResourceType)
+	}
+	return n
+}
+
+// coarse is the need without its family.
+func (n advisorNeed) coarse() advisorNeed {
+	n.family = ""
+	return n
 }
 
 // dropCoveredAdvisorReservations removes Advisor reservation rows that the
 // Consumption-based services already cover, matched on (account, service,
-// region, term) because a SKU match would miss duplicates of the same need.
-// Dropped rows are not skips.
+// region, term, VM family) because a SKU match would miss duplicates of the
+// same need. A row whose family is unknown matches every family of its coarse
+// need, so one need never surfaces as two rows. Dropped rows are not skips.
 func dropCoveredAdvisorReservations(advisor, consumption []common.Recommendation) []common.Recommendation {
-	covered := make(map[advisorNeed]bool)
+	cov := advisorCoverage{wild: map[advisorNeed]bool{}, someFamily: map[advisorNeed]bool{}, families: map[advisorNeed]bool{}}
 	for i := range consumption {
 		if consumption[i].CommitmentType == common.CommitmentReservedInstance {
-			covered[advisorNeedOf(&consumption[i])] = true
+			cov.add(advisorNeedOf(&consumption[i]))
 		}
 	}
 	out := make([]common.Recommendation, 0, len(advisor))
 	for i := range advisor {
-		if advisor[i].CommitmentType == common.CommitmentReservedInstance && covered[advisorNeedOf(&advisor[i])] {
+		if advisor[i].CommitmentType == common.CommitmentReservedInstance && cov.covers(advisorNeedOf(&advisor[i])) {
 			continue
 		}
 		out = append(out, advisor[i])
@@ -339,6 +352,24 @@ func dropCoveredAdvisorReservations(advisor, consumption []common.Recommendation
 		logging.Infof("azure advisor: dropped %d reservation row(s) covered by Consumption", n)
 	}
 	return out
+}
+
+// advisorCoverage records what Consumption reservation rows cover: wild are
+// coarse needs covered whatever the family, someFamily those with a known
+// covered family, families the exact (coarse need, family) pairs.
+type advisorCoverage struct{ wild, someFamily, families map[advisorNeed]bool }
+
+func (c advisorCoverage) add(n advisorNeed) {
+	if n.family == "" {
+		c.wild[n.coarse()] = true
+		return
+	}
+	c.someFamily[n.coarse()] = true
+	c.families[n] = true
+}
+
+func (c advisorCoverage) covers(n advisorNeed) bool {
+	return c.wild[n.coarse()] || c.families[n] || (n.family == "" && c.someFamily[n.coarse()])
 }
 
 // advisorFn returns the injected Advisor collector, or the real one.
@@ -776,4 +807,17 @@ func shouldIncludeService(params common.RecommendationParams, service common.Ser
 
 	// Check if this is the requested service
 	return params.Service == service
+}
+
+var vmFamilyRe = regexp.MustCompile(`(?i)^standard_([a-z]+)\d`)
+
+// vmFamily returns the series letters of a VM size ("Standard_D2s_v3" -> "d"),
+// or "" when unknown. Series letters never split an Azure ISF group, so the key
+// cannot turn one need into two rows; d, e and m merge several groups, which
+// only loses advice.
+func vmFamily(sku string) string {
+	if m := vmFamilyRe.FindStringSubmatch(sku); m != nil {
+		return strings.ToLower(m[1])
+	}
+	return ""
 }

@@ -3,6 +3,7 @@ package azure
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -174,4 +175,52 @@ func TestPriceAdvisorReservations_ThreeYearRowIsPricedForThreeYears(t *testing.T
 	require.Len(t, got, 2)
 	assert.Equal(t, 720.0, got[0].CommitmentCost)
 	assert.Equal(t, 20.0, *got[1].RecurringMonthlyCost, "720 over 36 months")
+}
+
+func TestPriceAdvisorReservations_KeepsCheapestPerVMFamily(t *testing.T) {
+	t.Parallel()
+	prices := map[string]azrecs.ReservationPrice{
+		"Standard_D2s_v3": usd(100), "Standard_D4s_v3": usd(120), "Standard_E4s_v3": usd(300), "Standard_E8s_v3": usd(310), "weird": usd(50),
+	}
+	rows := map[string]common.Recommendation{
+		"d2": vmBase("eastus", "Standard_D2s_v3", 1), // 100
+		"d4": vmBase("eastus", "Standard_D4s_v3", 1), // 120
+		"e4": vmBase("eastus", "Standard_E4s_v3", 1), // 300
+		"e8": vmBase("eastus", "Standard_E8s_v3", 1), // 310
+		"w":  vmBase("eastus", "weird", 1),           // 50, unknown family
+	}
+	survivors := func(keys ...string) []string {
+		in := make([]common.Recommendation, 0, len(keys))
+		for _, k := range keys {
+			in = append(in, rows[k])
+		}
+		got, _ := priceRows(t, &fakePrices{prices: prices}, in...)
+		set := map[string]bool{}
+		for _, g := range got {
+			set[g.ResourceType] = true
+		}
+		out := make([]string, 0, len(set))
+		for s := range set {
+			out = append(out, s)
+		}
+		slices.Sort(out)
+		return out
+	}
+
+	for _, perm := range [][]string{{"d2", "d4", "e4", "e8"}, {"e8", "d4", "e4", "d2"}, {"e4", "d2", "e8", "d4"}} {
+		assert.Equal(t, []string{"Standard_D2s_v3", "Standard_E4s_v3"}, survivors(perm...), "one per family: %v", perm)
+	}
+	for _, perm := range [][]string{{"d2", "e4", "w"}, {"w", "e4", "d2"}, {"e4", "w", "d2"}} {
+		assert.Equal(t, []string{"weird"}, survivors(perm...), "unknown family collapses the whole need: %v", perm)
+	}
+}
+
+func TestPriceAdvisorReservations_FamilyTieGoesToFirst(t *testing.T) {
+	t.Parallel()
+	prices := map[string]azrecs.ReservationPrice{"Standard_D2s_v3": usd(100), "Standard_D4s_v3": usd(100), "Standard_E4s_v3": usd(100)}
+	got, _ := priceRows(t, &fakePrices{prices: prices},
+		vmBase("eastus", "Standard_D4s_v3", 1), vmBase("eastus", "Standard_E4s_v3", 1), vmBase("eastus", "Standard_D2s_v3", 1))
+	require.Len(t, got, 4)
+	assert.Equal(t, "Standard_D4s_v3", got[0].ResourceType)
+	assert.Equal(t, "Standard_E4s_v3", got[2].ResourceType)
 }
