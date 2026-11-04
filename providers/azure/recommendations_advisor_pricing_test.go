@@ -15,12 +15,14 @@ import (
 
 type fakePrices struct {
 	calls  int
+	terms  []int
 	prices map[string]azrecs.ReservationPrice
 	err    error
 }
 
-func (f *fakePrices) lookup(_ context.Context, sku, _ string, _ int) (azrecs.ReservationPrice, error) {
+func (f *fakePrices) lookup(_ context.Context, sku, _ string, termYears int) (azrecs.ReservationPrice, error) {
 	f.calls++
+	f.terms = append(f.terms, termYears)
 	if f.err != nil {
 		return azrecs.ReservationPrice{}, f.err
 	}
@@ -157,4 +159,19 @@ func TestPriceAdvisorReservations_NonBaseRowIsSkipped(t *testing.T) {
 	assert.Zero(t, f.calls)
 	require.Len(t, skips.Entries(), 1)
 	assert.Contains(t, skips.Entries()[0], "not a base row")
+}
+
+func TestPriceAdvisorReservations_ThreeYearRowIsPricedForThreeYears(t *testing.T) {
+	t.Parallel()
+	f := &fakePrices{prices: map[string]azrecs.ReservationPrice{"a": usd(360)}}
+	row := vmBase("eastus", "a", 2)
+	row.Term = "3yr"
+
+	got, skips := priceRows(t, f, row)
+
+	assert.Equal(t, []int{3}, f.terms)
+	assert.Empty(t, skips.Entries())
+	require.Len(t, got, 2)
+	assert.Equal(t, 720.0, got[0].CommitmentCost)
+	assert.Equal(t, 20.0, *got[1].RecurringMonthlyCost, "720 over 36 months")
 }
