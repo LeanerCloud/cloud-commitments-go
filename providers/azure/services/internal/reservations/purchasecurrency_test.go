@@ -63,6 +63,8 @@ func TestPurchaseChecksBillingCurrency(t *testing.T) {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)
 				assert.ErrorIs(t, err, common.ErrCurrencyNotAccepted)
+				// #671: on the first attempt nothing was sent, so the outcome is known.
+				assert.NotErrorIs(t, err, common.ErrOutcomeUnknown)
 				assert.Zero(t, c.purchased, "no purchase call after a currency refusal")
 				return
 			}
