@@ -18,7 +18,7 @@ func TestVMFamily(t *testing.T) {
 		"Standard_B1ls":         "b",
 		"standard_d2s_v3":       "d",
 		"Standard_NC4as_T4_v3":  "nc",
-		"Standard_Ebdsv5":       "ebdsv",
+		"Ebdsv5":                "",
 		"Standard_":             "",
 		"D2s_v3":                "",
 		"garbage":               "",

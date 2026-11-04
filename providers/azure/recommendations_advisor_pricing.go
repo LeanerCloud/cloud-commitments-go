@@ -131,11 +131,11 @@ func advisorPricers(lookups map[common.ServiceType]azrecs.PriceFunc) map[common.
 func keepCheapest(legs [][]common.Recommendation, rows []common.Recommendation, idx []int) int {
 	byFamily := make(map[string][]int)
 	for _, i := range idx {
-		if advisorNeedOf(&rows[i]).family == "" {
+		f := advisorNeedOf(&rows[i]).family
+		if f == "" {
 			byFamily = map[string][]int{"": idx}
 			break
 		}
-		f := advisorNeedOf(&rows[i]).family
 		byFamily[f] = append(byFamily[f], i)
 	}
 	cleared := 0
