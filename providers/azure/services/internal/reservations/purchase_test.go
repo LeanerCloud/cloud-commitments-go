@@ -1659,6 +1659,31 @@ func TestPurchaseRetry_FailureAfterUncertainAttemptIsOutcomeUnknown(t *testing.T
 	assert.Equal(t, 2, c.purchases)
 }
 
+// TestPurchaseRetry_CancelDuringRetryDelayIsOutcomeUnknown: attempt 1's
+// purchase fails retryably (and may have committed), then the context is
+// canceled during the wait before attempt 2. The cancellation must not read as
+// "nothing was bought" (#671 review).
+func TestPurchaseRetry_CancelDuringRetryDelayIsOutcomeUnknown(t *testing.T) {
+	t.Parallel()
+	sessionTimeout := `{"error":{"code":"BadRequest","message":"Session timed out - Call CalculatePrice again"}}`
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	c := &idempotencyRetryClient{
+		listResp: func(int) (*http.Response, error) { return fakeResp(http.StatusOK, emptyOrdersList), nil },
+		purchase: func(int) *http.Response {
+			cancel() // canceled while the retry delay is about to start
+			return fakeResp(http.StatusBadRequest, sessionTimeout)
+		},
+	}
+
+	_, _, err := DoIdempotentPurchaseTwoStep(ctx, c, calcURL, []byte(testBody), "tok", "tok-671-cancel", "")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled, "the cause stays in the chain")
+	assert.ErrorIs(t, err, common.ErrOutcomeUnknown, "attempt 1 may have committed")
+	assert.Equal(t, 1, c.purchases, "no second purchase after cancellation")
+	assert.Equal(t, 1, c.calcs)
+}
+
 // TestPurchaseRetry_FirstAttemptFailureIsNotOutcomeUnknown keeps the marker
 // off errors where nothing earlier could have committed.
 func TestPurchaseRetry_FirstAttemptFailureIsNotOutcomeUnknown(t *testing.T) {
