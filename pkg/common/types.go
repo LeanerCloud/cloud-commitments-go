@@ -34,6 +34,16 @@ var ErrCurrencyNotAccepted = errors.New("currency not accepted")
 // contract until the platform persists a typed flag (platform #778).
 var ErrOutcomeUnknown = errors.New("purchase outcome unknown")
 
+// ErrRefusedBeforePurchase marks a PurchaseCommitment failure raised by the
+// approved-upfront guard (price read, currency, or ceiling check) before the
+// purchase request was built or sent. Its presence is sufficient to know that
+// call sent no purchase request, but its absence proves nothing: other refusals
+// do not carry it. It describes only the call that returned it and says nothing
+// about earlier calls with the same idempotency token. A wrapper that combines
+// several purchase calls must not propagate it unless none of them sent a
+// request. Detect it with errors.Is(err, ErrRefusedBeforePurchase).
+var ErrRefusedBeforePurchase = errors.New("refused before purchase")
+
 // ProviderType identifies the cloud provider.
 type ProviderType string
 

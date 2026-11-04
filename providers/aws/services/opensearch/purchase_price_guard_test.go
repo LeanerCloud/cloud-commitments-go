@@ -66,6 +66,8 @@ func TestPurchaseCommitment_RefusesOfferingAboveApprovedUpfront(t *testing.T) {
 	m := guardMock(525.01, "USD") // 2 x 525.01 = 1050.02 > ceiling 1050.00
 	res, err := buy(m, guardRec())
 	require.ErrorContains(t, err, "exceeds the approved upfront")
+	assert.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
+	assert.ErrorIs(t, res.Error, common.ErrRefusedBeforePurchase)
 	assert.ErrorContains(t, err, "1050.02")
 	assert.ErrorContains(t, err, "1000.00")
 	assert.False(t, res.Success)

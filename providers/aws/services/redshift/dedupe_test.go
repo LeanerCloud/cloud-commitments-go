@@ -268,6 +268,7 @@ func TestDedupe_RecoverAfterUnknownOutcome(t *testing.T) {
 				return
 			}
 			assert.ErrorIs(t, err, common.ErrOutcomeUnknown)
+			assert.NotErrorIs(t, err, common.ErrRefusedBeforePurchase)
 			assert.False(t, result.Success)
 		})
 	}

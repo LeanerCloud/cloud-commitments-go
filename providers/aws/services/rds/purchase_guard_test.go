@@ -132,6 +132,8 @@ func TestPurchaseGuard_OtherPurchaseErrorNotRecovered(t *testing.T) {
 	result, err := guardClient(m).PurchaseCommitment(context.Background(), idempotencyTestRec(), common.PurchaseOptions{IdempotencyToken: common.DeriveIdempotencyToken("exec-other", 0)})
 
 	require.Error(t, err)
+	assert.NotErrorIs(t, err, common.ErrRefusedBeforePurchase)
+	assert.NotErrorIs(t, result.Error, common.ErrRefusedBeforePurchase)
 	assert.False(t, result.Success)
 	m.AssertNumberOfCalls(t, "DescribeReservedDBInstances", 1)
 }

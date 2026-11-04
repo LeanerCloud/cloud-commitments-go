@@ -32,6 +32,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **`common.ErrRefusedBeforePurchase`:** the AWS EC2, RDS, OpenSearch, Redshift
+  and MemoryDB approved-upfront guard refusals now wrap it, so callers can tell
+  with `errors.Is` that the call sent no purchase request.
 - **Azure `NewPartialSubscriptionFailure` constructor:** builds a
   `PartialSubscriptionFailureError`, optionally with skip reasons readable
   through `Skips()`, so code outside the module can construct one, for example
