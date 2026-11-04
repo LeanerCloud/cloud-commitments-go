@@ -257,6 +257,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   compiling and a `Config` map key panics as unhashable), and
   `json.Unmarshal` into a `Config` carrying an `APIKey` now errors where the
   old `json:"-"` tag ignored it (#330)
+- **Breaking (source):** `azure.PartialResultError` gained a `Kinds` field
+  (#670). Downstream code that builds it with unkeyed composite literals no
+  longer compiles; keyed literals such as `PartialResultError{Skipped: ...}`
+  are unaffected and read as `SkipUnpriceable`.
 - **Breaking (source):** `common.PurchaseResult` gained an `ExistingCommitment`
   field. Downstream code that builds it with unkeyed composite literals no
   longer compiles; keyed literals are unaffected. The field is true when a
