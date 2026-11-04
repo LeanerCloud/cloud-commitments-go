@@ -32,6 +32,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **`azure`:** `PartialResultError.SkipKinds() []SkipKind`, index-aligned with
+  `SkipReasons()`, so consumers can tell skip causes apart without matching the
+  reason text. `SkipUnpriceable` is a row with no usable price, a non-USD
+  currency, no pricer or a malformed row. `SkipPriceLookupUnavailable` is a
+  price lookup that failed to complete: the failing Advisor row and every one
+  after it. `SkipSourceIncomplete` is a truncated Advisor walk. The kinds survive
+  the multi-subscription merge. A `PartialResultError` built with only `Skipped`
+  reads as `SkipUnpriceable`. Existing fields and methods are unchanged (#670).
 - **`common.ErrRefusedBeforePurchase`:** a sentinel for a purchase refused before
   the call sent any purchase request, detectable with `errors.Is`. The AWS EC2, RDS,
   OpenSearch, Redshift and MemoryDB approved-upfront guard refusals wrap it.

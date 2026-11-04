@@ -301,10 +301,27 @@ func ExpandConsumptionVariants(ctx context.Context, base common.Recommendation, 
 	return []common.Recommendation{upfront, monthly}, nil
 }
 
+// SkipKind says why a recommendation was dropped, so a consumer can react to
+// the cause without matching the reason text (issue #670).
+type SkipKind string
+
+const (
+	// SkipUnpriceable: the row itself cannot be used (no usable price,
+	// non-USD currency, no pricer for its service, a malformed row).
+	SkipUnpriceable SkipKind = "unpriceable"
+	// SkipPriceLookupUnavailable: the price lookup failed to complete (see
+	// IsCollectionFailure), so the row's price is unknown, not absent.
+	SkipPriceLookupUnavailable SkipKind = "price_lookup_unavailable"
+	// SkipSourceIncomplete: the source listing stopped early (a truncated
+	// Advisor walk), so rows beyond that point were never seen.
+	SkipSourceIncomplete SkipKind = "source_incomplete"
+)
+
 // SkipLog collects the recommendations a collection dropped. It is attached
 // to the collection context by WithSkipLog and is safe for concurrent use.
 type SkipLog struct {
 	entries []string
+	kinds   []SkipKind
 	mu      sync.Mutex
 }
 
@@ -317,12 +334,24 @@ func WithSkipLog(ctx context.Context) (context.Context, *SkipLog) {
 }
 
 // RecordSkip logs a dropped recommendation and records it in the context's
-// SkipLog, if any.
+// SkipLog, if any. The kind is SkipPriceLookupUnavailable when err is a failed
+// lookup (IsCollectionFailure) and SkipUnpriceable otherwise; use
+// RecordSkipKind for any other kind.
 func RecordSkip(ctx context.Context, service string, err error) {
-	logging.Errorf("azure %s: skipping recommendation: %v", service, err)
+	kind := SkipUnpriceable
+	if IsCollectionFailure(err) {
+		kind = SkipPriceLookupUnavailable
+	}
+	RecordSkipKind(ctx, service, kind, err)
+}
+
+// RecordSkipKind is RecordSkip with an explicit kind.
+func RecordSkipKind(ctx context.Context, service string, kind SkipKind, err error) {
+	logging.Errorf("azure %s: skipping recommendation (%s): %v", service, kind, err)
 	if l, ok := ctx.Value(skipLogKey{}).(*SkipLog); ok {
 		l.mu.Lock()
 		l.entries = append(l.entries, fmt.Sprintf("%s: %v", service, err))
+		l.kinds = append(l.kinds, kind)
 		l.mu.Unlock()
 	}
 }
@@ -334,6 +363,13 @@ func (l *SkipLog) Entries() []string {
 	return append([]string(nil), l.entries...)
 }
 
+// Kinds returns a copy of the recorded skip kinds, index-aligned with Entries.
+func (l *SkipLog) Kinds() []SkipKind {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]SkipKind(nil), l.kinds...)
+}
+
 // PartialResultError reports that a collection dropped recommendations it
 // could not scale or price (non-USD billing currency, unpriceable SKU, ...).
 // The recommendations that did succeed are returned alongside it; callers that
@@ -341,6 +377,9 @@ func (l *SkipLog) Entries() []string {
 // a failed run see the problem instead of an empty-looking success.
 type PartialResultError struct {
 	Skipped []string
+	// Kinds holds each skip's kind, index-aligned with Skipped. Read it
+	// through SkipKinds, which also covers values built without it.
+	Kinds []SkipKind
 }
 
 // Partial marks the error as one that accompanies usable recommendations; the
@@ -353,6 +392,20 @@ func (e *PartialResultError) SkippedCount() int { return len(e.Skipped) }
 
 // SkipReasons returns a copy of the per-recommendation skip reasons.
 func (e *PartialResultError) SkipReasons() []string { return append([]string(nil), e.Skipped...) }
+
+// SkipKinds returns each skip's kind, index-aligned with SkipReasons. A skip
+// with no recorded kind (a value built with Skipped only) reads as
+// SkipUnpriceable, what every skip meant before kinds existed.
+func (e *PartialResultError) SkipKinds() []SkipKind {
+	kinds := make([]SkipKind, len(e.Skipped))
+	for i := range kinds {
+		kinds[i] = SkipUnpriceable
+		if i < len(e.Kinds) {
+			kinds[i] = e.Kinds[i]
+		}
+	}
+	return kinds
+}
 
 func (e *PartialResultError) Error() string {
 	return fmt.Sprintf("azure recommendations: %d recommendation(s) skipped: %s", len(e.Skipped), strings.Join(e.Skipped, "; "))

@@ -265,7 +265,7 @@ func withSkips(recs []common.Recommendation, err error, skips *azrecs.SkipLog) (
 		return nil, err
 	}
 	if skipped := skips.Entries(); len(skipped) > 0 {
-		return recs, &azrecs.PartialResultError{Skipped: skipped}
+		return recs, &azrecs.PartialResultError{Skipped: skipped, Kinds: skips.Kinds()}
 	}
 	return recs, nil
 }
@@ -500,7 +500,7 @@ var errAdvisorTruncated = errors.New("azure advisor: recommendation list is inco
 func collectAdvisorOrSkip(ctx context.Context, fn func(context.Context, common.RecommendationParams) ([]common.Recommendation, error), params common.RecommendationParams) ([]common.Recommendation, error) {
 	recs, err := fn(ctx, params)
 	if errors.Is(err, errAdvisorTruncated) {
-		azrecs.RecordSkip(ctx, "advisor", err)
+		azrecs.RecordSkipKind(ctx, "advisor", azrecs.SkipSourceIncomplete, err)
 		return recs, nil
 	}
 	return recs, err

@@ -131,6 +131,9 @@ func TestGetRecommendations_AdvisorTruncationIsSurfaced(t *testing.T) {
 	var partial *azrecs.PartialResultError
 	require.True(t, errors.As(err, &partial), "a capped Advisor walk must not look complete: %v", err)
 	assert.Contains(t, partial.Skipped[0], "pagination cap")
+	// #670: a truncated walk is an incomplete source, not an unpriceable row
+	// or a pricing outage, though its reason text also starts "advisor: azure advisor:".
+	assert.Equal(t, []SkipKind{SkipSourceIncomplete}, partial.SkipKinds())
 }
 
 func TestGetRecommendations_AdvisorSavingsPlanDedupedAgainstBenefitRecs(t *testing.T) {
