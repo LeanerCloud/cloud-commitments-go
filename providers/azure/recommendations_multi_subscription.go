@@ -64,11 +64,18 @@ type PartialResultError = azrecs.PartialResultError
 // PartialResultError.SkipKinds (#670).
 type SkipKind = azrecs.SkipKind
 
-// The SkipKind values; see azrecs for their meaning.
 const (
-	SkipUnpriceable            = azrecs.SkipUnpriceable
+	// SkipUnpriceable: the row itself cannot be used (no usable price,
+	// non-USD currency, no pricer for its service, a malformed row). It is
+	// also what a skip with no recorded or an empty kind reads as.
+	SkipUnpriceable = azrecs.SkipUnpriceable
+	// SkipPriceLookupUnavailable: the price lookup failed to complete, so the
+	// row's price is unknown, not absent. A consumer should not treat the row
+	// as gone (for example, hold eviction).
 	SkipPriceLookupUnavailable = azrecs.SkipPriceLookupUnavailable
-	SkipSourceIncomplete       = azrecs.SkipSourceIncomplete
+	// SkipSourceIncomplete: the source listing stopped early (a truncated
+	// Advisor walk), so rows beyond that point were never seen.
+	SkipSourceIncomplete = azrecs.SkipSourceIncomplete
 )
 
 // AsPartialResult returns the *PartialResultError in err's chain, or nil.
@@ -469,6 +476,14 @@ func newPartialSubscriptionFailure(attempted int, failed []SubscriptionFailure, 
 // must add it. attempted should be >= len(failed).
 func NewPartialSubscriptionFailure(attempted int, failed []SubscriptionFailure, skipReasons []string) *PartialSubscriptionFailureError {
 	return newPartialSubscriptionFailure(attempted, failed, append([]string(nil), skipReasons...), nil)
+}
+
+// NewPartialSubscriptionFailureWithKinds is NewPartialSubscriptionFailure with
+// each skip's kind, index-aligned with skipReasons (#680). Both slices are
+// copied. A missing or empty kind reads as SkipUnpriceable and extra kinds are
+// ignored, as PartialResultError.SkipKinds documents.
+func NewPartialSubscriptionFailureWithKinds(attempted int, failed []SubscriptionFailure, skipReasons []string, kinds []SkipKind) *PartialSubscriptionFailureError {
+	return newPartialSubscriptionFailure(attempted, failed, append([]string(nil), skipReasons...), append([]SkipKind(nil), kinds...))
 }
 
 // GetRecommendationsForService retrieves recommendations for a single
