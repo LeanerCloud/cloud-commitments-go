@@ -273,7 +273,42 @@ func TestAppendConsumptionVariants_SkipsOnlyTheUnpriceable(t *testing.T) {
 	require.Len(t, recs, 2)
 	require.Len(t, skips.Entries(), 1, "the skipped SKU is recorded, not only logged")
 	assert.Contains(t, skips.Entries()[0], "Standard_Bad")
+	assert.Equal(t, []SkipKind{SkipUnpriceable}, skips.Kinds(), "no usable price is an unpriceable row (#670)")
 	assert.Equal(t, "Standard_D2as_v4", recs[0].ResourceType)
+}
+
+// #670: consumers tell a pricing outage from an unpriceable row by kind, not
+// by matching the reason text.
+func TestRecordSkip_DerivesTheKindFromTheError(t *testing.T) {
+	t.Parallel()
+	ctx, skips := WithSkipLog(context.Background())
+	RecordSkip(ctx, "compute", errors.New("billing currency EUR is not USD"))
+	RecordSkip(ctx, "compute", fmt.Errorf("lookup: %w", pricing.ErrFetch))
+	RecordSkip(ctx, "compute", fmt.Errorf("lookup: %w", context.DeadlineExceeded))
+	RecordSkipKind(ctx, "advisor", SkipSourceIncomplete, errors.New("walk stopped"))
+
+	assert.Equal(t, []SkipKind{SkipUnpriceable, SkipPriceLookupUnavailable, SkipPriceLookupUnavailable, SkipSourceIncomplete}, skips.Kinds())
+	require.Len(t, skips.Entries(), 4, "kinds stay index-aligned with the reasons")
+	assert.Equal(t, "advisor: walk stopped", skips.Entries()[3])
+}
+
+func TestPartialResultError_SkipKindsAreIndexAligned(t *testing.T) {
+	t.Parallel()
+	e := &PartialResultError{Skipped: []string{"a", "b", "c"}, Kinds: []SkipKind{SkipSourceIncomplete, SkipPriceLookupUnavailable, SkipUnpriceable}}
+	assert.Equal(t, []SkipKind{SkipSourceIncomplete, SkipPriceLookupUnavailable, SkipUnpriceable}, e.SkipKinds())
+
+	got := e.SkipKinds()
+	got[0] = SkipUnpriceable
+	assert.Equal(t, SkipSourceIncomplete, e.Kinds[0], "SkipKinds returns a copy")
+
+	// A value built without (or with too few) kinds stays aligned; the
+	// missing ones read as unpriceable, the pre-#670 meaning of a skip.
+	assert.Equal(t, []SkipKind{SkipUnpriceable, SkipUnpriceable}, (&PartialResultError{Skipped: []string{"a", "b"}}).SkipKinds())
+	assert.Equal(t, []SkipKind{SkipSourceIncomplete, SkipUnpriceable},
+		(&PartialResultError{Skipped: []string{"a", "b"}, Kinds: []SkipKind{SkipSourceIncomplete}}).SkipKinds())
+	assert.Equal(t, []SkipKind{SkipSourceIncomplete},
+		(&PartialResultError{Skipped: []string{"a"}, Kinds: []SkipKind{SkipSourceIncomplete, SkipUnpriceable}}).SkipKinds())
+	assert.Empty(t, (&PartialResultError{}).SkipKinds())
 }
 
 func TestConsumptionFilter_SetsLookBackExplicitly(t *testing.T) {

@@ -226,6 +226,9 @@ func TestDoPurchaseTwoStep_RetryCalculateCurrencyChangedRefuses(t *testing.T) {
 	_, err := DoPurchaseTwoStep(context.Background(), m, calcURL, []byte(testBody), "tok")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "bills in EUR")
+	// #671: the refusal follows a purchase attempt that may have committed.
+	assert.ErrorIs(t, err, common.ErrCurrencyNotAccepted)
+	assert.ErrorIs(t, err, common.ErrOutcomeUnknown)
 	for _, call := range m.Calls {
 		req := call.Arguments.Get(0).(*http.Request)
 		assert.NotContains(t, req.URL.Path, "order-second", "no purchase request for the refused retry")
@@ -1504,6 +1507,9 @@ type idempotencyRetryClient struct {
 	lists     int
 	listResp  func(callNo int) (*http.Response, error)
 	purchase  func(callNo int) *http.Response
+	// currency, when set, picks calculatePrice's billing currency per call
+	// (default USD).
+	currency func(callNo int) string
 }
 
 func (c *idempotencyRetryClient) Do(req *http.Request) (*http.Response, error) {
@@ -1513,7 +1519,11 @@ func (c *idempotencyRetryClient) Do(req *http.Request) (*http.Response, error) {
 		return c.listResp(c.lists)
 	case req.URL.String() == calcURL:
 		c.calcs++
-		return fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"USD"},"reservationOrderId":"order-`+itoa(c.calcs)+`"}}`), nil
+		cur := "USD"
+		if c.currency != nil {
+			cur = c.currency(c.calcs)
+		}
+		return fakeResp(http.StatusOK, `{"properties":{"billingCurrencyTotal":{"currencyCode":"`+cur+`"},"reservationOrderId":"order-`+itoa(c.calcs)+`"}}`), nil
 	default:
 		c.purchases++
 		return c.purchase(c.purchases), nil
@@ -1597,6 +1607,97 @@ func TestPurchaseRetry_StillRecoversWhenFirstAttemptGenuinelyFailed(t *testing.T
 	assert.Equal(t, 2, c.calcs, "each attempt mints its own session-bound order ID")
 }
 
+// TestPurchaseRetry_CurrencyRefusalAfterUncertainAttemptIsOutcomeUnknown is the
+// committed-then-error sequence of issue #671: attempt 1 reports a retryable
+// session timeout but committed on Azure's side, the in-loop re-check misses
+// the order (eventual consistency), and the retry's calculatePrice now bills in
+// EUR. The refusal must not read as "nothing was bought".
+func TestPurchaseRetry_CurrencyRefusalAfterUncertainAttemptIsOutcomeUnknown(t *testing.T) {
+	t.Parallel()
+	const token = "tok-671"
+	sessionTimeout := `{"error":{"code":"BadRequest","message":"Session timed out - Call CalculatePrice again"}}`
+
+	c := &idempotencyRetryClient{
+		listResp: func(int) (*http.Response, error) { return fakeResp(http.StatusOK, emptyOrdersList), nil },
+		purchase: func(int) *http.Response { return fakeResp(http.StatusBadRequest, sessionTimeout) },
+		currency: func(n int) string {
+			if n == 1 {
+				return "USD"
+			}
+			return "EUR"
+		},
+	}
+
+	_, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token, "USD")
+	require.Error(t, err)
+	assert.False(t, existing)
+	assert.ErrorIs(t, err, common.ErrCurrencyNotAccepted, "the cause stays matchable")
+	assert.ErrorIs(t, err, common.ErrOutcomeUnknown, "attempt 1 may have committed")
+	assert.Contains(t, err.Error(), "purchase outcome unknown", "the text platform persists (#778)")
+	assert.Equal(t, 1, c.purchases, "the refused retry sends no second purchase")
+}
+
+// TestPurchaseRetry_FailureAfterUncertainAttemptIsOutcomeUnknown: any error a
+// retry returns follows an attempt that may have committed, not only a currency
+// refusal (#671). Here attempt 2's purchase fails with a non-retryable 500.
+func TestPurchaseRetry_FailureAfterUncertainAttemptIsOutcomeUnknown(t *testing.T) {
+	t.Parallel()
+	sessionTimeout := `{"error":{"code":"BadRequest","message":"Session timed out - Call CalculatePrice again"}}`
+	c := &idempotencyRetryClient{
+		listResp: func(int) (*http.Response, error) { return fakeResp(http.StatusOK, emptyOrdersList), nil },
+		purchase: func(n int) *http.Response {
+			if n == 1 {
+				return fakeResp(http.StatusBadRequest, sessionTimeout)
+			}
+			return fakeResp(http.StatusInternalServerError, `{"error":"boom"}`)
+		},
+	}
+
+	_, _, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", "tok-671-500", "")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, common.ErrOutcomeUnknown)
+	assert.Equal(t, 2, c.purchases)
+}
+
+// TestPurchaseRetry_CancelDuringRetryDelayIsOutcomeUnknown: attempt 1's
+// purchase fails retryably (and may have committed), then the context is
+// canceled during the wait before attempt 2. The cancellation must not read as
+// "nothing was bought" (#671 review).
+func TestPurchaseRetry_CancelDuringRetryDelayIsOutcomeUnknown(t *testing.T) {
+	t.Parallel()
+	sessionTimeout := `{"error":{"code":"BadRequest","message":"Session timed out - Call CalculatePrice again"}}`
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	c := &idempotencyRetryClient{
+		listResp: func(int) (*http.Response, error) { return fakeResp(http.StatusOK, emptyOrdersList), nil },
+		purchase: func(int) *http.Response {
+			cancel() // canceled while the retry delay is about to start
+			return fakeResp(http.StatusBadRequest, sessionTimeout)
+		},
+	}
+
+	_, _, err := DoIdempotentPurchaseTwoStep(ctx, c, calcURL, []byte(testBody), "tok", "tok-671-cancel", "")
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.Canceled, "the cause stays in the chain")
+	assert.ErrorIs(t, err, common.ErrOutcomeUnknown, "attempt 1 may have committed")
+	assert.Equal(t, 1, c.purchases, "no second purchase after cancellation")
+	assert.Equal(t, 1, c.calcs)
+}
+
+// TestPurchaseRetry_FirstAttemptFailureIsNotOutcomeUnknown keeps the marker
+// off errors where nothing earlier could have committed.
+func TestPurchaseRetry_FirstAttemptFailureIsNotOutcomeUnknown(t *testing.T) {
+	t.Parallel()
+	c := &idempotencyRetryClient{
+		listResp: func(int) (*http.Response, error) { return fakeResp(http.StatusOK, emptyOrdersList), nil },
+		purchase: func(int) *http.Response { return fakeResp(http.StatusConflict, `{"error":"conflict"}`) },
+	}
+	_, _, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", "tok-671-first", "")
+	require.Error(t, err)
+	assert.NotErrorIs(t, err, common.ErrOutcomeUnknown)
+	assert.Equal(t, 1, c.purchases)
+}
+
 // TestPurchaseRetry_RefusesRetryWhenRecheckLookupFails pins the fail-closed
 // property in its new position. The pre-loop guard already refuses to purchase
 // when its lookup errors; the in-loop check must behave identically, or it
@@ -1621,6 +1722,8 @@ func TestPurchaseRetry_RefusesRetryWhenRecheckLookupFails(t *testing.T) {
 	assert.False(t, existing, "a refused re-check is a failure, not an adoption")
 	assert.Contains(t, err.Error(), "refusing to retry",
 		"an unusable re-check must stop the retry rather than proceed blind")
+	assert.ErrorIs(t, err, common.ErrOutcomeUnknown,
+		"attempt 1 may have committed, so the refusal cannot say nothing was bought (#671)")
 	assert.Equal(t, 1, c.purchases,
 		"no second purchase may be attempted when the re-check could not be completed")
 }

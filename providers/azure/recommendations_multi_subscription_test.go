@@ -470,7 +470,7 @@ func TestMultiSubscriptionRecommendationsClient_GetRecommendationsForService_Pas
 func TestMultiSubscriptionRecommendationsClient_PartialResultKeepsRecommendations(t *testing.T) {
 	withFakeSubscriptionClients(t, map[string]*fakeRecommendationsClient{
 		"sub-1": {recs: []common.Recommendation{{Account: "sub-1"}}, err: &PartialResultError{Skipped: []string{"compute: EUR"}}},
-		"sub-2": {recs: []common.Recommendation{{Account: "sub-2"}}, err: &PartialResultError{Skipped: []string{"compute: bad sku"}}},
+		"sub-2": {recs: []common.Recommendation{{Account: "sub-2"}}, err: &PartialResultError{Skipped: []string{"advisor: lookup down"}, Kinds: []SkipKind{SkipPriceLookupUnavailable}}},
 	})
 	client, err := NewMultiSubscriptionRecommendationsClient(&mockAzureTokenCredential{}, twoTestAccounts())
 	require.NoError(t, err)
@@ -479,7 +479,17 @@ func TestMultiSubscriptionRecommendationsClient_PartialResultKeepsRecommendation
 	assert.Len(t, recs, 2)
 	partial := AsPartialResult(err)
 	require.NotNil(t, partial, "got %v", err)
-	assert.ElementsMatch(t, []string{"sub-1: compute: EUR", "sub-2: compute: bad sku"}, partial.Skipped)
+	assert.ElementsMatch(t, []string{"sub-1: compute: EUR", "sub-2: advisor: lookup down"}, partial.Skipped)
+	// #670: each kind stays at its reason's index through the merge.
+	kinds := partial.SkipKinds()
+	require.Len(t, kinds, 2)
+	for i, reason := range partial.SkipReasons() {
+		want := SkipUnpriceable
+		if reason == "sub-2: advisor: lookup down" {
+			want = SkipPriceLookupUnavailable
+		}
+		assert.Equal(t, want, kinds[i], reason)
+	}
 	assert.True(t, partial.Partial())
 	assert.Nil(t, AsPartialSubscriptionFailure(err), "a partial result is not a failed subscription")
 }
@@ -489,7 +499,7 @@ func TestMultiSubscriptionRecommendationsClient_PartialResultKeepsRecommendation
 // on Skips(), never matchable as a partial result from the error chain.
 func TestMultiSubscriptionRecommendationsClient_FailureAndSkipsMixed(t *testing.T) {
 	withFakeSubscriptionClients(t, map[string]*fakeRecommendationsClient{
-		"sub-1": {recs: []common.Recommendation{{Account: "sub-1"}}, err: &PartialResultError{Skipped: []string{"compute: EUR"}}},
+		"sub-1": {recs: []common.Recommendation{{Account: "sub-1"}}, err: &PartialResultError{Skipped: []string{"advisor: lookup down"}, Kinds: []SkipKind{SkipPriceLookupUnavailable}}},
 		"sub-2": {err: errors.New("sub-2 unreachable")},
 	})
 	client, err := NewMultiSubscriptionRecommendationsClient(&mockAzureTokenCredential{}, twoTestAccounts())
@@ -507,7 +517,10 @@ func TestMultiSubscriptionRecommendationsClient_FailureAndSkipsMixed(t *testing.
 	skips := failure.Skips()
 	require.NotNil(t, skips)
 	assert.Equal(t, 1, skips.SkippedCount())
-	assert.Equal(t, []string{"sub-1: compute: EUR"}, skips.SkipReasons())
+	assert.Equal(t, []string{"sub-1: advisor: lookup down"}, skips.SkipReasons())
+	// #670: a sweep with a failed subscription keeps the kinds on Skips() too
+	// (the platform's partial-sweep path reads them there).
+	assert.Equal(t, []SkipKind{SkipPriceLookupUnavailable}, skips.SkipKinds())
 
 	var partial interface{ Partial() bool }
 	assert.False(t, errors.As(err, &partial), "a failure error must not match a partial-result check")

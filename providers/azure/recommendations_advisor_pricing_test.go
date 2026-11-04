@@ -80,6 +80,8 @@ func TestPriceAdvisorReservations_CollectionFailureStopsLookups(t *testing.T) {
 	assert.Empty(t, got)
 	assert.Equal(t, 1, f.calls, "no further lookups once pricing is unavailable")
 	assert.Len(t, skips.Entries(), 3)
+	// #670: the failing row and every row after it are an outage, not unpriceable.
+	assert.Equal(t, []azrecs.SkipKind{azrecs.SkipPriceLookupUnavailable, azrecs.SkipPriceLookupUnavailable, azrecs.SkipPriceLookupUnavailable}, skips.Kinds())
 }
 
 func TestPriceAdvisorReservations_PassesNonReservationsThrough(t *testing.T) {
@@ -99,6 +101,7 @@ func TestPriceAdvisorReservations_ServiceWithoutPricerIsSkipped(t *testing.T) {
 	assert.Empty(t, got)
 	require.Len(t, skips.Entries(), 1)
 	assert.Contains(t, skips.Entries()[0], "no reservation pricer for service")
+	assert.Equal(t, []azrecs.SkipKind{azrecs.SkipUnpriceable}, skips.Kinds())
 }
 
 func TestPriceAdvisorReservations_KeepsCheapestPricedTotalPerNeed(t *testing.T) {

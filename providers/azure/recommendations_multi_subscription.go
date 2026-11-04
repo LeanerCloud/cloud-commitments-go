@@ -60,6 +60,17 @@ var ErrSubscriptionNotAccessible = errors.New("subscription is not accessible to
 // PartialSubscriptionFailureError.Skips instead, not in the error chain.
 type PartialResultError = azrecs.PartialResultError
 
+// SkipKind says why a skipped recommendation was dropped; see
+// PartialResultError.SkipKinds (#670).
+type SkipKind = azrecs.SkipKind
+
+// The SkipKind values; see azrecs for their meaning.
+const (
+	SkipUnpriceable            = azrecs.SkipUnpriceable
+	SkipPriceLookupUnavailable = azrecs.SkipPriceLookupUnavailable
+	SkipSourceIncomplete       = azrecs.SkipSourceIncomplete
+)
+
 // AsPartialResult returns the *PartialResultError in err's chain, or nil.
 func AsPartialResult(err error) *PartialResultError {
 	var partial *PartialResultError
@@ -390,6 +401,7 @@ func mergeSubscriptionResults(subs []subscriptionClient, results [][]common.Reco
 	out := make([]common.Recommendation, 0, total)
 	failed := make([]SubscriptionFailure, 0, len(subs)+len(unmatched))
 	var skipped []string
+	var kinds []SkipKind // index-aligned with skipped
 	for i, err := range errs {
 		if partial := AsPartialResult(err); partial != nil {
 			// The subscription answered; some recommendations were dropped.
@@ -398,6 +410,7 @@ func mergeSubscriptionResults(subs []subscriptionClient, results [][]common.Reco
 			for _, s := range partial.Skipped {
 				skipped = append(skipped, subs[i].subscriptionID+": "+s)
 			}
+			kinds = append(kinds, partial.SkipKinds()...)
 			logging.Warnf("Azure subscription %s recommendations incomplete: %v", subs[i].subscriptionID, err)
 			continue
 		}
@@ -419,7 +432,7 @@ func mergeSubscriptionResults(subs []subscriptionClient, results [][]common.Reco
 	attempted := len(subs) + len(unmatched)
 	if len(failed) == 0 {
 		if len(skipped) > 0 {
-			return out, &PartialResultError{Skipped: skipped}
+			return out, &PartialResultError{Skipped: skipped, Kinds: kinds}
 		}
 		return out, nil
 	}
@@ -430,17 +443,17 @@ func mergeSubscriptionResults(subs []subscriptionClient, results [][]common.Reco
 	// Partial sweep: hand back what succeeded AND a typed error saying what
 	// did not, so the caller can tell an incomplete sweep from a complete one
 	// that happened to find nothing. See PartialSubscriptionFailureError.
-	return out, newPartialSubscriptionFailure(attempted, failed, skipped)
+	return out, newPartialSubscriptionFailure(attempted, failed, skipped, kinds)
 }
 
-func newPartialSubscriptionFailure(attempted int, failed []SubscriptionFailure, skipped []string) *PartialSubscriptionFailureError {
+func newPartialSubscriptionFailure(attempted int, failed []SubscriptionFailure, skipped []string, kinds []SkipKind) *PartialSubscriptionFailureError {
 	e := &PartialSubscriptionFailureError{
 		Attempted: attempted,
 		Succeeded: attempted - len(failed),
 		Failed:    failed,
 	}
 	if len(skipped) > 0 {
-		e.skipped = &PartialResultError{Skipped: skipped}
+		e.skipped = &PartialResultError{Skipped: skipped, Kinds: kinds}
 	}
 	return e
 }
@@ -455,7 +468,7 @@ func newPartialSubscriptionFailure(attempted int, failed []SubscriptionFailure, 
 // path prefixes each with "<subscription ID>: ", so callers wanting that shape
 // must add it. attempted should be >= len(failed).
 func NewPartialSubscriptionFailure(attempted int, failed []SubscriptionFailure, skipReasons []string) *PartialSubscriptionFailureError {
-	return newPartialSubscriptionFailure(attempted, failed, append([]string(nil), skipReasons...))
+	return newPartialSubscriptionFailure(attempted, failed, append([]string(nil), skipReasons...), nil)
 }
 
 // GetRecommendationsForService retrieves recommendations for a single

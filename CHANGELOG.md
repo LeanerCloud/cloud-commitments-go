@@ -32,6 +32,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **`azure`:** `PartialResultError.SkipKinds() []SkipKind`, index-aligned with
+  `SkipReasons()`, so consumers can tell skip causes apart without matching the
+  reason text. `SkipUnpriceable` is a row with no usable price, a non-USD
+  currency, no pricer or a malformed row. `SkipPriceLookupUnavailable` is a
+  price lookup that failed to complete: the failing Advisor row and every one
+  after it. `SkipSourceIncomplete` is a truncated Advisor walk. The kinds survive
+  the multi-subscription merge. A `PartialResultError` built with only `Skipped`
+  reads as `SkipUnpriceable`. Existing fields and methods are unchanged (#670).
 - **`common.ErrRefusedBeforePurchase`:** a sentinel for a purchase refused before
   the call sent any purchase request, detectable with `errors.Is`. The AWS EC2, RDS,
   OpenSearch, Redshift and MemoryDB approved-upfront guard refusals wrap it.
@@ -253,6 +261,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   compiling and a `Config` map key panics as unhashable), and
   `json.Unmarshal` into a `Config` carrying an `APIKey` now errors where the
   old `json:"-"` tag ignored it (#330)
+- **Breaking (source):** `azure.PartialResultError` gained a `Kinds` field
+  (#670). Downstream code that builds it with unkeyed composite literals no
+  longer compiles; keyed literals such as `PartialResultError{Skipped: ...}`
+  are unaffected and read as `SkipUnpriceable`.
 - **Breaking (source):** `common.PurchaseResult` gained an `ExistingCommitment`
   field. Downstream code that builds it with unkeyed composite literals no
   longer compiles; keyed literals are unaffected. The field is true when a
@@ -261,6 +273,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **`azure`:** an error from a reservation purchase retry (attempt 2 or later) now also wraps `common.ErrOutcomeUnknown`. That covers a currency refusal from the retry's calculatePrice, a failed idempotency re-check, a non-retryable purchase failure, a cancelled retry wait and exhausted attempts. A retry runs only after a purchase that failed retryably and may have committed, and the re-check can miss that order, so none of these errors may read as "nothing was bought". The cause stays in the chain, so `errors.Is(err, common.ErrCurrencyNotAccepted)` still matches. The `ErrCurrencyNotAccepted` doc now says it is pre-purchase only without `ErrOutcomeUnknown` (#671).
 - **Azure purchases check the recommendation currency.** Azure reservation purchases
   compare the calculatePrice billing currency with the recommendation currency
   (empty means USD) and refuse before purchasing when it is missing or differs.
