@@ -58,13 +58,13 @@ func (r *RecommendationsClientAdapter) priceAdvisor(ctx context.Context, rows []
 // A row that cannot be priced is dropped and recorded with RecordSkip. A
 // failure to reach the price catalog makes the rest of the call skip without
 // further lookups. Of the priced rows sharing (account, service, region,
-// term), only the one with the smallest total (Count x unit price) is kept,
-// the first on a tie, so the result never commits more than any single Advisor
-// suggestion. Collapsed rows are logged, not skips.
+// term, VM family), only the one with the smallest total (Count x unit price) is
+// kept, the first on a tie, so the result never commits more than any single
+// Advisor suggestion per family. Collapsed rows are logged, not skips.
 func priceAdvisorReservations(ctx context.Context, rows []common.Recommendation, lookups map[common.ServiceType]azrecs.PriceFunc) []common.Recommendation {
 	pricers := advisorPricers(lookups)
 	legs := make([][]common.Recommendation, len(rows))
-	winner := make(map[advisorNeed]int)
+	groups := make(map[advisorNeed][]int)
 	var unavailable error
 	var priced, skipped, collapsed int
 	skip := func(err error) {
@@ -100,9 +100,12 @@ func priceAdvisorReservations(ctx context.Context, rows []common.Recommendation,
 			continue
 		}
 		priced++
-		if keepCheapest(legs, winner, i, advisorNeedOf(&row), rowLegs) {
-			collapsed++
-		}
+		legs[i] = rowLegs
+		coarse := advisorNeedOf(&row).coarse()
+		groups[coarse] = append(groups[coarse], i)
+	}
+	for _, idx := range groups {
+		collapsed += keepCheapest(legs, rows, idx)
 	}
 	out := make([]common.Recommendation, 0, len(rows))
 	for _, l := range legs {
@@ -120,20 +123,37 @@ func advisorPricers(lookups map[common.ServiceType]azrecs.PriceFunc) map[common.
 	return pricers
 }
 
-// keepCheapest stores rowLegs at legs[i] if its total beats the current winner
-// for need (or there is none), clearing the loser. It reports whether a row was
-// collapsed away, which is true unless row i is the first for its need. The
-// first row wins a tie.
-func keepCheapest(legs [][]common.Recommendation, winner map[advisorNeed]int, i int, need advisorNeed, rowLegs []common.Recommendation) bool {
-	best, ok := winner[need]
-	if !ok {
-		winner[need], legs[i] = i, rowLegs
-		return false
+// keepCheapest clears the legs of every row in idx (ascending, one coarse
+// need) except the cheapest, and returns how many it cleared. Rows are split by
+// VM family only when every family is known; one unknown family makes the
+// whole need a single group, so it never yields two purchasable rows. The
+// first row wins a tie, whatever the order the groups are visited in.
+func keepCheapest(legs [][]common.Recommendation, rows []common.Recommendation, idx []int) int {
+	byFamily := make(map[string][]int)
+	for _, i := range idx {
+		if advisorNeedOf(&rows[i]).family == "" {
+			byFamily = map[string][]int{"": idx}
+			break
+		}
+		f := advisorNeedOf(&rows[i]).family
+		byFamily[f] = append(byFamily[f], i)
 	}
-	if rowLegs[0].CommitmentCost < legs[best][0].CommitmentCost {
-		legs[best], winner[need], legs[i] = nil, i, rowLegs
+	cleared := 0
+	for _, g := range byFamily {
+		best := g[0]
+		for _, i := range g[1:] {
+			if legs[i][0].CommitmentCost < legs[best][0].CommitmentCost {
+				best = i
+			}
+		}
+		for _, i := range g {
+			if i != best {
+				legs[i] = nil
+				cleared++
+			}
+		}
 	}
-	return true
+	return cleared
 }
 
 func logAdvisorPricing(priced, skipped, collapsed int) {

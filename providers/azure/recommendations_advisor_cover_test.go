@@ -174,3 +174,53 @@ func TestGetRecommendations_AdvisorPricingUsesParentContext(t *testing.T) {
 	assert.Equal(t, "USD", recs[0].CommitmentCurrency)
 	assert.Positive(t, recs[0].CommitmentCost)
 }
+
+func TestDropCoveredAdvisorReservations_ByVMFamily(t *testing.T) {
+	t.Parallel()
+	vm := common.ServiceCompute
+	row := func(sku string) common.Recommendation { return riRow(vm, "eastus", "1yr", sku, 1, "") }
+	covered := func(sku string) common.Recommendation { return riRow(vm, "eastus", "1yr", sku, 1, "upfront") }
+	for name, tc := range map[string]struct {
+		consumption []common.Recommendation
+		advisor     []common.Recommendation
+		want        []common.Recommendation
+	}{
+		"other family survives": {
+			[]common.Recommendation{covered("Standard_D4s_v3")},
+			[]common.Recommendation{row("Standard_E4s_v3"), row("Standard_D2s_v3")},
+			[]common.Recommendation{row("Standard_E4s_v3")},
+		},
+		"same family other size dropped": {
+			[]common.Recommendation{covered("Standard_B1ls")},
+			[]common.Recommendation{row("Standard_B2s")},
+			nil,
+		},
+		"unknown-family consumption covers every family": {
+			[]common.Recommendation{covered("D2s_v3")},
+			[]common.Recommendation{row("Standard_E4s_v3")},
+			nil,
+		},
+		"unknown-family advisor row is covered by any family": {
+			[]common.Recommendation{covered("Standard_D4s_v3")},
+			[]common.Recommendation{row("weird")},
+			nil,
+		},
+		"unknown-family advisor row survives without coverage": {
+			nil,
+			[]common.Recommendation{row("weird")},
+			[]common.Recommendation{row("weird")},
+		},
+		"non-compute stays coarse": {
+			[]common.Recommendation{riRow(common.ServiceRelationalDB, "eastus", "1yr", "GP_Gen5_2", 1, "upfront")},
+			[]common.Recommendation{riRow(common.ServiceRelationalDB, "eastus", "1yr", "BC_Gen5_4", 1, "")},
+			nil,
+		},
+	} {
+		got := dropCoveredAdvisorReservations(tc.advisor, tc.consumption)
+		if len(tc.want) == 0 {
+			assert.Empty(t, got, name)
+			continue
+		}
+		assert.Equal(t, tc.want, got, name)
+	}
+}
