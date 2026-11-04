@@ -32,6 +32,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **`azure`:** `PartialResultError.SkipKinds() []SkipKind`, index-aligned with
+  `SkipReasons()`, so consumers can tell skip causes apart without matching the
+  reason text. `SkipUnpriceable` is a row with no usable price, a non-USD
+  currency, no pricer or a malformed row. `SkipPriceLookupUnavailable` is a
+  price lookup that failed to complete: the failing Advisor row and every one
+  after it. `SkipSourceIncomplete` is a truncated Advisor walk. The kinds survive
+  the multi-subscription merge. A `PartialResultError` built with only `Skipped`
+  reads as `SkipUnpriceable`. Existing fields and methods are unchanged (#670).
 - **`common.ErrRefusedBeforePurchase`:** a sentinel for a purchase refused before
   the call sent any purchase request, detectable with `errors.Is`. The AWS EC2, RDS,
   OpenSearch, Redshift and MemoryDB approved-upfront guard refusals wrap it.
@@ -249,6 +257,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   compiling and a `Config` map key panics as unhashable), and
   `json.Unmarshal` into a `Config` carrying an `APIKey` now errors where the
   old `json:"-"` tag ignored it (#330)
+- **Breaking (source):** `azure.PartialResultError` gained a `Kinds` field
+  (#670). Downstream code that builds it with unkeyed composite literals no
+  longer compiles; keyed literals such as `PartialResultError{Skipped: ...}`
+  are unaffected and read as `SkipUnpriceable`.
 - **Breaking (source):** `common.PurchaseResult` gained an `ExistingCommitment`
   field. Downstream code that builds it with unkeyed composite literals no
   longer compiles; keyed literals are unaffected. The field is true when a
