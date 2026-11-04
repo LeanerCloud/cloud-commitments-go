@@ -626,3 +626,16 @@ func TestErrCurrencyNotAccepted(t *testing.T) {
 	assert.ErrorIs(t, wrapped, ErrCurrencyNotAccepted)
 	assert.NotErrorIs(t, errors.New("currency not accepted"), ErrCurrencyNotAccepted)
 }
+
+func TestErrRefusedBeforePurchase(t *testing.T) {
+	wrapped := fmt.Errorf("%w: %w", ErrRefusedBeforePurchase, errors.New("upfront 1200 exceeds approved 1000"))
+	assert.ErrorIs(t, wrapped, ErrRefusedBeforePurchase)
+	assert.NotErrorIs(t, errors.New("refused before purchase"), ErrRefusedBeforePurchase)
+	// Consumers release spend on this sentinel, so it must never match a sibling
+	// that marks a purchase as possibly made (ErrOutcomeUnknown).
+	for _, other := range []error{ErrOutcomeUnknown, ErrCurrencyNotAccepted, ErrCommitmentPurchaseNotSupported} {
+		assert.NotErrorIs(t, ErrRefusedBeforePurchase, other)
+		assert.NotErrorIs(t, other, ErrRefusedBeforePurchase)
+	}
+	assert.Equal(t, "refused before purchase", ErrRefusedBeforePurchase.Error())
+}
