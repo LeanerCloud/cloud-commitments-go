@@ -40,6 +40,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   after it. `SkipSourceIncomplete` is a truncated Advisor walk. The kinds survive
   the multi-subscription merge. A `PartialResultError` built with only `Skipped`
   reads as `SkipUnpriceable`. Existing fields and methods are unchanged (#670).
+- **`azure.NewPartialSubscriptionFailureWithKinds`:** builds a
+  `PartialSubscriptionFailureError` with each skip's kind, so a consumer test can
+  build a failure whose `SkipKinds()` reports a price-lookup outage or a truncated
+  source. `SkipKinds()` now also reads an empty kind as `SkipUnpriceable` (#680).
 - **`common.ErrRefusedBeforePurchase`:** a sentinel for a purchase refused before
   the call sent any purchase request, detectable with `errors.Is`. The AWS EC2, RDS,
   OpenSearch, Redshift and MemoryDB approved-upfront guard refusals wrap it.
