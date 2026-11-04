@@ -2411,6 +2411,10 @@ func TestListTargetOfferings_WalksPast10Pages(t *testing.T) {
 	assert.Len(t, offs, 2500)
 	assert.True(t, hasInstanceType(offs, "t4g.micro"))
 	assert.Len(t, got, 25)
+	assert.Nil(t, got[0].NextToken)
+	for _, in := range got[1:] {
+		assert.Equal(t, "next", aws.ToString(in.NextToken))
+	}
 }
 
 func TestListTargetOfferings_EmptyPagesWithNextToken_StillReachesLaterMatch(t *testing.T) {
