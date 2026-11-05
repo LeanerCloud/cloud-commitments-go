@@ -18,7 +18,12 @@ import (
 	ec2svc "github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/ec2"
 )
 
-var _ ladder.ObservedCommitmentRateCapability = (*AWSLadder)(nil)
+// Pins ladder.ObservedCommitmentRateCapability's signature without naming it:
+// providers/aws builds standalone against the released pkg, which predates the
+// interface. Switch to the named assertion after the pkg pin bump.
+var _ interface {
+	GetObservedCommitmentRates(context.Context, ladder.Scope) (map[ladder.LayerType]float64, error)
+} = (*AWSLadder)(nil)
 
 type spObsCall struct {
 	plan            cetypes.SupportedSavingsPlansType
