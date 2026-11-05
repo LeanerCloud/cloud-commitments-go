@@ -150,9 +150,10 @@ func (c *Client) parseRIUtilizationSignals(rec *common.Recommendation, details *
 // option C): the upfront, the recurring monthly charge, the monthly savings and
 // the savings percentage scale by count/qty. The on-demand baseline, break-even
 // (upfront over savings) and the usage signals do not depend on the quantity.
-// A quantity that rounds to 0 is left unscaled; the caller warns about it.
+// A quantity that rounds to 0 scales every cost to 0, so the row never carries
+// an upfront or savings for instances it does not buy; the caller warns.
 func scaleToRoundedCount(rec *common.Recommendation, count int, qty float64) {
-	if count == 0 || float64(count) == qty {
+	if float64(count) == qty {
 		return
 	}
 	f := float64(count) / qty
@@ -178,24 +179,33 @@ func (c *Client) parseRecommendedQuantity(details *types.ReservationPurchaseReco
 	raw := *details.RecommendedNumberOfInstancesToPurchase
 
 	var count float64
-	if _, err = fmt.Sscanf(raw, "%f", &count); err != nil {
-		if intCount, atoiErr := strconv.Atoi(raw); atoiErr == nil {
-			if intCount < 0 {
-				return 0, 0, false, fmt.Errorf("recommended quantity %q is negative", raw)
-			}
-			return intCount, float64(intCount), false, nil
+	if _, scanErr := fmt.Sscanf(raw, "%f", &count); scanErr != nil {
+		intCount, atoiErr := strconv.Atoi(raw)
+		if atoiErr != nil {
+			return 0, 0, false, fmt.Errorf("failed to parse quantity '%s' as float or int", raw)
 		}
-		return 0, 0, false, fmt.Errorf("failed to parse quantity '%s' as float or int", raw)
+		count = float64(intCount)
 	}
-	// Sscanf %f accepts "NaN"/"Inf"; a non-finite quantity would corrupt the
-	// purchase count (int(math.Floor(NaN)) is undefined). A negative count is
-	// likewise invalid for a purchase quantity. Fail loud on both.
-	if math.IsNaN(count) || math.IsInf(count, 0) || count < 0 {
-		return 0, 0, false, fmt.Errorf("recommended quantity %q is not a finite non-negative number", raw)
+	if err := checkQuantityRange(raw, count); err != nil {
+		return 0, 0, false, err
 	}
 
 	rounded = int(math.Floor(count))
 	return rounded, count, rounded == 0 && count > 0, nil
+}
+
+// checkQuantityRange refuses a quantity that cannot be a purchase count.
+// Sscanf %f accepts "NaN"/"Inf" (int(math.Floor(NaN)) is undefined), negatives
+// are meaningless, and purchase APIs take an int32 count, so a larger value
+// would saturate or truncate.
+func checkQuantityRange(raw string, count float64) error {
+	if math.IsNaN(count) || math.IsInf(count, 0) || count < 0 {
+		return fmt.Errorf("recommended quantity %q is not a finite non-negative number", raw)
+	}
+	if count > math.MaxInt32 {
+		return fmt.Errorf("recommended quantity %q exceeds %d", raw, math.MaxInt32)
+	}
+	return nil
 }
 
 // parseCostInformation extracts cost and savings information.

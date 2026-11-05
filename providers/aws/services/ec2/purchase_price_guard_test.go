@@ -104,6 +104,9 @@ func TestPurchaseCommitment_FlooredFractionalQuantity(t *testing.T) {
 	res, err := (&Client{client: m, region: "us-east-1"}).PurchaseCommitment(context.Background(), floored(), common.PurchaseOptions{})
 	require.NoError(t, err)
 	assert.True(t, res.Success)
+	m.AssertCalled(t, "PurchaseReservedInstancesOffering", mock.Anything, mock.MatchedBy(func(in *ec2.PurchaseReservedInstancesOfferingInput) bool {
+		return in.InstanceCount != nil && *in.InstanceCount == 2
+	}), mock.Anything)
 
 	m = offeringsMock(pricedOffering(1051)) // 2102 > 2000 x 1.05
 	_, err = (&Client{client: m, region: "us-east-1"}).PurchaseCommitment(context.Background(), floored(), common.PurchaseOptions{})

@@ -108,6 +108,30 @@ func TestParseRecommendedQuantity(t *testing.T) {
 			expectError: true,
 		},
 		{
+			name: "float quantity above MaxInt32 rejected",
+			details: &types.ReservationPurchaseRecommendationDetail{
+				RecommendedNumberOfInstancesToPurchase: aws.String("1e10"),
+			},
+			expected:    0,
+			expectError: true,
+		},
+		{
+			name: "int quantity above MaxInt32 rejected",
+			details: &types.ReservationPurchaseRecommendationDetail{
+				RecommendedNumberOfInstancesToPurchase: aws.String("3000000000"),
+			},
+			expected:    0,
+			expectError: true,
+		},
+		{
+			name: "MaxInt32 accepted",
+			details: &types.ReservationPurchaseRecommendationDetail{
+				RecommendedNumberOfInstancesToPurchase: aws.String("2147483647"),
+			},
+			expected:    2147483647,
+			expectError: false,
+		},
+		{
 			name: "negative int quantity rejected",
 			details: &types.ReservationPurchaseRecommendationDetail{
 				RecommendedNumberOfInstancesToPurchase: aws.String("-3"),
@@ -846,7 +870,11 @@ func TestParseRecommendationDetail_FloorsFractionalQuantityAndScalesCosts(t *tes
 		{"3.99", 3, 3 / 3.99},
 		{"3", 3, 1},
 		{"3.0", 3, 1},
-		{"0.6", 0, 1}, // rounds to 0: warned and left unscaled, as before
+		// Rounds to 0: option C scales the costs to 0 as well, so a Count-0
+		// row never carries a full upfront or counts toward savings.
+		{"0.4", 0, 0},
+		{"0.5", 0, 0},
+		{"0.6", 0, 0},
 	} {
 		t.Run(tt.qty, func(t *testing.T) {
 			rec, err := client.parseRecommendationDetail(context.Background(), &types.ReservationPurchaseRecommendationDetail{
