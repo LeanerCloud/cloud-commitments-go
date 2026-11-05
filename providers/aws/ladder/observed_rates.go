@@ -87,6 +87,10 @@ func (a *AWSLadder) observedConvertibleRIRate(ctx context.Context) (rate float64
 	return r, true, nil
 }
 
+// riHoursTolerance is the relative slack allowed when actual hours exceed
+// purchased hours.
+const riHoursTolerance = 1e-9
+
 // sumUsedRIFees totals the used-hours fee and on-demand cost over the RIs in
 // ids. ok is false when a convertible RI has hours or cost without purchased
 // hours, or more actual than purchased hours, so the layer degrades to the
@@ -97,8 +101,9 @@ func sumUsedRIFees(fees []recommendations.RIFeeUtilization, ids map[string]struc
 			continue
 		}
 		// Actual hours with zero purchased hours fall under actual > purchased.
+		// The tolerance absorbs float noise from summing CE hour strings.
 		if f.PurchasedHours == 0 && (f.TotalAmortizedFee > 0 || f.OnDemandCostOfRIHoursUsed > 0) ||
-			f.TotalActualHours > f.PurchasedHours {
+			f.TotalActualHours > f.PurchasedHours*(1+riHoursTolerance) {
 			log.Printf("WARNING: AWSLadder GetObservedCommitmentRates: dropping %s: RI %s has malformed hours (purchased=%g actual=%g)",
 				ladder.LayerConvertibleRI, f.ReservedInstanceID, f.PurchasedHours, f.TotalActualHours)
 			return 0, 0, false
@@ -106,7 +111,7 @@ func sumUsedRIFees(fees []recommendations.RIFeeUtilization, ids map[string]struc
 		if f.PurchasedHours == 0 {
 			continue
 		}
-		usedFee += f.TotalAmortizedFee * f.TotalActualHours / f.PurchasedHours
+		usedFee += f.TotalAmortizedFee * min(f.TotalActualHours, f.PurchasedHours) / f.PurchasedHours
 		onDemand += f.OnDemandCostOfRIHoursUsed
 	}
 	return usedFee, onDemand, true

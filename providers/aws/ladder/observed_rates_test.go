@@ -288,6 +288,19 @@ func TestGetObservedCommitmentRates_MalformedRIHoursWarnAndDrop(t *testing.T) {
 	}
 }
 
+// CE hour strings summed across rows can put a fully used RI's actual hours a
+// float hair above its purchased hours; that is not malformed data.
+func TestGetObservedCommitmentRates_FullyUsedRIWithinFloatTolerance(t *testing.T) {
+	t.Parallel()
+	f := &fakeObservedSource{fees: []recommendations.RIFeeUtilization{
+		{ReservedInstanceID: "r", TotalAmortizedFee: 10, OnDemandCostOfRIHoursUsed: 20, PurchasedHours: 720, TotalActualHours: 720 + 1e-9},
+	}}
+	got, err := obsLadder(f, cri("r")).GetObservedCommitmentRates(context.Background(), testScope())
+	require.NoError(t, err)
+	require.Contains(t, got, ladder.LayerConvertibleRI)
+	assert.InDelta(t, 0.5, got[ladder.LayerConvertibleRI], 1e-9, "actual is clamped to purchased")
+}
+
 func TestGetObservedCommitmentRates_ZeroDenominatorIsSilent(t *testing.T) {
 	// Not parallel: captures the global logger.
 	buf := captureLog(t)
