@@ -1003,7 +1003,7 @@ func TestClient_PurchaseCommitment_Idempotent_GuardShortCircuits(t *testing.T) {
 // regression guard for the count-validation ordering fix (follow-up to #831).
 // An invalid instance count must fail loud up front, even when an idempotency
 // token would otherwise short-circuit against an existing reservation. Before
-// the fix, safeInt32Count ran after idempotencyGuard, so this call returned
+// the fix, offeringprice.PurchaseCount ran after idempotencyGuard, so this call returned
 // Success and silently ignored the bad count. The mocks assert the offering
 // lookup and reservation describe are never reached.
 func TestClient_PurchaseCommitment_InvalidCount_FailsBeforeIdempotencyGuard(t *testing.T) {
@@ -1013,13 +1013,13 @@ func TestClient_PurchaseCommitment_InvalidCount_FailsBeforeIdempotencyGuard(t *t
 	token := common.DeriveIdempotencyToken("exec-badcount", 0)
 
 	rec := osIdemRec()
-	rec.Count = 0 // invalid: safeInt32Count rejects n < 1
+	rec.Count = 0 // invalid: offeringprice.PurchaseCount rejects n < 1
 
 	result, err := client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{IdempotencyToken: token})
 	assert.Error(t, err)
 	assert.False(t, result.Success, "invalid count must not report Success via the idempotency short-circuit")
 	if err != nil {
-		assert.Contains(t, err.Error(), "instance count 0 is out of valid range")
+		assert.Contains(t, err.Error(), "purchase count 0 is out of valid range")
 	}
 	mockOS.AssertNotCalled(t, "DescribeReservedInstanceOfferings", mock.Anything, mock.Anything)
 	mockOS.AssertNotCalled(t, "DescribeReservedInstances", mock.Anything, mock.Anything)
