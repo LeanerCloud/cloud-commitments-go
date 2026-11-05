@@ -32,6 +32,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- `ladder.ObservedCommitmentRateCapability` and its AWS implementation report commitment dollars per covered on-demand dollar measured on the account's existing Savings Plans and convertible RIs (account-scoped Cost Explorer utilization). Layers with no usable observation are absent.
+
 - **`azure`:** `PartialResultError.SkipKinds() []SkipKind`, index-aligned with
   `SkipReasons()`, so consumers can tell skip causes apart without matching the
   reason text. `SkipUnpriceable` is a row with no usable price, a non-USD
