@@ -94,6 +94,7 @@ type AWSLadder struct {
 	spPurchase  spPurchaser         // write side; nil until WithWriteSide is called
 	exchange    exchangeRunner      // write side; nil until WithWriteSide is called
 	spRates     spCommitmentRateSource
+	observed    observedRateSource
 	cfg         Config
 }
 

@@ -319,10 +319,7 @@ func computeEC2CoveragePct(coverageMap recommendations.PoolCoverageMap, region s
 // intersection restricts the aggregate to exactly the convertible RIs this
 // buffer layer tracks (PR #1361).
 func utilsForConvertibleRIs(utils []recommendations.RIUtilization, ris []ec2svc.ConvertibleRI) []recommendations.RIUtilization {
-	ids := make(map[string]struct{}, len(ris))
-	for i := range ris {
-		ids[ris[i].ReservedInstanceID] = struct{}{}
-	}
+	ids := convertibleRIIDs(ris)
 	filtered := make([]recommendations.RIUtilization, 0, len(utils))
 	for i := range utils {
 		u := utils[i]
@@ -331,6 +328,15 @@ func utilsForConvertibleRIs(utils []recommendations.RIUtilization, ris []ec2svc.
 		}
 	}
 	return filtered
+}
+
+// convertibleRIIDs returns the set of reservation IDs in ris.
+func convertibleRIIDs(ris []ec2svc.ConvertibleRI) map[string]struct{} {
+	ids := make(map[string]struct{}, len(ris))
+	for i := range ris {
+		ids[ris[i].ReservedInstanceID] = struct{}{}
+	}
+	return ids
 }
 
 // computeRIUtilizationPct aggregates per-RI utilization data from the CE

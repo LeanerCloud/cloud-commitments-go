@@ -638,3 +638,36 @@ func TestMultiSubscriptionRecommendationsClient_GetRecommendations_BoundsConcurr
 	assert.LessOrEqual(t, peak.Load(), int64(limit))
 	assert.Greater(t, peak.Load(), int64(1), "fan-out should still run subscriptions concurrently")
 }
+
+// #680: callers (the platform's fixtures) can build a failure whose skips carry
+// a kind other than SkipUnpriceable, index-aligned with the reasons.
+func TestNewPartialSubscriptionFailureWithKinds(t *testing.T) {
+	failed := []SubscriptionFailure{{SubscriptionID: "sub-2", Err: errors.New("unreachable")}}
+	e := NewPartialSubscriptionFailureWithKinds(2, failed,
+		[]string{"sub-1: advisor: lookup down", "sub-1: advisor: walk stopped"},
+		[]SkipKind{SkipPriceLookupUnavailable, SkipSourceIncomplete})
+	require.NotNil(t, e.Skips())
+	assert.Equal(t, []SkipKind{SkipPriceLookupUnavailable, SkipSourceIncomplete}, e.Skips().SkipKinds())
+	assert.Equal(t, 1, e.Succeeded)
+
+	// The inputs are copied.
+	reasons := []string{"r"}
+	kinds := []SkipKind{SkipSourceIncomplete}
+	e = NewPartialSubscriptionFailureWithKinds(1, nil, reasons, kinds)
+	kinds[0] = SkipUnpriceable
+	reasons[0] = "changed"
+	assert.Equal(t, []SkipKind{SkipSourceIncomplete}, e.Skips().SkipKinds())
+	assert.Equal(t, []string{"r"}, e.Skips().SkipReasons())
+
+	// No reasons: no Skips, whatever kinds were passed.
+	assert.Nil(t, NewPartialSubscriptionFailureWithKinds(1, nil, nil, []SkipKind{SkipSourceIncomplete}).Skips())
+}
+
+// #680: one rule for a kind that is missing or empty: it reads as
+// SkipUnpriceable; extra kinds are ignored.
+func TestSkipKindsPadsTruncatesAndDefaultsEmpty(t *testing.T) {
+	e := NewPartialSubscriptionFailureWithKinds(1, nil, []string{"a", "b", "c"}, []SkipKind{"", SkipSourceIncomplete})
+	assert.Equal(t, []SkipKind{SkipUnpriceable, SkipSourceIncomplete, SkipUnpriceable}, e.Skips().SkipKinds())
+	e = NewPartialSubscriptionFailureWithKinds(1, nil, []string{"a"}, []SkipKind{SkipSourceIncomplete, SkipPriceLookupUnavailable})
+	assert.Equal(t, []SkipKind{SkipSourceIncomplete}, e.Skips().SkipKinds())
+}

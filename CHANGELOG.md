@@ -32,6 +32,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **`ladder`/`aws`:** `ladder.ObservedCommitmentRateCapability` and its AWS implementation report commitment dollars per covered on-demand dollar measured on the account's existing Savings Plans and convertible RIs (account-scoped Cost Explorer utilization). Layers with no usable observation are absent.
+
 - **`azure`:** `PartialResultError.SkipKinds() []SkipKind`, index-aligned with
   `SkipReasons()`, so consumers can tell skip causes apart without matching the
   reason text. `SkipUnpriceable` is a row with no usable price, a non-USD
@@ -40,6 +42,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   after it. `SkipSourceIncomplete` is a truncated Advisor walk. The kinds survive
   the multi-subscription merge. A `PartialResultError` built with only `Skipped`
   reads as `SkipUnpriceable`. Existing fields and methods are unchanged (#670).
+- **`azure.NewPartialSubscriptionFailureWithKinds`:** builds a
+  `PartialSubscriptionFailureError` with each skip's kind, so a consumer test can
+  build a failure whose `SkipKinds()` reports a price-lookup outage or a truncated
+  source. `SkipKinds()` now also reads an empty kind as `SkipUnpriceable` (#680).
 - **`common.ErrRefusedBeforePurchase`:** a sentinel for a purchase refused before
   the call sent any purchase request, detectable with `errors.Is`. The AWS EC2, RDS,
   OpenSearch, Redshift and MemoryDB approved-upfront guard refusals wrap it.
@@ -166,6 +172,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- `ListTargetOfferings` now walks up to 50 pages (about 5000 offerings)
+  instead of 10, and returns an error wrapping the new
+  `ec2.ErrTargetOfferingsTruncated` (with no list) when that bound is hit,
+  instead of silently returning a partial list.
 - GCP Cloud Storage pricing lists the SKU catalog once per client, like Cloud
   SQL and Memorystore.
 - Azure multi-subscription collection keeps skipped recommendations when a

@@ -394,13 +394,14 @@ func (e *PartialResultError) SkippedCount() int { return len(e.Skipped) }
 func (e *PartialResultError) SkipReasons() []string { return append([]string(nil), e.Skipped...) }
 
 // SkipKinds returns each skip's kind, index-aligned with SkipReasons. A skip
-// with no recorded kind (a value built with Skipped only) reads as
-// SkipUnpriceable, what every skip meant before kinds existed.
+// with no recorded kind (a value built with Skipped only, or fewer Kinds than
+// Skipped) or an empty kind reads as SkipUnpriceable, what every skip meant
+// before kinds existed. Kinds beyond len(Skipped) are ignored.
 func (e *PartialResultError) SkipKinds() []SkipKind {
 	kinds := make([]SkipKind, len(e.Skipped))
 	for i := range kinds {
 		kinds[i] = SkipUnpriceable
-		if i < len(e.Kinds) {
+		if i < len(e.Kinds) && e.Kinds[i] != "" {
 			kinds[i] = e.Kinds[i]
 		}
 	}
