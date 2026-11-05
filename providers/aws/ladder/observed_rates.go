@@ -68,6 +68,9 @@ func (a *AWSLadder) observedConvertibleRIRate(ctx context.Context) (rate float64
 	if err != nil {
 		return 0, false, fmt.Errorf("GetObservedCommitmentRates: list convertible RIs: %w", err)
 	}
+	if len(ris) == 0 {
+		return 0, false, nil // skip the billed CE call: nothing to join
+	}
 	fees, err := a.observed.GetRIFeeUtilization(ctx, a.cfg.AccountID, a.cfg.Region, a.cfg.lookbackDays())
 	if err != nil {
 		return 0, false, fmt.Errorf("GetObservedCommitmentRates: %s: %w", ladder.LayerConvertibleRI, err)
@@ -85,19 +88,22 @@ func (a *AWSLadder) observedConvertibleRIRate(ctx context.Context) (rate float64
 }
 
 // sumUsedRIFees totals the used-hours fee and on-demand cost over the RIs in
-// ids. ok is false when a convertible RI has cost but zero purchased hours, so
-// the layer degrades to the marginal rate instead of failing the run.
+// ids. ok is false when a convertible RI has hours or cost without purchased
+// hours, or more actual than purchased hours, so the layer degrades to the
+// marginal rate instead of failing the run.
 func sumUsedRIFees(fees []recommendations.RIFeeUtilization, ids map[string]struct{}) (usedFee, onDemand float64, ok bool) {
 	for _, f := range fees {
 		if _, in := ids[f.ReservedInstanceID]; !in {
 			continue
 		}
+		// Actual hours with zero purchased hours fall under actual > purchased.
+		if f.PurchasedHours == 0 && (f.TotalAmortizedFee > 0 || f.OnDemandCostOfRIHoursUsed > 0) ||
+			f.TotalActualHours > f.PurchasedHours {
+			log.Printf("WARNING: AWSLadder GetObservedCommitmentRates: dropping %s: RI %s has malformed hours (purchased=%g actual=%g)",
+				ladder.LayerConvertibleRI, f.ReservedInstanceID, f.PurchasedHours, f.TotalActualHours)
+			return 0, 0, false
+		}
 		if f.PurchasedHours == 0 {
-			if f.TotalAmortizedFee > 0 || f.OnDemandCostOfRIHoursUsed > 0 {
-				log.Printf("WARNING: AWSLadder GetObservedCommitmentRates: dropping %s: RI %s has cost but zero purchased hours",
-					ladder.LayerConvertibleRI, f.ReservedInstanceID)
-				return 0, 0, false
-			}
 			continue
 		}
 		usedFee += f.TotalAmortizedFee * f.TotalActualHours / f.PurchasedHours

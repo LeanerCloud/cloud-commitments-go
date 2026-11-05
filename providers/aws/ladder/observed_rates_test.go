@@ -177,7 +177,7 @@ func TestGetObservedCommitmentRates_Errors(t *testing.T) {
 		"fee": {feeErr: boom},
 	} {
 		t.Run(name, func(t *testing.T) {
-			got, err := obsLadder(f).GetObservedCommitmentRates(context.Background(), testScope())
+			got, err := obsLadder(f, cri("r")).GetObservedCommitmentRates(context.Background(), testScope())
 			require.ErrorIs(t, err, boom)
 			assert.Nil(t, got)
 		})
@@ -247,4 +247,71 @@ func TestGetObservedCommitmentRates_SPWarnsOnlyOnOutOfRange(t *testing.T) {
 	assert.Empty(t, buf.String(), "no observation is silent")
 	run(spSummary(11))
 	assert.Contains(t, buf.String(), "WARNING")
+}
+
+func captureLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buf bytes.Buffer
+	orig := log.Writer()
+	log.SetOutput(&buf)
+	t.Cleanup(func() { log.SetOutput(orig) })
+	return &buf
+}
+
+func TestGetObservedCommitmentRates_NoRIsSkipsFeeCall(t *testing.T) {
+	t.Parallel()
+	f := &fakeObservedSource{}
+	got, err := obsLadder(f).GetObservedCommitmentRates(context.Background(), testScope())
+	require.NoError(t, err)
+	assert.Empty(t, f.feeCalls, "a billed CE call is wasted when there is nothing to join")
+	_, ok := got[ladder.LayerConvertibleRI]
+	assert.False(t, ok)
+}
+
+func TestGetObservedCommitmentRates_MalformedRIHoursWarnAndDrop(t *testing.T) {
+	// Not parallel: captures the global logger.
+	good := recommendations.RIFeeUtilization{ReservedInstanceID: "good", TotalAmortizedFee: 10, OnDemandCostOfRIHoursUsed: 20, PurchasedHours: 10, TotalActualHours: 10}
+	for name, bad := range map[string]recommendations.RIFeeUtilization{
+		"actual hours with no purchased hours": {ReservedInstanceID: "bad", TotalActualHours: 5},
+		"actual above purchased":               {ReservedInstanceID: "bad", TotalAmortizedFee: 1, OnDemandCostOfRIHoursUsed: 2, PurchasedHours: 10, TotalActualHours: 11},
+	} {
+		t.Run(name, func(t *testing.T) {
+			buf := captureLog(t)
+			f := &fakeObservedSource{fees: []recommendations.RIFeeUtilization{good, bad}}
+			got, err := obsLadder(f, cri("good"), cri("bad")).GetObservedCommitmentRates(context.Background(), testScope())
+			require.NoError(t, err)
+			_, ok := got[ladder.LayerConvertibleRI]
+			assert.False(t, ok)
+			assert.Contains(t, buf.String(), "bad")
+			assert.NotContains(t, buf.String(), "outside (0, 1]", "the specific warning, not the generic range one")
+		})
+	}
+}
+
+func TestGetObservedCommitmentRates_ZeroDenominatorIsSilent(t *testing.T) {
+	// Not parallel: captures the global logger.
+	buf := captureLog(t)
+	f := &fakeObservedSource{fees: []recommendations.RIFeeUtilization{{ReservedInstanceID: "r", TotalAmortizedFee: 1, PurchasedHours: 10, TotalActualHours: 10}}}
+	got, err := obsLadder(f, cri("r")).GetObservedCommitmentRates(context.Background(), testScope())
+	require.NoError(t, err)
+	_, ok := got[ladder.LayerConvertibleRI]
+	assert.False(t, ok)
+	assert.Empty(t, buf.String(), "|| onDemand == 0 must return before the ratio is computed")
+}
+
+func TestGetObservedCommitmentRates_PartialMap(t *testing.T) {
+	t.Parallel()
+	f := &fakeObservedSource{
+		spSummaries: map[cetypes.SupportedSavingsPlansType]recommendations.SPUtilizationSummary{
+			cetypes.SupportedSavingsPlansTypeEc2InstanceSp: spSummary(7),
+		},
+		fees: []recommendations.RIFeeUtilization{{ReservedInstanceID: "r", TotalAmortizedFee: 10, OnDemandCostOfRIHoursUsed: 20, PurchasedHours: 10, TotalActualHours: 10}},
+	}
+	got, err := obsLadder(f, cri("r")).GetObservedCommitmentRates(context.Background(), testScope())
+	require.NoError(t, err)
+	assert.Len(t, got, 2)
+	assert.InDelta(t, 0.7, got[ladder.LayerEC2InstanceSP], 1e-9)
+	assert.InDelta(t, 0.5, got[ladder.LayerConvertibleRI], 1e-9)
+	_, ok := got[ladder.LayerComputeSP]
+	assert.False(t, ok)
 }
