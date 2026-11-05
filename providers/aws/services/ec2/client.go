@@ -901,7 +901,24 @@ type FindConvertibleOfferingParams struct {
 	// AvailabilityZone is the source RI's AZ name: required for zonal scope and
 	// refused for regional scope.
 	AvailabilityZone string
-	Duration         int64
+	// OfferingType is the source RI's AWS offering type (ConvertibleRI.OfferingType:
+	// "All Upfront", "Partial Upfront" or "No Upfront"). The target must match it,
+	// so an exchange never changes the payment option the operator chose (#553).
+	// Required.
+	OfferingType string
+	Duration     int64
+}
+
+// parseExchangeOfferingType validates the source RI's offering type. Empty or
+// unknown values are refused, never defaulted to whatever AWS lists first.
+func parseExchangeOfferingType(raw string) (types.OfferingTypeValues, error) {
+	ot := types.OfferingTypeValues(raw)
+	for _, v := range []types.OfferingTypeValues{types.OfferingTypeValuesAllUpfront, types.OfferingTypeValuesPartialUpfront, types.OfferingTypeValuesNoUpfront} {
+		if ot == v {
+			return ot, nil
+		}
+	}
+	return "", fmt.Errorf("convertible offering lookup needs the source RI's offering type (All Upfront, Partial Upfront or No Upfront), got %q", raw)
 }
 
 // parseExchangeLookup parses the tenancy and scope of an exchange lookup and
@@ -931,6 +948,7 @@ func (c *Client) FindConvertibleOffering(ctx context.Context, params FindConvert
 		return "", err
 	}
 	input := convertibleOfferingInput(want.instanceType, want.productDesc, want.scope, want.tenancy, want.az, want.duration)
+	input.OfferingType = want.offeringType
 	skips := offeringSkips{}
 	for page := 1; page <= maxConvertibleOfferingPages; page++ {
 		if err := ctx.Err(); err != nil {
@@ -945,13 +963,13 @@ func (c *Client) FindConvertibleOffering(ctx context.Context, params FindConvert
 			return id, nil
 		}
 		if isLastEC2Page(result.NextToken) {
-			return "", fmt.Errorf("no convertible offering found for %s (%s, %s, %s, AZ %q)%s",
-				want.instanceType, want.productDesc, want.tenancy, want.scope, want.az, skips.note())
+			return "", fmt.Errorf("no convertible offering found for %s (%s, %s, %s, %s, AZ %q)%s",
+				want.instanceType, want.productDesc, want.tenancy, want.scope, want.offeringType, want.az, skips.note())
 		}
 		input.NextToken = result.NextToken
 	}
-	return "", fmt.Errorf("no convertible offering found for %s (%s, %s, %s, AZ %q) within %d pages: pagination cap reached%s",
-		want.instanceType, want.productDesc, want.tenancy, want.scope, want.az, maxConvertibleOfferingPages, skips.note())
+	return "", fmt.Errorf("no convertible offering found for %s (%s, %s, %s, %s, AZ %q) within %d pages: pagination cap reached%s",
+		want.instanceType, want.productDesc, want.tenancy, want.scope, want.offeringType, want.az, maxConvertibleOfferingPages, skips.note())
 }
 
 // resolveFindWant validates params and builds the expectation the returned
@@ -972,9 +990,13 @@ func resolveFindWant(params FindConvertibleOfferingParams) (offeringWant, error)
 	if instanceType == "" {
 		return offeringWant{}, errors.New("convertible offering lookup needs an instance type")
 	}
+	offeringType, err := parseExchangeOfferingType(params.OfferingType)
+	if err != nil {
+		return offeringWant{}, err
+	}
 	return offeringWant{
 		instanceType: instanceType, productDesc: productDesc, tenancy: tenancy, scope: scope,
-		duration: duration, class: types.OfferingClassTypeConvertible, az: az,
+		duration: duration, class: types.OfferingClassTypeConvertible, offeringType: offeringType, az: az,
 	}, nil
 }
 

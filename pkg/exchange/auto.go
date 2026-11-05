@@ -97,7 +97,10 @@ type LookupOfferingParams struct {
 	Tenancy            string
 	Scope              string
 	AvailabilityZone   string
-	Duration           int64
+	// OfferingType is the source RI's AWS offering type; the target must match
+	// it (#553).
+	OfferingType string
+	Duration     int64
 }
 
 // LookupOfferingFunc looks up a target offering ID for a given instance type and RI metadata.
@@ -144,7 +147,10 @@ type RIMetadataInfo struct {
 	InstanceTenancy    string
 	Scope              string
 	AvailabilityZone   string
-	Duration           int64
+	// OfferingType is the RI's AWS offering type (ConvertibleRI.OfferingType);
+	// the exchange target keeps it (#553).
+	OfferingType string
+	Duration     int64
 }
 
 // AutoExchangeResult contains the outcome of an auto exchange run.
@@ -350,6 +356,7 @@ func resolveOffering(ctx context.Context, params RunAutoExchangeParams, rec Resh
 		Scope:              meta.Scope,
 		AvailabilityZone:   meta.AvailabilityZone,
 		Duration:           meta.Duration,
+		OfferingType:       meta.OfferingType,
 	})
 	if err != nil {
 		logging.Warnf("offering lookup failed for %s -> %s: %v", rec.SourceRIID, rec.TargetInstanceType, err)
