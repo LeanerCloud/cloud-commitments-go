@@ -2040,7 +2040,7 @@ func TestFindConvertibleOffering_Zonal_NoMatchAcrossPages_Errors(t *testing.T) {
 func TestFindConvertibleOffering_Zonal_PageCapReached_Errors(t *testing.T) {
 	t.Parallel()
 	var got []*ec2.DescribeReservedInstancesOfferingsInput
-	pages := make([][]types.ReservedInstancesOffering, maxTargetOfferingPages+1)
+	pages := make([][]types.ReservedInstancesOffering, maxConvertibleOfferingPages+1)
 	for i := range pages {
 		pages[i] = []types.ReservedInstancesOffering{fullOffering("off-1a", "us-east-1a")}
 	}
@@ -2052,8 +2052,8 @@ func TestFindConvertibleOffering_Zonal_PageCapReached_Errors(t *testing.T) {
 	require.Error(t, err)
 	assert.Empty(t, id)
 	assert.Contains(t, err.Error(), "pagination cap reached")
-	assert.Contains(t, err.Error(), fmt.Sprintf("%d pages", maxTargetOfferingPages))
-	assert.Len(t, got, maxTargetOfferingPages)
+	assert.Contains(t, err.Error(), fmt.Sprintf("%d pages", maxConvertibleOfferingPages))
+	assert.Len(t, got, maxConvertibleOfferingPages)
 }
 
 func TestFindConvertibleOffering_ZoneMisuse_ErrorsBeforeAPICall(t *testing.T) {
@@ -2370,4 +2370,104 @@ func TestOfferingLookups_MissingFields_ErrorBeforeAPICall(t *testing.T) {
 			})
 		}
 	}
+}
+
+// uniquePages builds n pages of size offerings each with unique IDs; the
+// offering at flat index tIdx (if >= 0) is a t4g.micro.
+func uniquePages(n, size, tIdx int) [][]types.ReservedInstancesOffering {
+	pages := make([][]types.ReservedInstancesOffering, n)
+	for i := range pages {
+		for j := 0; j < size; j++ {
+			idx := i*size + j
+			it := types.InstanceTypeM5Large
+			if idx == tIdx {
+				it = types.InstanceType("t4g.micro")
+			}
+			pages[i] = append(pages[i], fullOffering(fmt.Sprintf("off-%d", idx), "",
+				func(o *types.ReservedInstancesOffering) { o.InstanceType = it }))
+		}
+	}
+	return pages
+}
+
+func hasInstanceType(offs []TargetOffering, it string) bool {
+	for _, o := range offs {
+		if o.InstanceType == it {
+			return true
+		}
+	}
+	return false
+}
+
+func TestListTargetOfferings_WalksPast10Pages(t *testing.T) {
+	t.Parallel()
+	var got []*ec2.DescribeReservedInstancesOfferingsInput
+	m := pagedOfferingsMock(&got, uniquePages(25, 100, 2150)...)
+	client := &Client{client: m, region: "us-east-1"}
+
+	offs, err := client.ListTargetOfferings(context.Background(), regionalListParams())
+
+	require.NoError(t, err)
+	assert.Len(t, offs, 2500)
+	assert.True(t, hasInstanceType(offs, "t4g.micro"))
+	assert.Len(t, got, 25)
+	assert.Nil(t, got[0].NextToken)
+	for _, in := range got[1:] {
+		assert.Equal(t, "next", aws.ToString(in.NextToken))
+	}
+}
+
+func TestListTargetOfferings_EmptyPagesWithNextToken_StillReachesLaterMatch(t *testing.T) {
+	t.Parallel()
+	var got []*ec2.DescribeReservedInstancesOfferingsInput
+	pages := make([][]types.ReservedInstancesOffering, 0, 13)
+	for i := 0; i < 12; i++ {
+		pages = append(pages, nil)
+	}
+	pages = append(pages, uniquePages(1, 1, 0)[0])
+	m := pagedOfferingsMock(&got, pages...)
+	client := &Client{client: m, region: "us-east-1"}
+
+	offs, err := client.ListTargetOfferings(context.Background(), regionalListParams())
+
+	require.NoError(t, err)
+	assert.True(t, hasInstanceType(offs, "t4g.micro"))
+	assert.Len(t, got, 13)
+}
+
+func TestListTargetOfferings_PageCap_ReturnsTruncatedErrorAndNoList(t *testing.T) {
+	t.Parallel()
+	var got []*ec2.DescribeReservedInstancesOfferingsInput
+	m := pagedOfferingsMock(&got, uniquePages(maxListPages+1, 1, -1)...)
+	client := &Client{client: m, region: "us-east-1"}
+
+	offs, err := client.ListTargetOfferings(context.Background(), regionalListParams())
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, ErrTargetOfferingsTruncated)
+	assert.Nil(t, offs)
+	assert.Len(t, got, maxListPages)
+}
+
+func TestListTargetOfferings_CancelMidWalk_StopsWithContextError(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	calls := 0
+	m := &MockEC2Client{}
+	m.On("DescribeReservedInstancesOfferings", mock.Anything, mock.Anything).
+		Run(func(mock.Arguments) {
+			calls++
+			if calls == 3 {
+				cancel()
+			}
+		}).
+		Return(&ec2.DescribeReservedInstancesOfferingsOutput{NextToken: aws.String("next")}, nil)
+	client := &Client{client: m, region: "us-east-1"}
+
+	offs, err := client.ListTargetOfferings(ctx, regionalListParams())
+
+	assert.ErrorIs(t, err, context.Canceled)
+	assert.Nil(t, offs)
+	assert.Equal(t, 3, calls)
 }
