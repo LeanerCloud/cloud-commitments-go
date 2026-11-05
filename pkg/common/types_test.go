@@ -654,6 +654,15 @@ func TestCommitment_CostKnown(t *testing.T) {
 		assert.True(t, out.CostKnown)
 		assert.Equal(t, 12.5, out.Cost)
 	})
+	t.Run("known zero round-trips", func(t *testing.T) {
+		b, err := json.Marshal(Commitment{Cost: 0, CostKnown: true})
+		require.NoError(t, err)
+		assert.Contains(t, string(b), `"cost_known":true`)
+		var out Commitment
+		require.NoError(t, json.Unmarshal(b, &out))
+		assert.True(t, out.CostKnown)
+		assert.Zero(t, out.Cost)
+	})
 	t.Run("zero value serializes explicitly", func(t *testing.T) {
 		b, err := json.Marshal(Commitment{})
 		require.NoError(t, err)
