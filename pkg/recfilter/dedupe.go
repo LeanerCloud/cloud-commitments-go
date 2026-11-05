@@ -127,6 +127,8 @@ func isRecentActiveCommitment(c common.Commitment, cutoffTime time.Time, logf Lo
 	case common.CommitmentStateRetired, common.CommitmentStatePendingReturn, common.CommitmentStateExpired,
 		common.CommitmentStateCanceled, common.CommitmentStateFailed:
 		return false
+	case "":
+		// Unknown state is expected from providers that cannot report one; count it silently.
 	default:
 		logf.printf("    [DuplicateChecker] WARNING: commitment %s has unrecognized state %q; counting it as existing",
 			c.CommitmentID, c.State)
