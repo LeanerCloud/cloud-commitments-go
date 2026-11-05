@@ -170,6 +170,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- `ListTargetOfferings` now walks up to 50 pages (about 5000 offerings)
+  instead of 10, and returns an error wrapping the new
+  `ec2.ErrTargetOfferingsTruncated` (with no list) when that bound is hit,
+  instead of silently returning a partial list.
 - GCP Cloud Storage pricing lists the SKU catalog once per client, like Cloud
   SQL and Memorystore.
 - Azure multi-subscription collection keeps skipped recommendations when a
