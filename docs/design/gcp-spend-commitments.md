@@ -22,7 +22,7 @@ cloned on 2026-10-05.
   `cloudsql/client.go:471`, `cloudstorage/client.go:448`; assigned at
   `memorystore/client.go:526`, `cloudsql/client.go:558`,
   `cloudstorage/client.go:535`). For Memorystore that is the instance name,
-  which then fails tier pricing and `ValidateOffering`
+  which then fails tier pricing and the (since removed from `ServiceClient`) `ValidateOffering`
   (`memorystore/client.go:237-250`, tiers at `:292-299`).
 - Those clients query `google.memorystore.redis.PerformanceRecommender`
   (`memorystore/client.go:165`), `google.cloudsql.instance.PerformanceRecommender`

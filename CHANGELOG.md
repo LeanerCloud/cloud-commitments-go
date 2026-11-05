@@ -172,6 +172,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **Breaking (source):** `provider.ServiceClient` no longer declares
+  `ValidateOffering`, `GetOfferingDetails` or `GetValidResourceTypes`. Nothing
+  in `pkg` called them through the interface. `GetOfferingDetails` moves to the
+  new optional `provider.OfferingPricer`; callers type-assert and refuse when a
+  client lacks it. Existing implementations keep compiling (extra methods are
+  legal), but code calling these methods on a `ServiceClient` value must assert
+  `OfferingPricer` or use the concrete client (#11).
+
 - `ListTargetOfferings` now walks up to 50 pages (about 5000 offerings)
   instead of 10, and returns an error wrapping the new
   `ec2.ErrTargetOfferingsTruncated` (with no list) when that bound is hit,

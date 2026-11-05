@@ -46,11 +46,13 @@ type ServiceClient interface {
 	// Commitments (RI/SP/CUD/etc)
 	GetExistingCommitments(ctx context.Context) ([]common.Commitment, error)
 	PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error)
-	ValidateOffering(ctx context.Context, rec common.Recommendation) error
-	GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error)
+}
 
-	// Resource validation
-	GetValidResourceTypes(ctx context.Context) ([]string, error)
+// OfferingPricer is implemented by service clients that can price the offering
+// a recommendation resolves to. Callers type-assert a ServiceClient to it and
+// must refuse when the client does not implement it, rather than default.
+type OfferingPricer interface {
+	GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error)
 }
 
 // RecommendationsClient provides centralized recommendations across all services.
