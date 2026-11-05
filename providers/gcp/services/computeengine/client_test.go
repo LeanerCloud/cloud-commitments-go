@@ -177,9 +177,11 @@ type MockCommitmentsService struct {
 	commitments   []*computepb.Commitment
 	getCommitment *computepb.Commitment
 	getErr        error
+	lastListReq   *computepb.ListRegionCommitmentsRequest // captured for assertions
 }
 
 func (m *MockCommitmentsService) List(ctx context.Context, req *computepb.ListRegionCommitmentsRequest) CommitmentsIterator {
+	m.lastListReq = req
 	return &MockCommitmentsIterator{commitments: m.commitments, err: m.listErr}
 }
 
@@ -407,6 +409,37 @@ func TestComputeEngineClient_GetExistingCommitments_WithMock(t *testing.T) {
 	assert.Equal(t, "GENERAL_PURPOSE_N2", commitments[0].ResourceType)
 	assert.Equal(t, 16, commitments[0].Count)
 	assert.False(t, commitments[0].StartDate.IsZero())
+}
+
+// The mock ignores Filter, so this proves only what the client sends. Whether
+// the real API honours the filter is unverified (no live GCP call was made).
+func TestComputeEngineClient_GetExistingCommitments_ListsOnlyLive(t *testing.T) {
+	t.Parallel()
+	client, _ := NewClient("test-project", "us-central1")
+	svc := &MockCommitmentsService{commitments: []*computepb.Commitment{recentCUD()}}
+	client.SetCommitmentsService(svc)
+
+	_, err := client.GetExistingCommitments(context.Background())
+	require.NoError(t, err)
+	require.NotNil(t, svc.lastListReq)
+	assert.Equal(t, "(status != EXPIRED) (status != CANCELLED)", svc.lastListReq.GetFilter())
+	assert.Equal(t, "test-project", svc.lastListReq.GetProject())
+	assert.Equal(t, "us-central1", svc.lastListReq.GetRegion())
+}
+
+func TestComputeEngineClient_GetExistingCommitments_ItemCapStillErrors(t *testing.T) {
+	t.Parallel()
+	client, _ := NewClient("test-project", "us-central1")
+	cuds := make([]*computepb.Commitment, 0, maxCommitmentsPages+1)
+	for i := 0; i <= maxCommitmentsPages; i++ {
+		cuds = append(cuds, recentCUD())
+	}
+	client.SetCommitmentsService(&MockCommitmentsService{commitments: cuds})
+
+	got, err := client.GetExistingCommitments(context.Background())
+	require.Error(t, err)
+	assert.Nil(t, got)
+	assert.Contains(t, err.Error(), "iteration cap")
 }
 
 func TestComputeEngineClient_GetExistingCommitments_Error(t *testing.T) {

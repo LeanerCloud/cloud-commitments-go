@@ -27,6 +27,7 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -42,6 +43,10 @@ const maxRecsPages = 20
 
 // maxCommitmentsPages caps GCP committed-use discount iteration.
 const maxCommitmentsPages = 50
+
+// liveCommitmentsFilter drops EXPIRED and CANCELLED commitments server-side so
+// the item cap counts live CUDs, not a region's full history (AIP-160 syntax).
+const liveCommitmentsFilter = "(status != EXPIRED) (status != CANCELLED)"
 
 // maxMachineTypeItems caps GCP machine types iteration (one item per Next() call).
 const maxMachineTypeItems = 20
@@ -487,6 +492,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 	req := &computepb.ListRegionCommitmentsRequest{
 		Project: c.projectID,
 		Region:  c.region,
+		Filter:  proto.String(liveCommitmentsFilter),
 	}
 
 	return c.collectCommitments(ctx, svc, req)
