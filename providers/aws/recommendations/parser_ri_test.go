@@ -36,11 +36,11 @@ func TestParseRecommendedQuantity(t *testing.T) {
 			expectError: false,
 		},
 		{
-			name: "Float quantity rounds to nearest",
+			name: "Float quantity rounds down (go#635 option C)",
 			details: &types.ReservationPurchaseRecommendationDetail{
 				RecommendedNumberOfInstancesToPurchase: aws.String("3.8"),
 			},
-			expected:    4, // math.Round(3.8) = 4
+			expected:    3, // never buy above CE's quantity
 			expectError: false,
 		},
 		{
@@ -119,7 +119,7 @@ func TestParseRecommendedQuantity(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, _, err := client.parseRecommendedQuantity(tt.details)
+			result, _, _, err := client.parseRecommendedQuantity(tt.details)
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -141,7 +141,9 @@ func TestParseRecommendationDetail_WarnsWhenFractionRoundsToZero(t *testing.T) {
 		{"0.05", 0, true},
 		{"0.4", 0, true},
 		{"0.4999", 0, true},
-		{"0.5", 1, false}, // math.Round rounds half away from zero
+		{"0.5", 0, true},
+		{"0.9999", 0, true}, // rounds down, never up (go#635)
+		{"1.5", 1, false},
 		{"2.4", 2, false},
 		{"0", 0, false},
 		{"0.0", 0, false},
@@ -828,4 +830,56 @@ func TestParseRecommendations_InvalidAverageInstancesIsReportedNotZeroed(t *test
 		require.Len(t, recs, 1)
 		assert.Zero(t, recs[0].AverageInstancesUsedPerHour)
 	})
+}
+
+// go#635 option C: a fractional quantity rounds down, and the figures CE gives
+// for that quantity scale to the bought count, so Count and the costs agree.
+func TestParseRecommendationDetail_FloorsFractionalQuantityAndScalesCosts(t *testing.T) {
+	client := &Client{}
+	for _, tt := range []struct {
+		qty   string
+		count int
+		scale float64
+	}{
+		{"2.5", 2, 2 / 2.5},
+		{"2.4", 2, 2 / 2.4},
+		{"3.99", 3, 3 / 3.99},
+		{"3", 3, 1},
+		{"3.0", 3, 1},
+		{"0.6", 0, 1}, // rounds to 0: warned and left unscaled, as before
+	} {
+		t.Run(tt.qty, func(t *testing.T) {
+			rec, err := client.parseRecommendationDetail(context.Background(), &types.ReservationPurchaseRecommendationDetail{
+				RecommendedNumberOfInstancesToPurchase: aws.String(tt.qty),
+				AccountId:                              aws.String("123456789012"),
+				CurrencyCode:                           aws.String("USD"),
+				UpfrontCost:                            aws.String("2500"),
+				RecurringStandardMonthlyCost:           aws.String("100"),
+				EstimatedMonthlySavingsAmount:          aws.String("50"),
+				EstimatedMonthlySavingsPercentage:      aws.String("40"),
+				EstimatedMonthlyOnDemandCost:           aws.String("125"),
+				EstimatedBreakEvenInMonths:             aws.String("7"),
+				AverageNumberOfInstancesUsedPerHour:    aws.String("2.7"),
+				InstanceDetails: &types.InstanceDetails{
+					EC2InstanceDetails: &types.EC2InstanceDetails{
+						InstanceType: aws.String("m5.large"),
+						Platform:     aws.String("Linux/UNIX"),
+						Region:       aws.String("us-east-1"),
+						Tenancy:      aws.String("shared"),
+					},
+				},
+			}, common.RecommendationParams{Service: common.ServiceEC2, PaymentOption: "partial-upfront", Term: "1yr", LookbackPeriod: "7d"})
+			require.NoError(t, err)
+			assert.Equal(t, tt.count, rec.Count)
+			assert.Equal(t, tt.count, rec.RecommendedCount)
+			assert.InDelta(t, 2500*tt.scale, rec.CommitmentCost, 1e-9, "upfront")
+			require.NotNil(t, rec.RecurringMonthlyCost)
+			assert.InDelta(t, 100*tt.scale, *rec.RecurringMonthlyCost, 1e-9, "recurring")
+			assert.InDelta(t, 50*tt.scale, rec.EstimatedSavings, 1e-9, "savings")
+			assert.InDelta(t, 40*tt.scale, rec.SavingsPercentage, 1e-9, "savings %% of an unchanged on-demand baseline")
+			assert.InDelta(t, 125, rec.OnDemandCost, 1e-9, "on-demand spend does not depend on the quantity bought")
+			assert.InDelta(t, 7, rec.BreakEvenMonths, 1e-9, "upfront/savings is unchanged by scaling")
+			assert.InDelta(t, 2.7, rec.AverageInstancesUsedPerHour, 1e-9, "demand is not scaled")
+		})
+	}
 }
