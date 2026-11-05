@@ -548,6 +548,11 @@ type Commitment struct {
 
 	Count int     `json:"count"`
 	Cost  float64 `json:"cost"`
+	// CostKnown reports whether Cost holds a price the provider reported. The zero
+	// value means unknown, so a Cost of 0 on a commitment that did not set
+	// CostKnown must not be read as free. Set it true only where the amount was
+	// read from the provider (a real 0 included).
+	CostKnown bool `json:"cost_known"`
 
 	// StartDateIsDay marks StartDate as a UTC calendar date. The zero value
 	// means StartDate is a precise timestamp; true means the real instant
