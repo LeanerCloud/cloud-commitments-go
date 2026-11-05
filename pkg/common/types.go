@@ -39,8 +39,9 @@ var ErrCurrencyNotAccepted = errors.New("currency not accepted")
 // contract until the platform persists a typed flag (platform #778).
 var ErrOutcomeUnknown = errors.New("purchase outcome unknown")
 
-// ErrRefusedBeforePurchase wraps any error from the approved-upfront check,
-// which runs before the purchase request is built or sent. Its presence is
+// ErrRefusedBeforePurchase wraps any error from the approved-upfront check or
+// the purchase-count bounds check, both of which run before the purchase
+// request is built or sent. Its presence is
 // sufficient to know that this call sent no purchase request, but its absence
 // proves nothing: other refusals do not carry it. It describes only the call
 // that returned it and says nothing about earlier calls with the same

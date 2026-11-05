@@ -87,3 +87,16 @@ func TestNoUpfrontApproved(t *testing.T) {
 	assert.False(t, NoUpfrontApproved(math.Inf(1)))
 	assert.False(t, NoUpfrontApproved(math.Inf(-1)))
 }
+
+func TestPurchaseCount(t *testing.T) {
+	t.Parallel()
+	for _, n := range []int{1, 7, math.MaxInt32} {
+		got, err := PurchaseCount(n)
+		require.NoError(t, err)
+		assert.EqualValues(t, n, got)
+	}
+	for _, n := range []int{math.MaxInt32 + 1, 1 << 40, 0, -1} {
+		_, err := PurchaseCount(n)
+		require.ErrorIs(t, err, ErrPurchaseCountOutOfRange, "count %d", n)
+	}
+}
