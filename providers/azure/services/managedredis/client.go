@@ -500,6 +500,15 @@ type RedisPricing struct {
 	ReservationPrice float64
 }
 
+// ReservationUnitPrice returns the Retail Prices reservation total and currency for one unit of sku in region over termYears.
+func (c *Client) ReservationUnitPrice(ctx context.Context, sku, region string, termYears int) (recommendations.ReservationPrice, error) {
+	p, err := c.getRedisPricing(ctx, sku, region, termYears)
+	if err != nil {
+		return recommendations.ReservationPrice{}, err
+	}
+	return recommendations.ReservationPrice{Total: p.ReservationPrice, Currency: p.Currency}, nil
+}
+
 func (c *Client) getRedisPricing(ctx context.Context, sku, region string, termYears int) (*RedisPricing, error) {
 	identity, err := pricing.ParseRedisIdentity(sku)
 	if err != nil {
