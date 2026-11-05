@@ -32,6 +32,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **`pkg`:** `common.Commitment.CostKnown` reports whether `Cost` holds a price the provider reported. The zero value means unknown, so a `Cost` of 0 without `CostKnown` must not be read as free. Producers set it in a follow-up (#74).
+
 - **`ladder`/`aws`:** `ladder.ObservedCommitmentRateCapability` and its AWS implementation report commitment dollars per covered on-demand dollar measured on the account's existing Savings Plans and convertible RIs (account-scoped Cost Explorer utilization). Layers with no usable observation are absent.
 
 - **`azure`:** `PartialResultError.SkipKinds() []SkipKind`, index-aligned with
@@ -278,6 +280,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   token (#211)
 
 ### Fixed
+
+- **`recfilter`:** a commitment with an empty `State` is still counted as existing but no longer logs a per-commitment WARNING; an unrecognized non-empty state still warns (#74).
 
 - **`aws` RI recommendations:** a fractional Cost Explorer quantity now rounds
   down instead of to the nearest integer, so a purchase never exceeds CE's
