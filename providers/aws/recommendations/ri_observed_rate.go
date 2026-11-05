@@ -107,13 +107,13 @@ func addRIFeeDetail(agg map[string]*RIFeeUtilization, detail types.ReservationUt
 func parseRIFeeFields(id string, u *types.ReservationAggregates) ([4]float64, error) {
 	var vals [4]float64
 	for i, f := range []struct {
-		name string
 		src  *string
+		name string
 	}{
-		{"TotalAmortizedFee", u.TotalAmortizedFee},
-		{"OnDemandCostOfRIHoursUsed", u.OnDemandCostOfRIHoursUsed},
-		{"PurchasedHours", u.PurchasedHours},
-		{"TotalActualHours", u.TotalActualHours},
+		{u.TotalAmortizedFee, "TotalAmortizedFee"},
+		{u.OnDemandCostOfRIHoursUsed, "OnDemandCostOfRIHoursUsed"},
+		{u.PurchasedHours, "PurchasedHours"},
+		{u.TotalActualHours, "TotalActualHours"},
 	} {
 		if f.src == nil {
 			return vals, fmt.Errorf("reservation %s: %s is missing while other fee fields are present", id, f.name)

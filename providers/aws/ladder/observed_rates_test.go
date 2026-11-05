@@ -45,8 +45,8 @@ func (f *fakeObservedSource) GetRIFeeUtilization(_ context.Context, acct, region
 	return f.fees, f.feeErr
 }
 
-func spSummary(used, od float64) recommendations.SPUtilizationSummary {
-	return recommendations.SPUtilizationSummary{UsedCommitmentUSDPerHour: aws.Float64(used), OnDemandCostEquivalentUSDPerHour: aws.Float64(od)}
+func spSummary(used float64) recommendations.SPUtilizationSummary {
+	return recommendations.SPUtilizationSummary{UsedCommitmentUSDPerHour: aws.Float64(used), OnDemandCostEquivalentUSDPerHour: aws.Float64(10)}
 }
 
 func obsLadder(src *fakeObservedSource, ris ...ec2svc.ConvertibleRI) *AWSLadder {
@@ -90,8 +90,8 @@ func TestGetObservedCommitmentRates_ScopesAndValues(t *testing.T) {
 	t.Parallel()
 	f := &fakeObservedSource{
 		spSummaries: map[cetypes.SupportedSavingsPlansType]recommendations.SPUtilizationSummary{
-			cetypes.SupportedSavingsPlansTypeEc2InstanceSp: spSummary(7, 10),
-			cetypes.SupportedSavingsPlansTypeComputeSp:     spSummary(8, 10),
+			cetypes.SupportedSavingsPlansTypeEc2InstanceSp: spSummary(7),
+			cetypes.SupportedSavingsPlansTypeComputeSp:     spSummary(8),
 		},
 		fees: []recommendations.RIFeeUtilization{
 			{ReservedInstanceID: "ri-1", TotalAmortizedFee: 100, OnDemandCostOfRIHoursUsed: 62.5, PurchasedHours: 200, TotalActualHours: 100},
@@ -137,7 +137,7 @@ func TestGetObservedCommitmentRates_AbsentKeys(t *testing.T) {
 	}{
 		"nothing observed": {},
 		"sp ratio above one": {
-			sp: spSummary(11, 10),
+			sp: spSummary(11),
 		},
 		"ri above one": {
 			fees: []recommendations.RIFeeUtilization{{ReservedInstanceID: "r", TotalAmortizedFee: 10, OnDemandCostOfRIHoursUsed: 5, PurchasedHours: 10, TotalActualHours: 10}},
@@ -245,6 +245,6 @@ func TestGetObservedCommitmentRates_SPWarnsOnlyOnOutOfRange(t *testing.T) {
 	}
 	run(recommendations.SPUtilizationSummary{})
 	assert.Empty(t, buf.String(), "no observation is silent")
-	run(spSummary(11, 10))
+	run(spSummary(11))
 	assert.Contains(t, buf.String(), "WARNING")
 }

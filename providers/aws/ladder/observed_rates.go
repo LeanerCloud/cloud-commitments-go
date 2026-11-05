@@ -63,7 +63,7 @@ func (a *AWSLadder) GetObservedCommitmentRates(ctx context.Context, scope ladder
 // observedConvertibleRIRate is sum(fee * actual/purchased) / sum(on-demand cost
 // of used hours) over the convertible RIs: the used-hours share of the fee, so
 // unused hours do not push the rate above 1.
-func (a *AWSLadder) observedConvertibleRIRate(ctx context.Context) (float64, bool, error) {
+func (a *AWSLadder) observedConvertibleRIRate(ctx context.Context) (rate float64, ok bool, err error) {
 	ris, err := a.ris.ListConvertibleReservedInstances(ctx)
 	if err != nil {
 		return 0, false, fmt.Errorf("GetObservedCommitmentRates: list convertible RIs: %w", err)
