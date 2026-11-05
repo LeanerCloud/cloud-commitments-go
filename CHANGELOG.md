@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Notices
 
+- **Azure Redis purchases must go through managedredis (`ServiceMemoryDB`).**
+  The Azure recommendations adapter still labels Redis recommendations
+  `ServiceCache`, and the cache client now refuses every purchase (#538), so
+  route Azure Redis purchases to the managedredis client. The refusal wraps
+  `common.ErrRefusedBeforePurchase` (nothing was sent), not an upfront-approval
+  failure, so approving and retrying does not help.
 - **Federation IaC bundles downloaded before 2026-04-22 need to be
   re-downloaded** to get zero-touch registration. Older bundles silently
   skip auto-registration unless manually edited (Terraform `registration.tf`
@@ -172,6 +178,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **`azure`:** the cache service no longer purchases Azure Redis reservations;
+  managedredis (`ServiceMemoryDB`) is the only service that buys `RedisCache`,
+  so one Redis recommendation cannot be bought once through each service.
+  `cache.PurchaseCommitment` now refuses before any API call with an error
+  wrapping `common.ErrRefusedBeforePurchase`. Consumers that buy an Azure
+  `ServiceCache` recommendation must route it to managedredis (#538).
 - `ListTargetOfferings` now walks up to 50 pages (about 5000 offerings)
   instead of 10, and returns an error wrapping the new
   `ec2.ErrTargetOfferingsTruncated` (with no list) when that bound is hit,
