@@ -164,7 +164,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	// surface the bad input. Fail loud up front instead.
 	instanceCount, countErr := offeringprice.PurchaseCount(rec.Count)
 	if countErr != nil {
-		result.Error = countErr
+		result.Error = fmt.Errorf("%w: %w", common.ErrRefusedBeforePurchase, countErr)
 		return result, result.Error
 	}
 

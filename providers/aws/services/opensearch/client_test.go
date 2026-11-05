@@ -1019,6 +1019,7 @@ func TestClient_PurchaseCommitment_InvalidCount_FailsBeforeIdempotencyGuard(t *t
 	assert.Error(t, err)
 	assert.False(t, result.Success, "invalid count must not report Success via the idempotency short-circuit")
 	if err != nil {
+		assert.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
 		assert.Contains(t, err.Error(), "purchase count 0 is out of valid range")
 	}
 	mockOS.AssertNotCalled(t, "DescribeReservedInstanceOfferings", mock.Anything, mock.Anything)

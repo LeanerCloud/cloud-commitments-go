@@ -2,6 +2,7 @@ package memorydb
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"testing"
 
@@ -39,7 +40,7 @@ func TestPurchaseCommitment_Count(t *testing.T) {
 	})
 
 	for _, n := range []int{math.MaxInt32 + 1, 0, -1} {
-		t.Run("refused before any API call", func(t *testing.T) {
+		t.Run(fmt.Sprintf("refused before any API call, count %d", n), func(t *testing.T) {
 			t.Parallel()
 			m := &MockMemoryDBClient{}
 			m.Test(t)
