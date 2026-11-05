@@ -86,3 +86,30 @@ func TestCheckApprovedUpfront_RefusesMissingPriceAndNonUSDOffering(t *testing.T)
 	eur.CurrencyCode = types.CurrencyCodeValues("EUR")
 	require.ErrorContains(t, checkApprovedUpfront(pricedRec(), &eur), "USD only")
 }
+
+// go#635: CE recommends 2.5 instances at a $2500 upfront for that quantity. The
+// parser floors it to 2 and scales the upfront to $2000 (pinned in
+// recommendations.TestParseRecommendationDetail_FloorsFractionalQuantityAndScalesCosts),
+// so a $1000 offering (2 x 1000) is bought, and one above the 5% tolerance is
+// still refused.
+func TestPurchaseCommitment_FlooredFractionalQuantity(t *testing.T) {
+	t.Parallel()
+	floored := func() common.Recommendation {
+		r := pricedRec()
+		r.Count = 2
+		r.CommitmentCost = 2500 * 2 / 2.5
+		return r
+	}
+	m := offeringsMock(pricedOffering(1000))
+	res, err := (&Client{client: m, region: "us-east-1"}).PurchaseCommitment(context.Background(), floored(), common.PurchaseOptions{})
+	require.NoError(t, err)
+	assert.True(t, res.Success)
+	m.AssertCalled(t, "PurchaseReservedInstancesOffering", mock.Anything, mock.MatchedBy(func(in *ec2.PurchaseReservedInstancesOfferingInput) bool {
+		return in.InstanceCount != nil && *in.InstanceCount == 2
+	}), mock.Anything)
+
+	m = offeringsMock(pricedOffering(1051)) // 2102 > 2000 x 1.05
+	_, err = (&Client{client: m, region: "us-east-1"}).PurchaseCommitment(context.Background(), floored(), common.PurchaseOptions{})
+	require.ErrorContains(t, err, "exceeds the approved upfront")
+	m.AssertNotCalled(t, "PurchaseReservedInstancesOffering", mock.Anything, mock.Anything)
+}
