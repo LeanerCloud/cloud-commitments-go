@@ -134,6 +134,14 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		Timestamp:      time.Now(),
 	}
 
+	// Refuse before any lookup or idempotency short-circuit so a bad count
+	// never reaches AWS and a re-drive cannot mask it.
+	count, countErr := offeringprice.PurchaseCount(rec.Count)
+	if countErr != nil {
+		result.Error = fmt.Errorf("%w: %w", common.ErrRefusedBeforePurchase, countErr)
+		return result, result.Error
+	}
+
 	offeringID, err := c.findOfferingID(ctx, rec, opts.ExecutionID)
 	if err != nil {
 		result.Error = fmt.Errorf("failed to find offering: %w", err)
@@ -155,7 +163,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 
 	input := &redshift.PurchaseReservedNodeOfferingInput{
 		ReservedNodeOfferingId: aws.String(offeringID),
-		NodeCount:              aws.Int32(int32(rec.Count)), // #nosec G115 -- Count from CE recommendation; AWS RI purchase limits keep this far below math.MaxInt32
+		NodeCount:              aws.Int32(count),
 	}
 
 	// A single attempt: the API has no ClientToken or caller ID, so an SDK retry

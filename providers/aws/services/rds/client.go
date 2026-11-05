@@ -134,6 +134,17 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 
 // PurchaseCommitment purchases an RDS Reserved Instance.
 func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
+	// Refuse before any lookup or idempotency short-circuit so a bad count
+	// never reaches AWS and a re-drive cannot mask it.
+	count, err := offeringprice.PurchaseCount(rec.Count)
+	if err != nil {
+		err = fmt.Errorf("%w: %w", common.ErrRefusedBeforePurchase, err)
+		return common.PurchaseResult{Recommendation: rec, Timestamp: time.Now(), Error: err}, err
+	}
+	return c.purchase(ctx, rec, count, opts)
+}
+
+func (c *Client) purchase(ctx context.Context, rec common.Recommendation, count int32, opts common.PurchaseOptions) (common.PurchaseResult, error) {
 	result := common.PurchaseResult{
 		Recommendation: rec,
 		DryRun:         false,
@@ -175,7 +186,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	input := &rds.PurchaseReservedDBInstancesOfferingInput{
 		ReservedDBInstancesOfferingId: aws.String(offeringID),
 		ReservedDBInstanceId:          aws.String(reservationID),
-		DBInstanceCount:               aws.Int32(int32(rec.Count)), // #nosec G115 -- Count from CE recommendation; AWS RI purchase limits keep this far below math.MaxInt32
+		DBInstanceCount:               aws.Int32(count),
 		Tags:                          c.createPurchaseTags(rec, opts.Source),
 	}
 

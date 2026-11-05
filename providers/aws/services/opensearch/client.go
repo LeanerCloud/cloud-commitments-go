@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math"
 	"strings"
 	"sync"
 	"time"
@@ -163,9 +162,9 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	// a re-drive carrying an invalid count (negative / int32-overflow) against
 	// an already-existing reservation would short-circuit to Success and never
 	// surface the bad input. Fail loud up front instead.
-	instanceCount, countErr := safeInt32Count(rec.Count)
+	instanceCount, countErr := offeringprice.PurchaseCount(rec.Count)
 	if countErr != nil {
-		result.Error = countErr
+		result.Error = fmt.Errorf("%w: %w", common.ErrRefusedBeforePurchase, countErr)
 		return result, result.Error
 	}
 
@@ -660,14 +659,4 @@ func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 		"i3.8xlarge.search",
 		"i3.16xlarge.search",
 	}, nil
-}
-
-// safeInt32Count validates that n is a positive value that fits in int32 and
-// returns it as int32. This prevents a gosec G115 integer-overflow conversion
-// on the PurchaseReservedInstanceOffering InstanceCount field.
-func safeInt32Count(n int) (int32, error) {
-	if n < 1 || n > math.MaxInt32 {
-		return 0, fmt.Errorf("instance count %d is out of valid range [1, %d]", n, math.MaxInt32)
-	}
-	return int32(n), nil
 }

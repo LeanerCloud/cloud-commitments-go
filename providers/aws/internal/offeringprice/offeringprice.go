@@ -5,6 +5,7 @@
 package offeringprice
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -13,6 +14,19 @@ import (
 )
 
 const hourlyFrequency = "Hourly"
+
+// ErrPurchaseCountOutOfRange marks a purchase count PurchaseCount refused.
+var ErrPurchaseCountOutOfRange = errors.New("purchase count out of range")
+
+// PurchaseCount returns n as the int32 the AWS purchase inputs take. It refuses
+// a count outside [1, math.MaxInt32] instead of letting int32(n) wrap into a
+// wrong, possibly positive, quantity. Call it before any AWS call.
+func PurchaseCount(n int) (int32, error) {
+	if n < 1 || n > math.MaxInt32 {
+		return 0, fmt.Errorf("%w: purchase count %d is out of valid range [1, %d]", ErrPurchaseCountOutOfRange, n, math.MaxInt32)
+	}
+	return int32(n), nil
+}
 
 // Charge is one recurring charge of an offering.
 type Charge struct {
