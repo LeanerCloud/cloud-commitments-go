@@ -1119,6 +1119,7 @@ func TestResolveOffering_ForwardsAvailabilityZone(t *testing.T) {
 		"ri-001": {
 			ProductDescription: "Linux/UNIX", InstanceTenancy: "default",
 			Scope: "Availability Zone", AvailabilityZone: "us-east-1b", Duration: 31536000,
+			OfferingType: "Partial Upfront",
 		},
 	}
 	rec := ReshapeRecommendation{SourceRIID: "ri-001", TargetInstanceType: "m5.2xlarge"}
@@ -1130,6 +1131,7 @@ func TestResolveOffering_ForwardsAvailabilityZone(t *testing.T) {
 	assert.Equal(t, LookupOfferingParams{
 		InstanceType: "m5.2xlarge", ProductDescription: "Linux/UNIX", Tenancy: "default",
 		Scope: "Availability Zone", AvailabilityZone: "us-east-1b", Duration: 31536000,
+		OfferingType: "Partial Upfront",
 	}, got)
 }
 

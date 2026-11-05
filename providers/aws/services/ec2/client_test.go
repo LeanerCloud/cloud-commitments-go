@@ -1517,6 +1517,7 @@ func TestFindConvertibleOffering_InvalidTenancyOrScope_ErrorsBeforeAPICall(t *te
 				Tenancy:            tc.tenancy,
 				Scope:              tc.scope,
 				Duration:           OneYearSeconds,
+				OfferingType:       string(types.OfferingTypeValuesNoUpfront),
 			})
 
 			require.Error(t, err)
@@ -1613,6 +1614,7 @@ func TestFindConvertibleOffering_TenancyScopeVariants_SendEnumValues(t *testing.
 				Scope:              tc.scope,
 				AvailabilityZone:   tc.az,
 				Duration:           OneYearSeconds,
+				OfferingType:       string(types.OfferingTypeValuesNoUpfront),
 			})
 
 			require.NoError(t, err)
@@ -1957,6 +1959,7 @@ func zonalFindParams(az string) FindConvertibleOfferingParams {
 	return FindConvertibleOfferingParams{
 		InstanceType: "m5.large", ProductDescription: "Linux/UNIX", Tenancy: "default",
 		Scope: "Availability Zone", AvailabilityZone: az, Duration: OneYearSeconds,
+		OfferingType: string(types.OfferingTypeValuesNoUpfront),
 	}
 }
 
