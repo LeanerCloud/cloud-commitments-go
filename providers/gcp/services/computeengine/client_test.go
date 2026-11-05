@@ -412,7 +412,7 @@ func TestComputeEngineClient_GetExistingCommitments_WithMock(t *testing.T) {
 }
 
 // The mock ignores Filter, so this proves only what the client sends. Whether
-// the real API honours the filter is unverified (no live GCP call was made).
+// the real API honors the filter is unverified (no live GCP call was made).
 func TestComputeEngineClient_GetExistingCommitments_ListsOnlyLive(t *testing.T) {
 	t.Parallel()
 	client, _ := NewClient("test-project", "us-central1")
@@ -422,7 +422,8 @@ func TestComputeEngineClient_GetExistingCommitments_ListsOnlyLive(t *testing.T) 
 	_, err := client.GetExistingCommitments(context.Background())
 	require.NoError(t, err)
 	require.NotNil(t, svc.lastListReq)
-	assert.Equal(t, "(status != EXPIRED) (status != CANCELLED)", svc.lastListReq.GetFilter())
+	want := "(status != " + computepb.Commitment_EXPIRED.String() + ") (status != " + computepb.Commitment_CANCELLED.String() + ")" //nolint:misspell // SDK identifier
+	assert.Equal(t, want, svc.lastListReq.GetFilter())
 	assert.Equal(t, "test-project", svc.lastListReq.GetProject())
 	assert.Equal(t, "us-central1", svc.lastListReq.GetRegion())
 }
@@ -440,6 +441,21 @@ func TestComputeEngineClient_GetExistingCommitments_ItemCapStillErrors(t *testin
 	require.Error(t, err)
 	assert.Nil(t, got)
 	assert.Contains(t, err.Error(), "iteration cap")
+}
+
+// Exactly maxCommitmentsPages items is still a complete list, not a cap hit.
+func TestComputeEngineClient_GetExistingCommitments_ExactlyAtCapSucceeds(t *testing.T) {
+	t.Parallel()
+	client, _ := NewClient("test-project", "us-central1")
+	cuds := make([]*computepb.Commitment, 0, maxCommitmentsPages)
+	for i := 0; i < maxCommitmentsPages; i++ {
+		cuds = append(cuds, recentCUD())
+	}
+	client.SetCommitmentsService(&MockCommitmentsService{commitments: cuds})
+
+	got, err := client.GetExistingCommitments(context.Background())
+	require.NoError(t, err)
+	assert.Len(t, got, maxCommitmentsPages)
 }
 
 func TestComputeEngineClient_GetExistingCommitments_Error(t *testing.T) {
