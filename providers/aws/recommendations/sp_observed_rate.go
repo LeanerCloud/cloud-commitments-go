@@ -9,6 +9,12 @@ import (
 
 // GetSPUtilizationForAccount is GetSPUtilization restricted to one linked
 // account. Under payer credentials the unscoped call blends every account.
+//
+// MANUAL VERIFICATION REQUIRED (mock-unprovable): the tests prove only the
+// request shape. Whether LINKED_ACCOUNT matches the owner account or the usage
+// account is not provable offline. Before trusting this under payer
+// credentials, run GetSavingsPlansUtilization with LINKED_ACCOUNT=<id> under the payer
+// credentials, repeat it under that account's own credentials, and compare.
 func (c *Client) GetSPUtilizationForAccount(ctx context.Context, planType types.SupportedSavingsPlansType, accountID, region string, lookbackDays int) (SPUtilizationSummary, error) {
 	if accountID == "" {
 		return SPUtilizationSummary{}, errors.New("sp utilization: accountID must not be empty")

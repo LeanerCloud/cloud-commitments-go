@@ -25,6 +25,12 @@ type RIFeeUtilization struct {
 // one linked account (and region, when non-empty) over the last lookbackDays.
 // A group with all four fields absent is skipped; a partial, unparseable,
 // non-finite or negative set is an error.
+//
+// MANUAL VERIFICATION REQUIRED (mock-unprovable): the tests prove only the
+// request shape. Whether LINKED_ACCOUNT matches the owner account or the usage
+// account is not provable offline. Before trusting this under payer
+// credentials, run GetReservationUtilization with LINKED_ACCOUNT=<id> under the payer
+// credentials, repeat it under that account's own credentials, and compare.
 func (c *Client) GetRIFeeUtilization(ctx context.Context, accountID, region string, lookbackDays int) ([]RIFeeUtilization, error) {
 	if accountID == "" {
 		return nil, errors.New("ri fee utilization: accountID must not be empty")
