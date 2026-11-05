@@ -27,6 +27,7 @@ import (
 	"google.golang.org/api/option"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -42,6 +43,12 @@ const maxRecsPages = 20
 
 // maxCommitmentsPages caps GCP committed-use discount iteration.
 const maxCommitmentsPages = 50
+
+// liveCommitmentsFilter drops expired and canceled commitments server-side so
+// the item cap counts live commitments only. It is built from the SDK status
+// enum so the status names cannot drift from what the API returns.
+var liveCommitmentsFilter = fmt.Sprintf("(status != %s) (status != %s)",
+	computepb.Commitment_EXPIRED.String(), computepb.Commitment_CANCELLED.String()) //nolint:misspell // SDK identifier
 
 // maxMachineTypeItems caps GCP machine types iteration (one item per Next() call).
 const maxMachineTypeItems = 20
@@ -487,6 +494,7 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 	req := &computepb.ListRegionCommitmentsRequest{
 		Project: c.projectID,
 		Region:  c.region,
+		Filter:  proto.String(liveCommitmentsFilter),
 	}
 
 	return c.collectCommitments(ctx, svc, req)
@@ -516,15 +524,16 @@ func (c *Client) collectCommitments(ctx context.Context, svc CommitmentsService,
 		if err := ctx.Err(); err != nil {
 			return nil, fmt.Errorf("context canceled during pagination: %w", err)
 		}
-		if pageIdx >= maxCommitmentsPages {
-			return nil, fmt.Errorf("computeengine: GetExistingCommitments iteration cap (%d items) reached", maxCommitmentsPages)
-		}
 		commitment, err := it.Next()
 		if errors.Is(err, iterator.Done) {
 			break
 		}
 		if err != nil {
 			return nil, fmt.Errorf("failed to list commitments: %w", err)
+		}
+		// Checked after Done so exactly maxCommitmentsPages items still succeed.
+		if pageIdx >= maxCommitmentsPages {
+			return nil, fmt.Errorf("computeengine: GetExistingCommitments iteration cap (%d items) reached", maxCommitmentsPages)
 		}
 
 		com, err := c.convertGCPCommitmentToCommon(commitment)
