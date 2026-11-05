@@ -932,7 +932,7 @@ func (c *Client) FindConvertibleOffering(ctx context.Context, params FindConvert
 	}
 	input := convertibleOfferingInput(want.instanceType, want.productDesc, want.scope, want.tenancy, want.az, want.duration)
 	skips := offeringSkips{}
-	for page := 1; page <= maxTargetOfferingPages; page++ {
+	for page := 1; page <= maxConvertibleOfferingPages; page++ {
 		if err := ctx.Err(); err != nil {
 			return "", err
 		}
@@ -951,7 +951,7 @@ func (c *Client) FindConvertibleOffering(ctx context.Context, params FindConvert
 		input.NextToken = result.NextToken
 	}
 	return "", fmt.Errorf("no convertible offering found for %s (%s, %s, %s, AZ %q) within %d pages: pagination cap reached%s",
-		want.instanceType, want.productDesc, want.tenancy, want.scope, want.az, maxTargetOfferingPages, skips.note())
+		want.instanceType, want.productDesc, want.tenancy, want.scope, want.az, maxConvertibleOfferingPages, skips.note())
 }
 
 // resolveFindWant validates params and builds the expectation the returned
@@ -1039,10 +1039,14 @@ type ListTargetOfferingsParams struct {
 	Duration           int64
 }
 
-// maxTargetOfferingPages caps the pagination walk for ListTargetOfferings.
-// At 100 results per page this allows up to 1000 offerings -- more than
-// enough given the small number of convertible instance types AWS offers.
-const maxTargetOfferingPages = 10
+// maxConvertibleOfferingPages caps the FindConvertibleOffering walk:
+// 10 pages x 20 results.
+const maxConvertibleOfferingPages = 10
+
+// ErrTargetOfferingsTruncated reports that ListTargetOfferings hit its page
+// bound (maxListPages) while AWS still had more pages. No partial list is
+// returned alongside it.
+var ErrTargetOfferingsTruncated = errors.New("target offerings pagination cap reached")
 
 // normalizeTargetOfferingsParams validates the request and converts the
 // OfferingType string to the AWS SDK enum. ProductDescription and Duration have
@@ -1149,6 +1153,9 @@ func listOfferingsInput(want offeringWant, nextToken *string) *ec2.DescribeReser
 // InstanceType is intentionally left unset so AWS returns all instance types
 // matching the other constraints -- that is exactly the "valid targets" set for
 // a convertible RI exchange.
+//
+// After maxListPages pages with more still to read it returns
+// ErrTargetOfferingsTruncated and no list, never a partial one.
 func (c *Client) ListTargetOfferings(ctx context.Context, params ListTargetOfferingsParams) ([]TargetOffering, error) {
 	want, err := resolveListWant(params)
 	if err != nil {
@@ -1158,7 +1165,7 @@ func (c *Client) ListTargetOfferings(ctx context.Context, params ListTargetOffer
 	var out []TargetOffering
 	var nextToken *string
 	skips := offeringSkips{}
-	for page := 1; page <= maxTargetOfferingPages; page++ {
+	for page := 1; page <= maxListPages; page++ {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
@@ -1171,11 +1178,9 @@ func (c *Client) ListTargetOfferings(ctx context.Context, params ListTargetOffer
 			break
 		}
 		nextToken = result.NextToken
-		if page == maxTargetOfferingPages {
-			// Return what we collected: the picker is best-effort and
-			// partial results are still useful to the user.
-			log.Printf("ListTargetOfferings: pagination cap (%d pages) reached, returning %d offerings",
-				maxTargetOfferingPages, len(out))
+		if page == maxListPages {
+			return nil, fmt.Errorf("%w after %d pages (%d offerings collected)",
+				ErrTargetOfferingsTruncated, maxListPages, len(out))
 		}
 	}
 	if n := skips.total(); n > 0 {

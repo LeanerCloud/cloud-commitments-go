@@ -32,6 +32,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **`ladder`/`aws`:** `ladder.ObservedCommitmentRateCapability` and its AWS implementation report commitment dollars per covered on-demand dollar measured on the account's existing Savings Plans and convertible RIs (account-scoped Cost Explorer utilization). Layers with no usable observation are absent.
+
 - **`azure`:** `PartialResultError.SkipKinds() []SkipKind`, index-aligned with
   `SkipReasons()`, so consumers can tell skip causes apart without matching the
   reason text. `SkipUnpriceable` is a row with no usable price, a non-USD
@@ -170,6 +172,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- `ListTargetOfferings` now walks up to 50 pages (about 5000 offerings)
+  instead of 10, and returns an error wrapping the new
+  `ec2.ErrTargetOfferingsTruncated` (with no list) when that bound is hit,
+  instead of silently returning a partial list.
 - GCP Cloud Storage pricing lists the SKU catalog once per client, like Cloud
   SQL and Memorystore.
 - Azure multi-subscription collection keeps skipped recommendations when a
