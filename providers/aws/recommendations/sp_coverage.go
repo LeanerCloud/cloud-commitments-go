@@ -420,6 +420,12 @@ func (c *Client) fetchSPCoveragePage(ctx context.Context, input *costexplorer.Ge
 // retry state from the client's shared retry policy, so callers never mutate
 // the same retry counter.
 func (c *Client) GetSPUtilization(ctx context.Context, planType types.SupportedSavingsPlansType, region string, lookbackDays int) (SPUtilizationSummary, error) {
+	return c.getSPUtilization(ctx, planType, "", region, lookbackDays)
+}
+
+// getSPUtilization is shared by GetSPUtilization (accountID "") and
+// GetSPUtilizationForAccount.
+func (c *Client) getSPUtilization(ctx context.Context, planType types.SupportedSavingsPlansType, accountID, region string, lookbackDays int) (SPUtilizationSummary, error) {
 	if err := validateSPPlanType(planType); err != nil {
 		return SPUtilizationSummary{}, fmt.Errorf("sp utilization: %w", err)
 	}
@@ -429,7 +435,7 @@ func (c *Client) GetSPUtilization(ctx context.Context, planType types.SupportedS
 	// Plan-type filter, optionally ANDed with region. This shape is valid
 	// ONLY for the utilization API - coverage rejects SAVINGS_PLANS_TYPE.
 	// See spUtilizationFilter / spCoverageRegionFilter.
-	filter, err := spUtilizationFilter(planType, region)
+	filter, err := spUtilizationFilterForAccount(planType, accountID, region)
 	if err != nil {
 		return SPUtilizationSummary{}, fmt.Errorf("sp utilization: %w", err)
 	}

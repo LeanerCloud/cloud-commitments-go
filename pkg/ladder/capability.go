@@ -12,6 +12,15 @@ type CommitmentRateCapability interface {
 	GetCommitmentRates(context.Context, Scope, Term, PaymentOption) (map[LayerType]float64, error)
 }
 
+// ObservedCommitmentRateCapability optionally supplies commitment dollars per
+// covered on-demand dollar as measured on the account's existing commitments.
+// Keys match CommitmentRateCapability. An absent key means no usable
+// observation; every returned value is finite and in (0,1]. On error the map
+// is nil. Observed rates do not depend on term or payment option.
+type ObservedCommitmentRateCapability interface {
+	GetObservedCommitmentRates(context.Context, Scope) (map[LayerType]float64, error)
+}
+
 // LadderCapability is implemented by each cloud provider to give the ladder
 // engine a uniform interface for querying commitment state and executing
 // purchases. Implementations live in providers/ and are injected into the
