@@ -61,11 +61,12 @@ func ratePage(details, token string) string {
 	return fmt.Sprintf(`{"NextPageToken":%q,"SavingsPlansPurchaseRecommendation":{"SavingsPlansPurchaseRecommendationDetails":[%s]}}`, token, details)
 }
 
-func sdkRateLadder(t *testing.T, pages []string) *awsladder.AWSLadder {
+// sdkRateLadder serves pages per Savings Plans type and asserts that exactly
+// those pages are requested for each type.
+func sdkRateLadder(t *testing.T, pagesByType map[string][]string) *awsladder.AWSLadder {
 	t.Helper()
-	var calls atomic.Int32
+	calls := map[string]*atomic.Int32{"EC2_INSTANCE_SP": {}, "COMPUTE_SP": {}}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		page := int(calls.Add(1)) - 1
 		assert.Equal(t, http.MethodPost, r.Method)
 		assert.Equal(t, "AWSInsightsIndexService.GetSavingsPlansPurchaseRecommendation", r.Header.Get("X-Amz-Target"))
 		var input map[string]any
@@ -73,7 +74,15 @@ func sdkRateLadder(t *testing.T, pages []string) *awsladder.AWSLadder {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		want := map[string]any{"SavingsPlansType": "EC2_INSTANCE_SP", "AccountScope": "LINKED",
+		planType, _ := input["SavingsPlansType"].(string)
+		counter, known := calls[planType]
+		if !assert.True(t, known, "unexpected plan type %q", planType) {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		pages := pagesByType[planType]
+		page := int(counter.Add(1)) - 1
+		want := map[string]any{"SavingsPlansType": planType, "AccountScope": "LINKED",
 			"TermInYears": "THREE_YEARS", "PaymentOption": "PARTIAL_UPFRONT", "LookbackPeriodInDays": "SEVEN_DAYS"}
 		if page > 0 {
 			want["NextPageToken"] = "second"
@@ -90,7 +99,9 @@ func sdkRateLadder(t *testing.T, pages []string) *awsladder.AWSLadder {
 	}))
 	t.Cleanup(func() {
 		srv.Close()
-		assert.Equal(t, int32(len(pages)), calls.Load())
+		for planType, counter := range calls {
+			assert.Equal(t, int32(len(pagesByType[planType])), counter.Load(), planType)
+		}
 	})
 	endpoint, err := url.Parse(srv.URL)
 	require.NoError(t, err)
@@ -106,44 +117,59 @@ func sdkRateLadder(t *testing.T, pages []string) *awsladder.AWSLadder {
 
 func TestCommitmentRates_PublicSDKConsumer(t *testing.T) {
 	t.Parallel()
-	a := sdkRateLadder(t, []string{
-		ratePage(rateDetail("fixture-account", "eu-west-1", "m5", "10", "10")+","+
-			rateDetail("other-fixture-account", "eu-west-1", "m5", "999", "1")+","+
-			rateDetail("fixture-account", "us-east-1", "m5", "999", "1"), "second"),
-		ratePage(rateDetail("fixture-account", "eu-west-1", "c5", "60", "20"), ""),
+	a := sdkRateLadder(t, map[string][]string{
+		"EC2_INSTANCE_SP": {
+			ratePage(rateDetail("fixture-account", "eu-west-1", "m5", "10", "10")+","+
+				rateDetail("other-fixture-account", "eu-west-1", "m5", "999", "1")+","+
+				rateDetail("fixture-account", "us-east-1", "m5", "999", "1"), "second"),
+			ratePage(rateDetail("fixture-account", "eu-west-1", "c5", "60", "20"), ""),
+		},
+		// Compute SP is account-wide: both regions count, other accounts do not.
+		"COMPUTE_SP": {ratePage(rateDetail("fixture-account", "eu-west-1", "", "20", "20")+","+
+			rateDetail("fixture-account", "us-east-1", "", "20", "20")+","+
+			rateDetail("other-fixture-account", "eu-west-1", "", "999", "1"), "")},
 	})
 	scope := ladder.Scope{Provider: common.ProviderAWS, AccountID: "fixture-account"}
 	rates, err := a.GetCommitmentRates(context.Background(), scope, ladder.Term3Year, ladder.PaymentPartialUpfront)
 	require.NoError(t, err)
-	require.Equal(t, map[ladder.LayerType]float64{ladder.LayerEC2InstanceSP: 0.7}, rates)
+	require.Equal(t, map[ladder.LayerType]float64{ladder.LayerEC2InstanceSP: 0.7, ladder.LayerComputeSP: 0.5}, rates)
 	in := consumerInput(a, scope, rates)
 	result, err := ladder.Allocate(in)
 	require.NoError(t, err)
-	require.Len(t, result.Allocations, 1)
-	allocation := result.Allocations[0]
-	assert.Equal(t, ladder.LayerEC2InstanceSP, allocation.Layer)
-	assert.Equal(t, 0, allocation.OnDemandEquivalentUSDPerHour.Cmp(big.NewRat(10, 1)))
-	assert.InDelta(t, 7, ratFloat(allocation.GapUSDPerHour), 1e-12)
-	assertMissingRateHold(t, result, ladder.LayerComputeSP)
+	// With both rates present, the base gap buys EC2 Instance SP at 0.7 and the
+	// flex gap buys Compute SP at the account-wide 0.5 (#349 option A).
+	require.Len(t, result.Allocations, 2)
+	byLayer := map[ladder.LayerType]ladder.Allocation{}
+	for _, a := range result.Allocations {
+		byLayer[a.Layer] = a
+	}
+	ec2, compute := byLayer[ladder.LayerEC2InstanceSP], byLayer[ladder.LayerComputeSP]
+	assert.Equal(t, 0, ec2.OnDemandEquivalentUSDPerHour.Cmp(big.NewRat(10, 1)))
+	assert.InDelta(t, 7, ratFloat(ec2.GapUSDPerHour), 1e-12)
+	assert.Equal(t, 0, compute.OnDemandEquivalentUSDPerHour.Cmp(big.NewRat(10, 1)))
+	assert.InDelta(t, 5, ratFloat(compute.GapUSDPerHour), 1e-12)
+	nextID := 0
 	tranches, err := ladder.BuildTranches(&ladder.TrancheInput{
-		Config: &in.Config, RunID: "synthetic-run", Term: ladder.Term3Year,
-		PaymentOption: ladder.PaymentPartialUpfront, NewID: func() string { return "synthetic-tranche" },
-		Now: in.Now, Allocations: result.Allocations,
+		Config: &in.Config, RunID: "synthetic-run", Term: ladder.Term3Year, PaymentOption: ladder.PaymentPartialUpfront,
+		NewID: func() string { nextID++; return fmt.Sprintf("synthetic-tranche-%d", nextID) },
+		Now:   in.Now, Allocations: result.Allocations,
 	})
 	require.NoError(t, err)
-	require.Len(t, tranches.Tranches, 1)
-	tr := tranches.Tranches[0]
-	assert.Equal(t, allocation.GapUSDPerHour.RatString(), tr.AmountUSDPerHour)
-	assert.Equal(t, allocation.Rate.RatString(), tr.CommitmentRate)
-	storedAmount, ok := new(big.Rat).SetString(tr.AmountUSDPerHour)
-	require.True(t, ok)
-	storedRate, ok := new(big.Rat).SetString(tr.CommitmentRate)
-	require.True(t, ok)
-	in.InFlight = []ladder.InFlightTranche{{Layer: tr.Layer, CommitmentUSDPerHour: ratFloat(storedAmount), Rate: ratFloat(storedRate)}}
+	require.Len(t, tranches.Tranches, 2)
+	in.InFlight = []ladder.InFlightTranche{}
+	for _, tr := range tranches.Tranches {
+		alloc := byLayer[tr.Layer]
+		assert.Equal(t, alloc.GapUSDPerHour.RatString(), tr.AmountUSDPerHour, tr.Layer)
+		assert.Equal(t, alloc.Rate.RatString(), tr.CommitmentRate, tr.Layer)
+		storedAmount, ok := new(big.Rat).SetString(tr.AmountUSDPerHour)
+		require.True(t, ok)
+		storedRate, ok := new(big.Rat).SetString(tr.CommitmentRate)
+		require.True(t, ok)
+		in.InFlight = append(in.InFlight, ladder.InFlightTranche{Layer: tr.Layer, CommitmentUSDPerHour: ratFloat(storedAmount), Rate: ratFloat(storedRate)})
+	}
 	replay, err := ladder.Allocate(in)
 	require.NoError(t, err)
 	assert.True(t, replay.IsNoOp())
-	assertMissingRateHold(t, replay, ladder.LayerComputeSP)
 }
 
 func consumerInput(a *awsladder.AWSLadder, scope ladder.Scope, rates map[ladder.LayerType]float64) *ladder.AllocationInput {
@@ -184,7 +210,11 @@ func TestCommitmentRates_SDKMissingAndMalformed(t *testing.T) {
 			if cost == "" {
 				detail = `{"AccountId":"fixture-account","SavingsPlansDetails":{"Region":"eu-west-1"}}`
 			}
-			a := sdkRateLadder(t, []string{ratePage(detail, "")})
+			pages := map[string][]string{"EC2_INSTANCE_SP": {ratePage(detail, "")}}
+			if cost == "" {
+				pages["COMPUTE_SP"] = []string{ratePage(detail, "")}
+			}
+			a := sdkRateLadder(t, pages)
 			scope := ladder.Scope{Provider: common.ProviderAWS, AccountID: "fixture-account"}
 			rates, err := a.GetCommitmentRates(context.Background(), scope, ladder.Term3Year, ladder.PaymentPartialUpfront)
 			if cost != "" {
@@ -199,6 +229,7 @@ func TestCommitmentRates_SDKMissingAndMalformed(t *testing.T) {
 			require.NoError(t, err)
 			assert.True(t, result.IsNoOp())
 			assertMissingRateHold(t, result, ladder.LayerEC2InstanceSP)
+			assertMissingRateHold(t, result, ladder.LayerComputeSP)
 		})
 	}
 }
