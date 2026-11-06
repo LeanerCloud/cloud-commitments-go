@@ -80,7 +80,6 @@ func TestRIFit(t *testing.T) {
 		{"regional rec with AZ set", baseRI(set(func(ri *types.ReservedInstances) { ri.AvailabilityZone = aws.String("us-east-1a") })), regional, token, fitNo, false},
 		{"duration differs", baseRI(set(func(ri *types.ReservedInstances) { ri.Duration = aws.Int64(3 * OneYearSeconds) })), regional, token, fitNo, false},
 		{"offering type differs", baseRI(set(func(ri *types.ReservedInstances) { ri.OfferingType = types.OfferingTypeValuesAllUpfront })), regional, token, fitNo, false},
-		{"convertible RI vs standard query", baseRI(set(func(ri *types.ReservedInstances) { ri.OfferingClass = types.OfferingClassTypeConvertible })), regional, token, fitNo, false},
 		{"standard RI vs convertible query", baseRI(), convertibleQ, token, fitNo, false},
 		{"class differs", baseRI(set(func(ri *types.ReservedInstances) { ri.OfferingClass = types.OfferingClassTypeConvertible })), regional, token, fitNo, false},
 
