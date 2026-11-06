@@ -24,9 +24,6 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
 )
 
-// maxRecsPages caps Consumption API recommendation pagination.
-const maxRecsPages = 10
-
 // maxReservationsPages caps reservation-detail pagination.
 const maxReservationsPages = 50
 
@@ -151,65 +148,12 @@ func (c *Client) GetRegion() string {
 // AzureRetailPrice is the response envelope for the Azure Retail Prices API.
 type AzureRetailPrice = pricing.Page[pricing.RetailPriceItem]
 
-// GetRecommendations gets Redis Cache reservation recommendations from Azure Consumption API.
-func (c *Client) GetRecommendations(ctx context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
-	recommendations := make([]common.Recommendation, 0)
-	pricer := azrecs.NewPricer("cache", c.ReservationUnitPrice)
-
-	// Use injected pager if available (for testing)
-	var pager RecommendationsPager
-	if c.recommendationsPager != nil {
-		pager = c.recommendationsPager
-	} else {
-		client, err := armconsumption.NewReservationRecommendationsClient(c.cred, nil)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create consumption client: %w", err)
-		}
-		// NewListPager's first argument is the billing scope, NOT the
-		// filter — see the parallel comment in compute/client.go for the
-		// failure mode that the wrong shape produced.
-		scope := fmt.Sprintf("/subscriptions/%s", c.subscriptionID)
-		filter := azrecs.ConsumptionFilter("RedisCache")
-		pager = client.NewListPager(scope, &armconsumption.ReservationRecommendationsClientListOptions{Filter: &filter})
-	}
-
-	for pageIdx := 0; pager.More(); pageIdx++ {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context canceled during pagination: %w", err)
-		}
-		if pageIdx >= maxRecsPages {
-			return nil, fmt.Errorf("cache: GetRecommendations pagination cap (%d pages) reached", maxRecsPages)
-		}
-		page, err := slot.NextPage(ctx, pager)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get Redis Cache recommendations: %w", err)
-		}
-
-		recommendations, err = c.appendPage(ctx, pricer, recommendations, page.Value)
-		if err != nil {
-			return recommendations, err
-		}
-	}
-
-	return recommendations, nil
-}
-
-// appendPage converts one page of recommendations and appends their priced
-// variants. It is split out of GetRecommendations to keep that function under
-// the cyclomatic limit.
-func (c *Client) appendPage(ctx context.Context, pricer *azrecs.Pricer, recs []common.Recommendation, page []armconsumption.ReservationRecommendationClassification) ([]common.Recommendation, error) {
-	for _, rec := range page {
-		converted := c.convertAzureRedisRecommendation(ctx, rec)
-		if converted == nil {
-			continue
-		}
-		var err error
-		recs, err = azrecs.AppendConsumptionVariants(ctx, "cache", recs, *converted, pricer)
-		if err != nil {
-			return recs, err
-		}
-	}
-	return recs, nil
+// GetRecommendations returns an empty slice: Azure Redis recommendations are
+// collected, labeled ServiceMemoryDB, by the managedredis client. Collecting
+// them here too would list every Redis recommendation twice, and a
+// ServiceCache label routes the purchase to a client that must not buy Redis.
+func (c *Client) GetRecommendations(_ context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
+	return []common.Recommendation{}, nil
 }
 
 // GetExistingCommitments retrieves existing Redis Cache reserved capacity.
@@ -596,47 +540,6 @@ func (c *Client) getRedisPricing(ctx context.Context, sku, region string, termYe
 		ReservationPrice: selected.RetailPrice,
 		Currency:         selected.CurrencyCode,
 	}, nil
-}
-
-// convertAzureRedisRecommendation converts Azure Redis Cache reservation recommendation to common format.
-// See providers/azure/internal/recommendations.Extract for the shared
-// SDK-to-struct ladder. Returns nil when the SDK payload is unusable.
-//
-// Details populated by parsing the SKU string into Engine ("redis") and
-// NodeType, then enriched from the lazily-cached armredis catalog
-// (cachedSKULookup). Shards is sourced from the catalog when an
-// existing cache in the subscription matches the recommendation's
-// Premium-tier SKU; otherwise stays 0 (zero means "unknown", not
-// "definitely zero shards" — see the redisSKUEntry godoc).
-func (c *Client) convertAzureRedisRecommendation(ctx context.Context, azureRec armconsumption.ReservationRecommendationClassification) *common.Recommendation {
-	f := azrecs.ExtractConsumptionOrSkip(ctx, "cache", azureRec)
-	if f == nil {
-		return nil
-	}
-	details := &common.CacheDetails{
-		Engine:   "redis",
-		NodeType: f.ResourceType,
-	}
-	if entry, ok := c.cachedSKULookup(ctx, f.ResourceType); ok && entry.shardCount > 0 {
-		details.Shards = entry.shardCount
-	}
-	return &common.Recommendation{
-		Provider:             common.ProviderAzure,
-		Service:              common.ServiceCache,
-		Account:              c.subscriptionID,
-		Region:               f.Region,
-		ResourceType:         f.ResourceType,
-		Count:                f.Count,
-		OnDemandCost:         f.OnDemandCost,
-		CommitmentCost:       f.CommitmentCost,
-		EstimatedSavings:     f.EstimatedSavings,
-		RecurringMonthlyCost: f.RecurringMonthlyCost,
-		CommitmentType:       common.CommitmentReservedInstance,
-		Term:                 f.Term,
-		PaymentOption:        "upfront",
-		Timestamp:            time.Now(),
-		Details:              details,
-	}
 }
 
 // cachedSKULookup returns the SKU catalog entry for skuName, fetching

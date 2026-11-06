@@ -37,9 +37,6 @@ func (h slotHTTP) Do(*http.Request) (*http.Response, error) {
 
 func TestSlotHeldDuringCalls(t *testing.T) {
 	t.Parallel()
-	recs := func(p *slottest.Probe) *slotPager[armconsumption.ReservationRecommendationsClientListResponse] {
-		return &slotPager[armconsumption.ReservationRecommendationsClientListResponse]{p: p}
-	}
 	resv := func(p *slottest.Probe) *slotPager[armconsumption.ReservationsDetailsClientListResponse] {
 		return &slotPager[armconsumption.ReservationsDetailsClientListResponse]{p: p}
 	}
@@ -47,9 +44,6 @@ func TestSlotHeldDuringCalls(t *testing.T) {
 		name string
 		call func(ctx context.Context, p *slottest.Probe)
 	}{
-		{"recommendations", func(ctx context.Context, p *slottest.Probe) {
-			_, _ = (&Client{recommendationsPager: recs(p)}).GetRecommendations(ctx, nil)
-		}},
 		{"reservations", func(ctx context.Context, p *slottest.Probe) {
 			_, _ = (&Client{reservationsPager: resv(p)}).GetExistingCommitments(ctx)
 		}},
