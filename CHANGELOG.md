@@ -288,6 +288,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   actually bought. Before, 2.5 became 3 with the upfront for 2.5, and the
   approved-upfront check refused the purchase. The on-demand baseline and
   break-even months are unchanged (#635).
+- **AWS:** purchase counts outside [1, MaxInt32] are refused before any API call in EC2, ElastiCache, MemoryDB, OpenSearch, RDS and Redshift, with `ErrRefusedBeforePurchase` and `offeringprice.ErrPurchaseCountOutOfRange` (#683).
 - **`azure`:** an error from a reservation purchase retry (attempt 2 or later) now also wraps `common.ErrOutcomeUnknown`. That covers a currency refusal from the retry's calculatePrice, a failed idempotency re-check, a non-retryable purchase failure, a cancelled retry wait and exhausted attempts. A retry runs only after a purchase that failed retryably and may have committed, and the re-check can miss that order, so none of these errors may read as "nothing was bought". The cause stays in the chain, so `errors.Is(err, common.ErrCurrencyNotAccepted)` still matches. The `ErrCurrencyNotAccepted` doc now says it is pre-purchase only without `ErrOutcomeUnknown` (#671).
 - **Azure purchases check the recommendation currency.** Azure reservation purchases
   compare the calculatePrice billing currency with the recommendation currency
