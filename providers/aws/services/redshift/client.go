@@ -125,6 +125,12 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 // The tokenized path relies on the caller contract documented on
 // findMatchingNodes: no concurrent same-spec purchase for the account and region.
 //
+// With an IdempotencyToken and PurchaseOptions.AttemptJournal (go#107) the
+// attempt is also recorded: sending before the call, then purchased or
+// outcome_unknown. A node recorded as purchased by an earlier attempt is adopted
+// without the window, and an unresolved earlier attempt that the window cannot
+// resolve refuses. The window dedupe alone applies when no journal is set.
+//
 // Reserved nodes cannot be tagged, so the purchased node is not tagged.
 func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
 	result := common.PurchaseResult{

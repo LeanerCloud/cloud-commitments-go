@@ -42,7 +42,10 @@ var errRequestedAtRequired = errors.New("RequestedAt is required with an idempot
 // dispatch another Redshift purchase for the same account, region, offering ID
 // and node count while a re-drive of an earlier lineage is still possible (the
 // platform's execution claim provides this). Otherwise a re-drive may adopt the
-// later node or be refused as ambiguous.
+// later node or be refused as ambiguous. A caller that re-dispatches a token
+// whose earlier attempt may have been sent must first wait long enough for
+// DescribeReservedNodes to list a node that attempt bought; an AttemptJournal
+// (go#107) records the attempts but cannot close that listing lag.
 func (c *Client) findMatchingNodes(ctx context.Context, offeringID string, count int, requestedAt time.Time) ([]string, error) {
 	since := requestedAt.Add(-redshiftClockSkew)
 	var ids []string
