@@ -392,3 +392,108 @@ func TestJournal_CancelledCtxAfterSendStillRecords(t *testing.T) {
 	assert.True(t, result.Success)
 	assert.Equal(t, common.AttemptPurchased, j.row(t, jExecNew).State)
 }
+
+func TestJournal_UnknownOutcomeRecorded(t *testing.T) {
+	t.Parallel()
+	j := newFakeJournal()
+	c, m := recoverMock(buyFails(transportErr()))
+	result, err := c.PurchaseCommitment(context.Background(), rsIdemRec(), jOpts(j, jExecNew))
+	require.ErrorIs(t, err, common.ErrOutcomeUnknown)
+	assert.False(t, result.Success)
+	m.AssertNumberOfCalls(t, "PurchaseReservedNodeOffering", 1)
+	assert.Equal(t, common.AttemptOutcomeUnknown, j.row(t, jExecNew).State)
+}
+
+func TestJournal_PostSendAdoptRecordsPurchased(t *testing.T) {
+	t.Parallel()
+	j := newFakeJournal()
+	c, m := recoverMock(buyFails(transportErr()), dnode("rn-1", "payment-pending", dedupeReqAt.Add(time.Second)))
+	result, err := c.PurchaseCommitment(context.Background(), rsIdemRec(), jOpts(j, jExecNew))
+	require.NoError(t, err)
+	assert.True(t, result.Success)
+	assert.Equal(t, "rn-1", result.CommitmentID)
+	m.AssertNumberOfCalls(t, "DescribeReservedNodes", 2)
+	recs := j.recordCalls()
+	require.Len(t, recs, 2)
+	assert.Equal(t, common.AttemptSending, recs[0].State)
+	assert.Equal(t, common.AttemptPurchased, recs[1].State)
+	assert.Equal(t, "rn-1", recs[1].ReservationID)
+}
+
+func TestJournal_AmbiguousResponseRecordedUnknown(t *testing.T) {
+	t.Parallel()
+	t.Run("empty 200", func(t *testing.T) {
+		j := newFakeJournal()
+		c, _ := recoverMock(buyEmpty)
+		_, err := c.PurchaseCommitment(context.Background(), rsIdemRec(), jOpts(j, jExecNew))
+		require.ErrorIs(t, err, common.ErrOutcomeUnknown)
+		assert.Equal(t, common.AttemptOutcomeUnknown, j.row(t, jExecNew).State)
+	})
+	t.Run("definite 4xx", func(t *testing.T) {
+		j := newFakeJournal()
+		c, _ := recoverMock(buyFails(clean4xx()))
+		_, err := c.PurchaseCommitment(context.Background(), rsIdemRec(), jOpts(j, jExecNew))
+		require.Error(t, err)
+		assert.NotErrorIs(t, err, common.ErrOutcomeUnknown)
+		assert.Equal(t, common.AttemptOutcomeUnknown, j.row(t, jExecNew).State)
+	})
+}
+
+func TestJournal_UnknownWriteErrorStillOutcomeUnknown(t *testing.T) {
+	t.Parallel()
+	j := newFakeJournal()
+	j.failOn[common.AttemptOutcomeUnknown] = errors.New("db down")
+	c, _ := recoverMock(buyFails(transportErr()))
+	result, err := c.PurchaseCommitment(context.Background(), rsIdemRec(), jOpts(j, jExecNew))
+	require.ErrorIs(t, err, common.ErrOutcomeUnknown)
+	assert.Contains(t, err.Error(), "db down")
+	assert.False(t, result.Success)
+}
+
+func TestJournal_UpfrontRefusalWritesNothing(t *testing.T) {
+	t.Parallel()
+	j := newFakeJournal()
+	m := guardMock(1000, "")
+	expectNodePages(m, nil)
+	c := &Client{client: m, region: "eu-west-1"}
+	rec := rsIdemRec()
+	rec.CommitmentCost = 10
+	_, err := c.PurchaseCommitment(context.Background(), rec, jOpts(j, jExecNew))
+	require.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
+	assert.Empty(t, j.recordCalls())
+	jNoBuy(t, m)
+}
+
+func TestJournal_ZeroRequestedAtRefusesBeforeJournal(t *testing.T) {
+	t.Parallel()
+	j := newFakeJournal()
+	j.seed(jExecOld, common.AttemptPurchased, "rn-1", jOffer)
+	c, m := newDedupe(jWindow("rn-1"))
+	opts := jOpts(j, jExecNew)
+	opts.RequestedAt = time.Time{}
+	_, err := c.PurchaseCommitment(context.Background(), rsIdemRec(), opts)
+	require.ErrorIs(t, err, errRequestedAtRequired)
+	assert.Empty(t, j.calls)
+	jNoBuy(t, m)
+}
+
+func TestJournal_EmptyTokenSkipsJournal(t *testing.T) {
+	t.Parallel()
+	j := newFakeJournal()
+	c, m := newDedupe(nil)
+	result, err := c.PurchaseCommitment(context.Background(), rsIdemRec(), common.PurchaseOptions{AttemptJournal: j})
+	require.NoError(t, err)
+	assert.True(t, result.Success)
+	assert.Empty(t, j.calls)
+	m.AssertNumberOfCalls(t, "PurchaseReservedNodeOffering", 1)
+}
+
+func TestJournal_RequiresExecutionID(t *testing.T) {
+	t.Parallel()
+	j := newFakeJournal()
+	c, m := newDedupe(nil)
+	_, err := c.PurchaseCommitment(context.Background(), rsIdemRec(), jOpts(j, ""))
+	require.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
+	assert.Empty(t, j.calls)
+	jNoBuy(t, m)
+}
