@@ -97,7 +97,7 @@ func TestPriceAdvisorReservations_PassesNonReservationsThrough(t *testing.T) {
 func TestPriceAdvisorReservations_ServiceWithoutPricerIsSkipped(t *testing.T) {
 	t.Parallel()
 	ctx, skips := azrecs.WithSkipLog(context.Background())
-	got := priceAdvisorReservations(ctx, []common.Recommendation{riRow(common.ServiceCache, "eastus", "1yr", "Premium_P1", 1, "")}, nil)
+	got := priceAdvisorReservations(ctx, []common.Recommendation{riRow(common.ServiceMemoryDB, "eastus", "1yr", "Premium_P1", 1, "")}, nil)
 	assert.Empty(t, got)
 	require.Len(t, skips.Entries(), 1)
 	assert.Contains(t, skips.Entries()[0], "no reservation pricer for service")

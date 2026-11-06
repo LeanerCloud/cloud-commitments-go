@@ -204,11 +204,11 @@ func TestRecommendationsClientAdapter_Fields(t *testing.T) {
 // given fakes and restores the originals on cleanup, so adapter tests never
 // build real ARM clients (which would issue live requests to
 // management.azure.com).
-func overrideServiceClientFns(t *testing.T, compute, database, cache, cosmos, sp serviceRecsGetter) {
+func overrideServiceClientFns(t *testing.T, compute, database, redis, cosmos, sp serviceRecsGetter) {
 	t.Helper()
 	origCompute := newComputeClientFn
 	origDatabase := newDatabaseClientFn
-	origCache := newCacheClientFn
+	origRedis := newManagedRedisClientFn
 	origCosmos := newCosmosDBClientFn
 	origSP := newSavingsPlansClientFn
 	origSynapse := newSynapseClientFn
@@ -216,13 +216,13 @@ func overrideServiceClientFns(t *testing.T, compute, database, cache, cosmos, sp
 		newSynapseClientFn = origSynapse
 		newComputeClientFn = origCompute
 		newDatabaseClientFn = origDatabase
-		newCacheClientFn = origCache
+		newManagedRedisClientFn = origRedis
 		newCosmosDBClientFn = origCosmos
 		newSavingsPlansClientFn = origSP
 	})
 	newComputeClientFn = newFakeFn(compute)
 	newDatabaseClientFn = newFakeFn(database)
-	newCacheClientFn = newFakeFn(cache)
+	newManagedRedisClientFn = newFakeFn(redis)
 	newCosmosDBClientFn = newFakeFn(cosmos)
 	newSavingsPlansClientFn = newFakeFn(sp)
 	newSynapseClientFn = newFakeFn(&fakeServiceClient{})
@@ -253,7 +253,7 @@ func TestRecommendationsClientAdapter_GetAllRecommendations(t *testing.T) {
 	overrideServiceClientFns(t,
 		&fakeServiceClient{recs: []common.Recommendation{rec(common.ServiceCompute)}},
 		&fakeServiceClient{recs: []common.Recommendation{rec(common.ServiceRelationalDB)}},
-		&fakeServiceClient{recs: []common.Recommendation{rec(common.ServiceCache)}},
+		&fakeServiceClient{recs: []common.Recommendation{rec(common.ServiceMemoryDB)}},
 		&fakeServiceClient{recs: []common.Recommendation{rec(common.ServiceNoSQL)}},
 		&fakeServiceClient{})
 
@@ -268,7 +268,7 @@ func TestRecommendationsClientAdapter_GetAllRecommendations(t *testing.T) {
 	require.NoError(t, err)
 	assert.ElementsMatch(t, []common.Recommendation{
 		rec(common.ServiceCompute), rec(common.ServiceRelationalDB),
-		rec(common.ServiceCache), rec(common.ServiceNoSQL),
+		rec(common.ServiceMemoryDB), rec(common.ServiceNoSQL),
 	}, recs)
 }
 
@@ -419,7 +419,7 @@ func TestMergeServiceResults_OrderIsStable(t *testing.T) {
 
 	computeRec := mkRec(common.ServiceCompute, "compute")
 	dbRec := mkRec(common.ServiceRelationalDB, "database")
-	cacheRec := mkRec(common.ServiceCache, "cache")
+	redisRec := mkRec(common.ServiceMemoryDB, "redis")
 	cosmosRec := mkRec(common.ServiceNoSQL, "cosmosdb")
 	spRec := mkRec(common.ServiceSavingsPlansAll, "savingsplans")
 	advisorRec := mkRec(common.ServiceCompute, "advisor") // Advisor produces Compute recs
@@ -428,7 +428,7 @@ func TestMergeServiceResults_OrderIsStable(t *testing.T) {
 	result, err := mergeServiceResults(
 		serviceResult{err: nil, name: "compute", recs: []common.Recommendation{computeRec}, attempted: true},
 		serviceResult{err: nil, name: "database", recs: []common.Recommendation{dbRec}, attempted: true},
-		serviceResult{err: nil, name: "cache", recs: []common.Recommendation{cacheRec}, attempted: true},
+		serviceResult{err: nil, name: "managedredis", recs: []common.Recommendation{redisRec}, attempted: true},
 		serviceResult{err: nil, name: "cosmosdb", recs: []common.Recommendation{cosmosRec}, attempted: true},
 		serviceResult{err: nil, name: "savingsplans", recs: []common.Recommendation{spRec}, attempted: true},
 		serviceResult{err: nil, name: "advisor", recs: []common.Recommendation{advisorRec}, attempted: true},
@@ -438,7 +438,7 @@ func TestMergeServiceResults_OrderIsStable(t *testing.T) {
 	require.Len(t, result, 6, "all six services must be represented")
 	assert.Equal(t, "compute", result[0].ResourceType, "first must be compute")
 	assert.Equal(t, "database", result[1].ResourceType, "second must be database")
-	assert.Equal(t, "cache", result[2].ResourceType, "third must be cache")
+	assert.Equal(t, "redis", result[2].ResourceType, "third must be redis")
 	assert.Equal(t, "cosmosdb", result[3].ResourceType, "fourth must be cosmosdb")
 	assert.Equal(t, "savingsplans", result[4].ResourceType, "fifth must be savingsplans")
 	assert.Equal(t, "advisor", result[5].ResourceType, "sixth must be advisor (compute-type)")
@@ -596,14 +596,14 @@ const fakeServiceSleep = 100 * time.Millisecond
 func TestGetRecommendations_Parallelism(t *testing.T) {
 	origCompute := newComputeClientFn
 	origDatabase := newDatabaseClientFn
-	origCache := newCacheClientFn
+	origRedis := newManagedRedisClientFn
 	origCosmos := newCosmosDBClientFn
 	origSynapse := newSynapseClientFn
 	origSP := newSavingsPlansClientFn
 	t.Cleanup(func() {
 		newComputeClientFn = origCompute
 		newDatabaseClientFn = origDatabase
-		newCacheClientFn = origCache
+		newManagedRedisClientFn = origRedis
 		newCosmosDBClientFn = origCosmos
 		newSavingsPlansClientFn = origSP
 		newSynapseClientFn = origSynapse
@@ -616,7 +616,7 @@ func TestGetRecommendations_Parallelism(t *testing.T) {
 	noopFake := newFakeFn(&fakeServiceClient{})
 	newComputeClientFn = newFakeFn(&fakeServiceClient{sleepDur: fakeServiceSleep, recs: []common.Recommendation{rec(common.ServiceCompute)}})
 	newDatabaseClientFn = newFakeFn(&fakeServiceClient{sleepDur: fakeServiceSleep, recs: []common.Recommendation{rec(common.ServiceRelationalDB)}})
-	newCacheClientFn = newFakeFn(&fakeServiceClient{sleepDur: fakeServiceSleep, recs: []common.Recommendation{rec(common.ServiceCache)}})
+	newManagedRedisClientFn = newFakeFn(&fakeServiceClient{sleepDur: fakeServiceSleep, recs: []common.Recommendation{rec(common.ServiceMemoryDB)}})
 	newCosmosDBClientFn = newFakeFn(&fakeServiceClient{sleepDur: fakeServiceSleep, recs: []common.Recommendation{rec(common.ServiceNoSQL)}})
 	newSavingsPlansClientFn = noopFake
 	newSynapseClientFn = newFakeFn(&fakeServiceClient{})
@@ -650,14 +650,14 @@ func TestGetRecommendations_Parallelism(t *testing.T) {
 func TestGetRecommendations_OrderPreservation(t *testing.T) {
 	origCompute := newComputeClientFn
 	origDatabase := newDatabaseClientFn
-	origCache := newCacheClientFn
+	origRedis := newManagedRedisClientFn
 	origCosmos := newCosmosDBClientFn
 	origSynapse := newSynapseClientFn
 	origSP := newSavingsPlansClientFn
 	t.Cleanup(func() {
 		newComputeClientFn = origCompute
 		newDatabaseClientFn = origDatabase
-		newCacheClientFn = origCache
+		newManagedRedisClientFn = origRedis
 		newCosmosDBClientFn = origCosmos
 		newSavingsPlansClientFn = origSP
 		newSynapseClientFn = origSynapse
@@ -672,7 +672,7 @@ func TestGetRecommendations_OrderPreservation(t *testing.T) {
 	// still reflect the canonical order.
 	newComputeClientFn = newFakeFn(&fakeServiceClient{sleepDur: 40 * time.Millisecond, recs: []common.Recommendation{makeRec(common.ServiceCompute)}})
 	newDatabaseClientFn = newFakeFn(&fakeServiceClient{sleepDur: 30 * time.Millisecond, recs: []common.Recommendation{makeRec(common.ServiceRelationalDB)}})
-	newCacheClientFn = newFakeFn(&fakeServiceClient{sleepDur: 20 * time.Millisecond, recs: []common.Recommendation{makeRec(common.ServiceCache)}})
+	newManagedRedisClientFn = newFakeFn(&fakeServiceClient{sleepDur: 20 * time.Millisecond, recs: []common.Recommendation{makeRec(common.ServiceMemoryDB)}})
 	newCosmosDBClientFn = newFakeFn(&fakeServiceClient{sleepDur: 10 * time.Millisecond, recs: []common.Recommendation{makeRec(common.ServiceNoSQL)}})
 	newSavingsPlansClientFn = newFakeFn(&fakeServiceClient{})
 	newSynapseClientFn = newFakeFn(&fakeServiceClient{})
@@ -691,7 +691,7 @@ func TestGetRecommendations_OrderPreservation(t *testing.T) {
 	require.Len(t, recs, 4, "expected one rec per injectable service")
 	assert.Equal(t, common.ServiceCompute, recs[0].Service, "slot 0 must be compute")
 	assert.Equal(t, common.ServiceRelationalDB, recs[1].Service, "slot 1 must be database")
-	assert.Equal(t, common.ServiceCache, recs[2].Service, "slot 2 must be cache")
+	assert.Equal(t, common.ServiceMemoryDB, recs[2].Service, "slot 2 must be redis")
 	assert.Equal(t, common.ServiceNoSQL, recs[3].Service, "slot 3 must be cosmosdb")
 }
 
@@ -704,14 +704,14 @@ func TestGetRecommendations_OrderPreservation(t *testing.T) {
 func TestGetRecommendations_ErrorIsolation(t *testing.T) {
 	origCompute := newComputeClientFn
 	origDatabase := newDatabaseClientFn
-	origCache := newCacheClientFn
+	origRedis := newManagedRedisClientFn
 	origCosmos := newCosmosDBClientFn
 	origSynapse := newSynapseClientFn
 	origSP := newSavingsPlansClientFn
 	t.Cleanup(func() {
 		newComputeClientFn = origCompute
 		newDatabaseClientFn = origDatabase
-		newCacheClientFn = origCache
+		newManagedRedisClientFn = origRedis
 		newCosmosDBClientFn = origCosmos
 		newSavingsPlansClientFn = origSP
 		newSynapseClientFn = origSynapse
@@ -724,7 +724,7 @@ func TestGetRecommendations_ErrorIsolation(t *testing.T) {
 	// database returns an error; the other three must still contribute recs.
 	newComputeClientFn = newFakeFn(&fakeServiceClient{sleepDur: fakeServiceSleep, recs: []common.Recommendation{makeRec(common.ServiceCompute)}})
 	newDatabaseClientFn = newFakeFn(&fakeServiceClient{sleepDur: fakeServiceSleep, err: errors.New("db unavailable")})
-	newCacheClientFn = newFakeFn(&fakeServiceClient{sleepDur: fakeServiceSleep, recs: []common.Recommendation{makeRec(common.ServiceCache)}})
+	newManagedRedisClientFn = newFakeFn(&fakeServiceClient{sleepDur: fakeServiceSleep, recs: []common.Recommendation{makeRec(common.ServiceMemoryDB)}})
 	newCosmosDBClientFn = newFakeFn(&fakeServiceClient{sleepDur: fakeServiceSleep, recs: []common.Recommendation{makeRec(common.ServiceNoSQL)}})
 	newSavingsPlansClientFn = newFakeFn(&fakeServiceClient{})
 	newSynapseClientFn = newFakeFn(&fakeServiceClient{})
@@ -744,7 +744,7 @@ func TestGetRecommendations_ErrorIsolation(t *testing.T) {
 		services[i] = r.Service
 	}
 	assert.Contains(t, services, common.ServiceCompute, "compute recs must be present despite db error")
-	assert.Contains(t, services, common.ServiceCache, "cache recs must be present despite db error")
+	assert.Contains(t, services, common.ServiceMemoryDB, "redis recs must be present despite db error")
 	assert.Contains(t, services, common.ServiceNoSQL, "cosmosdb recs must be present despite db error")
 	assert.NotContains(t, services, common.ServiceRelationalDB, "db recs must be absent when db errors")
 }

@@ -24,26 +24,6 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/mocks"
 )
 
-// MockRecommendationsPager mocks the RecommendationsPager interface.
-type MockRecommendationsPager struct {
-	mock.Mock
-	pages []armconsumption.ReservationRecommendationsClientListResponse
-	index int
-}
-
-func (m *MockRecommendationsPager) More() bool {
-	return m.index < len(m.pages)
-}
-
-func (m *MockRecommendationsPager) NextPage(ctx context.Context) (armconsumption.ReservationRecommendationsClientListResponse, error) {
-	if m.index >= len(m.pages) {
-		return armconsumption.ReservationRecommendationsClientListResponse{}, errors.New("no more pages")
-	}
-	page := m.pages[m.index]
-	m.index++
-	return page, nil
-}
-
 // MockReservationsDetailsPager mocks the ReservationsDetailsPager interface.
 type MockReservationsDetailsPager struct {
 	pages []armconsumption.ReservationsDetailsClientListResponse
@@ -487,57 +467,6 @@ func TestCacheClient_ValidateOffering_CaseInsensitive(t *testing.T) {
 	})
 }
 
-func TestCacheClient_GetRecommendations_WithMockPager(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client := NewClient(nil, "test-subscription", "eastus")
-
-	// Create mock pager with empty results
-	mockPager := &MockRecommendationsPager{
-		pages: []armconsumption.ReservationRecommendationsClientListResponse{
-			{
-				ReservationRecommendationsListResult: armconsumption.ReservationRecommendationsListResult{
-					Value: []armconsumption.ReservationRecommendationClassification{},
-				},
-			},
-		},
-	}
-
-	client.SetRecommendationsPager(mockPager)
-
-	recs, err := client.GetRecommendations(ctx, &common.RecommendationParams{})
-	require.NoError(t, err)
-	assert.Empty(t, recs)
-}
-
-func TestCacheClient_GetRecommendations_MultiplePages(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client := NewClient(nil, "test-subscription", "eastus")
-
-	// Create mock pager with multiple pages
-	mockPager := &MockRecommendationsPager{
-		pages: []armconsumption.ReservationRecommendationsClientListResponse{
-			{
-				ReservationRecommendationsListResult: armconsumption.ReservationRecommendationsListResult{
-					Value: []armconsumption.ReservationRecommendationClassification{},
-				},
-			},
-			{
-				ReservationRecommendationsListResult: armconsumption.ReservationRecommendationsListResult{
-					Value: []armconsumption.ReservationRecommendationClassification{},
-				},
-			},
-		},
-	}
-
-	client.SetRecommendationsPager(mockPager)
-
-	recs, err := client.GetRecommendations(ctx, &common.RecommendationParams{})
-	require.NoError(t, err)
-	assert.Empty(t, recs)
-}
-
 func TestCacheClient_GetExistingCommitments_WithMockPager(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -840,11 +769,6 @@ func TestCacheClient_SetterMethods(t *testing.T) {
 	t.Parallel()
 	client := NewClient(nil, "test-subscription", "eastus")
 
-	// Test SetRecommendationsPager
-	mockRecPager := &MockRecommendationsPager{}
-	client.SetRecommendationsPager(mockRecPager)
-	assert.Equal(t, mockRecPager, client.recommendationsPager)
-
 	// Test SetReservationsPager
 	mockResPager := &MockReservationsDetailsPager{}
 	client.SetReservationsPager(mockResPager)
@@ -867,179 +791,6 @@ func TestCacheClient_GetCommonSKUs(t *testing.T) {
 	assert.Contains(t, skus, "Standard_C6")
 	assert.Contains(t, skus, "Premium_P1")
 	assert.Contains(t, skus, "Premium_P5")
-}
-
-// TestCacheClient_ConvertAzureRedisRecommendation_NilGuards pins the new
-// contract: unusable SDK payloads produce a nil *Recommendation.
-func TestCacheClient_ConvertAzureRedisRecommendation_NilGuards(t *testing.T) {
-	t.Parallel()
-	client := NewClient(nil, "test-subscription", "eastus")
-	assert.Nil(t, client.convertAzureRedisRecommendation(context.Background(), nil))
-}
-
-// TestCacheClient_ConvertAzureRedisRecommendation_PopulatesAllFields asserts
-// the converter forwards every helper-extracted field + applies the
-// Cache-service-specific constants. An empty SKU catalog (no caches in
-// the subscription) is the "no signal" baseline — Shards stays 0.
-func TestCacheClient_ConvertAzureRedisRecommendation_PopulatesAllFields(t *testing.T) {
-	t.Parallel()
-	client := NewClient(nil, "test-subscription", "eastus")
-	// Inject empty mock pager so the cachedSKULookup hits the lazy-fetch
-	// codepath without making a real Azure API call.
-	client.SetRedisCachesPager(&MockRedisCachesPager{})
-
-	rec := mocks.BuildLegacyReservationRecommendation(
-		mocks.WithRegion("eastus"),
-		mocks.WithTerm("P3Y"),
-		mocks.WithQuantity(1),
-		mocks.WithNormalizedSize("Premium_P3"),
-		mocks.WithCosts(50, 35, 15),
-	)
-	out := client.convertAzureRedisRecommendation(context.Background(), rec)
-	require.NotNil(t, out)
-	assert.Equal(t, common.ProviderAzure, out.Provider)
-	assert.Equal(t, common.ServiceCache, out.Service)
-	assert.Equal(t, "test-subscription", out.Account)
-	assert.Equal(t, "eastus", out.Region)
-	assert.Equal(t, "Premium_P3", out.ResourceType)
-	assert.Equal(t, 1, out.Count)
-	assert.InDelta(t, 50.0*30.4375/7, out.OnDemandCost, 1e-9)
-	assert.Zero(t, out.CommitmentCost, "commitment is priced from the retail row at variant expansion")
-	assert.InDelta(t, 15.0*30.4375/7, out.EstimatedSavings, 1e-9)
-	assert.Equal(t, common.CommitmentReservedInstance, out.CommitmentType)
-	assert.Equal(t, "3yr", out.Term)
-	assert.Equal(t, "upfront", out.PaymentOption)
-
-	// Details carries Engine=redis + NodeType from the SKU string. Shards
-	// stays 0 when no cache instance matches in the subscription (the
-	// catalogue's only signal source for shard counts).
-	require.NotNil(t, out.Details)
-	details, ok := out.Details.(*common.CacheDetails)
-	require.True(t, ok, "Details must be a *common.CacheDetails pointer")
-	assert.Equal(t, "redis", details.Engine)
-	assert.Equal(t, "Premium_P3", details.NodeType)
-	assert.Equal(t, 0, details.Shards, "Shards is 0 when no matching cache exists in the subscription")
-}
-
-// TestCacheClient_ConvertAzureRedisRecommendation_PopulatesShardsFromSKUCache
-// asserts the new batched-SKU-catalog lookup populates CacheDetails.Shards
-// when the subscription has a Premium-tier clustered cache with the same
-// SKU as the recommendation. Single ListBySubscription call per client
-// lifetime feeds many converter calls; this test pins the contract.
-func TestCacheClient_ConvertAzureRedisRecommendation_PopulatesShardsFromSKUCache(t *testing.T) {
-	t.Parallel()
-	client := NewClient(nil, "test-subscription", "eastus")
-
-	premiumName := armredis.SKUNamePremium
-	familyP := armredis.SKUFamilyP
-	capacity := int32(3)
-	shardCount := int32(5)
-
-	// One Premium_P3 cache with 5 shards in the subscription. The
-	// converter will see f.ResourceType="Premium_P3" and look it up.
-	mockPager := &MockRedisCachesPager{
-		pages: []armredis.ClientListBySubscriptionResponse{
-			{
-				ListResult: armredis.ListResult{
-					Value: []*armredis.ResourceInfo{
-						{
-							Properties: &armredis.Properties{
-								SKU: &armredis.SKU{
-									Name:     &premiumName,
-									Family:   &familyP,
-									Capacity: &capacity,
-								},
-								ShardCount: &shardCount,
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	client.SetRedisCachesPager(mockPager)
-
-	rec := mocks.BuildLegacyReservationRecommendation(
-		mocks.WithRegion("eastus"),
-		mocks.WithNormalizedSize("Premium_P3"),
-		mocks.WithCosts(100, 70, 30),
-	)
-	out := client.convertAzureRedisRecommendation(context.Background(), rec)
-	require.NotNil(t, out)
-	details, ok := out.Details.(*common.CacheDetails)
-	require.True(t, ok)
-	assert.Equal(t, "redis", details.Engine)
-	assert.Equal(t, "Premium_P3", details.NodeType)
-	assert.Equal(t, 5, details.Shards, "Shards must be enriched from the cached SKU catalog")
-}
-
-// TestCacheClient_ConvertAzureRedisRecommendation_PagerErrorFallsBack
-// asserts that a SKU-catalog fetch failure does NOT fail the
-// conversion — Shards just stays at 0 and the rest of Details is
-// populated from the recommendation payload as before. This is the
-// graceful-degradation contract the issue asks for.
-func TestCacheClient_ConvertAzureRedisRecommendation_PagerErrorFallsBack(t *testing.T) {
-	t.Parallel()
-	client := NewClient(nil, "test-subscription", "eastus")
-	mockPager := &MockRedisCachesPager{
-		pages: []armredis.ClientListBySubscriptionResponse{{}},
-		err:   errors.New("transient Azure API error"),
-	}
-	client.SetRedisCachesPager(mockPager)
-
-	rec := mocks.BuildLegacyReservationRecommendation(
-		mocks.WithRegion("eastus"),
-		mocks.WithNormalizedSize("Premium_P3"),
-		mocks.WithCosts(100, 70, 30),
-	)
-	out := client.convertAzureRedisRecommendation(context.Background(), rec)
-	require.NotNil(t, out, "conversion must NOT fail on catalog-fetch error")
-	details, ok := out.Details.(*common.CacheDetails)
-	require.True(t, ok)
-	assert.Equal(t, "redis", details.Engine)
-	assert.Equal(t, "Premium_P3", details.NodeType)
-	assert.Equal(t, 0, details.Shards, "Shards left at 0 when catalog fetch fails")
-}
-
-// TestCacheClient_CachedSKULookup_FetchedOnce pins the perf invariant:
-// many converter calls in the same GetRecommendations run trigger
-// exactly ONE catalog fetch. The mock pager counts pages served; the
-// assertion verifies the count stays at 1 after multiple lookups.
-func TestCacheClient_CachedSKULookup_FetchedOnce(t *testing.T) {
-	t.Parallel()
-	client := NewClient(nil, "test-subscription", "eastus")
-
-	premiumName := armredis.SKUNamePremium
-	familyP := armredis.SKUFamilyP
-	capacity := int32(1)
-	shardCount := int32(2)
-
-	mockPager := &MockRedisCachesPager{
-		pages: []armredis.ClientListBySubscriptionResponse{
-			{
-				ListResult: armredis.ListResult{
-					Value: []*armredis.ResourceInfo{
-						{
-							Properties: &armredis.Properties{
-								SKU: &armredis.SKU{
-									Name:     &premiumName,
-									Family:   &familyP,
-									Capacity: &capacity,
-								},
-								ShardCount: &shardCount,
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	client.SetRedisCachesPager(mockPager)
-
-	for i := 0; i < 10; i++ {
-		_, _ = client.cachedSKULookup(context.Background(), "Premium_P1")
-	}
-	assert.Equal(t, 1, mockPager.index, "catalog must be fetched ONCE regardless of lookup count")
 }
 
 // Test the to package is properly imported (used in tests).

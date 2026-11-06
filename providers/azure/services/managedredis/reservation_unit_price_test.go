@@ -1,4 +1,4 @@
-package cache
+package managedredis
 
 import (
 	"context"
@@ -21,4 +21,26 @@ func TestClient_ReservationUnitPrice(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, azrecs.ReservationPrice{Total: 500, Currency: "USD"}, got)
+}
+
+func TestClient_ReservationUnitPrice_UnknownPriceFailsLoudly(t *testing.T) {
+	t.Parallel()
+	h := &mocks.PricingHTTP{}
+	client := NewClientWithHTTP(nil, "sub", "eastus", h)
+
+	got, err := client.ReservationUnitPrice(context.Background(), "Premium_P1", "eastus", 1)
+
+	require.Error(t, err)
+	assert.Equal(t, azrecs.ReservationPrice{}, got)
+}
+
+func TestClient_ReservationUnitPrice_UnsupportedSKUErrorsBeforeRequest(t *testing.T) {
+	t.Parallel()
+	h := &mocks.PricingHTTP{}
+	client := NewClientWithHTTP(nil, "sub", "eastus", h)
+
+	_, err := client.ReservationUnitPrice(context.Background(), "Azure_Managed_Redis_Balanced_B0", "eastus", 1)
+
+	require.Error(t, err)
+	assert.Zero(t, h.Calls())
 }

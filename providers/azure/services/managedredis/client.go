@@ -145,13 +145,7 @@ type AzureRetailPrice = pricing.Page[pricing.RetailPriceItem]
 // GetRecommendations gets Redis Cache reservation recommendations from the Azure Consumption API.
 func (c *Client) GetRecommendations(ctx context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	recs := make([]common.Recommendation, 0)
-	pricer := recommendations.NewPricer("managedredis", func(ctx context.Context, sku, region string, termYears int) (recommendations.ReservationPrice, error) {
-		p, err := c.getRedisPricing(ctx, sku, region, termYears)
-		if err != nil {
-			return recommendations.ReservationPrice{}, err
-		}
-		return recommendations.ReservationPrice{Total: p.ReservationPrice, Currency: p.Currency}, nil
-	})
+	pricer := recommendations.NewPricer("managedredis", c.ReservationUnitPrice)
 
 	var pager RecommendationsPager
 	if c.recommendationsPager != nil {
@@ -224,6 +218,9 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 			return nil, err
 		}
 		if commitment != nil {
+			// The dedupe key includes the engine and recommendations carry
+			// CacheDetails.Engine "redis", so held reservations must too.
+			commitment.Engine = Engine
 			commitments = append(commitments, *commitment)
 		}
 	}
@@ -455,6 +452,15 @@ type RedisPricing struct {
 	ReservationPrice float64
 }
 
+// ReservationUnitPrice returns the Retail Prices reservation total and currency for one unit of sku in region over termYears.
+func (c *Client) ReservationUnitPrice(ctx context.Context, sku, region string, termYears int) (recommendations.ReservationPrice, error) {
+	p, err := c.getRedisPricing(ctx, sku, region, termYears)
+	if err != nil {
+		return recommendations.ReservationPrice{}, err
+	}
+	return recommendations.ReservationPrice{Total: p.ReservationPrice, Currency: p.Currency}, nil
+}
+
 func (c *Client) getRedisPricing(ctx context.Context, sku, region string, termYears int) (*RedisPricing, error) {
 	identity, err := pricing.ParseRedisIdentity(sku)
 	if err != nil {
@@ -499,6 +505,15 @@ func (c *Client) getRedisPricing(ctx context.Context, sku, region string, termYe
 	}, nil
 }
 
+// Engine is the CacheDetails.Engine of every Azure Cache for Redis recommendation and reservation.
+const Engine = "redis"
+
+// Details is the CacheDetails every Azure Redis recommendation carries, whether
+// it came from Consumption or Advisor. Shards is unknown, so 0.
+func Details(resourceType string) *common.CacheDetails {
+	return &common.CacheDetails{Engine: Engine, NodeType: resourceType}
+}
+
 // convertRecommendation converts an Azure Consumption API recommendation to the common format.
 // Returns nil when the input is nil or cannot be parsed (e.g. an unsupported SDK Kind).
 func (c *Client) convertRecommendation(ctx context.Context, rec armconsumption.ReservationRecommendationClassification) *common.Recommendation {
@@ -523,5 +538,6 @@ func (c *Client) convertRecommendation(ctx context.Context, rec armconsumption.R
 		Term:                 f.Term,
 		PaymentOption:        "upfront",
 		Timestamp:            time.Now(),
+		Details:              Details(f.ResourceType),
 	}
 }
