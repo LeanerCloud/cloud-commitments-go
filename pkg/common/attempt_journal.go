@@ -74,3 +74,15 @@ type AttemptJournal interface {
 	PriorAttempts(ctx context.Context, token string) ([]AttemptRecord, error)
 	RecordAttempt(ctx context.Context, rec AttemptRecord) error
 }
+
+// ClaimReader is an optional interface an AttemptJournal may also implement
+// (go#700). A provider client finds it by type assertion on
+// PurchaseOptions.AttemptJournal; a journal without it behaves as before.
+//
+// ClaimedByOthers returns the subset of ids that some attempt under a token
+// other than token has recorded as purchased. An id that only the given token
+// recorded is not returned, and an empty result excludes nothing. Any error
+// means the claims are not known.
+type ClaimReader interface {
+	ClaimedByOthers(ctx context.Context, token string, ids []string) ([]string, error)
+}
