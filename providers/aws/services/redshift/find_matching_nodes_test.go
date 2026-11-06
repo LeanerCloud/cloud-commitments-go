@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Characterization of findMatchingNodes: pins the paging, cap, ctx and field-matching behaviour.
+// Characterization of findMatchingNodes: pins the paging, cap, ctx and field-matching behavior.
 func TestFindMatchingNodes_Characterization(t *testing.T) {
 	t.Parallel()
 	active := "active"
@@ -62,7 +62,7 @@ func TestFindMatchingNodes_Characterization(t *testing.T) {
 		m.AssertNumberOfCalls(t, "DescribeReservedNodes", maxReservedNodePages)
 	})
 
-	t.Run("ctx cancelled", func(t *testing.T) {
+	t.Run("ctx canceled", func(t *testing.T) {
 		t.Parallel()
 		m := &MockRedshiftClient{}
 		m.Test(t)

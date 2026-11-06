@@ -62,7 +62,7 @@ func (c *Client) findMatchingNodes(ctx context.Context, offeringID string, count
 }
 
 // describeAllNodes pages through every reserved node, failing if the scan is incomplete
-// (API error, cancelled context or page cap) so callers never treat a partial list as complete.
+// (API error, canceled context or page cap) so callers never treat a partial list as complete.
 func (c *Client) describeAllNodes(ctx context.Context) ([]redshifttypes.ReservedNode, error) {
 	var nodes []redshifttypes.ReservedNode
 	var marker *string
