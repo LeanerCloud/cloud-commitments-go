@@ -28,7 +28,7 @@ func TestCacheClient_PurchaseCommitment_RefusesRedisPurchases(t *testing.T) {
 	t.Parallel()
 	mockHTTP := &mocks.MockHTTPClient{}
 	client := NewClientWithHTTP(unusedCred{t}, "test-subscription", "eastus", mockHTTP)
-	rec := common.Recommendation{ResourceType: "Premium_P1", Term: "1yr", Count: 1, PaymentOption: "no-upfront"}
+	rec := common.Recommendation{Service: common.ServiceCache, ResourceType: "Premium_P1", Term: "1yr", Count: 1, PaymentOption: "no-upfront"}
 
 	result, err := client.PurchaseCommitment(context.Background(), rec,
 		common.PurchaseOptions{Source: common.PurchaseSourceCLI, IdempotencyToken: "token-1"})
