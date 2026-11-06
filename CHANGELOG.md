@@ -286,6 +286,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **`common`:** a `Recommendation`, and a `PurchaseResult` carrying one (with
+  no `Error`), now decodes from JSON when `details` holds an object. `details`
+  is decoded into the typed pointer for the recommendation's service through
+  `DecodeServiceDetailsFor`; absent `details` leave the field unchanged and
+  null sets it nil, as encoding/json does, and details for a service with no
+  typed details fail with `ErrUntypedServiceDetails`. Before this,
+  encoding/json could not decode an object into the `ServiceDetails` interface
+  (#211).
 - **`aws` RI recommendations:** a fractional Cost Explorer quantity now rounds
   down instead of to the nearest integer, so a purchase never exceeds CE's
   quantity. The upfront, recurring monthly cost, monthly savings and savings

@@ -172,3 +172,32 @@ func newDetailsForService(service string) (ServiceDetails, bool) {
 	}
 	return nil, false
 }
+
+// UnmarshalJSON decodes details into the typed pointer for the
+// recommendation's service (DecodeServiceDetailsFor), so a Recommendation, and
+// a PurchaseResult carrying one, round-trips through JSON. encoding/json cannot
+// decode an object into the ServiceDetails interface on its own. As with
+// encoding/json, absent details leave Details unchanged and null sets it nil.
+func (r *Recommendation) UnmarshalJSON(data []byte) error {
+	type plain Recommendation
+	aux := struct {
+		*plain
+		Details json.RawMessage `json:"details,omitempty"`
+	}{plain: (*plain)(r)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if len(aux.Details) == 0 {
+		return nil
+	}
+	if bytes.Equal(aux.Details, jsonNullBytes) {
+		r.Details = nil
+		return nil
+	}
+	details, err := DecodeServiceDetailsFor(string(r.Service), aux.Details)
+	if err != nil {
+		return err
+	}
+	r.Details = details
+	return nil
+}
