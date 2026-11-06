@@ -24,10 +24,11 @@ func TestRIFit(t *testing.T) {
 		wantOfferingType: types.OfferingTypeValuesNoUpfront,
 		offeringClass:    types.OfferingClassTypeStandard, duration: OneYearSeconds,
 	}
+	convertibleQ := regional
+	convertibleQ.offeringClass = types.OfferingClassTypeConvertible
 	zonal := regional
 	zonal.scope = types.ScopeAvailabilityZone
 	zonal.availabilityZone = "us-east-1a"
-	class := types.OfferingClassTypeStandard
 
 	baseRI := func(mut ...func(*types.ReservedInstances)) types.ReservedInstances {
 		ri := types.ReservedInstances{
@@ -79,6 +80,8 @@ func TestRIFit(t *testing.T) {
 		{"regional rec with AZ set", baseRI(set(func(ri *types.ReservedInstances) { ri.AvailabilityZone = aws.String("us-east-1a") })), regional, token, fitNo, false},
 		{"duration differs", baseRI(set(func(ri *types.ReservedInstances) { ri.Duration = aws.Int64(3 * OneYearSeconds) })), regional, token, fitNo, false},
 		{"offering type differs", baseRI(set(func(ri *types.ReservedInstances) { ri.OfferingType = types.OfferingTypeValuesAllUpfront })), regional, token, fitNo, false},
+		{"convertible RI vs standard query", baseRI(set(func(ri *types.ReservedInstances) { ri.OfferingClass = types.OfferingClassTypeConvertible })), regional, token, fitNo, false},
+		{"standard RI vs convertible query", baseRI(), convertibleQ, token, fitNo, false},
 		{"class differs", baseRI(set(func(ri *types.ReservedInstances) { ri.OfferingClass = types.OfferingClassTypeConvertible })), regional, token, fitNo, false},
 
 		{"instance type missing", baseRI(set(func(ri *types.ReservedInstances) { ri.InstanceType = "" })), regional, token, fitUncertain, false},
@@ -124,7 +127,7 @@ func TestRIFit(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			got, tagged := riFit(tt.ri, tt.q, class, count, tt.token, lo, hi)
+			got, tagged := riFit(tt.ri, tt.q, count, tt.token, lo, hi)
 			assert.Equal(t, tt.want, got)
 			assert.Equal(t, tt.wantTagged, tagged)
 		})

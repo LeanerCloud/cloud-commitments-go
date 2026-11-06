@@ -39,7 +39,7 @@ func eq[T comparable](got, want, zero T) fit {
 
 // riFit classifies one reserved instance against the rec's query, section 4.1 of the plan.
 // tagged is true only for a match that carries the request's idempotency token.
-func riFit(ri types.ReservedInstances, q ec2OfferingQuery, class types.OfferingClassType, count int, token string, lo, hi time.Time) (f fit, tagged bool) {
+func riFit(ri types.ReservedInstances, q ec2OfferingQuery, count int, token string, lo, hi time.Time) (f fit, tagged bool) {
 	owned, other, dup := tagState(ri.Tags, token)
 	if dup {
 		return fitUncertain, false
@@ -47,7 +47,7 @@ func riFit(ri types.ReservedInstances, q ec2OfferingQuery, class types.OfferingC
 	if other {
 		return fitNo, false
 	}
-	f = attrFit(ri, q, class, count, lo, hi)
+	f = attrFit(ri, q, count, lo, hi)
 	if owned {
 		if f == fitMatch {
 			return fitMatch, true
@@ -80,13 +80,13 @@ func tagState(tags []types.Tag, token string) (owned, other, dup bool) {
 	return false, true, false
 }
 
-func attrFit(ri types.ReservedInstances, q ec2OfferingQuery, class types.OfferingClassType, count int, lo, hi time.Time) fit {
+func attrFit(ri types.ReservedInstances, q ec2OfferingQuery, count int, lo, hi time.Time) fit {
 	fits := []fit{
 		eq(ri.InstanceType, q.instanceType, ""),
 		eq(ri.InstanceTenancy, q.tenancy, ""),
 		eq(ri.Scope, q.scope, ""),
 		eq(ri.OfferingType, q.wantOfferingType, ""),
-		eq(ri.OfferingClass, class, ""),
+		eq(ri.OfferingClass, q.offeringClass, ""),
 		zoneFit(ri, q),
 		presentFit(ri.InstanceCount, func(n int32) bool { return int(n) == count }),
 		presentFit(ri.Duration, func(d int64) bool { return d == q.duration }),
