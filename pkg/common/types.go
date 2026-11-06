@@ -465,6 +465,13 @@ type PurchaseOptions struct {
 	// no owning execution and leaves it empty.
 	ExecutionID string
 
+	// AttemptJournal, when non-nil, durably records purchase attempts per
+	// IdempotencyToken (go#107). Nil means no journal (today's behavior).
+	// Only Redshift reads it, honored by providers/aws from the follow-up
+	// change onward; other providers ignore it. Used only with a non-empty
+	// IdempotencyToken; see AttemptJournal for the caller contract.
+	AttemptJournal AttemptJournal
+
 	// OfferingClass is the EC2 Reserved Instance offering class for this
 	// purchase: "convertible" (exchangeable) or "standard" (locked, ~5%
 	// cheaper). Empty means the caller has not set one; the EC2 client

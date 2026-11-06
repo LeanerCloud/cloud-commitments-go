@@ -32,6 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **`common`:** `AttemptJournal`, `AttemptRecord` and an optional `PurchaseOptions.AttemptJournal`, a caller-backed durable record of purchase attempts per idempotency token (#107). Nothing reads it yet.
 - **`ladder`/`aws`:** `ladder.ObservedCommitmentRateCapability` and its AWS implementation report commitment dollars per covered on-demand dollar measured on the account's existing Savings Plans and convertible RIs (account-scoped Cost Explorer utilization). Layers with no usable observation are absent.
 
 - **`azure`:** `PartialResultError.SkipKinds() []SkipKind`, index-aligned with
