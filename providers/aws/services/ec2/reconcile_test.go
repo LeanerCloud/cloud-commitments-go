@@ -119,6 +119,8 @@ func TestReconcilePurchase(t *testing.T) {
 			verdict: common.ReconcileUnknown, reason: purchasecfg.ReasonInvalidRequest},
 		{name: "region mismatch", req: reconcileReq(func(r *common.ReconcileRequest) { r.Recommendation.Region = "eu-west-1" }),
 			verdict: common.ReconcileUnknown, reason: purchasecfg.ReasonInvalidRequest},
+		{name: "empty region", req: reconcileReq(func(r *common.ReconcileRequest) { r.Recommendation.Region = "" }),
+			verdict: common.ReconcileUnknown, reason: purchasecfg.ReasonInvalidRequest},
 		{name: "zero count", req: reconcileReq(func(r *common.ReconcileRequest) { r.Recommendation.Count = 0 }),
 			verdict: common.ReconcileUnknown, reason: purchasecfg.ReasonInvalidRequest},
 		{name: "unparsable payment option", req: reconcileReq(func(r *common.ReconcileRequest) { r.Recommendation.PaymentOption = "bogus" }),

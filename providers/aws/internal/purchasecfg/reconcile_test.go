@@ -13,6 +13,7 @@ func TestReconcileWindow(t *testing.T) {
 	t.Parallel()
 	start := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
 	end := start.Add(time.Minute)
+	assert.Equal(t, 5*time.Minute, ClockSkew, "window padding is part of the reconcile contract")
 	wantLo, wantHi := start.Add(-ClockSkew), end.Add(ClockSkew)
 
 	tests := []struct {
