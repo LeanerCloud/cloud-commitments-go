@@ -284,6 +284,7 @@ func (c *Client) recordPurchased(ctx context.Context, result *common.PurchaseRes
 	}
 	log.Printf("Redshift reserved node %s was bought for token %s but the attempt record failed: %v", result.CommitmentID, common.MaskToken(opts.IdempotencyToken), err)
 	result.Success = false
+	result.ExistingCommitment = false
 	result.Error = fmt.Errorf("redshift reserved node %s was bought but not recorded: %w: %w", result.CommitmentID, err, common.ErrOutcomeUnknown)
 }
 

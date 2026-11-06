@@ -371,9 +371,49 @@ func TestJournal_AdoptWriteErrorNotSuccess(t *testing.T) {
 	require.Error(t, err)
 	assert.False(t, result.Success)
 	assert.Equal(t, "rn-1", result.CommitmentID)
+	assert.False(t, result.ExistingCommitment)
 	assert.Contains(t, err.Error(), "rn-1")
 	assert.ErrorIs(t, err, common.ErrOutcomeUnknown)
 	jNoBuy(t, m)
+}
+
+func TestJournal_PostSendAdoptWriteErrorNotSuccess(t *testing.T) {
+	t.Parallel()
+	j := newFakeJournal()
+	j.failOn[common.AttemptPurchased] = errors.New("db down")
+	c, _ := recoverMock(buyFails(transportErr()), dnode("rn-1", "payment-pending", dedupeReqAt.Add(time.Second)))
+	result, err := c.PurchaseCommitment(context.Background(), rsIdemRec(), jOpts(j, jExecNew))
+	require.ErrorIs(t, err, common.ErrOutcomeUnknown)
+	assert.False(t, result.Success)
+	assert.False(t, result.ExistingCommitment)
+	assert.Equal(t, "rn-1", result.CommitmentID)
+	assert.Contains(t, err.Error(), "rn-1")
+}
+
+func TestJournal_AdoptKeepsFirstOfferingID(t *testing.T) {
+	t.Parallel()
+	j := newFakeJournal()
+	j.seed("exec-1", common.AttemptOutcomeUnknown, "", "offering-0")
+	c, _ := newDedupe(jWindow("rn-1"))
+	_, err := c.PurchaseCommitment(context.Background(), rsIdemRec(), jOpts(j, "exec-1"))
+	require.NoError(t, err)
+	row := j.row(t, "exec-1")
+	assert.Equal(t, common.AttemptPurchased, row.State)
+	assert.Equal(t, "offering-0", row.OfferingID)
+}
+
+func TestFakeJournalEnforcesTable(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	rec := func(s common.AttemptState, id string) common.AttemptRecord {
+		return common.AttemptRecord{IdempotencyToken: jToken, ExecutionID: "e", State: s, ReservationID: id}
+	}
+	j := newFakeJournal()
+	require.NoError(t, j.RecordAttempt(ctx, rec(common.AttemptSending, "")))
+	require.Error(t, j.RecordAttempt(ctx, rec(common.AttemptSending, "")))
+	j = newFakeJournal()
+	require.NoError(t, j.RecordAttempt(ctx, rec(common.AttemptPurchased, "rn-1")))
+	require.Error(t, j.RecordAttempt(ctx, rec(common.AttemptPurchased, "rn-2")))
 }
 
 func TestJournal_CancelledCtxAfterSendStillRecords(t *testing.T) {
