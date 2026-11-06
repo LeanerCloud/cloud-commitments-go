@@ -9,8 +9,10 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/consumption/armconsumption"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/redis/armredis/v3"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
 
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/slot/slottest"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
 )
 
 // slotPager is a one-page fake pager whose NextPage reports whether the shared
@@ -28,6 +30,21 @@ func (s *slotPager[R]) NextPage(context.Context) (R, error) {
 	return z, nil
 }
 
+// slotLister reports one order so the order pager is exercised too.
+type slotLister struct{ p *slottest.Probe }
+
+func (l slotLister) GetAppliedReservationList(context.Context, string, *armreservations.AzureReservationAPIClientGetAppliedReservationListOptions) (armreservations.AzureReservationAPIClientGetAppliedReservationListResponse, error) {
+	l.p.Check()
+	order := "order-1"
+	return armreservations.AzureReservationAPIClientGetAppliedReservationListResponse{
+		AppliedReservations: armreservations.AppliedReservations{
+			Properties: &armreservations.AppliedReservationsProperties{
+				ReservationOrderIDs: &armreservations.AppliedReservationList{Value: []*string{&order}},
+			},
+		},
+	}, nil
+}
+
 type slotHTTP struct{ p *slottest.Probe }
 
 func (h slotHTTP) Do(*http.Request) (*http.Response, error) {
@@ -40,8 +57,13 @@ func TestSlotHeldDuringCalls(t *testing.T) {
 	recs := func(p *slottest.Probe) *slotPager[armconsumption.ReservationRecommendationsClientListResponse] {
 		return &slotPager[armconsumption.ReservationRecommendationsClientListResponse]{p: p}
 	}
-	resv := func(p *slottest.Probe) *slotPager[armconsumption.ReservationsDetailsClientListResponse] {
-		return &slotPager[armconsumption.ReservationsDetailsClientListResponse]{p: p}
+	resv := func(p *slottest.Probe) *reservations.InventoryFactories {
+		return &reservations.InventoryFactories{
+			NewAppliedLister: func() (reservations.AppliedReservationsLister, error) { return slotLister{p}, nil },
+			NewOrderPager: func(string) reservations.OrderReservationsPager {
+				return &slotPager[armreservations.ReservationClientListResponse]{p: p}
+			},
+		}
 	}
 	cases := []struct {
 		name string
@@ -51,7 +73,7 @@ func TestSlotHeldDuringCalls(t *testing.T) {
 			_, _ = (&Client{recommendationsPager: recs(p)}).GetRecommendations(ctx, nil)
 		}},
 		{"reservations", func(ctx context.Context, p *slottest.Probe) {
-			_, _ = (&Client{reservationsPager: resv(p)}).GetExistingCommitments(ctx)
+			_, _ = (&Client{inventoryFactories: resv(p)}).GetExistingCommitments(ctx)
 		}},
 		{"valid resource types", func(ctx context.Context, p *slottest.Probe) {
 			_, _ = (&Client{redisCachesPager: &slotPager[armredis.ClientListBySubscriptionResponse]{p: p}}).GetValidResourceTypes(ctx)

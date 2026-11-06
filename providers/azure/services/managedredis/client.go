@@ -46,12 +46,6 @@ type RecommendationsPager interface {
 	NextPage(ctx context.Context) (armconsumption.ReservationRecommendationsClientListResponse, error)
 }
 
-// ReservationsDetailsPager interface for reservations details pager (enables mocking).
-type ReservationsDetailsPager interface {
-	More() bool
-	NextPage(ctx context.Context) (armconsumption.ReservationsDetailsClientListResponse, error)
-}
-
 // RedisCachesPager interface for Redis caches pager (enables mocking).
 type RedisCachesPager interface {
 	More() bool
@@ -65,7 +59,7 @@ type Client struct {
 	cred                 azcore.TokenCredential
 	httpClient           HTTPClient
 	recommendationsPager RecommendationsPager
-	reservationsPager    ReservationsDetailsPager
+	inventoryFactories   *reservations.InventoryFactories
 	redisCachesPager     RedisCachesPager
 	subscriptionID       string
 	region               string
@@ -116,9 +110,18 @@ func (c *Client) SetRecommendationsPager(pager RecommendationsPager) {
 	c.recommendationsPager = pager
 }
 
-// SetReservationsPager sets the reservations pager (for testing).
-func (c *Client) SetReservationsPager(pager ReservationsDetailsPager) {
-	c.reservationsPager = pager
+// SetInventoryFactories injects reservation-inventory factories (for testing).
+func (c *Client) SetInventoryFactories(f *reservations.InventoryFactories) {
+	c.inventoryFactories = f
+}
+
+// factories returns the injected inventory factories, or the real SDK-backed
+// ones when none were injected (production only calls NewClient).
+func (c *Client) factories() reservations.InventoryFactories {
+	if c.inventoryFactories != nil {
+		return *c.inventoryFactories
+	}
+	return reservations.DefaultInventoryFactories(c.cred)
 }
 
 // SetRedisCachesPager sets the Redis caches pager (for testing).
@@ -195,78 +198,30 @@ func (c *Client) appendPage(ctx context.Context, pricer *recommendations.Pricer,
 	return recs, nil
 }
 
-// GetExistingCommitments retrieves existing Azure Cache for Redis reserved capacity.
+// GetExistingCommitments retrieves the Azure Cache for Redis reservations that
+// apply to this subscription from the Reservations API, which carries the
+// purchase date, quantity, location and lifecycle state the duplicate-purchase
+// guard needs (issue #699). Like compute, any failure or incomplete live row
+// is returned as an error rather than as an empty or partial inventory.
 func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
-	commitments := make([]common.Commitment, 0)
-
-	pager, err := c.reservationDetailsPager()
+	responses, err := reservations.ListAppliedReservations(ctx, c.subscriptionID, c.factories(), maxReservationsPages)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize reservations details pager: %w", err)
+		return nil, fmt.Errorf("managedredis: list applied reservations: %w", err)
 	}
 
-	for pageIdx := 0; pager.More(); pageIdx++ {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context canceled during pagination: %w", err)
-		}
-		if pageIdx >= maxReservationsPages {
-			return nil, fmt.Errorf("managedredis: GetExistingCommitments pagination cap (%d pages) reached", maxReservationsPages)
-		}
-		page, err := slot.NextPage(ctx, pager)
+	now := time.Now()
+	commitments := make([]common.Commitment, 0, len(responses))
+	for _, r := range responses {
+		commitment, err := reservations.StrictCommitment(r, c.subscriptionID, common.ServiceMemoryDB,
+			armreservations.ReservedResourceTypeRedisCache, reservations.StrictLabels{Service: "managedredis", Resource: "Redis"}, now)
 		if err != nil {
-			return nil, fmt.Errorf("failed to fetch reservations details page: %w", err)
+			return nil, err
 		}
-		for _, detail := range page.Value {
-			if cm := c.reservationDetailToCommitment(detail); cm != nil {
-				commitments = append(commitments, *cm)
-			}
+		if commitment != nil {
+			commitments = append(commitments, *commitment)
 		}
 	}
-
-	// ReservationsDetails is a daily usage API: one row per reservation per
-	// usage day. Without this, a single reservation held for N days would
-	// surface as N commitments sharing one CommitmentID (issue #73).
-	return reservations.DedupeCommitmentsByID(commitments), nil
-}
-
-// reservationDetailsPager returns the pager to use for reservation details,
-// preferring the injected mock over a real SDK pager.
-// The subscription-scope NewListPager is used so that all reservation orders
-// are queried rather than a single hardcoded order ID.
-func (c *Client) reservationDetailsPager() (ReservationsDetailsPager, error) {
-	if c.reservationsPager != nil {
-		return c.reservationsPager, nil
-	}
-	client, err := armconsumption.NewReservationsDetailsClient(c.cred, nil)
-	if err != nil {
-		return nil, err
-	}
-	scope := fmt.Sprintf("subscriptions/%s", c.subscriptionID)
-	return client.NewListPager(scope, &armconsumption.ReservationsDetailsClientListOptions{}), nil
-}
-
-// reservationDetailToCommitment converts a single reservation detail to a Commitment.
-// Returns nil when the detail should be skipped (nil properties, non-Redis SKU).
-func (c *Client) reservationDetailToCommitment(detail *armconsumption.ReservationDetail) *common.Commitment {
-	if detail == nil || detail.Properties == nil {
-		return nil
-	}
-	props := detail.Properties
-	if props.SKUName == nil || !strings.Contains(strings.ToLower(*props.SKUName), "redis") {
-		return nil
-	}
-	cm := &common.Commitment{
-		Provider:       common.ProviderAzure,
-		Account:        c.subscriptionID,
-		CommitmentType: common.CommitmentReservedInstance,
-		Service:        common.ServiceMemoryDB,
-		Region:         c.region,
-		State:          common.CommitmentStateActive,
-	}
-	if props.ReservationID != nil {
-		cm.CommitmentID = *props.ReservationID
-	}
-	cm.ResourceType = *props.SKUName
-	return cm
+	return commitments, nil
 }
 
 // PurchaseCommitment purchases Azure Cache for Redis reserved capacity using the two-step

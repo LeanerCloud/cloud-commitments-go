@@ -14,12 +14,14 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/consumption/armconsumption"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/redis/armredis/v3"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/mocks"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
 )
 
 // -- mock helpers --
@@ -39,23 +41,56 @@ func (m *mockRecommendationsPager) NextPage(_ context.Context) (armconsumption.R
 	return p, nil
 }
 
-type mockReservationsPager struct {
-	pages []armconsumption.ReservationsDetailsClientListResponse
-	index int
-	err   error
+// fakeAppliedLister returns a fixed set of reservation order IDs.
+type fakeAppliedLister struct {
+	orderIDs []*string
+	err      error
 }
 
-func (m *mockReservationsPager) More() bool { return m.index < len(m.pages) }
-func (m *mockReservationsPager) NextPage(_ context.Context) (armconsumption.ReservationsDetailsClientListResponse, error) {
-	if m.err != nil {
-		return armconsumption.ReservationsDetailsClientListResponse{}, m.err
+func (f *fakeAppliedLister) GetAppliedReservationList(context.Context, string, *armreservations.AzureReservationAPIClientGetAppliedReservationListOptions) (armreservations.AzureReservationAPIClientGetAppliedReservationListResponse, error) {
+	if f.err != nil {
+		return armreservations.AzureReservationAPIClientGetAppliedReservationListResponse{}, f.err
 	}
-	if m.index >= len(m.pages) {
-		return armconsumption.ReservationsDetailsClientListResponse{}, errors.New("no more pages")
+	return armreservations.AzureReservationAPIClientGetAppliedReservationListResponse{
+		AppliedReservations: armreservations.AppliedReservations{
+			Properties: &armreservations.AppliedReservationsProperties{
+				ReservationOrderIDs: &armreservations.AppliedReservationList{Value: f.orderIDs},
+			},
+		},
+	}, nil
+}
+
+// fakeOrderPager is a single-page reservations.OrderReservationsPager.
+type fakeOrderPager struct {
+	rows []*armreservations.ReservationResponse
+	err  error
+	done bool
+}
+
+func (p *fakeOrderPager) More() bool { return !p.done }
+func (p *fakeOrderPager) NextPage(context.Context) (armreservations.ReservationClientListResponse, error) {
+	p.done = true
+	if p.err != nil {
+		return armreservations.ReservationClientListResponse{}, p.err
 	}
-	p := m.pages[m.index]
-	m.index++
-	return p, nil
+	return armreservations.ReservationClientListResponse{ReservationList: armreservations.ReservationList{Value: p.rows}}, nil
+}
+
+const testOrderPath = "/providers/Microsoft.Capacity/reservationOrders/order-1"
+
+// factoriesFor injects one reservation order whose pager is newPager().
+func factoriesFor(newPager func() reservations.OrderReservationsPager) *reservations.InventoryFactories {
+	return &reservations.InventoryFactories{
+		NewAppliedLister: func() (reservations.AppliedReservationsLister, error) {
+			return &fakeAppliedLister{orderIDs: []*string{mocks.StringPtr(testOrderPath)}}, nil
+		},
+		NewOrderPager: func(string) reservations.OrderReservationsPager { return newPager() },
+	}
+}
+
+// factoriesRows injects one order holding rows (and err on the page fetch).
+func factoriesRows(err error, rows ...*armreservations.ReservationResponse) *reservations.InventoryFactories {
+	return factoriesFor(func() reservations.OrderReservationsPager { return &fakeOrderPager{rows: rows, err: err} })
 }
 
 type mockRedisPager struct {
@@ -406,108 +441,75 @@ func TestGetRecommendations_MultiplePages(t *testing.T) {
 func TestGetExistingCommitments_Empty(t *testing.T) {
 	t.Parallel()
 	c := NewClient(nil, "sub", "eastus")
-	c.SetReservationsPager(&mockReservationsPager{})
+	c.SetInventoryFactories(&reservations.InventoryFactories{
+		NewAppliedLister: func() (reservations.AppliedReservationsLister, error) { return &fakeAppliedLister{}, nil },
+		NewOrderPager:    func(string) reservations.OrderReservationsPager { return &fakeOrderPager{} },
+	})
 	commitments, err := c.GetExistingCommitments(context.Background())
 	require.NoError(t, err)
 	assert.Empty(t, commitments)
 }
 
-func TestGetExistingCommitments_RedisSKUIncluded(t *testing.T) {
+func TestGetExistingCommitments_RedisRowConverted(t *testing.T) {
 	t.Parallel()
 	c := NewClient(nil, "sub", "eastus")
-	resID := "res-123"
-	sku := "redis-premium-p1"
-	c.SetReservationsPager(&mockReservationsPager{
-		pages: []armconsumption.ReservationsDetailsClientListResponse{
-			{ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{
-				Value: []*armconsumption.ReservationDetail{
-					{Properties: &armconsumption.ReservationDetailProperties{ReservationID: &resID, SKUName: &sku}},
-				},
-			}},
-		},
-	})
+	c.SetInventoryFactories(factoriesRows(nil, redisRow("res-123", "Premium_P1", "westus2", 3)))
 	commitments, err := c.GetExistingCommitments(context.Background())
 	require.NoError(t, err)
 	require.Len(t, commitments, 1)
-	assert.Equal(t, resID, commitments[0].CommitmentID)
-	assert.Equal(t, sku, commitments[0].ResourceType)
+	assert.Equal(t, testOrderPath+"/reservations/res-123", commitments[0].CommitmentID)
+	assert.Equal(t, "Premium_P1", commitments[0].ResourceType)
+	assert.Equal(t, "westus2", commitments[0].Region, "reservation location must win over the client region")
+	assert.Equal(t, 3, commitments[0].Count)
+	assert.Equal(t, common.CommitmentStateActive, commitments[0].State)
 	assert.Equal(t, common.ServiceMemoryDB, commitments[0].Service)
 	assert.Equal(t, common.ProviderAzure, commitments[0].Provider)
-}
-
-// TestGetExistingCommitments_DedupesDailyUsageRows is the regression test
-// for #73: armconsumption.ReservationsDetails is a daily usage API, one row
-// per reservation per usage day. A pager returning three rows for the same
-// ReservationID must surface as a single commitment.
-func TestGetExistingCommitments_DedupesDailyUsageRows(t *testing.T) {
-	t.Parallel()
-	c := NewClient(nil, "sub", "eastus")
-	resID := "res-123"
-	sku := "redis-premium-p1"
-	dailyRow := &armconsumption.ReservationDetail{
-		Properties: &armconsumption.ReservationDetailProperties{ReservationID: &resID, SKUName: &sku},
-	}
-	c.SetReservationsPager(&mockReservationsPager{
-		pages: []armconsumption.ReservationsDetailsClientListResponse{
-			{ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{
-				Value: []*armconsumption.ReservationDetail{dailyRow, dailyRow, dailyRow},
-			}},
-		},
-	})
-	commitments, err := c.GetExistingCommitments(context.Background())
-	require.NoError(t, err)
-	require.Len(t, commitments, 1, "three daily rows for one reservation must collapse to one commitment (issue #73)")
-	assert.Equal(t, resID, commitments[0].CommitmentID)
 }
 
 func TestGetExistingCommitments_NonRedisFiltered(t *testing.T) {
 	t.Parallel()
 	c := NewClient(nil, "sub", "eastus")
-	sqlSKU := "sql-standard-s1"
-	redisSKU := "redis-premium-p2"
-	id1 := "res-1"
-	id2 := "res-2"
-	c.SetReservationsPager(&mockReservationsPager{
-		pages: []armconsumption.ReservationsDetailsClientListResponse{
-			{ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{
-				Value: []*armconsumption.ReservationDetail{
-					{Properties: &armconsumption.ReservationDetailProperties{ReservationID: &id1, SKUName: &sqlSKU}},
-					{Properties: &armconsumption.ReservationDetailProperties{ReservationID: &id2, SKUName: &redisSKU}},
-				},
-			}},
-		},
-	})
+	sqlRow := redisRow("res-1", "Standard_S0", "eastus", 1)
+	sqlType := armreservations.ReservedResourceTypeSQLDatabases
+	sqlRow.Properties.ReservedResourceType = &sqlType
+	c.SetInventoryFactories(factoriesRows(nil, sqlRow, redisRow("res-2", "Premium_P2", "eastus", 1)))
 	commitments, err := c.GetExistingCommitments(context.Background())
 	require.NoError(t, err)
 	require.Len(t, commitments, 1)
-	assert.Equal(t, id2, commitments[0].CommitmentID)
+	assert.Equal(t, testOrderPath+"/reservations/res-2", commitments[0].CommitmentID)
 }
 
-func TestGetExistingCommitments_NilProperties(t *testing.T) {
+// A row the guard cannot classify may be the reservation bought an hour ago,
+// so it fails closed instead of being dropped.
+func TestGetExistingCommitments_NilPropertiesFailsClosed(t *testing.T) {
 	t.Parallel()
 	c := NewClient(nil, "sub", "eastus")
-	c.SetReservationsPager(&mockReservationsPager{
-		pages: []armconsumption.ReservationsDetailsClientListResponse{
-			{ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{
-				Value: []*armconsumption.ReservationDetail{{Properties: nil}},
-			}},
-		},
-	})
-	commitments, err := c.GetExistingCommitments(context.Background())
-	require.NoError(t, err)
-	assert.Empty(t, commitments)
+	c.SetInventoryFactories(factoriesRows(nil, &armreservations.ReservationResponse{}))
+	_, err := c.GetExistingCommitments(context.Background())
+	require.Error(t, err)
 }
 
 func TestGetExistingCommitments_PagerError(t *testing.T) {
 	t.Parallel()
 	c := NewClient(nil, "sub", "eastus")
-	c.SetReservationsPager(&mockReservationsPager{
-		pages: []armconsumption.ReservationsDetailsClientListResponse{{}},
-		err:   errors.New("api error"),
-	})
+	c.SetInventoryFactories(factoriesRows(errors.New("api error")))
 	_, err := c.GetExistingCommitments(context.Background())
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to fetch reservations details page")
+	assert.Contains(t, err.Error(), "api error")
+}
+
+func TestGetExistingCommitments_ListerError(t *testing.T) {
+	t.Parallel()
+	c := NewClient(nil, "sub", "eastus")
+	c.SetInventoryFactories(&reservations.InventoryFactories{
+		NewAppliedLister: func() (reservations.AppliedReservationsLister, error) {
+			return &fakeAppliedLister{err: errors.New("boom")}, nil
+		},
+		NewOrderPager: func(string) reservations.OrderReservationsPager { return &fakeOrderPager{} },
+	})
+	_, err := c.GetExistingCommitments(context.Background())
+	require.Error(t, err, "a failed inventory lookup must not masquerade as an empty list")
+	assert.Contains(t, err.Error(), "managedredis: list applied reservations")
 }
 
 // -- GetOfferingDetails --
@@ -1008,9 +1010,9 @@ func TestSetterMethods(t *testing.T) {
 	c.SetRecommendationsPager(recPager)
 	assert.Equal(t, recPager, c.recommendationsPager)
 
-	resPager := &mockReservationsPager{}
-	c.SetReservationsPager(resPager)
-	assert.Equal(t, resPager, c.reservationsPager)
+	factories := &reservations.InventoryFactories{}
+	c.SetInventoryFactories(factories)
+	assert.Equal(t, factories, c.inventoryFactories)
 
 	redisPager := &mockRedisPager{}
 	c.SetRedisCachesPager(redisPager)
