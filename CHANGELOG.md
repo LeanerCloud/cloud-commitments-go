@@ -278,6 +278,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   longer compiles; keyed literals are unaffected. The field is true when a
   provider adopted a commitment that already existed for the same idempotency
   token (#211)
+- **Breaking (source):** `common.PurchaseResult` gained an `OfferingClass` field.
+  Downstream code that builds it with unkeyed composite literals no longer
+  compiles; keyed literals are unaffected. On an adopted re-drive it carries the
+  offering class AWS reports for the existing RI (the EC2 provider sets it in a
+  follow-up change); empty otherwise (#211).
 
 ### Fixed
 

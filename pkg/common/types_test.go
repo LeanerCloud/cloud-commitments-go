@@ -45,6 +45,19 @@ func TestPurchaseResult_ExistingCommitmentJSON(t *testing.T) {
 	assert.True(t, decoded.ExistingCommitment)
 }
 
+func TestPurchaseResult_OfferingClassJSON(t *testing.T) {
+	empty, err := json.Marshal(PurchaseResult{Success: true, CommitmentID: "ri-1"})
+	require.NoError(t, err)
+	assert.NotContains(t, string(empty), "offering_class")
+
+	set, err := json.Marshal(PurchaseResult{Success: true, CommitmentID: "ri-1", ExistingCommitment: true, OfferingClass: "convertible"})
+	require.NoError(t, err)
+	assert.Contains(t, string(set), `"offering_class":"convertible"`)
+	var decoded PurchaseResult
+	require.NoError(t, json.Unmarshal(set, &decoded))
+	assert.Equal(t, "convertible", decoded.OfferingClass)
+}
+
 func TestRecommendation_CommitmentCurrencyJSONAndScaling(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
