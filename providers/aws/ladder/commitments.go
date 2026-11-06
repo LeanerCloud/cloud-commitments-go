@@ -90,6 +90,7 @@ func riToCommitment(ri *ec2svc.ConvertibleRI, accountID, region string) common.C
 		StartDate:      ri.Start,
 		EndDate:        ri.End,
 		Cost:           totalHourlyCost,
+		CostKnown:      true,
 	}
 }
 
@@ -140,5 +141,6 @@ func spToCommitment(sp *ActiveSP, accountID string) common.Commitment {
 		StartDate:      sp.StartDate,
 		EndDate:        sp.EndDate,
 		Cost:           sp.HourlyCommitmentUSD,
+		CostKnown:      true,
 	}
 }
