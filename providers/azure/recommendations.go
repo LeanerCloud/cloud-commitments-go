@@ -19,23 +19,23 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	azrecs "github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/recommendations"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/slot"
-	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/cache"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/compute"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/cosmosdb"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/database"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/managedredis"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/savingsplans"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/synapse"
 )
 
 // serviceRecsGetter is the narrow interface satisfied by each per-service
-// client (compute, database, cache, cosmosdb). The interface exists solely to
+// client (compute, database, managedredis, cosmosdb). The interface exists solely to
 // allow tests to substitute fake implementations; production code uses the
 // concrete types via the newXxxClientFn variables below.
 type serviceRecsGetter interface {
 	GetRecommendations(ctx context.Context, params *common.RecommendationParams) ([]common.Recommendation, error)
 }
 
-// newComputeClientFn, newDatabaseClientFn, newCacheClientFn,
+// newComputeClientFn, newDatabaseClientFn, newManagedRedisClientFn,
 // newCosmosDBClientFn, and newSavingsPlansClientFn default to the real
 // constructors and are overridden in tests to inject fakes. The variables are
 // package-level (not fields on the adapter) so that the constructor signature
@@ -53,8 +53,8 @@ var (
 	newDatabaseClientFn func(azcore.TokenCredential, string, string) serviceRecsGetter = func(cred azcore.TokenCredential, sub, region string) serviceRecsGetter {
 		return database.NewClient(cred, sub, region)
 	}
-	newCacheClientFn func(azcore.TokenCredential, string, string) serviceRecsGetter = func(cred azcore.TokenCredential, sub, region string) serviceRecsGetter {
-		return cache.NewClient(cred, sub, region)
+	newManagedRedisClientFn func(azcore.TokenCredential, string, string) serviceRecsGetter = func(cred azcore.TokenCredential, sub, region string) serviceRecsGetter {
+		return managedredis.NewClient(cred, sub, region)
 	}
 	newCosmosDBClientFn func(azcore.TokenCredential, string, string) serviceRecsGetter = func(cred azcore.TokenCredential, sub, region string) serviceRecsGetter {
 		return cosmosdb.NewClient(cred, sub, region)
@@ -113,14 +113,14 @@ func NewRecommendationsClientAdapter(cred azcore.TokenCredential, subscriptionID
 // All seven service calls run concurrently under errgroup. Each goroutine captures
 // its own error and returns nil to the group so that a single service failure
 // does not cancel sibling calls. Results are appended in a deterministic order
-// (compute → database → cache → cosmosdb → synapse → savingsplans → advisor) after all goroutines finish.
+// (compute → database → redis → cosmosdb → synapse → savingsplans → advisor) after all goroutines finish.
 func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, params *common.RecommendationParams) ([]common.Recommendation, error) {
 	if params == nil {
 		return nil, fmt.Errorf("params cannot be nil")
 	}
 	var (
-		computeRecs, dbRecs, cacheRecs, cosmosRecs, advisorRecs, spRecs, synapseRecs []common.Recommendation
-		computeErr, dbErr, cacheErr, cosmosErr, advisorErr, spErr, synapseErr        error
+		computeRecs, dbRecs, redisRecs, cosmosRecs, advisorRecs, spRecs, synapseRecs []common.Recommendation
+		computeErr, dbErr, redisErr, cosmosErr, advisorErr, spErr, synapseErr        error
 	)
 
 	ctx, skips := azrecs.WithSkipLog(ctx)
@@ -144,7 +144,7 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 	// recommendations" when applying the all-attempted-failed guard.
 	includeCompute := shouldIncludeService(*params, common.ServiceCompute)
 	includeDB := shouldIncludeService(*params, common.ServiceRelationalDB)
-	includeCache := shouldIncludeService(*params, common.ServiceCache)
+	includeRedis := shouldIncludeService(*params, common.ServiceMemoryDB)
 	includeCosmos := shouldIncludeService(*params, common.ServiceNoSQL)
 	includeSP := shouldIncludeService(*params, common.ServiceSavingsPlansAll)
 	includeSynapse := shouldIncludeService(*params, common.ServiceDataWarehouse)
@@ -165,11 +165,11 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 		})
 	}
 
-	// Cache (Redis) recommendations — subscription-wide.
-	if includeCache {
+	// Redis recommendations (labeled memorydb) — subscription-wide.
+	if includeRedis {
 		goService(func() {
-			cacheClient := newCacheClientFn(r.cred, r.subscriptionID, "")
-			cacheRecs, cacheErr = cacheClient.GetRecommendations(gctx, params)
+			redisClient := newManagedRedisClientFn(r.cred, r.subscriptionID, "")
+			redisRecs, redisErr = redisClient.GetRecommendations(gctx, params)
 		})
 	}
 
@@ -181,8 +181,8 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 		})
 	}
 
-	// Synapse (SqlDataWarehouse) recommendations — subscription-wide. Search and
-	// Managed Redis are deliberately not collected here: see #47.
+	// Synapse (SqlDataWarehouse) recommendations — subscription-wide. Search is
+	// deliberately not collected here: see #47. Redis is collected above.
 	if includeSynapse {
 		goService(func() {
 			synapseRecs, synapseErr = newSynapseClientFn(r.cred, r.subscriptionID, "").GetRecommendations(gctx, params)
@@ -224,7 +224,7 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 		return nil, err
 	}
 
-	consumptionRIs := slices.Concat(okRecs(computeRecs, computeErr), okRecs(dbRecs, dbErr), okRecs(cacheRecs, cacheErr))
+	consumptionRIs := slices.Concat(okRecs(computeRecs, computeErr), okRecs(dbRecs, dbErr), okRecs(redisRecs, redisErr))
 	// Priced with the parent ctx: gctx is canceled once Wait returns.
 	advisorRecs = r.priceAdvisor(ctx, dropCoveredAdvisorReservations(dropCoveredAdvisorSavingsPlans(advisorRecs, spRecs), consumptionRIs), advisorErr)
 	if err := ctx.Err(); err != nil {
@@ -232,7 +232,7 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 	}
 	merged, err := mergeServiceResults(serviceResult{err: computeErr, name: "compute", recs: computeRecs, attempted: includeCompute},
 		serviceResult{err: dbErr, name: "database", recs: dbRecs, attempted: includeDB},
-		serviceResult{err: cacheErr, name: "cache", recs: cacheRecs, attempted: includeCache},
+		serviceResult{err: redisErr, name: "managedredis", recs: redisRecs, attempted: includeRedis},
 		serviceResult{err: cosmosErr, name: "cosmosdb", recs: cosmosRecs, attempted: includeCosmos},
 		serviceResult{err: synapseErr, name: "synapse", recs: synapseRecs, attempted: includeSynapse},
 		// The savingsplans client is a stub that unconditionally returns
@@ -400,7 +400,7 @@ type serviceResult struct {
 // mergeServiceResults logs per-service errors (matches the previous sequential
 // behavior where each error was logged inline via logging.Warnf) and appends
 // successful results in the order the slice is passed — callers must preserve
-// the canonical compute → database → cache → cosmosdb → synapse → savingsplans → advisor
+// the canonical compute → database → redis → cosmosdb → synapse → savingsplans → advisor
 // order so that order-sensitive consumers remain stable. The advisor entry's
 // error is logged via logging.Errorf to match the pre-parallelisation severity.
 //
@@ -753,7 +753,7 @@ func serviceFromExtendedProperties(ext map[string]*string) string {
 		case "sqldatabases":
 			return string(common.ServiceRelationalDB)
 		case "rediscache":
-			return string(common.ServiceCache)
+			return string(common.ServiceMemoryDB)
 		}
 	}
 	if subcat, ok := ext["recommendationSubCategory"]; ok && subcat != nil {

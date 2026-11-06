@@ -8,12 +8,12 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	azrecs "github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/recommendations"
-	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/cache"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/compute"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/database"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/managedredis"
 )
 
-// reservationUnitPricer is the price lookup the compute, database and cache
+// reservationUnitPricer is the price lookup the compute, database and Redis
 // clients export for pricing Advisor rows.
 type reservationUnitPricer interface {
 	ReservationUnitPrice(ctx context.Context, sku, region string, termYears int) (azrecs.ReservationPrice, error)
@@ -22,7 +22,7 @@ type reservationUnitPricer interface {
 var (
 	_ reservationUnitPricer = (*compute.Client)(nil)
 	_ reservationUnitPricer = (*database.Client)(nil)
-	_ reservationUnitPricer = (*cache.Client)(nil)
+	_ reservationUnitPricer = (*managedredis.Client)(nil)
 )
 
 // priceAdvisor prices the Advisor reservation rows with the service clients'
@@ -36,7 +36,7 @@ func (r *RecommendationsClientAdapter) priceAdvisor(ctx context.Context, rows []
 	clients := map[common.ServiceType]serviceRecsGetter{
 		common.ServiceCompute:      newComputeClientFn(r.cred, r.subscriptionID, ""),
 		common.ServiceRelationalDB: newDatabaseClientFn(r.cred, r.subscriptionID, ""),
-		common.ServiceCache:        newCacheClientFn(r.cred, r.subscriptionID, ""),
+		common.ServiceMemoryDB:     newManagedRedisClientFn(r.cred, r.subscriptionID, ""),
 	}
 	lookups := make(map[common.ServiceType]azrecs.PriceFunc, len(clients))
 	for service, client := range clients {
