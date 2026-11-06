@@ -45,15 +45,22 @@ func TestProvider_GetServiceClient_PurchaseReconciler(t *testing.T) {
 	p := &Provider{cfg: aws.Config{Region: "us-east-1"}}
 
 	cases := map[common.ServiceType]bool{
-		common.ServiceEC2:                 true,
-		common.ServiceCompute:             true,
-		common.ServiceRedshift:            true,
-		common.ServiceDataWarehouse:       true,
-		common.ServiceRDS:                 false,
-		common.ServiceElastiCache:         false,
-		common.ServiceMemoryDB:            false,
-		common.ServiceOpenSearch:          false,
-		common.ServiceSavingsPlansCompute: false,
+		common.ServiceEC2:                     true,
+		common.ServiceCompute:                 true,
+		common.ServiceRedshift:                true,
+		common.ServiceDataWarehouse:           true,
+		common.ServiceRDS:                     false,
+		common.ServiceElastiCache:             false,
+		common.ServiceMemoryDB:                false,
+		common.ServiceOpenSearch:              false,
+		common.ServiceSavingsPlansCompute:     false,
+		common.ServiceRelationalDB:            false,
+		common.ServiceCache:                   false,
+		common.ServiceSearch:                  false,
+		common.ServiceSavingsPlansEC2Instance: false,
+		common.ServiceSavingsPlansSageMaker:   false,
+		common.ServiceSavingsPlansDatabase:    false,
+		common.ServiceSavingsPlansAll:         false,
 	}
 	for service, want := range cases {
 		t.Run(string(service), func(t *testing.T) {
