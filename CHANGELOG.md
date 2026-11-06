@@ -32,6 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **AWS/Redshift:** when the `AttemptJournal` also implements `common.ClaimReader`, the reserved-node dedupe skips nodes another purchase recorded as bought, before and after the send. A claim read error refuses before the send or leaves the outcome unknown after it; if the skip leaves one of several matches and the token has no sending or outcome_unknown record, the purchase is refused as ambiguous (#700).
 - **`pkg`:** optional `common.ClaimReader` (`ClaimedByOthers(ctx, token, ids)`), which an `AttemptJournal` may implement so a provider can skip commitments another purchase recorded as bought (#700).
 - **`pkg`:** `common.Commitment.CostKnown` reports whether `Cost` holds a price the provider reported. The zero value means unknown, so a `Cost` of 0 without `CostKnown` must not be read as free. Producers set it in a follow-up (#74).
 
