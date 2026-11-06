@@ -20,6 +20,11 @@ import (
 
 const jOtherToken = "other-token"
 
+// seedOther records rn-1 as purchased under a different token.
+func (j *fakeJournal) seedOther() {
+	j.rows = append(j.rows, common.AttemptRecord{IdempotencyToken: jOtherToken, ExecutionID: "exec-other", State: common.AttemptPurchased, ReservationID: "rn-1", OfferingID: jOffer})
+}
+
 func purchasedStates(j *fakeJournal) []common.AttemptState {
 	recs := j.recordCalls()
 	out := make([]common.AttemptState, 0, len(recs))
@@ -32,7 +37,7 @@ func purchasedStates(j *fakeJournal) []common.AttemptState {
 func TestClaims_WindowSkipsOtherClaim(t *testing.T) {
 	t.Parallel()
 	j := newFakeJournal()
-	j.claims["rn-1"] = jOtherToken
+	j.seedOther()
 	c, m := newDedupe(jWindow("rn-1"))
 	result, err := c.PurchaseCommitment(context.Background(), rsIdemRec(), jOpts(j, jExecNew))
 	require.NoError(t, err)
@@ -60,7 +65,7 @@ func TestClaims_ExclusionToOneNeedsOwnSendEvidence(t *testing.T) {
 	t.Run("no priors refuses as ambiguous", func(t *testing.T) {
 		t.Parallel()
 		j := newFakeJournal()
-		j.claims["rn-1"] = jOtherToken
+		j.seedOther()
 		c, m := newDedupe(jWindow("rn-1", "rn-2"))
 		result, err := c.PurchaseCommitment(context.Background(), rsIdemRec(), jOpts(j, jExecNew))
 		require.Error(t, err)
@@ -68,8 +73,23 @@ func TestClaims_ExclusionToOneNeedsOwnSendEvidence(t *testing.T) {
 		assert.Empty(t, result.CommitmentID)
 		assert.Contains(t, err.Error(), "ambiguous")
 		assert.Contains(t, err.Error(), "rn-2")
-		assert.Contains(t, err.Error(), "recorded by another purchase")
+		assert.Contains(t, err.Error(), "recorded by another purchase and excluded")
+		assert.Contains(t, err.Error(), "no earlier attempt of this token shows a send")
 		assert.Contains(t, err.Error(), "rn-1")
+		assert.Empty(t, j.recordCalls())
+		jNoBuy(t, m)
+	})
+	t.Run("own prior under another offering refuses as ambiguous", func(t *testing.T) {
+		t.Parallel()
+		j := newFakeJournal()
+		j.seedOther()
+		j.seed(jExecOld, common.AttemptSending, "", "offering-0")
+		c, m := newDedupe(jWindow("rn-1", "rn-2"))
+		result, err := c.PurchaseCommitment(context.Background(), rsIdemRec(), jOpts(j, jExecNew))
+		require.Error(t, err)
+		assert.False(t, result.Success)
+		assert.Contains(t, err.Error(), "ambiguous")
+		assert.Contains(t, err.Error(), "no earlier attempt of this token shows a send")
 		assert.Empty(t, j.recordCalls())
 		jNoBuy(t, m)
 	})
@@ -77,7 +97,7 @@ func TestClaims_ExclusionToOneNeedsOwnSendEvidence(t *testing.T) {
 		t.Run("own "+string(state)+" prior adopts", func(t *testing.T) {
 			t.Parallel()
 			j := newFakeJournal()
-			j.claims["rn-1"] = jOtherToken
+			j.seedOther()
 			j.seed(jExecOld, state, "", jOffer)
 			c, m := newDedupe(jWindow("rn-1", "rn-2"))
 			result, err := c.PurchaseCommitment(context.Background(), rsIdemRec(), jOpts(j, jExecNew))
@@ -93,7 +113,7 @@ func TestClaims_ExclusionToOneNeedsOwnSendEvidence(t *testing.T) {
 func TestClaims_ThreeNodesOneClaimedStillAmbiguous(t *testing.T) {
 	t.Parallel()
 	j := newFakeJournal()
-	j.claims["rn-1"] = jOtherToken
+	j.seedOther()
 	c, m := newDedupe(jWindow("rn-1", "rn-2", "rn-3"))
 	result, err := c.PurchaseCommitment(context.Background(), rsIdemRec(), jOpts(j, jExecNew))
 	require.Error(t, err)
@@ -101,7 +121,8 @@ func TestClaims_ThreeNodesOneClaimedStillAmbiguous(t *testing.T) {
 	assert.Contains(t, err.Error(), "ambiguous")
 	assert.Contains(t, err.Error(), "rn-2")
 	assert.Contains(t, err.Error(), "rn-3")
-	assert.Contains(t, err.Error(), "recorded by another purchase")
+	assert.Contains(t, err.Error(), "recorded by another purchase and excluded")
+	assert.NotContains(t, err.Error(), "shows a send")
 	assert.Contains(t, err.Error(), "rn-1")
 	assert.Empty(t, j.recordCalls())
 	jNoBuy(t, m)
@@ -134,7 +155,7 @@ func TestClaims_ZeroIDsSkipsRead(t *testing.T) {
 func TestClaims_PostSendSkipsOtherClaim(t *testing.T) {
 	t.Parallel()
 	j := newFakeJournal()
-	j.claims["rn-1"] = jOtherToken
+	j.seedOther()
 	c, m := recoverMock(buyFails(transportErr()), dnode("rn-1", "payment-pending", dedupeReqAt.Add(time.Second)))
 	result, err := c.PurchaseCommitment(context.Background(), rsIdemRec(), jOpts(j, jExecNew))
 	require.ErrorIs(t, err, common.ErrOutcomeUnknown)
@@ -149,7 +170,7 @@ func TestClaims_PostSendSkipsOtherClaim(t *testing.T) {
 func TestClaims_PostSendSingleUnclaimedAdopts(t *testing.T) {
 	t.Parallel()
 	j := newFakeJournal()
-	j.claims["rn-1"] = jOtherToken
+	j.seedOther()
 	c, _ := recoverMock(buyFails(transportErr()),
 		dnode("rn-1", "payment-pending", dedupeReqAt.Add(time.Second)),
 		dnode("rn-2", "payment-pending", dedupeReqAt.Add(time.Second)))
@@ -175,13 +196,12 @@ func TestClaims_PostSendClaimErrorNoAdopt(t *testing.T) {
 func TestClaims_SameTokenClaimPassesToken(t *testing.T) {
 	t.Parallel()
 	j := newFakeJournal()
-	j.claims["rn-1"] = jToken
+	j.seedOther()
 	c, m := newDedupe(jWindow("rn-1"))
 	result, err := c.PurchaseCommitment(context.Background(), rsIdemRec(), jOpts(j, jExecNew))
 	require.NoError(t, err)
-	assert.Equal(t, "rn-1", result.CommitmentID)
-	assert.True(t, result.ExistingCommitment)
-	jNoBuy(t, m)
+	assert.Equal(t, "rn-new", result.CommitmentID)
+	m.AssertNumberOfCalls(t, "PurchaseReservedNodeOffering", 1)
 	require.Len(t, j.claimCalls(), 1)
 	assert.Equal(t, jToken, j.claimCalls()[0].Token)
 	assert.Equal(t, []string{"rn-1"}, j.claimCalls()[0].IDs)
@@ -211,7 +231,6 @@ func TestClaims_ReaderOptional(t *testing.T) {
 	log.SetOutput(&buf)
 	t.Cleanup(func() { log.SetOutput(os.Stderr) })
 	j := newFakeJournal()
-	j.claims["rn-1"] = jOtherToken
 	c, m := newDedupe(jWindow("rn-1"))
 	opts := jOpts(j, jExecNew)
 	opts.AttemptJournal = hiddenReader{j}

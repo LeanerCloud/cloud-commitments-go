@@ -40,15 +40,14 @@ type journalCall struct {
 // fakeJournal enforces the transition table and keeps the first OfferingID of
 // each (token, execution) row, as a store must. It also enforces the platform's
 // unique index: a reservation ID is purchased at most once across all rows.
-// claims maps a reservation ID to the token that recorded it as purchased, for
-// ClaimedByOthers; onPrior runs after PriorAttempts reads, to model a race.
+// ClaimedByOthers reads the stored rows, as the platform query does; onPrior
+// runs after PriorAttempts reads, to model a race.
 type fakeJournal struct {
 	mu       sync.Mutex
 	rows     []common.AttemptRecord
 	calls    []journalCall
 	priorErr error
 	failOn   map[common.AttemptState]error
-	claims   map[string]string
 	claimErr error
 	onPrior  func(*fakeJournal)
 }
@@ -56,7 +55,7 @@ type fakeJournal struct {
 var _ common.ClaimReader = (*fakeJournal)(nil)
 
 func newFakeJournal() *fakeJournal {
-	return &fakeJournal{failOn: map[common.AttemptState]error{}, claims: map[string]string{}}
+	return &fakeJournal{failOn: map[common.AttemptState]error{}}
 }
 
 func (f *fakeJournal) find(token, exec string) int {
@@ -95,7 +94,9 @@ func (f *fakeJournal) ClaimedByOthers(_ context.Context, token string, ids []str
 	}
 	var out []string
 	for _, id := range ids {
-		if owner, ok := f.claims[id]; ok && owner != token {
+		if slices.ContainsFunc(f.rows, func(r common.AttemptRecord) bool {
+			return r.State == common.AttemptPurchased && r.ReservationID == id && r.IdempotencyToken != token
+		}) {
 			out = append(out, id)
 		}
 	}

@@ -111,9 +111,9 @@ func (c *Client) guardAgainstRepurchase(ctx context.Context, result *common.Purc
 	}
 	switch {
 	case len(ids) > 1:
-		result.Error = ambiguousNodes(ids, excluded, offeringID, count, opts)
-	case len(ids) == 1 && len(raw) > 1 && !hasSendEvidence(priors):
-		result.Error = ambiguousNodes(ids, excluded, offeringID, count, opts)
+		result.Error = ambiguousNodes(ids, excluded, false, offeringID, count, opts)
+	case len(ids) == 1 && len(raw) > 1 && !hasSendEvidence(priors, offeringID):
+		result.Error = ambiguousNodes(ids, excluded, true, offeringID, count, opts)
 	case len(ids) == 1:
 		log.Printf("Redshift reserved node %s already matches idempotency token %s; skipping purchase", ids[0], common.MaskToken(opts.IdempotencyToken))
 		adopt(result, ids[0])
@@ -125,21 +125,25 @@ func (c *Client) guardAgainstRepurchase(ctx context.Context, result *common.Purc
 
 // ambiguousNodes is the refusal for a window that cannot name one node. The
 // excluded IDs (recorded by another purchase) are named so an operator can
-// tell why a smaller set remains.
-func ambiguousNodes(ids, excluded []string, offeringID string, count int, opts common.PurchaseOptions) error {
+// tell why a smaller set remains; noSend adds that the token shows no send.
+func ambiguousNodes(ids, excluded []string, noSend bool, offeringID string, count int, opts common.PurchaseOptions) error {
 	msg := fmt.Sprintf("ambiguous Redshift dedupe: %d reserved nodes (%s) match offering %s, node count %d, started since %s",
 		len(ids), strings.Join(ids, ", "), offeringID, count, opts.RequestedAt.Add(-redshiftClockSkew).UTC().Format(time.RFC3339))
 	if len(excluded) > 0 {
-		msg += fmt.Sprintf("; %s recorded by another purchase and excluded, and no earlier attempt of this token shows a send", strings.Join(excluded, ", "))
+		msg += fmt.Sprintf("; %s recorded by another purchase and excluded", strings.Join(excluded, ", "))
+	}
+	if noSend {
+		msg += ", and no earlier attempt of this token shows a send"
 	}
 	return fmt.Errorf("%s; refusing to purchase to avoid a possible double-buy; check the account and, if the commitment is missing, start a new purchase", msg)
 }
 
-// hasSendEvidence reports whether the token's own records show a send: a
-// sending or outcome_unknown record.
-func hasSendEvidence(priors []common.AttemptRecord) bool {
+// hasSendEvidence reports whether the token's own records show a send under
+// this offering: a sending or outcome_unknown record. A send under another
+// offering cannot have bought a node that matches this one.
+func hasSendEvidence(priors []common.AttemptRecord, offeringID string) bool {
 	return slices.ContainsFunc(priors, func(p common.AttemptRecord) bool {
-		return p.State == common.AttemptSending || p.State == common.AttemptOutcomeUnknown
+		return (p.State == common.AttemptSending || p.State == common.AttemptOutcomeUnknown) && p.OfferingID == offeringID
 	})
 }
 
