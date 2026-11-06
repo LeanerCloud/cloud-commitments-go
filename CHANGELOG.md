@@ -34,6 +34,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - **`pkg`:** `common.Commitment.CostKnown` reports whether `Cost` holds a price the provider reported. The zero value means unknown, so a `Cost` of 0 without `CostKnown` must not be read as free. Producers set it in a follow-up (#74).
 
+- **`pkg`:** `provider.PurchaseReconciler`, an optional read-only `ServiceClient` interface with `common.ReconcileRequest`, `common.ReconcileResult` and `common.ReconcileVerdict` (`ReconcileFound`/`ReconcileUnknown`, never NotFound), so a purchase that returned `ErrOutcomeUnknown` can later be checked against the provider. Types only; AWS EC2 and Redshift implementations follow (#298).
+
 - **`ladder`/`aws`:** `ladder.ObservedCommitmentRateCapability` and its AWS implementation report commitment dollars per covered on-demand dollar measured on the account's existing Savings Plans and convertible RIs (account-scoped Cost Explorer utilization). Layers with no usable observation are absent.
 
 - **`azure`:** `PartialResultError.SkipKinds() []SkipKind`, index-aligned with
@@ -288,6 +290,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   actually bought. Before, 2.5 became 3 with the upfront for 2.5, and the
   approved-upfront check refused the purchase. The on-demand baseline and
   break-even months are unchanged (#635).
+- **AWS:** purchase counts outside [1, MaxInt32] are refused before any API call in EC2, ElastiCache, MemoryDB, OpenSearch, RDS and Redshift, with `ErrRefusedBeforePurchase` and `offeringprice.ErrPurchaseCountOutOfRange` (#683).
 - **`azure`:** an error from a reservation purchase retry (attempt 2 or later) now also wraps `common.ErrOutcomeUnknown`. That covers a currency refusal from the retry's calculatePrice, a failed idempotency re-check, a non-retryable purchase failure, a cancelled retry wait and exhausted attempts. A retry runs only after a purchase that failed retryably and may have committed, and the re-check can miss that order, so none of these errors may read as "nothing was bought". The cause stays in the chain, so `errors.Is(err, common.ErrCurrencyNotAccepted)` still matches. The `ErrCurrencyNotAccepted` doc now says it is pre-purchase only without `ErrOutcomeUnknown` (#671).
 - **Azure purchases check the recommendation currency.** Azure reservation purchases
   compare the calculatePrice billing currency with the recommendation currency

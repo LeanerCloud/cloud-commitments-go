@@ -33,14 +33,15 @@ var ErrCurrencyNotAccepted = errors.New("currency not accepted")
 // provider but whose result is not known: the commitment may already exist.
 // Services whose purchase API has no idempotency token or caller-chosen ID
 // (AWS EC2, Redshift) must not be re-sent automatically after such an error;
-// reconcile against the provider first. Detect it with
+// reconcile against the provider first (see provider.PurchaseReconciler). Detect it with
 // errors.Is(err, ErrOutcomeUnknown). Consumers such as the platform persist
 // errors as strings, so the text "purchase outcome unknown" is effectively a
 // contract until the platform persists a typed flag (platform #778).
 var ErrOutcomeUnknown = errors.New("purchase outcome unknown")
 
-// ErrRefusedBeforePurchase wraps any error from the approved-upfront check,
-// which runs before the purchase request is built or sent. Its presence is
+// ErrRefusedBeforePurchase wraps any error from the approved-upfront check or
+// the purchase-count bounds check, both of which run before the purchase
+// request is built or sent. Its presence is
 // sufficient to know that this call sent no purchase request, but its absence
 // proves nothing: other refusals do not carry it. It describes only the call
 // that returned it and says nothing about earlier calls with the same

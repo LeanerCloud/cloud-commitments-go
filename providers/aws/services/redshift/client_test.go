@@ -563,6 +563,7 @@ func TestClient_PurchaseCommitment_FindOfferingError(t *testing.T) {
 	rec := common.Recommendation{
 		Service:       common.ServiceDataWarehouse,
 		ResourceType:  "dc2.large",
+		Count:         1,
 		PaymentOption: "all-upfront",
 		Term:          "1yr",
 		Details: common.DataWarehouseDetails{

@@ -704,6 +704,7 @@ func TestClient_PurchaseCommitment_OfferingNotFound(t *testing.T) {
 	rec := common.Recommendation{
 		Service:       common.ServiceCache,
 		ResourceType:  "db.r6gd.xlarge",
+		Count:         1,
 		PaymentOption: "partial-upfront",
 		Term:          "1yr",
 		Details: &common.CacheDetails{

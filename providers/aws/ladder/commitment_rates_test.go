@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -16,9 +17,21 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/recommendations"
 )
 
+type fakeRateResult struct {
+	rate float64
+	err  error
+}
+
+// fakeSPRateSource answers per plan type; an unlisted plan type is a test bug.
 type fakeSPRateSource struct {
-	err    error
-	params []recommendations.SPCommitmentRateParams
+	results map[types.SupportedSavingsPlansType]fakeRateResult
+	params  []recommendations.SPCommitmentRateParams
+}
+
+func ec2Fake(rate float64, err error) *fakeSPRateSource {
+	return &fakeSPRateSource{results: map[types.SupportedSavingsPlansType]fakeRateResult{
+		types.SupportedSavingsPlansTypeEc2InstanceSp: {rate, err},
+	}}
 }
 
 func TestNewFromConfig_ValidatesAndScopesClients(t *testing.T) {
@@ -39,7 +52,11 @@ func TestNewFromConfig_ValidatesAndScopesClients(t *testing.T) {
 
 func (f *fakeSPRateSource) GetSPCommitmentRate(_ context.Context, p recommendations.SPCommitmentRateParams) (float64, error) {
 	f.params = append(f.params, p)
-	return 0.7, f.err
+	r, ok := f.results[p.PlanType]
+	if !ok {
+		return 0, fmt.Errorf("unexpected plan type %s", p.PlanType)
+	}
+	return r.rate, r.err
 }
 
 func TestGetCommitmentRates_ValidatesBeforeSource(t *testing.T) {
@@ -56,7 +73,7 @@ func TestGetCommitmentRates_ValidatesBeforeSource(t *testing.T) {
 		{"payment", testScope(), ladder.Term1Year, ladder.PaymentOption("bad")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			f := &fakeSPRateSource{}
+			f := ec2Fake(0.7, nil)
 			a := &AWSLadder{cfg: Config{Region: "us-east-1", AccountID: testScope().AccountID}, spRates: f}
 			rates, err := a.GetCommitmentRates(context.Background(), tc.scope, tc.term, tc.payment)
 			require.Error(t, err)
@@ -70,7 +87,7 @@ func TestGetCommitmentRates_ForwardsSelection(t *testing.T) {
 	t.Parallel()
 	for _, days := range []int{0, 7, 60} {
 		t.Run(fmt.Sprint(days), func(t *testing.T) {
-			f := &fakeSPRateSource{}
+			f := ec2Fake(0.7, nil)
 			a := &AWSLadder{cfg: Config{Region: "eu-west-1", AccountID: testScope().AccountID, LookbackDays: days}, spRates: f}
 			rates, err := a.GetCommitmentRates(context.Background(), testScope(), ladder.Term3Year, ladder.PaymentPartialUpfront)
 			require.NoError(t, err)
@@ -96,8 +113,8 @@ func TestGetCommitmentRates_AbsenceAndErrors(t *testing.T) {
 		want   error
 	}{
 		{"unwired", nil, nil},
-		{"absent", &fakeSPRateSource{err: fmt.Errorf("wrapped: %w", recommendations.ErrNoSPCommitmentRate)}, nil},
-		{"hard", &fakeSPRateSource{err: hard}, hard},
+		{"absent", ec2Fake(0, fmt.Errorf("wrapped: %w", recommendations.ErrNoSPCommitmentRate)), nil},
+		{"hard", ec2Fake(0, hard), hard},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			a := newTestLadder(t, &fakeRILister{}, &fakeSPLister{}, &fakeCoverageSource{}, &fakeUtilizationSource{})
@@ -114,6 +131,67 @@ func TestGetCommitmentRates_AbsenceAndErrors(t *testing.T) {
 				require.NotNil(t, rates)
 				assert.Empty(t, rates)
 			}
+		})
+	}
+}
+
+func TestGetCommitmentRates_RejectsUnusableRate(t *testing.T) {
+	t.Parallel()
+	for name, rate := range map[string]float64{"nan": math.NaN(), "inf": math.Inf(1), "zero": 0, "negative": -0.3} {
+		t.Run(name, func(t *testing.T) {
+			a := &AWSLadder{cfg: Config{Region: "us-east-1", AccountID: testScope().AccountID}, spRates: ec2Fake(rate, nil)}
+			rates, err := a.GetCommitmentRates(context.Background(), testScope(), ladder.Term1Year, ladder.PaymentNoUpfront)
+			require.ErrorContains(t, err, string(ladder.LayerEC2InstanceSP))
+			assert.Nil(t, rates)
+		})
+	}
+}
+
+func TestGetCommitmentRates_HardErrorNamesLayer(t *testing.T) {
+	t.Parallel()
+	hard := errors.New("source failed")
+	a := &AWSLadder{cfg: Config{Region: "us-east-1", AccountID: testScope().AccountID}, spRates: ec2Fake(0, hard)}
+	_, err := a.GetCommitmentRates(context.Background(), testScope(), ladder.Term1Year, ladder.PaymentNoUpfront)
+	require.ErrorIs(t, err, hard)
+	assert.ErrorContains(t, err, string(ladder.LayerEC2InstanceSP))
+}
+
+func TestFetchLayerRates_LayersAreIndependent(t *testing.T) {
+	t.Parallel()
+	const (
+		planA = types.SupportedSavingsPlansTypeEc2InstanceSp
+		planB = types.SupportedSavingsPlansTypeComputeSp
+	)
+	layers := []rateLayer{
+		{layer: ladder.LayerEC2InstanceSP, plan: planA, region: "eu-west-1"},
+		{layer: ladder.LayerComputeSP, plan: planB, region: ""},
+	}
+	missing := fmt.Errorf("none: %w", recommendations.ErrNoSPCommitmentRate)
+	hard := errors.New("source failed")
+	for _, tc := range []struct {
+		name    string
+		a, b    fakeRateResult
+		want    map[ladder.LayerType]float64
+		wantErr error
+	}{
+		{"first missing second present", fakeRateResult{err: missing}, fakeRateResult{rate: 0.8}, map[ladder.LayerType]float64{ladder.LayerComputeSP: 0.8}, nil},
+		{"first present second hard", fakeRateResult{rate: 0.7}, fakeRateResult{err: hard}, nil, hard},
+		{"both missing", fakeRateResult{err: missing}, fakeRateResult{err: missing}, map[ladder.LayerType]float64{}, nil},
+		{"both present", fakeRateResult{rate: 0.7}, fakeRateResult{rate: 0.8}, map[ladder.LayerType]float64{ladder.LayerEC2InstanceSP: 0.7, ladder.LayerComputeSP: 0.8}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &fakeSPRateSource{results: map[types.SupportedSavingsPlansType]fakeRateResult{planA: tc.a, planB: tc.b}}
+			got, err := fetchLayerRates(context.Background(), f, layers, recommendations.SPCommitmentRateParams{AccountID: "acct"})
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+				assert.Nil(t, got)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+			require.Len(t, f.params, 2)
+			assert.Equal(t, "eu-west-1", f.params[0].Region)
+			assert.Equal(t, planB, f.params[1].PlanType)
 		})
 	}
 }
