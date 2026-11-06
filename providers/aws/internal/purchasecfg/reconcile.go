@@ -1,6 +1,7 @@
 package purchasecfg
 
 import (
+	"slices"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -65,7 +66,7 @@ func Decide(matches, uncertain, criteria []string, tagged bool) common.Reconcile
 		return common.ReconcileResult{
 			Verdict:      common.ReconcileFound,
 			CommitmentID: matches[0],
-			Criteria:     criteria,
+			Criteria:     slices.Clone(criteria),
 			Tagged:       tagged,
 		}
 	default:

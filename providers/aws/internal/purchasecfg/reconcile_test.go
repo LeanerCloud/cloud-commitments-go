@@ -139,3 +139,15 @@ func TestReasonPhrasesAreDistinct(t *testing.T) {
 	}
 	assert.Len(t, seen, 8)
 }
+
+func TestDecideCopiesCriteria(t *testing.T) {
+	t.Parallel()
+	crit := []string{"instance-type", "count"}
+	r1 := Decide([]string{"m1"}, nil, crit, false)
+	r2 := Decide([]string{"m1"}, nil, crit, false)
+
+	r1.Criteria[0] = "mutated"
+
+	assert.Equal(t, []string{"instance-type", "count"}, r2.Criteria)
+	assert.Equal(t, []string{"instance-type", "count"}, crit)
+}
