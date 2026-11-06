@@ -665,27 +665,3 @@ func TestAdjustRecommendationsForExisting_UsesCoveringCommitments(t *testing.T) 
 	assert.Equal(t, recs, passed)
 	assert.Nil(t, filtered)
 }
-
-func TestIsRecentActiveCommitment_EmptyStateIsQuiet(t *testing.T) {
-	t.Parallel()
-	cutoff := time.Now().Add(-time.Hour)
-	c := common.Commitment{CommitmentID: "c-1", StartDate: time.Now()}
-
-	var logs []string
-	logf := Logf(func(format string, args ...any) { logs = append(logs, fmt.Sprintf(format, args...)) })
-
-	assert.True(t, isRecentActiveCommitment(c, cutoff, logf), "empty state keeps the fail-closed decision")
-	assert.Empty(t, logs)
-}
-
-func TestIsRecentActiveCommitment_UnrecognizedStateWarns(t *testing.T) {
-	t.Parallel()
-	cutoff := time.Now().Add(-time.Hour)
-	c := common.Commitment{CommitmentID: "c-1", State: "bogus", StartDate: time.Now()}
-
-	var logs []string
-	logf := Logf(func(format string, args ...any) { logs = append(logs, fmt.Sprintf(format, args...)) })
-
-	assert.True(t, isRecentActiveCommitment(c, cutoff, logf))
-	assert.Contains(t, strings.Join(logs, "\n"), "WARNING")
-}

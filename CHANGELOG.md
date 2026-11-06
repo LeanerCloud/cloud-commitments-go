@@ -281,8 +281,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
-- **`recfilter`:** a commitment with an empty `State` is still counted as existing but no longer logs a per-commitment WARNING; an unrecognized non-empty state still warns (#74).
-
 - **`aws` RI recommendations:** a fractional Cost Explorer quantity now rounds
   down instead of to the nearest integer, so a purchase never exceeds CE's
   quantity. The upfront, recurring monthly cost, monthly savings and savings

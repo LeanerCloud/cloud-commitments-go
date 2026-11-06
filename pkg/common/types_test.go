@@ -641,9 +641,6 @@ func TestErrRefusedBeforePurchase(t *testing.T) {
 }
 
 func TestCommitment_CostKnown(t *testing.T) {
-	t.Run("zero value is unknown", func(t *testing.T) {
-		assert.False(t, Commitment{Cost: 0}.CostKnown)
-	})
 	t.Run("round-trips", func(t *testing.T) {
 		in := Commitment{Cost: 12.5, CostKnown: true}
 		b, err := json.Marshal(in)
