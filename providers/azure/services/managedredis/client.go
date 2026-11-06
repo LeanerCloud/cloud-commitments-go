@@ -526,5 +526,7 @@ func (c *Client) convertRecommendation(ctx context.Context, rec armconsumption.R
 		Term:                 f.Term,
 		PaymentOption:        "upfront",
 		Timestamp:            time.Now(),
+		// Shards is unknown here (it came from the removed SKU catalogue), so 0.
+		Details: &common.CacheDetails{Engine: "redis", NodeType: f.ResourceType},
 	}
 }
