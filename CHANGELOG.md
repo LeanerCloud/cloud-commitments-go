@@ -177,6 +177,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **`azure`:** Azure Redis recommendations now come only from managedredis and are labelled `memorydb` (`ServiceMemoryDB`), both from Consumption and from Advisor rows. The cache client's `GetRecommendations` returns none, so `GetRecommendationsForService(ServiceCache)` is empty for Azure, and consumers that stored Azure Redis plans or settings under `cache` must also match `memorydb`. Existing Redis reservations do not yet reduce recommendations (#699) (#692).
 - `ListTargetOfferings` now walks up to 50 pages (about 5000 offerings)
   instead of 10, and returns an error wrapping the new
   `ec2.ErrTargetOfferingsTruncated` (with no list) when that bound is hit,
