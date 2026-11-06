@@ -177,6 +177,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **BREAKING `azure`:** Azure Redis recommendations now come only from managedredis and are labelled `memorydb` (`ServiceMemoryDB`), both from Consumption and from Advisor rows. The cache client's `GetRecommendations` returns none, so `GetRecommendationsForService(ServiceCache)` is empty for Azure, and consumers that stored Azure Redis plans or settings under `cache` must also match `memorydb`. Azure Redis recommendations keep `CacheDetails` `Engine` and `NodeType` but no longer report `Shards` (0, unknown) (#692).
 - `ListTargetOfferings` now walks up to 50 pages (about 5000 offerings)
   instead of 10, and returns an error wrapping the new
   `ec2.ErrTargetOfferingsTruncated` (with no list) when that bound is hit,
@@ -297,6 +298,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   typed details fail with `ErrUntypedServiceDetails`. Before this,
   encoding/json could not decode an object into the `ServiceDetails` interface
   (#211).
+- **Breaking (source):** `managedredis.ReservationsDetailsPager` and `(*managedredis.Client).SetReservationsPager` are removed; tests inject reservation inventory with `SetInventoryFactories` instead (#699).
+- **`azure` Redis:** `managedredis.GetExistingCommitments` now reads held reservations from the Reservations API (purchase date, quantity, location, state), so a Redis reservation bought in the last day reduces the matching recommendation instead of being invisible to the duplicate guard (#699). An incomplete live reservation row (missing SKU, location, quantity or purchase date, an unattributable scope, or an expiry falling today) now fails the lookup with an error instead of being skipped, as `azure` compute already does.
 - **`aws` RI recommendations:** a fractional Cost Explorer quantity now rounds
   down instead of to the nearest integer, so a purchase never exceeds CE's
   quantity. The upfront, recurring monthly cost, monthly savings and savings
@@ -509,6 +512,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Removed
 
+- **BREAKING:** `providers/azure/services/cache` no longer exports `RecommendationsPager`, `(*Client).SetRecommendationsPager` or `(*Client).ReservationUnitPrice`. The cache client no longer collects or prices recommendations; managedredis does. No cli, mcp or platform code references them. (#692)
 - **BREAKING:** `common.Matches` (`pkg/common`) is removed. It compared only
   Provider, Region, Service, ResourceType and engine and had no callers in
   this repo, the CLI, the MCP server or the platform; use `pkg/recfilter`
