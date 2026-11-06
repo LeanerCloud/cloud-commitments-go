@@ -6,7 +6,7 @@ import (
 )
 
 func TestAttemptRecordValidate(t *testing.T) {
-	const token = "0123456789abcdef0123456789abcdef"
+	token := DeriveIdempotencyToken("exec-attempt-journal", 0)
 	tests := []struct {
 		name    string
 		rec     AttemptRecord
