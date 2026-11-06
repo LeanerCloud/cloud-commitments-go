@@ -125,19 +125,21 @@ func TestCommitmentRates_PublicSDKConsumer(t *testing.T) {
 			ratePage(rateDetail("fixture-account", "eu-west-1", "c5", "60", "20"), ""),
 		},
 		// Compute SP is account-wide: both regions count, other accounts do not.
+		// The regions have different ratios (0.5 and 0.75), so only the blend of
+		// both gives 0.625; a regional filter would give 0.5.
 		"COMPUTE_SP": {ratePage(rateDetail("fixture-account", "eu-west-1", "", "20", "20")+","+
-			rateDetail("fixture-account", "us-east-1", "", "20", "20")+","+
+			rateDetail("fixture-account", "us-east-1", "", "30", "10")+","+
 			rateDetail("other-fixture-account", "eu-west-1", "", "999", "1"), "")},
 	})
 	scope := ladder.Scope{Provider: common.ProviderAWS, AccountID: "fixture-account"}
 	rates, err := a.GetCommitmentRates(context.Background(), scope, ladder.Term3Year, ladder.PaymentPartialUpfront)
 	require.NoError(t, err)
-	require.Equal(t, map[ladder.LayerType]float64{ladder.LayerEC2InstanceSP: 0.7, ladder.LayerComputeSP: 0.5}, rates)
+	require.Equal(t, map[ladder.LayerType]float64{ladder.LayerEC2InstanceSP: 0.7, ladder.LayerComputeSP: 0.625}, rates)
 	in := consumerInput(a, scope, rates)
 	result, err := ladder.Allocate(in)
 	require.NoError(t, err)
 	// With both rates present, the base gap buys EC2 Instance SP at 0.7 and the
-	// flex gap buys Compute SP at the account-wide 0.5 (#349 option A).
+	// flex gap buys Compute SP at the account-wide 0.625 (#349 option A).
 	require.Len(t, result.Allocations, 2)
 	byLayer := map[ladder.LayerType]ladder.Allocation{}
 	for _, a := range result.Allocations {
@@ -147,7 +149,7 @@ func TestCommitmentRates_PublicSDKConsumer(t *testing.T) {
 	assert.Equal(t, 0, ec2.OnDemandEquivalentUSDPerHour.Cmp(big.NewRat(10, 1)))
 	assert.InDelta(t, 7, ratFloat(ec2.GapUSDPerHour), 1e-12)
 	assert.Equal(t, 0, compute.OnDemandEquivalentUSDPerHour.Cmp(big.NewRat(10, 1)))
-	assert.InDelta(t, 5, ratFloat(compute.GapUSDPerHour), 1e-12)
+	assert.InDelta(t, 6.25, ratFloat(compute.GapUSDPerHour), 1e-12)
 	nextID := 0
 	tranches, err := ladder.BuildTranches(&ladder.TrancheInput{
 		Config: &in.Config, RunID: "synthetic-run", Term: ladder.Term3Year, PaymentOption: ladder.PaymentPartialUpfront,

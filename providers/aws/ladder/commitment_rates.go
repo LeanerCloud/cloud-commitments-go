@@ -40,8 +40,9 @@ func (a *AWSLadder) GetCommitmentRates(ctx context.Context, scope ladder.Scope, 
 	}
 	// The Compute SP rate is Cost Explorer's account-wide blend over EC2, Lambda
 	// and Fargate in all regions, so for a regional EC2-only gap it can over-buy
-	// by r_blend/r_EC2. Accepted by the owner (#349, option A); the per-run and
-	// per-sweep caps bound it. Region is required by the source, not a filter.
+	// by r_blend/r_EC2. Accepted by the owner (#349, option A). Here only
+	// MaxHourlyCommitPerRun bounds it, and only when set; the platform plans a
+	// required per-sweep cap (#70). Region is required by the source, not a filter.
 	layers := []rateLayer{
 		{layer: ladder.LayerEC2InstanceSP, plan: types.SupportedSavingsPlansTypeEc2InstanceSp, region: a.cfg.Region},
 		{layer: ladder.LayerComputeSP, plan: types.SupportedSavingsPlansTypeComputeSp, region: a.cfg.Region},
