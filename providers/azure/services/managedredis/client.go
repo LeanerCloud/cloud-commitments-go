@@ -218,6 +218,9 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 			return nil, err
 		}
 		if commitment != nil {
+			// The dedupe key includes the engine and recommendations carry
+			// CacheDetails.Engine "redis", so held reservations must too.
+			commitment.Engine = redisEngine
 			commitments = append(commitments, *commitment)
 		}
 	}
@@ -502,6 +505,9 @@ func (c *Client) getRedisPricing(ctx context.Context, sku, region string, termYe
 	}, nil
 }
 
+// redisEngine is the CacheDetails.Engine of every Azure Cache for Redis recommendation and reservation.
+const redisEngine = "redis"
+
 // convertRecommendation converts an Azure Consumption API recommendation to the common format.
 // Returns nil when the input is nil or cannot be parsed (e.g. an unsupported SDK Kind).
 func (c *Client) convertRecommendation(ctx context.Context, rec armconsumption.ReservationRecommendationClassification) *common.Recommendation {
@@ -526,7 +532,7 @@ func (c *Client) convertRecommendation(ctx context.Context, rec armconsumption.R
 		Term:                 f.Term,
 		PaymentOption:        "upfront",
 		Timestamp:            time.Now(),
-		// Shards is unknown here (it came from the removed SKU catalogue), so 0.
-		Details: &common.CacheDetails{Engine: "redis", NodeType: f.ResourceType},
+		// Shards is unknown here (it came from the removed SKU catalog), so 0.
+		Details: &common.CacheDetails{Engine: redisEngine, NodeType: f.ResourceType},
 	}
 }
