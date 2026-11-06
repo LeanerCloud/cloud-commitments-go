@@ -158,28 +158,28 @@ func TestHeldReservation_Table(t *testing.T) {
 		name    string
 		mutate  func(*armreservations.ReservationResponse)
 		want    int
-		wantErr bool
+		wantErr string // non-empty: the lookup must fail with this text
 	}{
-		{"shared, this subscription", func(*armreservations.ReservationResponse) {}, 1, false},
+		{"shared, this subscription", func(*armreservations.ReservationResponse) {}, 1, ""},
 		{"single scope, this subscription", func(r *armreservations.ReservationResponse) {
 			single := armreservations.AppliedScopeTypeSingle
 			r.Properties.AppliedScopeType = &single
 			r.Properties.AppliedScopes = []*string{mocks.StringPtr("/subscriptions/sub")}
-		}, 1, false},
-		{"creating", state(armreservations.ProvisioningStateCreating), 1, false},
-		{"pending billing", state(armreservations.ProvisioningStatePendingBilling), 1, false},
-		{"purchased yesterday", purchased(fixtureYesterday), 1, false},
+		}, 1, ""},
+		{"creating", state(armreservations.ProvisioningStateCreating), 1, ""},
+		{"pending billing", state(armreservations.ProvisioningStatePendingBilling), 1, ""},
+		{"purchased yesterday", purchased(fixtureYesterday), 1, ""},
 		{"shared, billed to another subscription", func(r *armreservations.ReservationResponse) {
 			r.Properties.BillingScopeID = mocks.StringPtr("/subscriptions/other")
-		}, 2, false},
-		{"canceled", state(armreservations.ProvisioningStateCancelled), 2, false},
-		{"expired state", state(armreservations.ProvisioningStateExpired), 2, false},
-		{"succeeded past expiry", expiry(fixturePast), 2, false},
-		{"other region", func(r *armreservations.ReservationResponse) { r.Location = mocks.StringPtr("westus") }, 2, false},
-		{"other sku", func(r *armreservations.ReservationResponse) { r.SKU.Name = mocks.StringPtr("Premium_P2") }, 2, false},
-		{"purchased three days ago", purchased(fixtureThreeDays), 2, false},
-		{"missing quantity", func(r *armreservations.ReservationResponse) { r.Properties.Quantity = nil }, 0, true},
-		{"expires today", expiry(fixtureToday), 0, true},
+		}, 2, ""},
+		{"canceled", state(armreservations.ProvisioningStateCancelled), 2, ""},
+		{"expired state", state(armreservations.ProvisioningStateExpired), 2, ""},
+		{"succeeded past expiry", expiry(fixturePast), 2, ""},
+		{"other region", func(r *armreservations.ReservationResponse) { r.Location = mocks.StringPtr("westus") }, 2, ""},
+		{"other sku", func(r *armreservations.ReservationResponse) { r.SKU.Name = mocks.StringPtr("Premium_P2") }, 2, ""},
+		{"purchased three days ago", purchased(fixtureThreeDays), 2, ""},
+		{"missing quantity", func(r *armreservations.ReservationResponse) { r.Properties.Quantity = nil }, 0, "quantity"},
+		{"expires today", expiry(fixtureToday), 0, "expiryDate"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -190,8 +190,8 @@ func TestHeldReservation_Table(t *testing.T) {
 			tc.mutate(row)
 			c.SetInventoryFactories(factoriesRows(nil, row))
 			passed, err := adjust(t, c, []common.Recommendation{upfront})
-			if tc.wantErr {
-				require.Error(t, err)
+			if tc.wantErr != "" {
+				require.ErrorContains(t, err, tc.wantErr)
 				return
 			}
 			require.NoError(t, err)

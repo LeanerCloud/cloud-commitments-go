@@ -284,6 +284,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Breaking (source):** `managedredis.ReservationsDetailsPager` and `(*managedredis.Client).SetReservationsPager` are removed; tests inject reservation inventory with `SetInventoryFactories` instead (#699).
 - **`azure` Redis:** `managedredis.GetExistingCommitments` now reads held reservations from the Reservations API (purchase date, quantity, location, state), so a Redis reservation bought in the last day reduces the matching recommendation instead of being invisible to the duplicate guard (#699). An incomplete live reservation row (missing SKU, location, quantity or purchase date, an unattributable scope, or an expiry falling today) now fails the lookup with an error instead of being skipped, as `azure` compute already does.
 - **`aws` RI recommendations:** a fractional Cost Explorer quantity now rounds
   down instead of to the nearest integer, so a purchase never exceeds CE's
