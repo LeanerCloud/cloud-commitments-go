@@ -92,25 +92,40 @@ func TestGetCommitmentRates_ValidatesBeforeSource(t *testing.T) {
 
 func TestGetCommitmentRates_ForwardsSelection(t *testing.T) {
 	t.Parallel()
-	for _, days := range []int{0, 7, 60} {
-		t.Run(fmt.Sprint(days), func(t *testing.T) {
-			f := ec2Fake(0.7, nil)
-			a := &AWSLadder{cfg: Config{Region: "eu-west-1", AccountID: testScope().AccountID, LookbackDays: days}, spRates: f}
-			rates, err := a.GetCommitmentRates(context.Background(), testScope(), ladder.Term3Year, ladder.PaymentPartialUpfront)
-			require.NoError(t, err)
-			assert.Equal(t, map[ladder.LayerType]float64{ladder.LayerEC2InstanceSP: 0.7, ladder.LayerComputeSP: 0.8}, rates)
-			if days == 0 {
-				days = DefaultLookbackDays
-			}
-			base := recommendations.SPCommitmentRateParams{
-				AccountID: testScope().AccountID, Region: "eu-west-1",
-				Term: "3yr", PaymentOption: "partial-upfront", LookbackPeriod: fmt.Sprintf("%dd", days),
-			}
-			ec2, compute := base, base
-			ec2.PlanType = types.SupportedSavingsPlansTypeEc2InstanceSp
-			compute.PlanType = types.SupportedSavingsPlansTypeComputeSp
-			assert.Equal(t, []recommendations.SPCommitmentRateParams{ec2, compute}, f.params)
-		})
+	// Every requested term and payment must reach Cost Explorer as is, for both
+	// layers: a 1yr no-upfront ladder sized at a 3yr rate would over-buy.
+	selections := []struct {
+		term    ladder.Term
+		payment ladder.PaymentOption
+		wantT   string
+		wantP   string
+	}{
+		{ladder.Term1Year, ladder.PaymentNoUpfront, "1yr", "no-upfront"},
+		{ladder.Term3Year, ladder.PaymentAllUpfront, "3yr", "all-upfront"},
+		{ladder.Term3Year, ladder.PaymentPartialUpfront, "3yr", "partial-upfront"},
+	}
+	for _, sel := range selections {
+		for _, days := range []int{0, 7, 60} {
+			t.Run(fmt.Sprintf("%s/%s/%d", sel.wantT, sel.wantP, days), func(t *testing.T) {
+				f := ec2Fake(0.7, nil)
+				a := &AWSLadder{cfg: Config{Region: "eu-west-1", AccountID: testScope().AccountID, LookbackDays: days}, spRates: f}
+				rates, err := a.GetCommitmentRates(context.Background(), testScope(), sel.term, sel.payment)
+				require.NoError(t, err)
+				assert.Equal(t, map[ladder.LayerType]float64{ladder.LayerEC2InstanceSP: 0.7, ladder.LayerComputeSP: 0.8}, rates)
+				wantDays := days
+				if wantDays == 0 {
+					wantDays = DefaultLookbackDays
+				}
+				base := recommendations.SPCommitmentRateParams{
+					AccountID: testScope().AccountID, Region: "eu-west-1",
+					Term: sel.wantT, PaymentOption: sel.wantP, LookbackPeriod: fmt.Sprintf("%dd", wantDays),
+				}
+				ec2, compute := base, base
+				ec2.PlanType = types.SupportedSavingsPlansTypeEc2InstanceSp
+				compute.PlanType = types.SupportedSavingsPlansTypeComputeSp
+				assert.Equal(t, []recommendations.SPCommitmentRateParams{ec2, compute}, f.params)
+			})
+		}
 	}
 }
 
