@@ -62,15 +62,19 @@ func TestFindMatchingNodes_Characterization(t *testing.T) {
 		m.AssertNumberOfCalls(t, "DescribeReservedNodes", maxReservedNodePages)
 	})
 
-	t.Run("ctx canceled", func(t *testing.T) {
+	t.Run("ctx canceled mid-scan", func(t *testing.T) {
 		t.Parallel()
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 		m := &MockRedshiftClient{}
 		m.Test(t)
+		m.On("DescribeReservedNodes", mock.Anything, mock.Anything).
+			Run(func(mock.Arguments) { cancel() }).
+			Return(&redshift.DescribeReservedNodesOutput{ReservedNodes: []types.ReservedNode{match("a")}, Marker: aws.String("p1")}, nil)
 		c := &Client{client: m, region: "eu-west-1"}
-		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
-		_, err := c.findMatchingNodes(ctx, "offering-1", 1, dedupeReqAt)
+		got, err := c.findMatchingNodes(ctx, "offering-1", 1, dedupeReqAt)
 		assert.ErrorIs(t, err, context.Canceled)
-		m.AssertNotCalled(t, "DescribeReservedNodes", mock.Anything, mock.Anything)
+		assert.Nil(t, got)
+		m.AssertNumberOfCalls(t, "DescribeReservedNodes", 1)
 	})
 }
