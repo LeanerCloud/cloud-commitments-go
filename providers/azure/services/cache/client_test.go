@@ -24,26 +24,6 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/mocks"
 )
 
-// MockRecommendationsPager mocks the RecommendationsPager interface.
-type MockRecommendationsPager struct {
-	mock.Mock
-	pages []armconsumption.ReservationRecommendationsClientListResponse
-	index int
-}
-
-func (m *MockRecommendationsPager) More() bool {
-	return m.index < len(m.pages)
-}
-
-func (m *MockRecommendationsPager) NextPage(ctx context.Context) (armconsumption.ReservationRecommendationsClientListResponse, error) {
-	if m.index >= len(m.pages) {
-		return armconsumption.ReservationRecommendationsClientListResponse{}, errors.New("no more pages")
-	}
-	page := m.pages[m.index]
-	m.index++
-	return page, nil
-}
-
 // MockReservationsDetailsPager mocks the ReservationsDetailsPager interface.
 type MockReservationsDetailsPager struct {
 	pages []armconsumption.ReservationsDetailsClientListResponse
@@ -789,11 +769,6 @@ func TestCacheClient_SetterMethods(t *testing.T) {
 	t.Parallel()
 	client := NewClient(nil, "test-subscription", "eastus")
 
-	// Test SetRecommendationsPager
-	mockRecPager := &MockRecommendationsPager{}
-	client.SetRecommendationsPager(mockRecPager)
-	assert.Equal(t, mockRecPager, client.recommendationsPager)
-
 	// Test SetReservationsPager
 	mockResPager := &MockReservationsDetailsPager{}
 	client.SetReservationsPager(mockResPager)
@@ -816,47 +791,6 @@ func TestCacheClient_GetCommonSKUs(t *testing.T) {
 	assert.Contains(t, skus, "Standard_C6")
 	assert.Contains(t, skus, "Premium_P1")
 	assert.Contains(t, skus, "Premium_P5")
-}
-
-// TestCacheClient_CachedSKULookup_FetchedOnce pins the perf invariant:
-// many converter calls in the same GetRecommendations run trigger
-// exactly ONE catalog fetch. The mock pager counts pages served; the
-// assertion verifies the count stays at 1 after multiple lookups.
-func TestCacheClient_CachedSKULookup_FetchedOnce(t *testing.T) {
-	t.Parallel()
-	client := NewClient(nil, "test-subscription", "eastus")
-
-	premiumName := armredis.SKUNamePremium
-	familyP := armredis.SKUFamilyP
-	capacity := int32(1)
-	shardCount := int32(2)
-
-	mockPager := &MockRedisCachesPager{
-		pages: []armredis.ClientListBySubscriptionResponse{
-			{
-				ListResult: armredis.ListResult{
-					Value: []*armredis.ResourceInfo{
-						{
-							Properties: &armredis.Properties{
-								SKU: &armredis.SKU{
-									Name:     &premiumName,
-									Family:   &familyP,
-									Capacity: &capacity,
-								},
-								ShardCount: &shardCount,
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	client.SetRedisCachesPager(mockPager)
-
-	for i := 0; i < 10; i++ {
-		_, _ = client.cachedSKULookup(context.Background(), "Premium_P1")
-	}
-	assert.Equal(t, 1, mockPager.index, "catalog must be fetched ONCE regardless of lookup count")
 }
 
 // Test the to package is properly imported (used in tests).

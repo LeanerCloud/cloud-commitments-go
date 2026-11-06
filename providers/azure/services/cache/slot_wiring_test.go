@@ -50,9 +50,6 @@ func TestSlotHeldDuringCalls(t *testing.T) {
 		{"valid resource types", func(ctx context.Context, p *slottest.Probe) {
 			_, _ = (&Client{redisCachesPager: &slotPager[armredis.ClientListBySubscriptionResponse]{p: p}}).GetValidResourceTypes(ctx)
 		}},
-		{"sku catalog", func(ctx context.Context, p *slottest.Probe) {
-			(&Client{region: "eastus", redisCachesPager: &slotPager[armredis.ClientListBySubscriptionResponse]{p: p}}).fetchSKUCatalogue(ctx)
-		}},
 		{"retail pricing", func(ctx context.Context, p *slottest.Probe) {
 			_, _ = (&Client{httpClient: slotHTTP{p}}).getRedisPricing(ctx, "Premium_P1", "eastus", 1)
 		}},

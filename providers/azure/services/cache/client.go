@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -16,10 +15,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
-	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/httpclient"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/pricing"
-	azrecs "github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/recommendations"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/slot"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
 )
@@ -30,25 +27,9 @@ const maxReservationsPages = 50
 // maxCachesPages caps Redis cache list pagination.
 const maxCachesPages = 20
 
-// redisSKUEntry holds the SKU-catalog-derived fields the converter
-// wants for each Redis SKU. Sourced from the cache's Properties:
-//   - shardCount: Properties.ShardCount (Premium-tier clustered caches).
-//
-// Non-clustered caches return shardCount=0; the converter treats 0 as
-// "unknown" and leaves CacheDetails.Shards at its zero value.
-type redisSKUEntry struct {
-	shardCount int
-}
-
 // HTTPClient interface for HTTP operations (enables mocking).
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
-}
-
-// RecommendationsPager interface for recommendations pager (enables mocking).
-type RecommendationsPager interface {
-	More() bool
-	NextPage(ctx context.Context) (armconsumption.ReservationRecommendationsClientListResponse, error)
 }
 
 // ReservationsDetailsPager interface for reservations details pager (enables mocking).
@@ -65,32 +46,13 @@ type RedisCachesPager interface {
 
 // Client handles Azure Cache for Redis Reserved Capacity.
 type Client struct {
-	cred                 azcore.TokenCredential
-	httpClient           HTTPClient
-	recommendationsPager RecommendationsPager
-	reservationsPager    ReservationsDetailsPager
-	redisCachesPager     RedisCachesPager
-
-	// Lazy SKU catalog cache. armredis exposes no per-region "list all
-	// possible SKUs" surface, so we derive shard counts from the existing
-	// caches in the subscription (NewListBySubscriptionPager). Fetched
-	// ONCE per client lifetime; subsequent converter calls in the same
-	// GetRecommendations run hit the in-memory map. A failed fetch leaves
-	// skuCacheMap nil and converters fall back to Shards=0 with a WARN
-	// log — the conversion itself does NOT fail.
-	skuCacheMap map[string]redisSKUEntry
+	cred              azcore.TokenCredential
+	httpClient        HTTPClient
+	reservationsPager ReservationsDetailsPager
+	redisCachesPager  RedisCachesPager
 
 	subscriptionID string
 	region         string
-
-	// Lazy SKU catalog cache. armredis exposes no per-region "list all
-	// possible SKUs" surface, so we derive shard counts from the existing
-	// caches in the subscription (NewListBySubscriptionPager). Fetched
-	// ONCE per client lifetime; subsequent converter calls in the same
-	// GetRecommendations run hit the in-memory map. A failed fetch leaves
-	// skuCacheMap nil and converters fall back to Shards=0 with a WARN
-	// log — the conversion itself does NOT fail.
-	skuCacheOnce sync.Once
 }
 
 // NewClient creates a new Azure Cache client.
@@ -118,11 +80,6 @@ func NewClientWithHTTP(cred azcore.TokenCredential, subscriptionID, region strin
 		region:         region,
 		httpClient:     httpClient,
 	}
-}
-
-// SetRecommendationsPager sets the recommendations pager (for testing).
-func (c *Client) SetRecommendationsPager(pager RecommendationsPager) {
-	c.recommendationsPager = pager
 }
 
 // SetReservationsPager sets the reservations pager (for testing).
@@ -492,15 +449,6 @@ type RedisPricing struct {
 	ReservationPrice float64
 }
 
-// ReservationUnitPrice returns the Retail Prices reservation total and currency for one unit of sku in region over termYears.
-func (c *Client) ReservationUnitPrice(ctx context.Context, sku, region string, termYears int) (azrecs.ReservationPrice, error) {
-	p, err := c.getRedisPricing(ctx, sku, region, termYears)
-	if err != nil {
-		return azrecs.ReservationPrice{}, err
-	}
-	return azrecs.ReservationPrice{Total: p.ReservationPrice, Currency: p.Currency}, nil
-}
-
 func (c *Client) getRedisPricing(ctx context.Context, sku, region string, termYears int) (*RedisPricing, error) {
 	identity, err := pricing.ParseRedisIdentity(sku)
 	if err != nil {
@@ -540,82 +488,4 @@ func (c *Client) getRedisPricing(ctx context.Context, sku, region string, termYe
 		ReservationPrice: selected.RetailPrice,
 		Currency:         selected.CurrencyCode,
 	}, nil
-}
-
-// cachedSKULookup returns the SKU catalog entry for skuName, fetching
-// the catalog lazily on first call. The catalog is fetched ONCE per
-// client lifetime via armredis.Client.NewListBySubscriptionPager;
-// subsequent calls are O(1) map lookups. ok=false on cache miss OR
-// catalog-fetch failure — the caller falls back to Shards=0 rather
-// than failing the whole conversion.
-//
-// Why source from existing caches: armredis exposes no "list all
-// possible SKUs" endpoint. The catalog surface that does exist
-// (existing cache instances in the subscription) gives us authoritative
-// shard counts for the SKUs the customer actually uses, which is the
-// set the recommendation engine recommends from anyway.
-func (c *Client) cachedSKULookup(ctx context.Context, skuName string) (redisSKUEntry, bool) {
-	c.skuCacheOnce.Do(func() {
-		c.skuCacheMap = c.fetchSKUCatalogue(ctx)
-	})
-	if c.skuCacheMap == nil {
-		return redisSKUEntry{}, false
-	}
-	entry, ok := c.skuCacheMap[skuName]
-	return entry, ok
-}
-
-// fetchSKUCatalogue performs the single ListBySubscription walk and
-// reduces the response into a name->redisSKUEntry map keyed by the
-// "<Tier>_<Family><Capacity>" SKU naming convention (e.g. "Premium_P1")
-// that matches the recommendation engine's ResourceType output.
-//
-// Returns nil on error so the sync.Once-gated cache field stays nil and
-// cachedSKULookup falls back to the empty-Details path. The fetch error
-// is logged WARN once.
-func (c *Client) fetchSKUCatalogue(ctx context.Context) map[string]redisSKUEntry {
-	pager, err := c.createRedisCachesPager()
-	if err != nil {
-		logging.Warnf("azure cache: SKU catalog pager create failed for region %s: %v — Details.Shards left at 0", c.region, err)
-		return nil
-	}
-	out := make(map[string]redisSKUEntry)
-	for pageIdx := 0; pager.More(); pageIdx++ {
-		if ctx.Err() != nil {
-			return nil
-		}
-		if pageIdx >= maxCachesPages {
-			logging.Warnf("azure cache: SKU catalog pagination cap (%d pages) reached for region %s; partial cache (%d entries) discarded, Details.Shards left at 0", maxCachesPages, c.region, len(out))
-			return nil
-		}
-		page, err := slot.NextPage(ctx, pager)
-		if err != nil {
-			logging.Warnf("azure cache: SKU catalog page fetch failed for region %s: %v — partial cache (%d entries) discarded, Details.Shards left at 0", c.region, err, len(out))
-			return nil
-		}
-		addSKUEntries(out, page.Value)
-	}
-	return out
-}
-
-// addSKUEntries records each cache's SKU and shard count in out.
-func addSKUEntries(out map[string]redisSKUEntry, caches []*armredis.ResourceInfo) {
-	for _, cache := range caches {
-		fullSKU := extractSKUFromCache(cache)
-		if fullSKU == "" {
-			continue
-		}
-		shards := 0
-		if cache.Properties != nil && cache.Properties.ShardCount != nil {
-			shards = int(*cache.Properties.ShardCount)
-		}
-		// First-write-wins: if the same SKU appears on two caches
-		// with different ShardCounts, keep the first. Real Premium
-		// clusters configured to the same SKU typically share the
-		// shard count anyway — this just keeps the cache
-		// deterministic regardless of pager order.
-		if _, exists := out[fullSKU]; !exists {
-			out[fullSKU] = redisSKUEntry{shardCount: shards}
-		}
-	}
 }
