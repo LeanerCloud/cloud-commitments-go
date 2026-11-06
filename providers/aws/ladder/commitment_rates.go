@@ -38,10 +38,15 @@ func (a *AWSLadder) GetCommitmentRates(ctx context.Context, scope ladder.Scope, 
 	if a.spRates == nil {
 		return nil, errors.New("GetCommitmentRates: Savings Plan rate source not wired")
 	}
-	// Compute SP stays absent until the owner decides (#349). Its account-wide
-	// blend over EC2+Lambda+Fargate biases sizing of a regional EC2-only gap.
+	// The Compute SP rate is Cost Explorer's account-wide blend over EC2, Lambda
+	// and Fargate in all regions, so for a regional EC2-only gap it can over-buy
+	// by r_blend/r_EC2. Accepted by the owner (#349, option A). Here only
+	// MaxHourlyCommitPerRun bounds it, and only when set; the platform plans a
+	// required per-sweep cap (cloud-commitments-platform#70). Region is required
+	// by the source, not a filter.
 	layers := []rateLayer{
 		{layer: ladder.LayerEC2InstanceSP, plan: types.SupportedSavingsPlansTypeEc2InstanceSp, region: a.cfg.Region},
+		{layer: ladder.LayerComputeSP, plan: types.SupportedSavingsPlansTypeComputeSp, region: a.cfg.Region},
 	}
 	return fetchLayerRates(ctx, a.spRates, layers, recommendations.SPCommitmentRateParams{
 		AccountID: a.cfg.AccountID,
