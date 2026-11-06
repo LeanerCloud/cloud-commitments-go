@@ -33,7 +33,7 @@ var ErrCurrencyNotAccepted = errors.New("currency not accepted")
 // provider but whose result is not known: the commitment may already exist.
 // Services whose purchase API has no idempotency token or caller-chosen ID
 // (AWS EC2, Redshift) must not be re-sent automatically after such an error;
-// reconcile against the provider first. Detect it with
+// reconcile against the provider first (see provider.PurchaseReconciler). Detect it with
 // errors.Is(err, ErrOutcomeUnknown). Consumers such as the platform persist
 // errors as strings, so the text "purchase outcome unknown" is effectively a
 // contract until the platform persists a typed flag (platform #778).
