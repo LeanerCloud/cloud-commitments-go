@@ -43,9 +43,19 @@ func UnknownResult(reason string) common.ReconcileResult {
 // Decide is the single fail-closed rule for both services: Found only for exactly one match and no
 // uncertain candidate.
 func Decide(matches, uncertain, criteria []string, tagged bool) common.ReconcileResult {
-	if len(uncertain) > 0 {
+	// A match without an ID cannot be reported as Found, so it counts as uncertain.
+	var ids []string
+	blank := false
+	for _, id := range append(append([]string{}, matches...), uncertain...) {
+		if id == "" {
+			blank = true
+			continue
+		}
+		ids = append(ids, id)
+	}
+	if blank || len(uncertain) > 0 {
 		res := UnknownResult(ReasonUncertainCandidate)
-		res.CandidateIDs = append(append([]string{}, matches...), uncertain...)
+		res.CandidateIDs = ids
 		return res
 	}
 	switch len(matches) {

@@ -88,6 +88,8 @@ func TestDecide(t *testing.T) {
 		{"1 match 0 uncertain", []string{"m1"}, nil, false, common.ReconcileFound, "m1", "", nil},
 		{"1 match 0 uncertain tagged", []string{"m1"}, nil, true, common.ReconcileFound, "m1", "", nil},
 		{"1 match 1 uncertain", []string{"m1"}, []string{"u1"}, false, common.ReconcileUnknown, "", ReasonUncertainCandidate, []string{"m1", "u1"}},
+		{"1 empty-id match", []string{""}, nil, false, common.ReconcileUnknown, "", ReasonUncertainCandidate, nil},
+		{"2 match one empty id", []string{"m1", ""}, nil, false, common.ReconcileUnknown, "", ReasonUncertainCandidate, []string{"m1"}},
 		{"2 match 0 uncertain", []string{"m1", "m2"}, nil, false, common.ReconcileUnknown, "", ReasonAmbiguous, []string{"m1", "m2"}},
 		{"2 match 1 uncertain", []string{"m1", "m2"}, []string{"u1"}, false, common.ReconcileUnknown, "", ReasonUncertainCandidate, []string{"m1", "m2", "u1"}},
 	}
