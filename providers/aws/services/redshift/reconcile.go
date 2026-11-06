@@ -23,7 +23,8 @@ func (c *Client) reconcileParams(req common.ReconcileRequest) (count int32, mont
 	rec := req.Recommendation
 	count, countErr := offeringprice.PurchaseCount(rec.Count)
 	months, termErr := requiredMonthsForTerm(rec.Term)
-	if rec.Region != c.region || countErr != nil || termErr != nil {
+	if rec.Region != c.region || countErr != nil || termErr != nil ||
+		rec.ResourceType == "" || !supportedPaymentOption(rec.PaymentOption) {
 		return 0, 0, lo, hi, purchasecfg.ReasonInvalidRequest
 	}
 	return count, months, lo, hi, ""
