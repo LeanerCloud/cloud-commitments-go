@@ -30,6 +30,9 @@ const (
 	recoverLookupTimeout = 30 * time.Second
 )
 
+// errScanCapReached marks an incomplete describeAllNodes scan, so callers can tell it from an API error.
+var errScanCapReached = errors.New("pagination cap reached")
+
 // errRequestedAtRequired refuses a tokenized purchase that cannot be matched.
 var errRequestedAtRequired = errors.New("RequestedAt is required with an idempotency token: Redshift reserved nodes cannot be tagged, so an earlier purchase is found by start time; refusing to purchase to avoid a possible double-buy")
 
@@ -83,7 +86,7 @@ func (c *Client) describeAllNodes(ctx context.Context) ([]redshifttypes.Reserved
 		}
 		marker = response.Marker
 	}
-	return nil, fmt.Errorf("pagination cap reached after %d pages for Redshift reserved-node dedupe lookup", maxReservedNodePages)
+	return nil, fmt.Errorf("%w after %d pages for Redshift reserved-node dedupe lookup", errScanCapReached, maxReservedNodePages)
 }
 
 func nodeMatches(node *redshifttypes.ReservedNode, offeringID string, count int, since time.Time) bool {
