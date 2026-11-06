@@ -28,9 +28,16 @@ type fakeSPRateSource struct {
 	params  []recommendations.SPCommitmentRateParams
 }
 
+// ec2Fake answers EC2 Instance SP with the given result and Compute SP with a
+// fixed usable rate of 0.8.
 func ec2Fake(rate float64, err error) *fakeSPRateSource {
+	return layersFake(fakeRateResult{rate, err}, fakeRateResult{rate: 0.8})
+}
+
+func layersFake(ec2, compute fakeRateResult) *fakeSPRateSource {
 	return &fakeSPRateSource{results: map[types.SupportedSavingsPlansType]fakeRateResult{
-		types.SupportedSavingsPlansTypeEc2InstanceSp: {rate, err},
+		types.SupportedSavingsPlansTypeEc2InstanceSp: ec2,
+		types.SupportedSavingsPlansTypeComputeSp:     compute,
 	}}
 }
 
@@ -85,22 +92,40 @@ func TestGetCommitmentRates_ValidatesBeforeSource(t *testing.T) {
 
 func TestGetCommitmentRates_ForwardsSelection(t *testing.T) {
 	t.Parallel()
-	for _, days := range []int{0, 7, 60} {
-		t.Run(fmt.Sprint(days), func(t *testing.T) {
-			f := ec2Fake(0.7, nil)
-			a := &AWSLadder{cfg: Config{Region: "eu-west-1", AccountID: testScope().AccountID, LookbackDays: days}, spRates: f}
-			rates, err := a.GetCommitmentRates(context.Background(), testScope(), ladder.Term3Year, ladder.PaymentPartialUpfront)
-			require.NoError(t, err)
-			assert.Equal(t, map[ladder.LayerType]float64{ladder.LayerEC2InstanceSP: 0.7}, rates)
-			if days == 0 {
-				days = DefaultLookbackDays
-			}
-			assert.Equal(t, []recommendations.SPCommitmentRateParams{{
-				PlanType:  types.SupportedSavingsPlansTypeEc2InstanceSp,
-				AccountID: testScope().AccountID, Region: "eu-west-1",
-				Term: "3yr", PaymentOption: "partial-upfront", LookbackPeriod: fmt.Sprintf("%dd", days),
-			}}, f.params)
-		})
+	// Every requested term and payment must reach Cost Explorer as is, for both
+	// layers: a 1yr no-upfront ladder sized at a 3yr rate would over-buy.
+	selections := []struct {
+		term    ladder.Term
+		payment ladder.PaymentOption
+		wantT   string
+		wantP   string
+	}{
+		{ladder.Term1Year, ladder.PaymentNoUpfront, "1yr", "no-upfront"},
+		{ladder.Term3Year, ladder.PaymentAllUpfront, "3yr", "all-upfront"},
+		{ladder.Term3Year, ladder.PaymentPartialUpfront, "3yr", "partial-upfront"},
+	}
+	for _, sel := range selections {
+		for _, days := range []int{0, 7, 60} {
+			t.Run(fmt.Sprintf("%s/%s/%d", sel.wantT, sel.wantP, days), func(t *testing.T) {
+				f := ec2Fake(0.7, nil)
+				a := &AWSLadder{cfg: Config{Region: "eu-west-1", AccountID: testScope().AccountID, LookbackDays: days}, spRates: f}
+				rates, err := a.GetCommitmentRates(context.Background(), testScope(), sel.term, sel.payment)
+				require.NoError(t, err)
+				assert.Equal(t, map[ladder.LayerType]float64{ladder.LayerEC2InstanceSP: 0.7, ladder.LayerComputeSP: 0.8}, rates)
+				wantDays := days
+				if wantDays == 0 {
+					wantDays = DefaultLookbackDays
+				}
+				base := recommendations.SPCommitmentRateParams{
+					AccountID: testScope().AccountID, Region: "eu-west-1",
+					Term: sel.wantT, PaymentOption: sel.wantP, LookbackPeriod: fmt.Sprintf("%dd", wantDays),
+				}
+				ec2, compute := base, base
+				ec2.PlanType = types.SupportedSavingsPlansTypeEc2InstanceSp
+				compute.PlanType = types.SupportedSavingsPlansTypeComputeSp
+				assert.Equal(t, []recommendations.SPCommitmentRateParams{ec2, compute}, f.params)
+			})
+		}
 	}
 }
 
@@ -113,7 +138,7 @@ func TestGetCommitmentRates_AbsenceAndErrors(t *testing.T) {
 		want   error
 	}{
 		{"unwired", nil, nil},
-		{"absent", ec2Fake(0, fmt.Errorf("wrapped: %w", recommendations.ErrNoSPCommitmentRate)), nil},
+		{"absent", layersFake(fakeRateResult{err: fmt.Errorf("wrapped: %w", recommendations.ErrNoSPCommitmentRate)}, fakeRateResult{err: recommendations.ErrNoSPCommitmentRate}), nil},
 		{"hard", ec2Fake(0, hard), hard},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -154,6 +179,39 @@ func TestGetCommitmentRates_HardErrorNamesLayer(t *testing.T) {
 	_, err := a.GetCommitmentRates(context.Background(), testScope(), ladder.Term1Year, ladder.PaymentNoUpfront)
 	require.ErrorIs(t, err, hard)
 	assert.ErrorContains(t, err, string(ladder.LayerEC2InstanceSP))
+}
+
+func TestGetCommitmentRates_ComputeLayer(t *testing.T) {
+	t.Parallel()
+	missing := fmt.Errorf("none: %w", recommendations.ErrNoSPCommitmentRate)
+	hard := errors.New("source failed")
+	ec2, compute := fakeRateResult{rate: 0.7}, fakeRateResult{rate: 0.8}
+	for _, tc := range []struct {
+		name    string
+		ec2     fakeRateResult
+		compute fakeRateResult
+		want    map[ladder.LayerType]float64
+		wantErr error
+	}{
+		{"both", ec2, compute, map[ladder.LayerType]float64{ladder.LayerEC2InstanceSP: 0.7, ladder.LayerComputeSP: 0.8}, nil},
+		{"ec2 missing", fakeRateResult{err: missing}, compute, map[ladder.LayerType]float64{ladder.LayerComputeSP: 0.8}, nil},
+		{"compute missing", ec2, fakeRateResult{err: missing}, map[ladder.LayerType]float64{ladder.LayerEC2InstanceSP: 0.7}, nil},
+		{"compute hard", ec2, fakeRateResult{err: hard}, nil, hard},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := layersFake(tc.ec2, tc.compute)
+			a := &AWSLadder{cfg: Config{Region: "eu-west-1", AccountID: testScope().AccountID}, spRates: f}
+			got, err := a.GetCommitmentRates(context.Background(), testScope(), ladder.Term1Year, ladder.PaymentNoUpfront)
+			if tc.wantErr != nil {
+				require.ErrorIs(t, err, tc.wantErr)
+				assert.ErrorContains(t, err, string(ladder.LayerComputeSP))
+				assert.Nil(t, got)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
+		})
+	}
 }
 
 func TestFetchLayerRates_LayersAreIndependent(t *testing.T) {
