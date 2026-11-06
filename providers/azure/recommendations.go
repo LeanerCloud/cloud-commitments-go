@@ -651,6 +651,9 @@ func (r *RecommendationsClientAdapter) convertAdvisorRecommendation(ctx context.
 		azrecs.RecordSkip(ctx, "advisor", fmt.Errorf("%s recommendation in %q: %w", service, rec.Region, err))
 		return nil
 	}
+	if rec.Service == common.ServiceMemoryDB && rec.Details == nil {
+		rec.Details = managedredis.Details(rec.ResourceType)
+	}
 	return rec
 }
 
