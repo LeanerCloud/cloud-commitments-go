@@ -142,13 +142,7 @@ type AzureRetailPrice = pricing.Page[pricing.RetailPriceItem]
 // GetRecommendations gets Redis Cache reservation recommendations from the Azure Consumption API.
 func (c *Client) GetRecommendations(ctx context.Context, _ *common.RecommendationParams) ([]common.Recommendation, error) {
 	recs := make([]common.Recommendation, 0)
-	pricer := recommendations.NewPricer("managedredis", func(ctx context.Context, sku, region string, termYears int) (recommendations.ReservationPrice, error) {
-		p, err := c.getRedisPricing(ctx, sku, region, termYears)
-		if err != nil {
-			return recommendations.ReservationPrice{}, err
-		}
-		return recommendations.ReservationPrice{Total: p.ReservationPrice, Currency: p.Currency}, nil
-	})
+	pricer := recommendations.NewPricer("managedredis", c.ReservationUnitPrice)
 
 	var pager RecommendationsPager
 	if c.recommendationsPager != nil {
