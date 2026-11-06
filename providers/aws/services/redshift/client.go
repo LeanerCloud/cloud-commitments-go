@@ -125,6 +125,12 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 // The tokenized path relies on the caller contract documented on
 // findMatchingNodes: no concurrent same-spec purchase for the account and region.
 //
+// With an IdempotencyToken and PurchaseOptions.AttemptJournal (go#107) the
+// attempt is also recorded: sending before the call, then purchased or
+// outcome_unknown. A node recorded as purchased by an earlier attempt is adopted
+// without the window, and an unresolved earlier attempt that the window cannot
+// resolve refuses. The window dedupe alone applies when no journal is set.
+//
 // Reserved nodes cannot be tagged, so the purchased node is not tagged.
 func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
 	result := common.PurchaseResult{
@@ -148,16 +154,13 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		return result, result.Error
 	}
 
-	if opts.IdempotencyToken != "" {
-		if done := c.guardAgainstRepurchase(ctx, &result, offeringID, rec.Count, opts); done {
-			return result, result.Error
-		}
+	if done := c.guardBeforePurchase(ctx, &result, offeringID, rec.Count, opts); done {
+		return result, result.Error
 	}
 
 	// After the dedupe: a re-drive that already bought must not be refused for a
 	// later price rise (ec2/client.go does the same).
-	if err = c.checkApprovedUpfront(ctx, rec, offeringID); err != nil {
-		result.Error = fmt.Errorf("%w: %w", common.ErrRefusedBeforePurchase, err)
+	if !c.readyToSend(ctx, &result, rec, offeringID, opts) {
 		return result, result.Error
 	}
 
@@ -169,6 +172,9 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	// A single attempt: the API has no ClientToken or caller ID, so an SDK retry
 	// after a lost response would buy a second node (MON-02).
 	response, err := c.client.PurchaseReservedNodeOffering(ctx, input, func(o *redshift.Options) { o.RetryMaxAttempts = 1 })
+	if journalActive(opts) {
+		return c.finishJournaled(ctx, result, response, err, offeringID, rec.Count, opts)
+	}
 	if err != nil {
 		result.Error = fmt.Errorf("failed to purchase Redshift Reserved Node: %w", purchasecfg.ClassifyPurchaseError(err))
 		if c.adoptAfterUnknownOutcome(ctx, &result, offeringID, rec.Count, opts) {
@@ -191,6 +197,17 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	}
 
 	return result, nil
+}
+
+// readyToSend runs the last pre-send checks: the approved-upfront guard, then
+// the attempt record on the journal path. It reports false, with the refusal in
+// result.Error, when the purchase must not be sent.
+func (c *Client) readyToSend(ctx context.Context, result *common.PurchaseResult, rec common.Recommendation, offeringID string, opts common.PurchaseOptions) bool {
+	if err := c.checkApprovedUpfront(ctx, rec, offeringID); err != nil {
+		result.Error = fmt.Errorf("%w: %w", common.ErrRefusedBeforePurchase, err)
+		return false
+	}
+	return c.recordSending(ctx, result, offeringID, opts)
 }
 
 // reservedNodeTotal is the reservation's upfront total: FixedPrice is per node,
