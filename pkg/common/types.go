@@ -476,6 +476,13 @@ type PurchaseOptions struct {
 	// no owning execution and leaves it empty.
 	ExecutionID string
 
+	// AttemptJournal, when non-nil, durably records purchase attempts per
+	// IdempotencyToken (go#107). Nil means no journal (today's behavior).
+	// Only Redshift reads it, honored by providers/aws from the follow-up
+	// change onward; other providers ignore it. Used only with a non-empty
+	// IdempotencyToken; see AttemptJournal for the caller contract.
+	AttemptJournal AttemptJournal
+
 	// OfferingClass is the EC2 Reserved Instance offering class for this
 	// purchase: "convertible" (exchangeable) or "standard" (locked, ~5%
 	// cheaper). Empty means the caller has not set one; the EC2 client
@@ -560,6 +567,11 @@ type Commitment struct {
 
 	Count int     `json:"count"`
 	Cost  float64 `json:"cost"`
+	// CostKnown reports whether Cost holds a price the provider reported. The zero
+	// value means unknown, so a Cost of 0 on a commitment that did not set
+	// CostKnown must not be read as free. Set it true only where the amount was
+	// read from the provider (a real 0 included).
+	CostKnown bool `json:"cost_known"`
 
 	// StartDateIsDay marks StartDate as a UTC calendar date. The zero value
 	// means StartDate is a precise timestamp; true means the real instant
