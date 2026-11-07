@@ -6,6 +6,10 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/sql/armsql"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations/reservationstest"
 )
 
 // countingMIPager and countingServersPager report More() until limit pages
@@ -177,4 +181,59 @@ func TestHasRegularServers_ExactlyCapPagesWithPartialLastPageSucceeds(t *testing
 	assert.True(t, found)
 	assert.True(t, complete)
 	assert.Equal(t, maxSQLListPages, pager.calls)
+}
+
+func TestGetExistingCommitments_PageCapReturnsError(t *testing.T) {
+	t.Parallel()
+	pager := &reservationstest.CountingPager{Limit: 1000}
+	client, _, _ := inventoryClient()
+	client.SetInventoryFactories(factoriesFor(func() reservations.OrderReservationsPager { return pager }))
+
+	_, err := client.GetExistingCommitments(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "pagination cap")
+	assert.Equal(t, maxReservationsPages, pager.Calls)
+}
+
+func TestGetExistingCommitments_CancelledContextReturnsContextError(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	pager := &reservationstest.CountingPager{Limit: 1000}
+	client, _, _ := inventoryClient()
+	client.SetInventoryFactories(factoriesFor(func() reservations.OrderReservationsPager { return pager }))
+
+	_, err := client.GetExistingCommitments(ctx)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Zero(t, pager.Calls)
+}
+
+func TestGetExistingCommitments_CapIsExact(t *testing.T) {
+	t.Parallel()
+	atCap := &reservationstest.CountingPager{Limit: maxReservationsPages}
+	client, _, _ := inventoryClient()
+	client.SetInventoryFactories(factoriesFor(func() reservations.OrderReservationsPager { return atCap }))
+	_, err := client.GetExistingCommitments(context.Background())
+	require.NoError(t, err, "exactly cap pages must succeed")
+	assert.Equal(t, maxReservationsPages, atCap.Calls)
+
+	overCap := &reservationstest.CountingPager{Limit: maxReservationsPages + 1}
+	client, _, _ = inventoryClient()
+	client.SetInventoryFactories(factoriesFor(func() reservations.OrderReservationsPager { return overCap }))
+	_, err = client.GetExistingCommitments(context.Background())
+	require.Error(t, err)
+	assert.Equal(t, maxReservationsPages, overCap.Calls)
+}
+
+func TestGetExistingCommitments_CancelMidWalkReturnsContextError(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	pager := &reservationstest.CancelOnSecondCallPager{Cancel: cancel}
+	client, _, _ := inventoryClient()
+	client.SetInventoryFactories(factoriesFor(func() reservations.OrderReservationsPager { return pager }))
+
+	_, err := client.GetExistingCommitments(ctx)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, 2, pager.Calls)
 }

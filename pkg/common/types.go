@@ -538,12 +538,12 @@ const (
 
 // Commitment represents an existing commitment (RI/SP/CUD/etc).
 //
-// Deployment is RDS-specific (Multi-AZ vs Single-AZ); it stays empty for
-// services that don't have a deployment dimension (EC2, ElastiCache,
-// etc). When populated, it carries the same vocabulary as
-// DatabaseDetails.AZConfig on Recommendation ("single-az" / "multi-az")
-// so pool-key matching can collapse both sides via normaliseDeployment
-// in the recommendations package. Without this field, RDS expiry
+// Deployment is set for AWS RDS and Azure SQL Database and stays empty for
+// services without a deployment dimension (EC2, ElastiCache, etc). When
+// populated, it carries the same vocabulary as DatabaseDetails.AZConfig on
+// Recommendation ("single-az" / "multi-az" on AWS, "zoneRedundant" / "none"
+// on Azure) so pool-key matching can collapse both sides via
+// normaliseDeployment in the recommendations package. Without this field, RDS expiry
 // adjustments would silently miss because Recommendation lookup keys
 // are deployment-aware while commitment keys defaulted to empty.
 type Commitment struct {
@@ -557,7 +557,7 @@ type Commitment struct {
 	Region         string          `json:"region"`
 	ResourceType   string          `json:"resource_type"`
 	Engine         string          `json:"engine,omitempty"`     // Database engine for RDS/ElastiCache (e.g., "mysql", "aurora-postgresql")
-	Deployment     string          `json:"deployment,omitempty"` // RDS Multi-AZ vs Single-AZ; empty for non-RDS
+	Deployment     string          `json:"deployment,omitempty"` // RDS Multi-AZ vs Single-AZ, Azure SQL zone redundancy; empty otherwise
 	State          CommitmentState `json:"state"`
 
 	// EC2 reserved-instance dimensions. Empty means unknown or a wildcard.

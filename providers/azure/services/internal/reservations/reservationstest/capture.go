@@ -1,5 +1,6 @@
 // Package reservationstest provides a fake ARM transport for asserting the
-// purchase request bodies the Azure service clients send.
+// purchase request bodies the Azure service clients send, and fakes for the
+// reservation inventory path (live rows, applied lister, order pager).
 package reservationstest
 
 import (
