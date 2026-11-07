@@ -836,6 +836,11 @@ type ConvertibleRI struct {
 	RecurringHourlyAmount float64 `json:"recurring_hourly_amount,omitempty"`
 
 	InstanceCount int32 `json:"instance_count"`
+
+	// PriceReported is true only when EC2 reported FixedPrice and a recurring
+	// price (UsagePrice or a RecurringCharges amount). The float fields cannot
+	// tell "not reported" from a real 0. The zero value means unknown.
+	PriceReported bool `json:"-"`
 }
 
 // ListConvertibleReservedInstances returns all active convertible RIs in the region.
@@ -865,7 +870,11 @@ func (c *Client) ListConvertibleReservedInstances(ctx context.Context) ([]Conver
 		normFactor := normalizationFactorForInstanceType(instanceType)
 
 		var recurringHourly float64
+		recurringReported := ri.UsagePrice != nil
 		for _, rc := range ri.RecurringCharges {
+			if rc.Amount != nil {
+				recurringReported = true
+			}
 			recurringHourly += aws.ToFloat64(rc.Amount)
 		}
 		result = append(result, ConvertibleRI{
@@ -886,6 +895,7 @@ func (c *Client) ListConvertibleReservedInstances(ctx context.Context) ([]Conver
 			Duration:              aws.ToInt64(ri.Duration),
 			CurrencyCode:          string(ri.CurrencyCode),
 			RecurringHourlyAmount: recurringHourly,
+			PriceReported:         ri.FixedPrice != nil && recurringReported,
 		})
 	}
 

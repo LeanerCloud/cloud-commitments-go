@@ -75,8 +75,9 @@ func (a *AWSLadder) listRICommitments(ctx context.Context) ([]common.Commitment,
 // by InstanceCount. See riHourlyCost for the formula and semantics (matches the
 // repo's canonical monthlyCostFromConvertibleRI in internal/api/handler_ri_exchange.go).
 //
-// CostKnown requires a Duration: riHourlyCost skips upfront amortization without
-// one, so the total would be incomplete.
+// CostKnown requires the price to be reported by EC2 (PriceReported) and, when
+// there is an upfront part, a Duration: riHourlyCost skips upfront amortization
+// without one, so the total would be incomplete.
 func riToCommitment(ri *ec2svc.ConvertibleRI, accountID, region string) common.Commitment {
 	totalHourlyCost := riHourlyCost(ri)
 
@@ -93,7 +94,7 @@ func riToCommitment(ri *ec2svc.ConvertibleRI, accountID, region string) common.C
 		StartDate:      ri.Start,
 		EndDate:        ri.End,
 		Cost:           totalHourlyCost,
-		CostKnown:      ri.Duration > 0,
+		CostKnown:      ri.PriceReported && (ri.FixedPrice == 0 || ri.Duration > 0),
 	}
 }
 
