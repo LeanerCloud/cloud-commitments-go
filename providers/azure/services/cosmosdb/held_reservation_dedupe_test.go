@@ -57,11 +57,12 @@ func upfrontRec(t *testing.T, c *Client) common.Recommendation {
 }
 
 // purchasedRow buys rec through a capturing transport and builds the held
-// reservation from the request body CUDly actually sent.
-func purchasedRow(t *testing.T, rec common.Recommendation, qty int32) *armreservations.ReservationResponse {
+// reservation from the request body CUDly actually sent. region is the
+// recommending client's, so the location assertion can fail.
+func purchasedRow(t *testing.T, region string, rec common.Recommendation, qty int32) *armreservations.ReservationResponse {
 	t.Helper()
 	capture := &reservationstest.Capture{}
-	buyer := NewClientWithHTTP(&fake.TokenCredential{}, "sub", rec.Region, capture)
+	buyer := NewClientWithHTTP(&fake.TokenCredential{}, "sub", region, capture)
 	_, err := buyer.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
 	require.NoError(t, err)
 	var body struct {
@@ -91,7 +92,7 @@ func TestHeldReservation_PartialHoldReducesRecommendation(t *testing.T) {
 	t.Parallel()
 	c := NewClient(nil, "sub", "eastus")
 	upfront := upfrontRec(t, c)
-	c.SetInventoryFactories(factoriesRows(nil, purchasedRow(t, upfront, 1)))
+	c.SetInventoryFactories(factoriesRows(nil, purchasedRow(t, c.region, upfront, 1)))
 
 	passed, err := adjust(t, c, upfront)
 	require.NoError(t, err)
@@ -104,7 +105,7 @@ func TestHeldReservation_FullHoldFiltersRecommendation(t *testing.T) {
 	t.Parallel()
 	c := NewClient(nil, "sub", "eastus")
 	upfront := upfrontRec(t, c)
-	c.SetInventoryFactories(factoriesRows(nil, purchasedRow(t, upfront, 2)))
+	c.SetInventoryFactories(factoriesRows(nil, purchasedRow(t, c.region, upfront, 2)))
 
 	passed, err := adjust(t, c, upfront)
 	require.NoError(t, err)
@@ -143,7 +144,7 @@ func TestHeldReservation_Table(t *testing.T) {
 			t.Parallel()
 			c := NewClient(nil, "sub", "eastus")
 			upfront := upfrontRec(t, c)
-			row := purchasedRow(t, upfront, 1)
+			row := purchasedRow(t, c.region, upfront, 1)
 			tc.mutate(row)
 			c.SetInventoryFactories(factoriesRows(nil, row))
 			passed, err := adjust(t, c, upfront)
