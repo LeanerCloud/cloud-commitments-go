@@ -1,5 +1,5 @@
-github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261106184548-8d06fde536cf h1:uKewFUeWwrvgoBaFeZMepJXs+xsQdqTVRomAc6tYMX8=
-github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261106184548-8d06fde536cf/go.mod h1:l9V+ecJCfAigYr6XiK9kpIUemF9bnXOKHJN1s4TPsM0=
+github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261106235222-20c9dacb335f h1:+GzNJalL4vfbk1Lwcu2jIGvJxc7DKScfR2N94+uGbXk=
+github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261106235222-20c9dacb335f/go.mod h1:l9V+ecJCfAigYr6XiK9kpIUemF9bnXOKHJN1s4TPsM0=
 github.com/aws/aws-sdk-go-v2 v1.47.5 h1:5yA+A+BiXbDq1ZLbYwPViwhEGDMdR0MEhL8Jh2LnLS4=
 github.com/aws/aws-sdk-go-v2 v1.47.5/go.mod h1:iNIkogrRvFwm+1OQIUOP2lPBtlXZboOIUWiCa+pHEMw=
 github.com/aws/aws-sdk-go-v2/config v1.33.13 h1:u52x6ISQOx172tpwM0VRxhJzEsTJYpMcEYUGM2A1wrw=
