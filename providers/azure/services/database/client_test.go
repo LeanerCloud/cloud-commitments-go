@@ -754,6 +754,23 @@ func TestGetExistingCommitments_NilPropertiesFailsClosed(t *testing.T) {
 	assert.Zero(t, servers.CallCount)
 }
 
+// A cancellation during the enrichment walk must surface, not return
+// inventory stamped with a blank deployment.
+func TestGetExistingCommitments_CancelDuringEnrichmentWalk(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	c, _, servers := inventoryClient(sqlRow("res-1", "GP_Gen5_2", "eastus", 1))
+	c.SetManagedInstancesPager(&cancelAfterPagesMIPager{
+		MockSQLManagedInstancesPager: MockSQLManagedInstancesPager{pages: []armsql.ManagedInstancesClientListResponse{buildMIPage(true)}},
+		cancel:                       cancel,
+	})
+	servers.pages = []armsql.ServersClientListResponse{buildServerPage(1)}
+	commitments, err := c.GetExistingCommitments(ctx)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Nil(t, commitments)
+}
+
 func TestGetExistingCommitments_PagerError(t *testing.T) {
 	t.Parallel()
 	c, _, _ := inventoryClient()

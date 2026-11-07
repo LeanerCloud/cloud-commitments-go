@@ -292,6 +292,9 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 		return commitments, err
 	}
 	az := c.cachedDominantAZConfig(ctx)
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("database: enrich held reservations: %w", err)
+	}
 	for i := range commitments {
 		commitments[i].Engine = sqlServerEngine
 		commitments[i].Deployment = az
