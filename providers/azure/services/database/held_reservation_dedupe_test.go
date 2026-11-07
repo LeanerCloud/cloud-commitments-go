@@ -191,8 +191,10 @@ func TestHeldReservation_FleetShapes(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			c := fleetClient(tc.fleet...)
+			var failing *MockSQLManagedInstancesPager
 			if tc.miErr != nil {
-				c.SetManagedInstancesPager(&MockSQLManagedInstancesPager{err: tc.miErr})
+				failing = &MockSQLManagedInstancesPager{err: tc.miErr, pages: []armsql.ManagedInstancesClientListResponse{buildMIPage(true)}}
+				c.SetManagedInstancesPager(failing)
 			}
 			upfront := upfrontRec(t, c)
 			require.Equal(t, tc.az, common.DeploymentFromDetails(upfront.Details), "the rec key's deployment")
@@ -207,6 +209,9 @@ func TestHeldReservation_FleetShapes(t *testing.T) {
 			require.NoError(t, err)
 			require.Len(t, passed, 1)
 			assert.Equal(t, 1, passed[0].Count, "the hold must match the key whatever the fleet shape")
+			if failing != nil {
+				assert.Positive(t, failing.CallCount, "the failing walk must actually run")
+			}
 		})
 	}
 }
