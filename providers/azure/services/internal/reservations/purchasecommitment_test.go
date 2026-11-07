@@ -129,3 +129,12 @@ func TestBuildPurchaseBody_RegionMatchVariants(t *testing.T) {
 		assert.Contains(t, string(b), `"location":"eastus"`)
 	}
 }
+
+func TestBuildPurchaseBody_BothRegionsEmptyRefused(t *testing.T) {
+	t.Parallel()
+	rec := testRec
+	rec.Region = ""
+	_, err := BuildPurchaseBody(testParams, rec, common.PurchaseOptions{}, "", "sub1", armreservations.ReservationBillingPlanUpfront)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
+}

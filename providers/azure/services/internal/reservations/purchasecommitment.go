@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	azrecs "github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/recommendations"
 )
 
 // PurchaseParams holds what differs between the Azure service clients when
@@ -30,7 +30,7 @@ type PurchaseParams struct {
 // not match the client region: the body and pricing use the client region, so
 // a mismatch would buy in the wrong region (#704).
 func BuildPurchaseBody(p PurchaseParams, rec common.Recommendation, opts common.PurchaseOptions, region, subscriptionID string, plan armreservations.ReservationBillingPlan) ([]byte, error) {
-	if armRegionName(rec.Region) != armRegionName(region) || armRegionName(region) == "" {
+	if azrecs.ARMRegion(rec.Region) != azrecs.ARMRegion(region) || azrecs.ARMRegion(region) == "" {
 		return nil, fmt.Errorf("%w: recommendation region %q does not match client region %q",
 			common.ErrRefusedBeforePurchase, rec.Region, region)
 	}
@@ -60,12 +60,6 @@ func BuildPurchaseBody(p PurchaseParams, rec common.Recommendation, opts common.
 	}
 	ApplyPurchaseTags(body, opts.Source, opts.IdempotencyToken)
 	return json.Marshal(body)
-}
-
-// armRegionName maps a display region ("East US") or ARM name to the lowercase
-// space-free ARM form ("eastus").
-func armRegionName(s string) string {
-	return strings.ToLower(strings.Join(strings.Fields(s), ""))
 }
 
 // Submit fetches an ARM token and runs the idempotent two-step purchase. The
