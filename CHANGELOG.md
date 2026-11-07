@@ -38,6 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **`pkg`:** optional `common.ClaimReader` (`ClaimedByOthers(ctx, token, ids)`), which an `AttemptJournal` may implement so a provider can skip commitments another purchase recorded as bought (#700).
 - **`pkg`:** `common.Commitment.CostKnown` reports whether `Cost` holds a price the provider reported. The zero value means unknown, so a `Cost` of 0 without `CostKnown` must not be read as free. Producers set it in a follow-up (#74).
 
 - **`common`:** `AttemptJournal`, `AttemptRecord` and an optional `PurchaseOptions.AttemptJournal`, a caller-backed durable record of purchase attempts per idempotency token (#107). Nothing reads it yet.
