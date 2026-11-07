@@ -23,6 +23,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/mocks"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations/reservationstest"
 )
 
 // ---- credential mock -------------------------------------------------------
@@ -1332,4 +1333,33 @@ func TestNewClientWithHTTP_NilFallbackIsHardened(t *testing.T) {
 	}
 	require.Error(t, err, "nil-fallback client must reject IMDS connections")
 	assert.Contains(t, err.Error(), "blocked")
+}
+
+func TestSynapseClient_GetExistingCommitments_DoesNotInventRegionOrState(t *testing.T) {
+	t.Parallel()
+	for _, region := range []string{"eastus", "westeurope"} {
+		t.Run(region, func(t *testing.T) {
+			t.Parallel()
+			client := &Client{subscriptionID: "sub-123", region: region}
+			reservationID, skuName := "res-1", "DW1000c"
+			client.SetReservationsPager(&fakeReservationsPager{
+				pages: []armconsumption.ReservationsDetailsClientListResponse{{
+					ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{
+						Value: []*armconsumption.ReservationDetail{{
+							Properties: &armconsumption.ReservationDetailProperties{
+								ReservationID: &reservationID,
+								SKUName:       &skuName,
+							},
+						}},
+					},
+				}},
+			})
+
+			commitments, err := client.GetExistingCommitments(context.Background())
+
+			require.NoError(t, err)
+			require.Len(t, commitments, 1)
+			reservationstest.RequireUnknownInventory(t, commitments[0])
+		})
+	}
 }
