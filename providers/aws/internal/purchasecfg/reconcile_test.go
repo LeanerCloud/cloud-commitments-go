@@ -131,6 +131,7 @@ func TestReasonPhrasesAreDistinct(t *testing.T) {
 	phrases := []string{
 		ReasonInvalidWindow, ReasonInvalidRequest, ReasonLookupFailed, ReasonLookupIncomplete,
 		ReasonOfferingUnresolved, ReasonNoCandidate, ReasonAmbiguous, ReasonUncertainCandidate,
+		ReasonClaimLookupFailed,
 	}
 	seen := map[string]bool{}
 	for _, p := range phrases {
@@ -138,7 +139,7 @@ func TestReasonPhrasesAreDistinct(t *testing.T) {
 		assert.False(t, seen[p], "duplicate reason phrase %q", p)
 		seen[p] = true
 	}
-	assert.Len(t, seen, 8)
+	assert.Len(t, seen, 9)
 }
 
 func TestDecideCopiesCriteria(t *testing.T) {
