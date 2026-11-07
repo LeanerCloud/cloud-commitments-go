@@ -207,40 +207,6 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 		armreservations.ReservedResourceTypeSQLDataWarehouse, reservations.StrictLabels{Service: "synapse", Resource: "Synapse"})
 }
 
-// convertSynapseReservation converts a reservation detail to a Commitment if
-// it is a Synapse SQL Pool or Spark reservation. Identification relies on the
-// SKU name containing a Synapse-specific prefix ("DW" for Dedicated SQL Pools
-// or "SCU" for Spark Compute Units).
-func (c *Client) convertSynapseReservation(detail *armconsumption.ReservationDetail) *common.Commitment {
-	if detail == nil || detail.Properties == nil {
-		return nil
-	}
-	props := detail.Properties
-	if props.SKUName == nil {
-		return nil
-	}
-	skuLower := strings.ToLower(*props.SKUName)
-	if !strings.HasPrefix(skuLower, "dw") &&
-		!strings.HasPrefix(skuLower, "scu") &&
-		!strings.Contains(skuLower, "synapse") {
-		return nil
-	}
-
-	commitment := &common.Commitment{
-		Provider:       common.ProviderAzure,
-		Account:        c.subscriptionID,
-		CommitmentType: common.CommitmentReservedInstance,
-		Service:        common.ServiceDataWarehouse,
-		Region:         c.region,
-		State:          common.CommitmentStateActive,
-	}
-	if props.ReservationID != nil {
-		commitment.CommitmentID = *props.ReservationID
-	}
-	commitment.ResourceType = *props.SKUName
-	return commitment
-}
-
 // PurchaseCommitment purchases Synapse reserved capacity via the Azure
 // Reservations API two-step flow (calculatePrice -> purchase). The reserved
 // resource type is "SqlDataWarehouse" which covers Dedicated SQL Pool DWU reservations.
