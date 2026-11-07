@@ -1,6 +1,7 @@
 package reservations
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strings"
@@ -17,6 +18,28 @@ import (
 type StrictLabels struct {
 	Service  string
 	Resource string
+}
+
+// StrictCommitments lists the reservations applied to subscriptionID and
+// converts each with StrictCommitment, so any lister failure or incomplete
+// live row fails the whole inventory instead of yielding a partial one.
+func StrictCommitments(ctx context.Context, subscriptionID string, f InventoryFactories, maxPages int, service common.ServiceType, wantType armreservations.ReservedResourceType, labels StrictLabels) ([]common.Commitment, error) {
+	responses, err := ListAppliedReservations(ctx, subscriptionID, f, maxPages)
+	if err != nil {
+		return nil, fmt.Errorf("%s: list applied reservations: %w", labels.Service, err)
+	}
+	now := time.Now()
+	commitments := make([]common.Commitment, 0, len(responses))
+	for _, r := range responses {
+		commitment, err := StrictCommitment(r, subscriptionID, service, wantType, labels, now)
+		if err != nil {
+			return nil, err
+		}
+		if commitment != nil {
+			commitments = append(commitments, *commitment)
+		}
+	}
+	return commitments, nil
 }
 
 // StrictCommitment validates and converts one reservation, failing closed

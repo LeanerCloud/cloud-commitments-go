@@ -49,18 +49,12 @@ type RecommendationsPager interface {
 	NextPage(ctx context.Context) (armconsumption.ReservationRecommendationsClientListResponse, error)
 }
 
-// ReservationsDetailsPager interface for reservations details pager (enables mocking).
-type ReservationsDetailsPager interface {
-	More() bool
-	NextPage(ctx context.Context) (armconsumption.ReservationsDetailsClientListResponse, error)
-}
-
 // Client handles Azure Synapse Analytics Reserved Capacity.
 type Client struct {
 	cred                 azcore.TokenCredential
 	httpClient           HTTPClient
 	recommendationsPager RecommendationsPager
-	reservationsPager    ReservationsDetailsPager
+	inventoryFactories   *reservations.InventoryFactories
 	subscriptionID       string
 	region               string
 }
@@ -97,9 +91,18 @@ func (c *Client) SetRecommendationsPager(pager RecommendationsPager) {
 	c.recommendationsPager = pager
 }
 
-// SetReservationsPager sets the reservations pager (for testing).
-func (c *Client) SetReservationsPager(pager ReservationsDetailsPager) {
-	c.reservationsPager = pager
+// SetInventoryFactories injects reservation-inventory factories (for testing).
+func (c *Client) SetInventoryFactories(f *reservations.InventoryFactories) {
+	c.inventoryFactories = f
+}
+
+// factories returns the injected inventory factories, or the real SDK-backed
+// ones when none were injected (production only calls NewClient).
+func (c *Client) factories() reservations.InventoryFactories {
+	if c.inventoryFactories != nil {
+		return *c.inventoryFactories
+	}
+	return reservations.DefaultInventoryFactories(c.cred)
 }
 
 // GetServiceType returns the service type.
@@ -194,93 +197,19 @@ func (c *Client) appendRegionRecommendations(ctx context.Context, pricer *recomm
 	return recs, nil
 }
 
-// GetExistingCommitments retrieves existing Synapse reserved capacity
-// commitments from the Azure Consumption API.
+// GetExistingCommitments retrieves the Synapse reservations that apply to this
+// subscription from the Reservations API, which carries the purchase date,
+// quantity, location and lifecycle state the duplicate-purchase guard needs
+// (issue #705). Any failure or incomplete live row is returned as an error
+// rather than as an empty or partial inventory.
 func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
-	pager, err := c.createReservationsPager()
-	if err != nil {
-		return nil, fmt.Errorf("synapse: create reservations pager: %w", err)
-	}
-
-	return c.collectSynapseReservations(ctx, pager)
-}
-
-func (c *Client) createReservationsPager() (ReservationsDetailsPager, error) {
-	if c.reservationsPager != nil {
-		return c.reservationsPager, nil
-	}
-	client, err := armconsumption.NewReservationsDetailsClient(c.cred, nil)
-	if err != nil {
-		return nil, err
-	}
-	scope := fmt.Sprintf("subscriptions/%s", c.subscriptionID)
-	return client.NewListPager(scope, &armconsumption.ReservationsDetailsClientListOptions{}), nil
-}
-
-func (c *Client) collectSynapseReservations(ctx context.Context, pager ReservationsDetailsPager) ([]common.Commitment, error) {
-	commitments := make([]common.Commitment, 0)
-
-	for pageIdx := 0; pager.More(); pageIdx++ {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context canceled during pagination: %w", err)
-		}
-		if pageIdx >= maxReservationsPages {
-			return nil, fmt.Errorf("synapse: GetExistingCommitments pagination cap (%d pages) reached", maxReservationsPages)
-		}
-		page, err := slot.NextPage(ctx, pager)
-		if err != nil {
-			return nil, fmt.Errorf("synapse: list reservations: %w", err)
-		}
-		for _, detail := range page.Value {
-			if commitment := c.convertSynapseReservation(detail); commitment != nil {
-				commitments = append(commitments, *commitment)
-			}
-		}
-	}
-
-	// ReservationsDetails is a daily usage API: one row per reservation per
-	// usage day. Without this, a single reservation held for N days would
-	// surface as N commitments sharing one CommitmentID (issue #73).
-	return reservations.DedupeCommitmentsByID(commitments), nil
-}
-
-// convertSynapseReservation converts a reservation detail to a Commitment if
-// it is a Synapse SQL Pool or Spark reservation. Identification relies on the
-// SKU name containing a Synapse-specific prefix ("DW" for Dedicated SQL Pools
-// or "SCU" for Spark Compute Units).
-func (c *Client) convertSynapseReservation(detail *armconsumption.ReservationDetail) *common.Commitment {
-	if detail == nil || detail.Properties == nil {
-		return nil
-	}
-	props := detail.Properties
-	if props.SKUName == nil {
-		return nil
-	}
-	skuLower := strings.ToLower(*props.SKUName)
-	if !strings.HasPrefix(skuLower, "dw") &&
-		!strings.HasPrefix(skuLower, "scu") &&
-		!strings.Contains(skuLower, "synapse") {
-		return nil
-	}
-
-	commitment := &common.Commitment{
-		Provider:       common.ProviderAzure,
-		Account:        c.subscriptionID,
-		CommitmentType: common.CommitmentReservedInstance,
-		Service:        common.ServiceDataWarehouse,
-		Region:         c.region,
-		State:          common.CommitmentStateActive,
-	}
-	if props.ReservationID != nil {
-		commitment.CommitmentID = *props.ReservationID
-	}
-	commitment.ResourceType = *props.SKUName
-	return commitment
+	return reservations.StrictCommitments(ctx, c.subscriptionID, c.factories(), maxReservationsPages, common.ServiceDataWarehouse,
+		armreservations.ReservedResourceTypeSQLDataWarehouse, reservations.StrictLabels{Service: "synapse", Resource: "Synapse"})
 }
 
 // PurchaseCommitment purchases Synapse reserved capacity via the Azure
 // Reservations API two-step flow (calculatePrice -> purchase). The reserved
-// resource type is "SqlDW" which covers Dedicated SQL Pool DWU reservations.
+// resource type is "SqlDataWarehouse" which covers Dedicated SQL Pool DWU reservations.
 func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
 	result := common.PurchaseResult{
 		Recommendation: rec,

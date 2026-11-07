@@ -294,24 +294,8 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 		factories = *c.inventoryFactories
 	}
 
-	responses, err := reservations.ListAppliedReservations(ctx, c.subscriptionID, factories, maxReservationsPages)
-	if err != nil {
-		return nil, fmt.Errorf("compute: list applied reservations: %w", err)
-	}
-
-	now := time.Now()
-	commitments := make([]common.Commitment, 0, len(responses))
-	for _, r := range responses {
-		commitment, err := reservations.StrictCommitment(r, c.subscriptionID, common.ServiceCompute,
-			armreservations.ReservedResourceTypeVirtualMachines, reservations.StrictLabels{Service: "compute", Resource: "VM"}, now)
-		if err != nil {
-			return nil, err
-		}
-		if commitment != nil {
-			commitments = append(commitments, *commitment)
-		}
-	}
-	return commitments, nil
+	return reservations.StrictCommitments(ctx, c.subscriptionID, factories, maxReservationsPages, common.ServiceCompute,
+		armreservations.ReservedResourceTypeVirtualMachines, reservations.StrictLabels{Service: "compute", Resource: "VM"})
 }
 
 // providerRegistrationState is the JSON shape returned by the ARM providers API.

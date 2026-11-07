@@ -204,25 +204,15 @@ func (c *Client) appendPage(ctx context.Context, pricer *recommendations.Pricer,
 // guard needs (issue #699). Like compute, any failure or incomplete live row
 // is returned as an error rather than as an empty or partial inventory.
 func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
-	responses, err := reservations.ListAppliedReservations(ctx, c.subscriptionID, c.factories(), maxReservationsPages)
+	commitments, err := reservations.StrictCommitments(ctx, c.subscriptionID, c.factories(), maxReservationsPages, common.ServiceMemoryDB,
+		armreservations.ReservedResourceTypeRedisCache, reservations.StrictLabels{Service: "managedredis", Resource: "Redis"})
 	if err != nil {
-		return nil, fmt.Errorf("managedredis: list applied reservations: %w", err)
+		return nil, err
 	}
-
-	now := time.Now()
-	commitments := make([]common.Commitment, 0, len(responses))
-	for _, r := range responses {
-		commitment, err := reservations.StrictCommitment(r, c.subscriptionID, common.ServiceMemoryDB,
-			armreservations.ReservedResourceTypeRedisCache, reservations.StrictLabels{Service: "managedredis", Resource: "Redis"}, now)
-		if err != nil {
-			return nil, err
-		}
-		if commitment != nil {
-			// The dedupe key includes the engine and recommendations carry
-			// CacheDetails.Engine "redis", so held reservations must too.
-			commitment.Engine = Engine
-			commitments = append(commitments, *commitment)
-		}
+	// The dedupe key includes the engine and recommendations carry
+	// CacheDetails.Engine "redis", so held reservations must too.
+	for i := range commitments {
+		commitments[i].Engine = Engine
 	}
 	return commitments, nil
 }

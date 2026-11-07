@@ -53,12 +53,6 @@ type RecommendationsPager interface {
 	NextPage(ctx context.Context) (armconsumption.ReservationRecommendationsClientListResponse, error)
 }
 
-// ReservationsDetailsPager interface for reservations details pager (enables mocking).
-type ReservationsDetailsPager interface {
-	More() bool
-	NextPage(ctx context.Context) (armconsumption.ReservationsDetailsClientListResponse, error)
-}
-
 // CosmosAccountsPager interface for Cosmos DB accounts pager (enables mocking).
 type CosmosAccountsPager interface {
 	More() bool
@@ -70,7 +64,7 @@ type Client struct {
 	cred                 azcore.TokenCredential
 	httpClient           HTTPClient
 	recommendationsPager RecommendationsPager
-	reservationsPager    ReservationsDetailsPager
+	inventoryFactories   *reservations.InventoryFactories
 	cosmosAccountsPager  CosmosAccountsPager
 	subscriptionID       string
 	region               string
@@ -118,9 +112,18 @@ func (c *Client) SetRecommendationsPager(pager RecommendationsPager) {
 	c.recommendationsPager = pager
 }
 
-// SetReservationsPager sets the reservations pager (for testing).
-func (c *Client) SetReservationsPager(pager ReservationsDetailsPager) {
-	c.reservationsPager = pager
+// SetInventoryFactories injects reservation-inventory factories (for testing).
+func (c *Client) SetInventoryFactories(f *reservations.InventoryFactories) {
+	c.inventoryFactories = f
+}
+
+// factories returns the injected inventory factories, or the real SDK-backed
+// ones when none were injected (production only calls NewClient).
+func (c *Client) factories() reservations.InventoryFactories {
+	if c.inventoryFactories != nil {
+		return *c.inventoryFactories
+	}
+	return reservations.DefaultInventoryFactories(c.cred)
 }
 
 // SetCosmosAccountsPager sets the Cosmos DB accounts pager (for testing).
@@ -212,91 +215,14 @@ func (c *Client) appendPage(ctx context.Context, pricer *azrecs.Pricer, recs []c
 	return recs, nil
 }
 
-// GetExistingCommitments retrieves existing Cosmos DB reserved capacity using Azure Resource Graph.
+// GetExistingCommitments retrieves the Cosmos DB reservations that apply to
+// this subscription from the Reservations API, which carries the purchase
+// date, quantity, location and lifecycle state the duplicate-purchase guard
+// needs (issue #705). Any failure or incomplete live row is returned as an
+// error rather than as an empty or partial inventory.
 func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
-	pager, err := c.createReservationsPager()
-	if err != nil {
-		return nil, fmt.Errorf("cosmosdb: create reservations pager: %w", err)
-	}
-
-	return c.collectCosmosReservations(ctx, pager)
-}
-
-// createReservationsPager creates a pager for listing reservations.
-func (c *Client) createReservationsPager() (ReservationsDetailsPager, error) {
-	// Use injected pager if available (for testing)
-	if c.reservationsPager != nil {
-		return c.reservationsPager, nil
-	}
-
-	client, err := armconsumption.NewReservationsDetailsClient(c.cred, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	scope := fmt.Sprintf("subscriptions/%s", c.subscriptionID)
-	return client.NewListPager(scope, &armconsumption.ReservationsDetailsClientListOptions{}), nil
-}
-
-// collectCosmosReservations collects Cosmos DB reservations from the pager.
-// Returns an error on first pagination failure so callers can't silently act
-// on a partial list — see the compute client for the full rationale.
-func (c *Client) collectCosmosReservations(ctx context.Context, pager ReservationsDetailsPager) ([]common.Commitment, error) {
-	commitments := make([]common.Commitment, 0)
-
-	for pageIdx := 0; pager.More(); pageIdx++ {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context canceled during pagination: %w", err)
-		}
-		if pageIdx >= maxReservationsPages {
-			return nil, fmt.Errorf("cosmosdb: GetExistingCommitments pagination cap (%d pages) reached", maxReservationsPages)
-		}
-		page, err := slot.NextPage(ctx, pager)
-		if err != nil {
-			return nil, fmt.Errorf("cosmosdb: list reservations: %w", err)
-		}
-
-		for _, detail := range page.Value {
-			if commitment := c.convertCosmosReservation(detail); commitment != nil {
-				commitments = append(commitments, *commitment)
-			}
-		}
-	}
-
-	// ReservationsDetails is a daily usage API: one row per reservation per
-	// usage day. Without this, a single reservation held for N days would
-	// surface as N commitments sharing one CommitmentID (issue #73).
-	return reservations.DedupeCommitmentsByID(commitments), nil
-}
-
-// convertCosmosReservation converts a reservation detail to a commitment if it's a Cosmos DB reservation.
-func (c *Client) convertCosmosReservation(detail *armconsumption.ReservationDetail) *common.Commitment {
-	if detail.Properties == nil {
-		return nil
-	}
-
-	props := detail.Properties
-	if props.SKUName == nil || !strings.Contains(strings.ToLower(*props.SKUName), "cosmos") {
-		return nil
-	}
-
-	commitment := &common.Commitment{
-		Provider:       common.ProviderAzure,
-		Account:        c.subscriptionID,
-		CommitmentType: common.CommitmentReservedInstance,
-		Service:        common.ServiceNoSQL,
-		Region:         c.region,
-		State:          common.CommitmentStateActive,
-	}
-
-	if props.ReservationID != nil {
-		commitment.CommitmentID = *props.ReservationID
-	}
-	if props.SKUName != nil {
-		commitment.ResourceType = *props.SKUName
-	}
-
-	return commitment
+	return reservations.StrictCommitments(ctx, c.subscriptionID, c.factories(), maxReservationsPages, common.ServiceNoSQL,
+		armreservations.ReservedResourceTypeCosmosDb, reservations.StrictLabels{Service: "cosmosdb", Resource: "Cosmos DB"})
 }
 
 // PurchaseCommitment purchases Cosmos DB reserved capacity using the two-step
