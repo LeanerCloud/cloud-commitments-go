@@ -23,6 +23,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/mocks"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations/reservationstest"
 )
 
 // ---- credential mock -------------------------------------------------------
@@ -76,28 +77,6 @@ func (e *errorRecommendationsPager) More() bool { return !e.called }
 func (e *errorRecommendationsPager) NextPage(_ context.Context) (armconsumption.ReservationRecommendationsClientListResponse, error) {
 	e.called = true
 	return armconsumption.ReservationRecommendationsClientListResponse{}, errors.New("API error")
-}
-
-type fakeReservationsPager struct {
-	pages []armconsumption.ReservationsDetailsClientListResponse
-	index int
-	err   error
-}
-
-func (m *fakeReservationsPager) More() bool {
-	return m.index < len(m.pages)
-}
-
-func (m *fakeReservationsPager) NextPage(_ context.Context) (armconsumption.ReservationsDetailsClientListResponse, error) {
-	if m.err != nil {
-		return armconsumption.ReservationsDetailsClientListResponse{}, m.err
-	}
-	if m.index >= len(m.pages) {
-		return armconsumption.ReservationsDetailsClientListResponse{}, errors.New("no more pages")
-	}
-	page := m.pages[m.index]
-	m.index++
-	return page, nil
 }
 
 // ---- helpers ---------------------------------------------------------------
@@ -328,117 +307,114 @@ func TestGetRecommendations_modernShape(t *testing.T) {
 
 // ---- GetExistingCommitments -----------------------------------------------
 
+// factoriesRows injects one order holding rows (and err on the page fetch).
+func factoriesRows(err error, rows ...*armreservations.ReservationResponse) *reservations.InventoryFactories {
+	return factoriesFor(func() reservations.OrderReservationsPager { return &reservationstest.OrderPager{Rows: rows, Err: err} })
+}
+
+// factoriesFor injects one reservation order whose pager is newPager().
+func factoriesFor(newPager func() reservations.OrderReservationsPager) *reservations.InventoryFactories {
+	return &reservations.InventoryFactories{
+		NewAppliedLister: func() (reservations.AppliedReservationsLister, error) { return reservationstest.AppliedLister{}, nil },
+		NewOrderPager:    func(string) reservations.OrderReservationsPager { return newPager() },
+	}
+}
+
+func synapseRow(id, sku, location string, qty int32) *armreservations.ReservationResponse {
+	return reservationstest.LiveRow(armreservations.ReservedResourceTypeSQLDataWarehouse, "sub-123", id, sku, location, qty)
+}
+
 func TestGetExistingCommitments_empty(t *testing.T) {
 	t.Parallel()
 	c := newTestClient()
-	c.SetReservationsPager(&fakeReservationsPager{})
-
+	c.SetInventoryFactories(factoriesRows(nil))
 	commitments, err := c.GetExistingCommitments(context.Background())
 	require.NoError(t, err)
 	assert.Empty(t, commitments)
 }
 
-func TestGetExistingCommitments_synapseSKU(t *testing.T) {
+func TestGetExistingCommitments_synapseRowConverted(t *testing.T) {
 	t.Parallel()
 	c := newTestClient()
-
-	skuName := "DW1000c"
-	reservationID := "synapse-res-123"
-	c.SetReservationsPager(&fakeReservationsPager{
-		pages: []armconsumption.ReservationsDetailsClientListResponse{
-			{
-				ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{
-					Value: []*armconsumption.ReservationDetail{
-						{
-							Properties: &armconsumption.ReservationDetailProperties{
-								SKUName:       &skuName,
-								ReservationID: &reservationID,
-							},
-						},
-					},
-				},
-			},
-		},
-	})
-
+	c.SetInventoryFactories(factoriesRows(nil, synapseRow("res-123", "DW1000c", "westus2", 3)))
 	commitments, err := c.GetExistingCommitments(context.Background())
 	require.NoError(t, err)
 	require.Len(t, commitments, 1)
-	assert.Equal(t, common.ServiceDataWarehouse, commitments[0].Service)
+	assert.Equal(t, reservationstest.OrderPath+"/reservations/res-123", commitments[0].CommitmentID)
 	assert.Equal(t, "DW1000c", commitments[0].ResourceType)
-	assert.Equal(t, "synapse-res-123", commitments[0].CommitmentID)
-	assert.Equal(t, common.CommitmentReservedInstance, commitments[0].CommitmentType)
+	assert.Equal(t, "westus2", commitments[0].Region, "reservation location must win over the client region")
+	assert.Equal(t, 3, commitments[0].Count)
+	assert.Equal(t, common.CommitmentStateActive, commitments[0].State)
+	assert.Equal(t, common.ServiceDataWarehouse, commitments[0].Service)
 	assert.Equal(t, common.ProviderAzure, commitments[0].Provider)
+	assert.Empty(t, commitments[0].Engine, "DataWarehouseDetails keys carry no engine")
+	assert.Empty(t, commitments[0].Deployment, "DataWarehouseDetails keys carry no deployment")
 }
 
-// TestGetExistingCommitments_dedupesDailyUsageRows is the regression test
-// for #73: armconsumption.ReservationsDetails is a daily usage API, one row
-// per reservation per usage day. A pager returning three rows for the same
-// ReservationID must surface as a single commitment.
-func TestGetExistingCommitments_dedupesDailyUsageRows(t *testing.T) {
+func TestGetExistingCommitments_nonSynapseFiltered(t *testing.T) {
 	t.Parallel()
 	c := newTestClient()
-
-	skuName := "DW1000c"
-	reservationID := "synapse-res-123"
-	dailyRow := &armconsumption.ReservationDetail{
-		Properties: &armconsumption.ReservationDetailProperties{
-			SKUName:       &skuName,
-			ReservationID: &reservationID,
-		},
-	}
-	c.SetReservationsPager(&fakeReservationsPager{
-		pages: []armconsumption.ReservationsDetailsClientListResponse{
-			{
-				ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{
-					Value: []*armconsumption.ReservationDetail{dailyRow, dailyRow, dailyRow},
-				},
-			},
-		},
-	})
-
+	sqlRow := synapseRow("res-1", "Standard_S0", "eastus", 1)
+	sqlType := armreservations.ReservedResourceTypeSQLDatabases
+	sqlRow.Properties.ReservedResourceType = &sqlType
+	c.SetInventoryFactories(factoriesRows(nil, sqlRow, synapseRow("res-2", "DW1000c", "eastus", 1)))
 	commitments, err := c.GetExistingCommitments(context.Background())
 	require.NoError(t, err)
-	require.Len(t, commitments, 1, "three daily rows for one reservation must collapse to one commitment (issue #73)")
-	assert.Equal(t, "synapse-res-123", commitments[0].CommitmentID)
+	require.Len(t, commitments, 1)
+	assert.Equal(t, reservationstest.OrderPath+"/reservations/res-2", commitments[0].CommitmentID)
 }
 
-func TestGetExistingCommitments_filterNonSynapse(t *testing.T) {
+// A row the guard cannot classify may be the reservation bought an hour ago,
+// so it fails closed instead of being dropped.
+func TestGetExistingCommitments_nilPropertiesFailsClosed(t *testing.T) {
 	t.Parallel()
 	c := newTestClient()
-
-	vmSKU := "Standard_D2s_v3"
-	c.SetReservationsPager(&fakeReservationsPager{
-		pages: []armconsumption.ReservationsDetailsClientListResponse{
-			{
-				ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{
-					Value: []*armconsumption.ReservationDetail{
-						{
-							Properties: &armconsumption.ReservationDetailProperties{
-								SKUName: &vmSKU,
-							},
-						},
-					},
-				},
-			},
-		},
-	})
-
-	commitments, err := c.GetExistingCommitments(context.Background())
-	require.NoError(t, err)
-	assert.Empty(t, commitments, "non-Synapse SKU should be filtered out")
+	c.SetInventoryFactories(factoriesRows(nil, &armreservations.ReservationResponse{}))
+	_, err := c.GetExistingCommitments(context.Background())
+	require.Error(t, err)
 }
 
 func TestGetExistingCommitments_pagerError(t *testing.T) {
 	t.Parallel()
 	c := newTestClient()
-	c.SetReservationsPager(&fakeReservationsPager{
-		pages: []armconsumption.ReservationsDetailsClientListResponse{{}},
-		err:   errors.New("pager error"),
-	})
-
+	c.SetInventoryFactories(factoriesRows(errors.New("api error")))
 	_, err := c.GetExistingCommitments(context.Background())
-	assert.Error(t, err)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "api error")
+}
+
+func TestGetExistingCommitments_listerError(t *testing.T) {
+	t.Parallel()
+	c := newTestClient()
+	c.SetInventoryFactories(&reservations.InventoryFactories{
+		NewAppliedLister: func() (reservations.AppliedReservationsLister, error) {
+			return reservationstest.AppliedLister{Err: errors.New("boom")}, nil
+		},
+		NewOrderPager: func(string) reservations.OrderReservationsPager { return &reservationstest.OrderPager{} },
+	})
+	_, err := c.GetExistingCommitments(context.Background())
+	require.Error(t, err, "a failed inventory lookup must not masquerade as an empty list")
+	assert.Contains(t, err.Error(), "synapse: list applied reservations")
+}
+
+func TestNewClient_DefaultInventoryFactories(t *testing.T) {
+	t.Parallel()
+	for name, c := range map[string]*Client{
+		"NewClient":         NewClient(nil, "sub", "eastus"),
+		"NewClientWithHTTP": NewClientWithHTTP(nil, "sub", "eastus", nil),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require.Nil(t, c.inventoryFactories, "production wiring injects nothing")
+			f := c.factories()
+			assert.NotNil(t, f.NewAppliedLister)
+			assert.NotNil(t, f.NewOrderPager)
+		})
+	}
+	injected := &reservations.InventoryFactories{}
+	c := NewClient(nil, "sub", "eastus")
+	c.SetInventoryFactories(injected)
+	assert.Equal(t, *injected, c.factories())
 }
 
 // ---- ValidateOffering -----------------------------------------------------
