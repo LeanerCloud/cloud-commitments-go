@@ -215,3 +215,27 @@ func TestHeldReservation_FleetShapes(t *testing.T) {
 		})
 	}
 }
+
+// A walk that fails on the recommendation call and succeeds on the inventory
+// call must not give the held reservation a different deployment than the key
+// the recommendation already carries.
+func TestHeldReservation_UsesRecommendationsAZSnapshot(t *testing.T) {
+	t.Parallel()
+	c := fleetClient()
+	c.SetManagedInstancesPager(&flakyMIPager{failures: 1})
+	c.serverInfoRetryDelay = 10 * time.Millisecond
+	upfront := upfrontRec(t, c)
+	require.Empty(t, common.DeploymentFromDetails(upfront.Details), "the rec was keyed while the walk failed")
+	time.Sleep(30 * time.Millisecond)
+	c.SetInventoryFactories(factoriesRows(nil, purchasedRow(t, c.region, upfront, 1)))
+
+	held, err := c.GetExistingCommitments(context.Background())
+	require.NoError(t, err)
+	require.Len(t, held, 1)
+	assert.Empty(t, held[0].Deployment, "the held reservation must reuse the rec's snapshot")
+
+	passed, err := adjust(t, c, upfront)
+	require.NoError(t, err)
+	require.Len(t, passed, 1)
+	assert.Equal(t, 1, passed[0].Count)
+}

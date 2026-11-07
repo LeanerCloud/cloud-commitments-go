@@ -134,6 +134,12 @@ type Client struct {
 	// persistently failing subscription is not re-walked per recommendation.
 	serverInfoMu     sync.Mutex
 	serverInfoLoaded bool
+
+	// AZConfig the recommendation path last stamped on a recommendation,
+	// so held reservations are keyed identically even if a later walk
+	// answers differently. Guarded by serverInfoMu.
+	recAZConfig    string
+	recAZConfigSet bool
 }
 
 // serverInfoRetryDelayDefault is the minimum wait before re-walking the
@@ -291,7 +297,10 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 	if err != nil || len(commitments) == 0 {
 		return commitments, err
 	}
-	az := c.cachedDominantAZConfig(ctx)
+	az, ok := c.recommendationAZConfig()
+	if !ok {
+		az = c.cachedDominantAZConfig(ctx)
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("database: enrich held reservations: %w", err)
 	}
@@ -621,7 +630,9 @@ func (c *Client) convertAzureSQLRecommendation(ctx context.Context, azureRec arm
 	if entry, ok := c.cachedSKULookup(ctx, f.ResourceType); ok && entry.engineVersion != "" {
 		details.EngineVersion = entry.engineVersion
 	}
-	if az := c.cachedDominantAZConfig(ctx); az != "" {
+	az := c.cachedDominantAZConfig(ctx)
+	c.recordRecommendationAZConfig(az)
+	if az != "" {
 		details.AZConfig = az
 	}
 	if dep := c.cachedDominantDeployment(ctx); dep != "" {
@@ -728,6 +739,18 @@ func populateSQLSKUMapFromVersion(out map[string]sqlSKUEntry, engineVersion stri
 func (c *Client) cachedDominantAZConfig(ctx context.Context) string {
 	az, _ := c.serverInfo(ctx)
 	return az
+}
+
+func (c *Client) recordRecommendationAZConfig(az string) {
+	c.serverInfoMu.Lock()
+	defer c.serverInfoMu.Unlock()
+	c.recAZConfig, c.recAZConfigSet = az, true
+}
+
+func (c *Client) recommendationAZConfig() (string, bool) {
+	c.serverInfoMu.Lock()
+	defer c.serverInfoMu.Unlock()
+	return c.recAZConfig, c.recAZConfigSet
 }
 
 // cachedDominantDeployment returns the dominant Deployment observed
