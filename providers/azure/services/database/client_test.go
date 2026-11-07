@@ -746,6 +746,8 @@ func TestGetExistingCommitments_NonSQLFiltered(t *testing.T) {
 func TestGetExistingCommitments_NilPropertiesFailsClosed(t *testing.T) {
 	t.Parallel()
 	c, mi, servers := inventoryClient(&armreservations.ReservationResponse{})
+	mi.pages = []armsql.ManagedInstancesClientListResponse{buildMIPage(true)}
+	servers.pages = []armsql.ServersClientListResponse{buildServerPage(1)}
 	_, err := c.GetExistingCommitments(context.Background())
 	require.Error(t, err)
 	assert.Zero(t, mi.CallCount)

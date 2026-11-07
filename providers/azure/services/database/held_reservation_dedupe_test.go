@@ -3,6 +3,7 @@ package database
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -178,16 +179,21 @@ func TestHeldReservation_FleetShapes(t *testing.T) {
 	t.Parallel()
 	for name, tc := range map[string]struct {
 		fleet []bool
+		miErr error
 		az    string
 	}{
-		"no managed instances": {nil, ""},
-		"all zone-redundant":   {[]bool{true, true}, "zoneRedundant"},
-		"none zone-redundant":  {[]bool{false}, "none"},
-		"mixed fleet":          {[]bool{true, false}, ""},
+		"no managed instances":        {nil, nil, ""},
+		"all zone-redundant":          {[]bool{true, true}, nil, "zoneRedundant"},
+		"none zone-redundant":         {[]bool{false}, nil, "none"},
+		"mixed fleet":                 {[]bool{true, false}, nil, ""},
+		"managed-instance walk fails": {nil, errors.New("mi list failed"), ""},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			c := fleetClient(tc.fleet...)
+			if tc.miErr != nil {
+				c.SetManagedInstancesPager(&MockSQLManagedInstancesPager{err: tc.miErr})
+			}
 			upfront := upfrontRec(t, c)
 			require.Equal(t, tc.az, common.DeploymentFromDetails(upfront.Details), "the rec key's deployment")
 			c.SetInventoryFactories(factoriesRows(nil, purchasedRow(t, c.region, upfront, 1)))
