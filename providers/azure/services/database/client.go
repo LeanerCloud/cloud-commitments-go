@@ -115,8 +115,12 @@ type Client struct {
 	// Only a complete walk is cached (serverInfoLoaded); a failed or
 	// canceled walk is retried, but not before serverInfoRetryAfter so a
 	// persistently failing subscription is not re-walked per recommendation.
-	azConfig             string
-	deployment           string
+	azConfig   string
+	deployment string
+	// recAZConfig is the AZConfig the recommendation path last stamped, so
+	// held reservations are keyed identically even if a later walk answers
+	// differently. Guarded by serverInfoMu.
+	recAZConfig          string
 	serverInfoRetryDelay time.Duration
 
 	// Lazy SKU catalog cache. Populated once on the first
@@ -134,12 +138,7 @@ type Client struct {
 	// persistently failing subscription is not re-walked per recommendation.
 	serverInfoMu     sync.Mutex
 	serverInfoLoaded bool
-
-	// AZConfig the recommendation path last stamped on a recommendation,
-	// so held reservations are keyed identically even if a later walk
-	// answers differently. Guarded by serverInfoMu.
-	recAZConfig    string
-	recAZConfigSet bool
+	recAZConfigSet   bool
 }
 
 // serverInfoRetryDelayDefault is the minimum wait before re-walking the
