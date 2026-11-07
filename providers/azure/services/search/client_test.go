@@ -1615,7 +1615,7 @@ func TestSearchClient_GetExistingCommitments_DoesNotInventRegionOrState(t *testi
 
 			require.NoError(t, err)
 			require.Len(t, commitments, 1)
-			reservationstest.RequireUnknownInventory(t, commitments[0])
+			reservationstest.AssertUnknownInventory(t, commitments[0])
 		})
 	}
 }

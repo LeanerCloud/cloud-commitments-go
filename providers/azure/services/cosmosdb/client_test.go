@@ -1794,7 +1794,7 @@ func TestCosmosDBClient_GetExistingCommitments_DoesNotInventRegionOrState(t *tes
 
 			require.NoError(t, err)
 			require.Len(t, commitments, 1)
-			reservationstest.RequireUnknownInventory(t, commitments[0])
+			reservationstest.AssertUnknownInventory(t, commitments[0])
 		})
 	}
 }
