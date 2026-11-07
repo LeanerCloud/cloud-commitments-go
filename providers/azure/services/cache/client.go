@@ -12,7 +12,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/consumption/armconsumption"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/redis/armredis/v3"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/httpclient"
@@ -201,79 +200,12 @@ func (c *Client) convertRedisReservation(detail *armconsumption.ReservationDetai
 	return commitment
 }
 
-// PurchaseCommitment purchases Redis Cache reserved capacity using the two-step
-// calculatePrice->purchase flow required by Azure's Reservations API (issue #677).
-func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
-	result := common.PurchaseResult{
-		Recommendation: rec,
-		DryRun:         false,
-		Success:        false,
-		Timestamp:      time.Now(),
-	}
-
-	// Source is required so the resulting reservation is attributable to CUDly
-	// in the portal via the purchase-automation tag. The dedupe key for
-	// idempotent re-drives is now opts.IdempotencyToken (issue #721, applied
-	// in reservations.DoIdempotentPurchaseTwoStep); source remains mandatory
-	// for attribution.
-	if opts.Source == "" {
-		result.Error = fmt.Errorf("purchase source is required for Azure reservation purchases")
-		return result, result.Error
-	}
-	if strings.TrimSpace(rec.ResourceType) == "" {
-		result.Error = fmt.Errorf("resource type is required")
-		return result, result.Error
-	}
-	if rec.Count <= 0 {
-		result.Error = fmt.Errorf("quantity must be greater than zero, got %d", rec.Count)
-		return result, result.Error
-	}
-
-	termYears, termErr := reservations.ParseTermYears(rec.Term)
-	if termErr != nil {
-		result.Error = termErr
-		return result, result.Error
-	}
-	if _, termEnumErr := reservations.ReservationTermForYears(termYears); termEnumErr != nil {
-		result.Error = termEnumErr
-		return result, result.Error
-	}
-	billingPlan, billingPlanErr := reservations.BillingPlanForPaymentOption(rec.PaymentOption)
-	if billingPlanErr != nil {
-		result.Error = billingPlanErr
-		return result, result.Error
-	}
-
-	bodyBytes, err := reservations.BuildPurchaseBody(reservations.PurchaseParams{
-		ReservedResourceType: string(armreservations.ReservedResourceTypeRedisCache),
-		DisplayName: func(r common.Recommendation) string {
-			return reservations.BuildDisplayName(reservations.DisplayNameFields{
-				Service:      "redis",
-				Region:       c.region,
-				ResourceType: r.ResourceType,
-				Count:        r.Count,
-				Term:         r.Term,
-				Payment:      r.PaymentOption,
-				Now:          time.Now(),
-			})
-		},
-	}, rec, opts, c.region, c.subscriptionID, billingPlan)
-	if err != nil {
-		result.Error = fmt.Errorf("failed to marshal request: %w", err)
-		return result, result.Error
-	}
-
-	reservationOrderID, existing, err := reservations.Submit(ctx, c.cred, c.httpClient, bodyBytes, opts, rec.CommitmentCurrency)
-	if err != nil {
-		result.Error = err
-		return result, result.Error
-	}
-
-	result.Success = true
-	result.ExistingCommitment = existing
-	result.CommitmentID = reservationOrderID
-	result.Cost = reservations.UpfrontCostForBillingPlan(billingPlan)
-	return result, nil
+// PurchaseCommitment refuses: managedredis (ServiceMemoryDB) is the only Azure service that
+// buys RedisCache reservations (#538), so one Redis recommendation cannot be bought twice.
+func (c *Client) PurchaseCommitment(_ context.Context, rec common.Recommendation, _ common.PurchaseOptions) (common.PurchaseResult, error) {
+	err := fmt.Errorf("%w: Azure Redis reservations are purchased through the %s service, not %s",
+		common.ErrRefusedBeforePurchase, common.ServiceMemoryDB, common.ServiceCache)
+	return common.PurchaseResult{Recommendation: rec, Timestamp: time.Now(), Error: err}, err
 }
 
 // ValidateOffering validates that a Redis Cache SKU exists.

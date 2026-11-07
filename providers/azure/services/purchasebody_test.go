@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
-	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/cache"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/compute"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/cosmosdb"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/database"
@@ -34,7 +33,6 @@ func TestPurchaseBodies(t *testing.T) {
 		name, resourceType string
 		build              func(h *reservationstest.Capture) purchaser
 	}{
-		{"cache", "RedisCache", func(h *reservationstest.Capture) purchaser { return cache.NewClientWithHTTP(cred, "sub", "eastus", h) }},
 		{"compute", "VirtualMachines", func(h *reservationstest.Capture) purchaser {
 			return compute.NewClientWithHTTP(cred, "sub", "eastus", h)
 		}},

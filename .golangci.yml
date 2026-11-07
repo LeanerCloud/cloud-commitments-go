@@ -113,13 +113,14 @@ linters:
       - linters:
           - noctx
         path: _test\.go
-      # misspell: "cancelled" is the canonical stored status value in
-      # pkg/ladder (RunStatusCancelled, TrancheStatusCancelled); allow the UK
-      # spelling in the files that carry it.
+      # misspell: pkg/ladder writes "canceled" but still reads the legacy
+      # "cancelled" that rows carried before #554, and keeps the deprecated
+      # RunStatusCancelled/TrancheStatusCancelled aliases; allow the UK spelling
+      # in the files that carry it.
       - linters:
           - misspell
-        path: pkg/ladder/(store|types_test)\.go
-        text: "cancelled"
+        path: pkg/ladder/(store|types_test|canceled_spelling_test)\.go
+        text: "(?i)cancelled"
     paths:
       - third_party$
       - builtin$
