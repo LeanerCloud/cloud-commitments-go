@@ -3,6 +3,7 @@ package recfilter
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -77,7 +78,7 @@ func (d *DuplicateChecker) AdjustRecommendationsForExisting(ctx context.Context,
 	existingMap := buildExistingCommitmentsMap(recentExisting, d.Logf)
 	d.Logf.printf("    [DuplicateChecker] Existing map has %d unique keys", len(existingMap))
 
-	passed, filtered, err = adjustRecommendationsAgainstExisting(recs, existingMap, newEC2Dedupe(recentExisting, d.Logf), d.Logf)
+	passed, filtered, err = adjustRecommendationsAgainstExisting(recs, existingMap, recentExisting, d.Logf)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -249,18 +250,20 @@ func buildExistingCommitmentsMap(commitments []common.Commitment, logf Logf) map
 
 // adjustRecommendationsAgainstExisting adjusts recommendations based on existing commitments.
 // Returns (passed, filtered) where filtered contains recs whose count was reduced to zero.
-func adjustRecommendationsAgainstExisting(recs []common.Recommendation, existingMap map[string]int, ec2 *ec2Dedupe, logf Logf) (passed, filtered []common.Recommendation, err error) {
+func adjustRecommendationsAgainstExisting(recs []common.Recommendation, existingMap map[string]int, recent []common.Commitment, logf Logf) (passed, filtered []common.Recommendation, err error) {
 	passed = make([]common.Recommendation, 0, len(recs))
 	filtered = make([]common.Recommendation, 0)
+	variants := &variantGroups{held: existingMap, recent: recent, logf: logf, groups: map[string]*variantGroup{}}
 
 	for _rvc := range recs {
 		rec := recs[_rvc]
 		var adjusted common.Recommendation
 		var err error
-		if ec2.handles(rec) {
-			adjusted, err = ec2.adjust(rec)
+		group := variants.of(rec)
+		if isAWSCompute(rec.Provider, rec.Service) {
+			adjusted, err = group.ec2.adjust(rec)
 		} else {
-			adjusted, err = adjustSingleRecommendation(rec, existingMap, logf)
+			adjusted, err = adjustSingleRecommendation(rec, group.held, logf)
 		}
 		if err != nil {
 			return nil, nil, err
@@ -273,6 +276,32 @@ func adjustRecommendationsAgainstExisting(recs []common.Recommendation, existing
 	}
 
 	return passed, filtered, nil
+}
+
+// variantGroups holds the held budgets of each term and payment variant.
+// Variants are alternative ways to buy the same resource, so each group starts
+// from the full held quantity; recommendations of one variant share it in
+// input order. An empty term or payment is a group of its own (#703).
+type variantGroups struct {
+	groups map[string]*variantGroup
+	held   map[string]int
+	logf   Logf
+	recent []common.Commitment
+}
+
+type variantGroup struct {
+	held map[string]int
+	ec2  *ec2Dedupe
+}
+
+func (v *variantGroups) of(rec common.Recommendation) *variantGroup {
+	variant := strings.ToLower(strings.TrimSpace(rec.Term)) + "|" + strings.ToLower(strings.TrimSpace(rec.PaymentOption))
+	g, ok := v.groups[variant]
+	if !ok {
+		g = &variantGroup{held: maps.Clone(v.held), ec2: newEC2Dedupe(v.recent, v.logf)}
+		v.groups[variant] = g
+	}
+	return g
 }
 
 // adjustSingleRecommendation adjusts a single recommendation based on existing
