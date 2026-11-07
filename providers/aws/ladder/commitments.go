@@ -74,6 +74,9 @@ func (a *AWSLadder) listRICommitments(ctx context.Context) ([]common.Commitment,
 // FixedPrice) are per-instance, so the per-instance hourly rate is multiplied
 // by InstanceCount. See riHourlyCost for the formula and semantics (matches the
 // repo's canonical monthlyCostFromConvertibleRI in internal/api/handler_ri_exchange.go).
+//
+// CostKnown requires a Duration: riHourlyCost skips upfront amortization without
+// one, so the total would be incomplete.
 func riToCommitment(ri *ec2svc.ConvertibleRI, accountID, region string) common.Commitment {
 	totalHourlyCost := riHourlyCost(ri)
 
@@ -90,7 +93,7 @@ func riToCommitment(ri *ec2svc.ConvertibleRI, accountID, region string) common.C
 		StartDate:      ri.Start,
 		EndDate:        ri.End,
 		Cost:           totalHourlyCost,
-		CostKnown:      true,
+		CostKnown:      ri.Duration > 0,
 	}
 }
 
