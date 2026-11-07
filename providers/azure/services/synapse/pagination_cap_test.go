@@ -2,11 +2,14 @@ package synapse
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/consumption/armconsumption"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/mocks"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -86,4 +89,118 @@ func TestGetRecommendations_ExactlyCapPagesWithPartialLastPageSucceeds(t *testin
 	// Each recommendation expands to an upfront and a monthly variant.
 	assert.Len(t, recs, 2*(2*(maxRecsPages-1)+1))
 	assert.Equal(t, maxRecsPages, pager.calls)
+}
+
+// countingReservationsPager reports More() until limit pages were requested,
+// so a missing cap shows up as calls == limit instead of a hung test.
+type countingReservationsPager struct {
+	calls, limit int
+}
+
+func (p *countingReservationsPager) More() bool { return p.calls < p.limit }
+func (p *countingReservationsPager) NextPage(_ context.Context) (armreservations.ReservationClientListResponse, error) {
+	p.calls++
+	return armreservations.ReservationClientListResponse{}, nil
+}
+
+func TestGetExistingCommitments_PageCapReturnsError(t *testing.T) {
+	t.Parallel()
+	pager := &countingReservationsPager{limit: 1000}
+	client := NewClient(nil, "test-subscription", "eastus")
+	client.SetInventoryFactories(factoriesFor(func() reservations.OrderReservationsPager { return pager }))
+
+	_, err := client.GetExistingCommitments(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "pagination cap")
+	assert.Equal(t, maxReservationsPages, pager.calls)
+}
+
+func TestGetExistingCommitments_CancelledContextReturnsContextError(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	pager := &countingReservationsPager{limit: 1000}
+	client := NewClient(nil, "test-subscription", "eastus")
+	client.SetInventoryFactories(factoriesFor(func() reservations.OrderReservationsPager { return pager }))
+
+	_, err := client.GetExistingCommitments(ctx)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Zero(t, pager.calls)
+}
+
+func TestGetExistingCommitments_CapIsExact(t *testing.T) {
+	t.Parallel()
+	atCap := &countingReservationsPager{limit: maxReservationsPages}
+	client := NewClient(nil, "test-subscription", "eastus")
+	client.SetInventoryFactories(factoriesFor(func() reservations.OrderReservationsPager { return atCap }))
+	_, err := client.GetExistingCommitments(context.Background())
+	require.NoError(t, err, "exactly cap pages must succeed")
+	assert.Equal(t, maxReservationsPages, atCap.calls)
+
+	overCap := &countingReservationsPager{limit: maxReservationsPages + 1}
+	client = NewClient(nil, "test-subscription", "eastus")
+	client.SetInventoryFactories(factoriesFor(func() reservations.OrderReservationsPager { return overCap }))
+	_, err = client.GetExistingCommitments(context.Background())
+	require.Error(t, err)
+	assert.Equal(t, maxReservationsPages, overCap.calls)
+}
+
+// cancelOnSecondCallPager cancels the context while serving its second page.
+type cancelOnSecondCallPager struct {
+	calls  int
+	cancel context.CancelFunc
+}
+
+func (p *cancelOnSecondCallPager) More() bool { return true }
+func (p *cancelOnSecondCallPager) NextPage(_ context.Context) (armreservations.ReservationClientListResponse, error) {
+	p.calls++
+	if p.calls == 2 {
+		p.cancel()
+	}
+	return armreservations.ReservationClientListResponse{}, nil
+}
+
+func TestGetExistingCommitments_CancelMidWalkReturnsContextError(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	pager := &cancelOnSecondCallPager{cancel: cancel}
+	client := NewClient(nil, "test-subscription", "eastus")
+	client.SetInventoryFactories(factoriesFor(func() reservations.OrderReservationsPager { return pager }))
+
+	_, err := client.GetExistingCommitments(ctx)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Equal(t, 2, pager.calls)
+}
+
+// finalPartialReservationsPager serves exactly pages pages: full pages of two
+// reservations, then a last page of one.
+type finalPartialReservationsPager struct {
+	calls, pages int
+}
+
+func (p *finalPartialReservationsPager) More() bool { return p.calls < p.pages }
+func (p *finalPartialReservationsPager) NextPage(context.Context) (armreservations.ReservationClientListResponse, error) {
+	n := 2
+	if p.calls == p.pages-1 {
+		n = 1
+	}
+	var rows []*armreservations.ReservationResponse
+	for i := 0; i < n; i++ {
+		rows = append(rows, synapseRow(fmt.Sprintf("res-%d-%d", p.calls, i), "DW1000c", "eastus", 1))
+	}
+	p.calls++
+	return armreservations.ReservationClientListResponse{ReservationList: armreservations.ReservationList{Value: rows}}, nil
+}
+
+func TestGetExistingCommitments_ExactlyCapPagesWithPartialLastPageSucceeds(t *testing.T) {
+	t.Parallel()
+	pager := &finalPartialReservationsPager{pages: maxReservationsPages}
+	client := newTestClient()
+	client.SetInventoryFactories(factoriesFor(func() reservations.OrderReservationsPager { return pager }))
+
+	got, err := client.GetExistingCommitments(context.Background())
+	require.NoError(t, err)
+	assert.Len(t, got, 2*(maxReservationsPages-1)+1)
+	assert.Equal(t, maxReservationsPages, pager.calls)
 }
