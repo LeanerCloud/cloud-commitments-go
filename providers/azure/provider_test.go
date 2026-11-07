@@ -470,7 +470,6 @@ func TestAzureClients_GetExistingCommitments_PagerConstructionError(t *testing.T
 		client provider.ServiceClient
 	}{
 		{"cache", NewCacheClient(nil, "test-subscription", "eastus")},
-		{"cosmosdb", NewCosmosDBClient(nil, "test-subscription", "eastus")},
 		{"database", NewDatabaseClient(nil, "test-subscription", "eastus")},
 		{"search", NewSearchClient(nil, "test-subscription", "eastus")},
 	} {
@@ -502,6 +501,7 @@ func TestAzureClients_ReservationInventory_DefaultFactoryError(t *testing.T) {
 		name   string
 		client provider.ServiceClient
 	}{
+		{"cosmosdb", NewCosmosDBClient(nil, "test-subscription", "eastus")},
 		{"synapse", NewSynapseClient(nil, "test-subscription", "eastus")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
