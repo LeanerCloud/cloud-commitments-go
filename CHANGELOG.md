@@ -191,6 +191,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   `cache.PurchaseCommitment` now refuses before any API call with an error
   wrapping `common.ErrRefusedBeforePurchase`. Consumers that buy an Azure
   `ServiceCache` recommendation must route it to managedredis (#538).
+- Ladder run and tranche statuses now write the US spelling `canceled`
+  (`RunStatusCanceled`, `TrancheStatusCanceled`). Rows holding the legacy
+  `cancelled` still validate, count as terminal, and parse to the new
+  constants through `ParseRunStatus` and `ParseTrancheStatus`. The
+  `RunStatusCancelled` and `TrancheStatusCancelled` names remain as
+  deprecated aliases with the new value. Consumers that compare raw stored
+  strings or filter on `cancelled` in SQL must accept both spellings.
 - `ListTargetOfferings` now walks up to 50 pages (about 5000 offerings)
   instead of 10, and returns an error wrapping the new
   `ec2.ErrTargetOfferingsTruncated` (with no list) when that bound is hit,

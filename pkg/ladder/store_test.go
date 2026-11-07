@@ -19,7 +19,7 @@ func TestRunStatusIsTerminal(t *testing.T) {
 		{RunStatusExecuting, false},
 		{RunStatusCompleted, true},
 		{RunStatusFailed, true},
-		{RunStatusCancelled, true},
+		{RunStatusCanceled, true},
 		{RunStatusExpired, true},
 	}
 	for _, c := range cases {
@@ -86,9 +86,9 @@ func TestRunRecordValidate(t *testing.T) {
 			wantErr: false,
 		},
 		{
-			name: "RunStatusCancelled with CompletedAt is valid",
+			name: "RunStatusCanceled with CompletedAt is valid",
 			mutate: func(r *RunRecord) {
-				r.Status = RunStatusCancelled
+				r.Status = RunStatusCanceled
 				r.CompletedAt = &now
 			},
 			wantErr: false,
@@ -229,9 +229,9 @@ func TestTrancheValidate(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "TrancheStatusCancelled with FiredAt is invalid",
+			name: "TrancheStatusCanceled with FiredAt is invalid",
 			mutate: func(tr *Tranche) {
-				tr.Status = TrancheStatusCancelled
+				tr.Status = TrancheStatusCanceled
 				tr.FiredAt = &now
 			},
 			wantErr: true,
