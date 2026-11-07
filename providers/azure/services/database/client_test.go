@@ -761,6 +761,40 @@ func TestGetExistingCommitments_PagerError(t *testing.T) {
 	assert.Contains(t, err.Error(), "api error")
 }
 
+func TestGetExistingCommitments_ListerError(t *testing.T) {
+	t.Parallel()
+	c, _, _ := inventoryClient()
+	c.SetInventoryFactories(&reservations.InventoryFactories{
+		NewAppliedLister: func() (reservations.AppliedReservationsLister, error) {
+			return reservationstest.AppliedLister{Err: errors.New("boom")}, nil
+		},
+		NewOrderPager: func(string) reservations.OrderReservationsPager { return &reservationstest.OrderPager{} },
+	})
+	_, err := c.GetExistingCommitments(context.Background())
+	require.Error(t, err, "a failed inventory lookup must not masquerade as an empty list")
+	assert.Contains(t, err.Error(), "database: list applied reservations")
+}
+
+func TestNewClient_DefaultInventoryFactories(t *testing.T) {
+	t.Parallel()
+	for name, c := range map[string]*Client{
+		"NewClient":         NewClient(nil, "sub", "eastus"),
+		"NewClientWithHTTP": NewClientWithHTTP(nil, "sub", "eastus", nil),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require.Nil(t, c.inventoryFactories, "production wiring injects nothing")
+			f := c.factories()
+			assert.NotNil(t, f.NewAppliedLister)
+			assert.NotNil(t, f.NewOrderPager)
+		})
+	}
+	injected := &reservations.InventoryFactories{}
+	c := NewClient(nil, "sub", "eastus")
+	c.SetInventoryFactories(injected)
+	assert.Equal(t, *injected, c.factories())
+}
+
 func TestDatabaseClient_GetValidResourceTypes_WithMock(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

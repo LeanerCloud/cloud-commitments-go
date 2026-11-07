@@ -70,3 +70,33 @@ func (p *OrderPager) NextPage(context.Context) (armreservations.ReservationClien
 	}
 	return armreservations.ReservationClientListResponse{ReservationList: armreservations.ReservationList{Value: p.Rows}}, nil
 }
+
+// CountingPager reports More until Limit pages were requested, so a missing
+// pagination cap shows up as Calls == Limit instead of a hung test.
+type CountingPager struct {
+	Calls, Limit int
+}
+
+func (p *CountingPager) More() bool { return p.Calls < p.Limit }
+
+func (p *CountingPager) NextPage(context.Context) (armreservations.ReservationClientListResponse, error) {
+	p.Calls++
+	return armreservations.ReservationClientListResponse{}, nil
+}
+
+// CancelOnSecondCallPager never ends and calls Cancel while serving its
+// second page.
+type CancelOnSecondCallPager struct {
+	Calls  int
+	Cancel context.CancelFunc
+}
+
+func (p *CancelOnSecondCallPager) More() bool { return true }
+
+func (p *CancelOnSecondCallPager) NextPage(context.Context) (armreservations.ReservationClientListResponse, error) {
+	p.Calls++
+	if p.Calls == 2 {
+		p.Cancel()
+	}
+	return armreservations.ReservationClientListResponse{}, nil
+}
