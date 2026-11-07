@@ -304,9 +304,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   longer compiles; keyed literals are unaffected. The field is true when a
   provider adopted a commitment that already existed for the same idempotency
   token (#211)
+- **Breaking (source):** `common.PurchaseResult` gained an `OfferingClass` field.
+  Downstream code that builds it with unkeyed composite literals no longer
+  compiles; keyed literals are unaffected. On an adopted re-drive it carries the
+  offering class AWS reports for the existing RI (the EC2 provider sets it in a
+  follow-up change); empty otherwise (#211).
 
 ### Fixed
 
+- **`common`:** a `Recommendation`, and a `PurchaseResult` carrying one (with
+  no `Error`), now decodes from JSON when `details` holds an object. `details`
+  is decoded into the typed pointer for the recommendation's service through
+  `DecodeServiceDetailsFor`; absent `details` leave the field unchanged and
+  null sets it nil, as encoding/json does, and details for a service with no
+  typed details fail with `ErrUntypedServiceDetails`. Before this,
+  encoding/json could not decode an object into the `ServiceDetails` interface
+  (#211).
 - **Breaking (source):** `managedredis.ReservationsDetailsPager` and `(*managedredis.Client).SetReservationsPager` are removed; tests inject reservation inventory with `SetInventoryFactories` instead (#699).
 - **`azure` Redis:** `managedredis.GetExistingCommitments` now reads held reservations from the Reservations API (purchase date, quantity, location, state), so a Redis reservation bought in the last day reduces the matching recommendation instead of being invisible to the duplicate guard (#699). An incomplete live reservation row (missing SKU, location, quantity or purchase date, an unattributable scope, or an expiry falling today) now fails the lookup with an error instead of being skipped, as `azure` compute already does.
 - **`aws` RI recommendations:** a fractional Cost Explorer quantity now rounds
