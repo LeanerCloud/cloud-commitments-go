@@ -17,8 +17,16 @@ const (
 	RunStatusExecuting        RunStatus = "executing"
 	RunStatusCompleted        RunStatus = "completed"
 	RunStatusFailed           RunStatus = "failed"
-	RunStatusCancelled        RunStatus = "cancelled"
+	RunStatusCanceled         RunStatus = "canceled"
 	RunStatusExpired          RunStatus = "expired"
+
+	// Deprecated: use RunStatusCanceled. Kept so existing callers compile; it
+	// writes the new spelling.
+	RunStatusCancelled = RunStatusCanceled
+
+	// runStatusLegacyCancelled is the spelling rows carried before #554. It is
+	// read, never written.
+	runStatusLegacyCancelled RunStatus = "cancelled"
 )
 
 // Validate returns an error when s is not a recognized RunStatus.
@@ -26,30 +34,34 @@ func (s RunStatus) Validate() error {
 	switch s {
 	case RunStatusPlanned, RunStatusAwaitingApproval, RunStatusApproved,
 		RunStatusExecuting, RunStatusCompleted, RunStatusFailed,
-		RunStatusCancelled, RunStatusExpired:
+		RunStatusCanceled, runStatusLegacyCancelled, RunStatusExpired:
 		return nil
 	}
 	return fmt.Errorf("unknown run status %q", s)
 }
 
 // IsTerminal reports whether s is a terminal run status: RunStatusCompleted,
-// RunStatusFailed, RunStatusCancelled, or RunStatusExpired. Terminal runs are
+// RunStatusFailed, RunStatusCanceled (either spelling), or RunStatusExpired. Terminal runs are
 // the only ones allowed to carry a CompletedAt timestamp (see
 // RunRecord.Validate).
 func (s RunStatus) IsTerminal() bool {
 	switch s {
-	case RunStatusCompleted, RunStatusFailed, RunStatusCancelled, RunStatusExpired:
+	case RunStatusCompleted, RunStatusFailed, RunStatusCanceled, runStatusLegacyCancelled, RunStatusExpired:
 		return true
 	}
 	return false
 }
 
 // ParseRunStatus converts s into a RunStatus, returning a descriptive error
-// when s is not a recognized value.
+// when s is not a recognized value. The legacy "cancelled" reads as
+// RunStatusCanceled.
 func ParseRunStatus(s string) (RunStatus, error) {
 	st := RunStatus(s)
 	if err := st.Validate(); err != nil {
 		return "", err
+	}
+	if st == runStatusLegacyCancelled {
+		return RunStatusCanceled, nil
 	}
 	return st, nil
 }
@@ -61,15 +73,23 @@ const (
 	TrancheStatusScheduled TrancheStatus = "scheduled"
 	TrancheStatusFired     TrancheStatus = "fired"
 	TrancheStatusCompleted TrancheStatus = "completed"
-	TrancheStatusCancelled TrancheStatus = "cancelled"
+	TrancheStatusCanceled  TrancheStatus = "canceled"
 	TrancheStatusFailed    TrancheStatus = "failed"
+
+	// Deprecated: use TrancheStatusCanceled. Kept so existing callers compile;
+	// it writes the new spelling.
+	TrancheStatusCancelled = TrancheStatusCanceled
+
+	// trancheStatusLegacyCancelled is the spelling rows carried before #554.
+	// It is read, never written.
+	trancheStatusLegacyCancelled TrancheStatus = "cancelled"
 )
 
 // Validate returns an error when s is not a recognized TrancheStatus.
 func (s TrancheStatus) Validate() error {
 	switch s {
 	case TrancheStatusScheduled, TrancheStatusFired, TrancheStatusCompleted,
-		TrancheStatusCancelled, TrancheStatusFailed:
+		TrancheStatusCanceled, trancheStatusLegacyCancelled, TrancheStatusFailed:
 		return nil
 	}
 	return fmt.Errorf("unknown tranche status %q", s)
@@ -88,11 +108,15 @@ func (s TrancheStatus) allowsFiredAt() bool {
 }
 
 // ParseTrancheStatus converts s into a TrancheStatus, returning a
-// descriptive error when s is not a recognized value.
+// descriptive error when s is not a recognized value. The legacy "cancelled"
+// reads as TrancheStatusCanceled.
 func ParseTrancheStatus(s string) (TrancheStatus, error) {
 	st := TrancheStatus(s)
 	if err := st.Validate(); err != nil {
 		return "", err
+	}
+	if st == trancheStatusLegacyCancelled {
+		return TrancheStatusCanceled, nil
 	}
 	return st, nil
 }

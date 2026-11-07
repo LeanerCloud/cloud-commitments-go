@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Notices
 
+- **Azure Redis purchases must go through managedredis (`ServiceMemoryDB`).**
+  The Azure recommendations adapter still labels Redis recommendations
+  `ServiceCache`, and the cache client now refuses every purchase (#538), so
+  route Azure Redis purchases to the managedredis client. The refusal wraps
+  `common.ErrRefusedBeforePurchase` (nothing was sent), not an upfront-approval
+  failure, so approving and retrying does not help.
 - **Federation IaC bundles downloaded before 2026-04-22 need to be
   re-downloaded** to get zero-touch registration. Older bundles silently
   skip auto-registration unless manually edited (Terraform `registration.tf`
@@ -32,10 +38,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **AWS/Redshift:** when the `AttemptJournal` also implements `common.ClaimReader`, the reserved-node dedupe skips nodes another purchase recorded as bought, before and after the send. A claim read error refuses before the send or leaves the outcome unknown after it; if the skip leaves one of several matches and the token has no sending or outcome_unknown record, the purchase is refused as ambiguous (#700).
+- **`pkg`:** optional `common.ClaimReader` (`ClaimedByOthers(ctx, token, ids)`), which an `AttemptJournal` may implement so a provider can skip commitments another purchase recorded as bought (#700).
 - **`pkg`:** `common.Commitment.CostKnown` reports whether `Cost` holds a price the provider reported. The zero value means unknown, so a `Cost` of 0 without `CostKnown` must not be read as free. Producers set it in a follow-up (#74).
 
 - **`common`:** `AttemptJournal`, `AttemptRecord` and an optional `PurchaseOptions.AttemptJournal`, a caller-backed durable record of purchase attempts per idempotency token (#107). Nothing reads it yet.
 - **`pkg`:** `provider.PurchaseReconciler`, an optional read-only `ServiceClient` interface with `common.ReconcileRequest`, `common.ReconcileResult` and `common.ReconcileVerdict` (`ReconcileFound`/`ReconcileUnknown`, never NotFound), so a purchase that returned `ErrOutcomeUnknown` can later be checked against the provider. Types only; AWS EC2 and Redshift implementations follow (#298).
+- **`aws`:** the `ec2` and `redshift` service clients now implement `provider.PurchaseReconciler`: a read-only check, after a purchase returned `ErrOutcomeUnknown`, of whether the purchase landed. The verdict is `Found` or `Unknown`, never `NotFound`. It reports `Found` only for exactly one full attribute match inside the attempt window, and `Unknown` otherwise. The other AWS clients (rds, elasticache, memorydb, opensearch, savingsplans) have an idempotency token and do not implement it. The platform consumes it in a follow-up (#298).
 
 - **`ladder`/`aws`:** `ladder.ObservedCommitmentRateCapability` and its AWS implementation report commitment dollars per covered on-demand dollar measured on the account's existing Savings Plans and convertible RIs (account-scoped Cost Explorer utilization). Layers with no usable observation are absent.
 
@@ -178,6 +187,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Changed
 
 - **BREAKING `azure`:** Azure Redis recommendations now come only from managedredis and are labelled `memorydb` (`ServiceMemoryDB`), both from Consumption and from Advisor rows. The cache client's `GetRecommendations` returns none, so `GetRecommendationsForService(ServiceCache)` is empty for Azure, and consumers that stored Azure Redis plans or settings under `cache` must also match `memorydb`. Azure Redis recommendations keep `CacheDetails` `Engine` and `NodeType` but no longer report `Shards` (0, unknown) (#692).
+- **`azure`:** the cache service no longer purchases Azure Redis reservations;
+  managedredis (`ServiceMemoryDB`) is the only service that buys `RedisCache`,
+  so one Redis recommendation cannot be bought once through each service.
+  `cache.PurchaseCommitment` now refuses before any API call with an error
+  wrapping `common.ErrRefusedBeforePurchase`. Consumers that buy an Azure
+  `ServiceCache` recommendation must route it to managedredis (#538).
+- Ladder run and tranche statuses now write the US spelling `canceled`
+  (`RunStatusCanceled`, `TrancheStatusCanceled`). Rows holding the legacy
+  `cancelled` still validate, count as terminal, and parse to the new
+  constants through `ParseRunStatus` and `ParseTrancheStatus`. The
+  `RunStatusCancelled` and `TrancheStatusCancelled` names remain as
+  deprecated aliases with the new value. Consumers that compare raw stored
+  strings or filter on `cancelled` in SQL must accept both spellings.
 - `ListTargetOfferings` now walks up to 50 pages (about 5000 offerings)
   instead of 10, and returns an error wrapping the new
   `ec2.ErrTargetOfferingsTruncated` (with no list) when that bound is hit,

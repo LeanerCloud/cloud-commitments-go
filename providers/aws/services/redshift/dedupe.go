@@ -24,11 +24,14 @@ const (
 	// redshiftClockSkew is the slack between the caller's RequestedAt and AWS's
 	// node StartTime. The window deliberately has no upper bound: a late
 	// StartTime must never cause a double buy.
-	redshiftClockSkew = 5 * time.Minute
+	redshiftClockSkew = purchasecfg.ClockSkew
 	// recoverLookupTimeout bounds the post-error lookup, which runs on a
 	// context detached from the caller's cancellation.
 	recoverLookupTimeout = 30 * time.Second
 )
+
+// errScanCapReached marks an incomplete describeAllNodes scan, so callers can tell it from an API error.
+var errScanCapReached = errors.New("pagination cap reached")
 
 // errRequestedAtRequired refuses a tokenized purchase that cannot be matched.
 var errRequestedAtRequired = errors.New("RequestedAt is required with an idempotency token: Redshift reserved nodes cannot be tagged, so an earlier purchase is found by start time; refusing to purchase to avoid a possible double-buy")
@@ -45,10 +48,29 @@ var errRequestedAtRequired = errors.New("RequestedAt is required with an idempot
 // later node or be refused as ambiguous. A caller that re-dispatches a token
 // whose earlier attempt may have been sent must first wait long enough for
 // DescribeReservedNodes to list a node that attempt bought; an AttemptJournal
-// (go#107) records the attempts but cannot close that listing lag.
+// (go#107) records the attempts but cannot close that listing lag. When the
+// journal also implements common.ClaimReader (go#700), nodes another token
+// recorded as purchased are skipped; a node whose purchase was never recorded
+// stays invisible, so the dispatch rule above still applies.
 func (c *Client) findMatchingNodes(ctx context.Context, offeringID string, count int, requestedAt time.Time) ([]string, error) {
+	nodes, err := c.describeAllNodes(ctx)
+	if err != nil {
+		return nil, err
+	}
 	since := requestedAt.Add(-redshiftClockSkew)
 	var ids []string
+	for i := range nodes {
+		if nodeMatches(&nodes[i], offeringID, count, since) {
+			ids = append(ids, aws.ToString(nodes[i].ReservedNodeId))
+		}
+	}
+	return ids, nil
+}
+
+// describeAllNodes pages through every reserved node, failing if the scan is incomplete
+// (API error, canceled context or page cap) so callers never treat a partial list as complete.
+func (c *Client) describeAllNodes(ctx context.Context) ([]redshifttypes.ReservedNode, error) {
+	var nodes []redshifttypes.ReservedNode
 	var marker *string
 	for page := 0; page < maxReservedNodePages; page++ {
 		if err := ctx.Err(); err != nil {
@@ -61,17 +83,13 @@ func (c *Client) findMatchingNodes(ctx context.Context, offeringID string, count
 		if err != nil {
 			return nil, fmt.Errorf("failed to describe reserved nodes for dedupe: %w", err)
 		}
-		for i := range response.ReservedNodes {
-			if nodeMatches(&response.ReservedNodes[i], offeringID, count, since) {
-				ids = append(ids, aws.ToString(response.ReservedNodes[i].ReservedNodeId))
-			}
-		}
+		nodes = append(nodes, response.ReservedNodes...)
 		if aws.ToString(response.Marker) == "" {
-			return ids, nil
+			return nodes, nil
 		}
 		marker = response.Marker
 	}
-	return nil, fmt.Errorf("pagination cap reached after %d pages for Redshift reserved-node dedupe lookup", maxReservedNodePages)
+	return nil, fmt.Errorf("%w after %d pages for Redshift reserved-node dedupe lookup", errScanCapReached, maxReservedNodePages)
 }
 
 func nodeMatches(node *redshifttypes.ReservedNode, offeringID string, count int, since time.Time) bool {
@@ -89,32 +107,90 @@ func nodeMatches(node *redshifttypes.ReservedNode, offeringID string, count int,
 
 // guardAgainstRepurchase runs before a tokenized purchase. It reports done
 // when the purchase must not proceed: result then carries either the adopted
-// node (Success) or the refusal in result.Error.
-func (c *Client) guardAgainstRepurchase(ctx context.Context, result *common.PurchaseResult, offeringID string, count int, opts common.PurchaseOptions) (done bool) {
+// node (Success) or the refusal in result.Error. priors are the token's
+// journal records, nil without a journal.
+func (c *Client) guardAgainstRepurchase(ctx context.Context, result *common.PurchaseResult, offeringID string, count int, opts common.PurchaseOptions, priors []common.AttemptRecord) (done bool) {
 	if opts.RequestedAt.IsZero() {
 		result.Error = errRequestedAtRequired
 		return true
 	}
-	ids, err := c.findMatchingNodes(ctx, offeringID, count, opts.RequestedAt)
-	switch {
-	case err != nil:
+	raw, err := c.findMatchingNodes(ctx, offeringID, count, opts.RequestedAt)
+	if err != nil {
 		result.Error = fmt.Errorf("idempotency lookup failed before Redshift purchase (refusing to purchase to avoid a possible double-buy): %w", err)
+		return true
+	}
+	ids, excluded, err := c.unclaimed(ctx, raw, opts)
+	if err != nil {
+		refuseBeforePurchase(result, "claim lookup failed before Redshift purchase (refusing to purchase to avoid a possible double-buy): %w", err)
+		return true
+	}
+	switch {
 	case len(ids) > 1:
-		result.Error = fmt.Errorf("ambiguous Redshift dedupe: %d reserved nodes (%s) match offering %s, node count %d, started since %s; refusing to purchase to avoid a possible double-buy; check the account and, if the commitment is missing, start a new purchase",
-			len(ids), strings.Join(ids, ", "), offeringID, count, opts.RequestedAt.Add(-redshiftClockSkew).UTC().Format(time.RFC3339))
+		result.Error = ambiguousNodes(ids, excluded, false, offeringID, count, opts)
+	case len(ids) == 1 && len(raw) > 1 && !hasSendEvidence(priors, offeringID):
+		result.Error = ambiguousNodes(ids, excluded, true, offeringID, count, opts)
 	case len(ids) == 1:
 		log.Printf("Redshift reserved node %s already matches idempotency token %s; skipping purchase", ids[0], common.MaskToken(opts.IdempotencyToken))
 		adopt(result, ids[0])
-		return true
 	default:
 		return false
 	}
 	return true
 }
 
+// ambiguousNodes is the refusal for a window that cannot name one node. The
+// excluded IDs (recorded by another purchase) are named so an operator can
+// tell why a smaller set remains; noSend adds that the token shows no send.
+func ambiguousNodes(ids, excluded []string, noSend bool, offeringID string, count int, opts common.PurchaseOptions) error {
+	msg := fmt.Sprintf("ambiguous Redshift dedupe: %d reserved nodes (%s) match offering %s, node count %d, started since %s",
+		len(ids), strings.Join(ids, ", "), offeringID, count, opts.RequestedAt.Add(-redshiftClockSkew).UTC().Format(time.RFC3339))
+	if len(excluded) > 0 {
+		msg += fmt.Sprintf("; %s recorded by another purchase and excluded", strings.Join(excluded, ", "))
+	}
+	if noSend {
+		msg += ", and no earlier attempt of this token shows a send"
+	}
+	return fmt.Errorf("%s; refusing to purchase to avoid a possible double-buy; check the account and, if the commitment is missing, start a new purchase", msg)
+}
+
+// hasSendEvidence reports whether the token's own records show a send under
+// this offering: a sending or outcome_unknown record. A send under another
+// offering cannot have bought a node that matches this one.
+func hasSendEvidence(priors []common.AttemptRecord, offeringID string) bool {
+	return slices.ContainsFunc(priors, func(p common.AttemptRecord) bool {
+		return (p.State == common.AttemptSending || p.State == common.AttemptOutcomeUnknown) && p.OfferingID == offeringID
+	})
+}
+
+// unclaimed splits ids into those no other token recorded as purchased and
+// those another token did (go#700). It does nothing without a journal, when
+// the journal cannot read claims, or when there are no ids.
+func (c *Client) unclaimed(ctx context.Context, ids []string, opts common.PurchaseOptions) (kept, excluded []string, err error) {
+	if len(ids) == 0 {
+		return ids, nil, nil
+	}
+	reader, ok := opts.AttemptJournal.(common.ClaimReader)
+	if !ok {
+		return ids, nil, nil
+	}
+	claimed, err := reader.ClaimedByOthers(ctx, opts.IdempotencyToken, ids)
+	if err != nil {
+		return nil, nil, fmt.Errorf("claim lookup for token %s failed: %w", common.MaskToken(opts.IdempotencyToken), err)
+	}
+	for _, id := range ids {
+		if slices.Contains(claimed, id) {
+			excluded = append(excluded, id)
+		} else {
+			kept = append(kept, id)
+		}
+	}
+	return kept, excluded, nil
+}
+
 // adoptAfterUnknownOutcome runs after a purchase error. When the outcome is
 // unknown and exactly one node matches, the purchase did happen: adopt it. A
-// missing or ambiguous match leaves the original error in place.
+// missing or ambiguous match, or a failed claim read, leaves the original error
+// in place; a node another token recorded as purchased does not match.
 func (c *Client) adoptAfterUnknownOutcome(ctx context.Context, result *common.PurchaseResult, offeringID string, count int, opts common.PurchaseOptions) bool {
 	if !errors.Is(result.Error, common.ErrOutcomeUnknown) || opts.IdempotencyToken == "" || opts.RequestedAt.IsZero() {
 		return false
@@ -122,6 +198,9 @@ func (c *Client) adoptAfterUnknownOutcome(ctx context.Context, result *common.Pu
 	lookupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recoverLookupTimeout)
 	defer cancel()
 	ids, err := c.findMatchingNodes(lookupCtx, offeringID, count, opts.RequestedAt)
+	if err == nil {
+		ids, _, err = c.unclaimed(lookupCtx, ids, opts)
+	}
 	if err != nil || len(ids) != 1 {
 		log.Printf("Redshift purchase outcome unknown and not recoverable (matches=%d, lookup error=%v)", len(ids), err)
 		return false
@@ -151,7 +230,7 @@ func (c *Client) guardBeforePurchase(ctx context.Context, result *common.Purchas
 	case journalActive(opts):
 		return c.journalPreflight(ctx, result, offeringID, count, opts)
 	case opts.IdempotencyToken != "":
-		return c.guardAgainstRepurchase(ctx, result, offeringID, count, opts)
+		return c.guardAgainstRepurchase(ctx, result, offeringID, count, opts, nil)
 	default:
 		return false
 	}
@@ -181,13 +260,22 @@ func (c *Client) journalPreflight(ctx context.Context, result *common.PurchaseRe
 		c.adoptRecordedNode(ctx, result, ids, offeringID, count, opts)
 		return true
 	}
-	if c.guardAgainstRepurchase(ctx, result, offeringID, count, opts) {
+	warnWithoutClaimReader(opts)
+	if c.guardAgainstRepurchase(ctx, result, offeringID, count, opts, priors) {
 		if result.Success {
 			c.recordPurchased(ctx, result, offeringID, opts)
 		}
 		return true
 	}
 	return refuseUnresolvedPriors(result, priors, offeringID, opts)
+}
+
+// warnWithoutClaimReader logs once per purchase that the journal cannot read
+// other tokens' claims, so the dedupe runs as it did before go#700.
+func warnWithoutClaimReader(opts common.PurchaseOptions) {
+	if _, ok := opts.AttemptJournal.(common.ClaimReader); !ok {
+		log.Printf("attempt journal for token %s does not implement common.ClaimReader; nodes recorded by other purchases are not excluded from the Redshift dedupe", common.MaskToken(opts.IdempotencyToken))
+	}
 }
 
 // recordedReservationIDs returns the distinct reservation IDs of Purchased
