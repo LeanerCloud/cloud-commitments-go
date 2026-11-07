@@ -56,8 +56,8 @@ func (l AppliedLister) GetAppliedReservationList(context.Context, string, *armre
 
 // OrderPager is a single-page pager over Rows, or Err on the page fetch.
 type OrderPager struct {
-	Rows []*armreservations.ReservationResponse
 	Err  error
+	Rows []*armreservations.ReservationResponse
 	done bool
 }
 
@@ -87,8 +87,8 @@ func (p *CountingPager) NextPage(context.Context) (armreservations.ReservationCl
 // CancelOnSecondCallPager never ends and calls Cancel while serving its
 // second page.
 type CancelOnSecondCallPager struct {
-	Calls  int
 	Cancel context.CancelFunc
+	Calls  int
 }
 
 func (p *CancelOnSecondCallPager) More() bool { return true }
