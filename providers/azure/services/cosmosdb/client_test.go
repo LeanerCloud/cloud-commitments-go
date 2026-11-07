@@ -1768,3 +1768,18 @@ func TestGetCosmosPricing_LegitimateSKUBuildsExactFilter(t *testing.T) {
 	assert.Equal(t, "serviceName eq 'Azure Cosmos DB' and productName eq 'Azure Cosmos DB' and armRegionName eq 'Global' and armSkuName eq 'Cosmos_DB_100_RUs' and priceType eq 'Reservation'", req.URL.Query().Get("$filter"))
 	mockHTTP.AssertExpectations(t)
 }
+
+func TestPurchaseCommitment_RegionMismatchMakesNoHTTPCalls(t *testing.T) {
+	t.Parallel()
+	h := &mocks.MockHTTPClient{}
+	c := NewClientWithHTTP(&MockTokenCredential{token: "t"}, "sub", "eastus", h)
+	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{
+		Region: "westeurope", ResourceType: "x", Term: "1yr", Count: 1,
+		PaymentOption: "no-upfront",
+	}, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
+	assert.NotContains(t, err.Error(), "failed to marshal")
+	assert.False(t, result.Success)
+	h.AssertNumberOfCalls(t, "Do", 0)
+}

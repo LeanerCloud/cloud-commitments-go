@@ -2012,3 +2012,18 @@ func TestPopulateVMSKUMapFromPage_SkipsSKUWithUnparseableCapability(t *testing.T
 		t.Fatalf("Good entry wrong: %+v ok=%v", e, ok)
 	}
 }
+
+func TestPurchaseCommitment_RegionMismatchMakesNoHTTPCalls(t *testing.T) {
+	t.Parallel()
+	h := &mocks.MockHTTPClient{}
+	c := NewClientWithHTTP(&MockTokenCredential{token: "t"}, "sub", "eastus", h)
+	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{
+		Region: "westeurope", ResourceType: "Standard_D2s_v3", Term: "1yr", Count: 1,
+		PaymentOption: "no-upfront",
+	}, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
+	assert.NotContains(t, err.Error(), "failed to marshal")
+	assert.False(t, result.Success)
+	h.AssertNumberOfCalls(t, "Do", 0)
+}

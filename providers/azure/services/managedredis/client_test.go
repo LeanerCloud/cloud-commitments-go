@@ -1161,6 +1161,7 @@ func TestPurchaseCommitment_RegionMismatchRefusedBeforeHTTP(t *testing.T) {
 	}, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
+	assert.NotContains(t, err.Error(), "failed to marshal")
 	assert.False(t, result.Success)
 	h.AssertNumberOfCalls(t, "Do", 0)
 }

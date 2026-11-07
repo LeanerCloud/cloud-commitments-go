@@ -1333,3 +1333,18 @@ func TestNewClientWithHTTP_NilFallbackIsHardened(t *testing.T) {
 	require.Error(t, err, "nil-fallback client must reject IMDS connections")
 	assert.Contains(t, err.Error(), "blocked")
 }
+
+func TestPurchaseCommitment_RegionMismatchMakesNoHTTPCalls(t *testing.T) {
+	t.Parallel()
+	h := &mocks.MockHTTPClient{}
+	c := NewClientWithHTTP(&mockTokenCredential{}, "sub", "eastus", h)
+	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{
+		Region: "westeurope", ResourceType: "x", Term: "1yr", Count: 1,
+		PaymentOption: "no-upfront",
+	}, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
+	assert.NotContains(t, err.Error(), "failed to marshal")
+	assert.False(t, result.Success)
+	h.AssertNumberOfCalls(t, "Do", 0)
+}
