@@ -189,10 +189,6 @@ func ec2DimsFromDetails(details common.ServiceDetails) (platform, tenancy, scope
 	return "", "", "", ""
 }
 
-func (d *ec2Dedupe) handles(rec common.Recommendation) bool {
-	return isAWSCompute(rec.Provider, rec.Service)
-}
-
 // adjust consumes matching entries, fewest wildcards first, and resizes the
 // recommendation once to what is left. Entries are shared across
 // recommendations, so which recommendation is suppressed depends on their

@@ -85,3 +85,32 @@ func TestDedupe_ElastiCacheCoverWithVariants(t *testing.T) {
 	// 4 Redis nodes cover 5 Valkey nodes, once per variant: 6 -> 1, 1.
 	assert.Equal(t, []int{1, 1}, adjustCounts(t, held, []common.Recommendation{mk("1yr"), mk("3yr")}))
 }
+
+func TestDedupe_EC2VariantsEachSeeFullHeldQuantity(t *testing.T) {
+	t.Parallel()
+	held := []common.Commitment{{
+		Provider: common.ProviderAWS, Service: common.ServiceEC2, ResourceType: "m5.large", Region: "us-east-1",
+		Platform: "Linux/UNIX", Tenancy: "default", Scope: "Region", Count: 1, State: "active", StartDate: time.Now().Add(-time.Hour),
+	}}
+	mk := func(term, payment string) common.Recommendation {
+		return common.Recommendation{
+			Provider: common.ProviderAWS, Service: common.ServiceEC2, ResourceType: "m5.large", Region: "us-east-1",
+			Count: 2, Term: term, PaymentOption: payment,
+			Details: &common.ComputeDetails{Platform: "Linux/UNIX", Tenancy: "default", Scope: "region"},
+		}
+	}
+	got := adjustCounts(t, held, []common.Recommendation{
+		mk("1yr", "all-upfront"), mk("1yr", "no-upfront"), mk("3yr", "all-upfront"), mk("1yr", "all-upfront"),
+	})
+	assert.Equal(t, []int{1, 1, 1, 2}, got)
+}
+
+func TestDedupe_VariantNormalization(t *testing.T) {
+	t.Parallel()
+	recs := []common.Recommendation{variantRec("1yr", "upfront"), variantRec(" 1YR ", " UPFRONT ")}
+	assert.Equal(t, []int{1, 2}, adjustCounts(t, heldOne(), recs), "same variant after trim and case folding shares the budget")
+	recs = []common.Recommendation{variantRec("1yr", "upfront"), variantRec(" 1YR ", "monthly")}
+	assert.Equal(t, []int{1, 1}, adjustCounts(t, heldOne(), recs), "term folds case, payment differs")
+	recs = []common.Recommendation{variantRec("1yr", "monthly"), variantRec("1yr", " MONTHLY ")}
+	assert.Equal(t, []int{1, 2}, adjustCounts(t, heldOne(), recs), "payment folds case")
+}
