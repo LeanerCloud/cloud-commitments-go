@@ -3,6 +3,7 @@ package recfilter
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -252,6 +253,7 @@ func buildExistingCommitmentsMap(commitments []common.Commitment, logf Logf) map
 func adjustRecommendationsAgainstExisting(recs []common.Recommendation, existingMap map[string]int, ec2 *ec2Dedupe, logf Logf) (passed, filtered []common.Recommendation, err error) {
 	passed = make([]common.Recommendation, 0, len(recs))
 	filtered = make([]common.Recommendation, 0)
+	budgets := map[string]map[string]int{}
 
 	for _rvc := range recs {
 		rec := recs[_rvc]
@@ -260,7 +262,7 @@ func adjustRecommendationsAgainstExisting(recs []common.Recommendation, existing
 		if ec2.handles(rec) {
 			adjusted, err = ec2.adjust(rec)
 		} else {
-			adjusted, err = adjustSingleRecommendation(rec, existingMap, logf)
+			adjusted, err = adjustSingleRecommendation(rec, variantBudget(budgets, existingMap, rec), logf)
 		}
 		if err != nil {
 			return nil, nil, err
@@ -273,6 +275,20 @@ func adjustRecommendationsAgainstExisting(recs []common.Recommendation, existing
 	}
 
 	return passed, filtered, nil
+}
+
+// variantBudget returns the held budget for rec's term and payment variant.
+// Variants are alternative ways to buy the same resource, so each group starts
+// from the full held quantity; recommendations of one variant share it in
+// input order. An empty term or payment is a group of its own (#703).
+func variantBudget(budgets map[string]map[string]int, held map[string]int, rec common.Recommendation) map[string]int {
+	variant := strings.ToLower(strings.TrimSpace(rec.Term)) + "|" + strings.ToLower(strings.TrimSpace(rec.PaymentOption))
+	if b, ok := budgets[variant]; ok {
+		return b
+	}
+	b := maps.Clone(held)
+	budgets[variant] = b
+	return b
 }
 
 // adjustSingleRecommendation adjusts a single recommendation based on existing
