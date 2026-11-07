@@ -33,7 +33,7 @@ var ErrCurrencyNotAccepted = errors.New("currency not accepted")
 // provider but whose result is not known: the commitment may already exist.
 // Services whose purchase API has no idempotency token or caller-chosen ID
 // (AWS EC2, Redshift) must not be re-sent automatically after such an error;
-// reconcile against the provider first. Detect it with
+// reconcile against the provider first (see provider.PurchaseReconciler). Detect it with
 // errors.Is(err, ErrOutcomeUnknown). Consumers such as the platform persist
 // errors as strings, so the text "purchase outcome unknown" is effectively a
 // contract until the platform persists a typed flag (platform #778).
@@ -465,6 +465,16 @@ type PurchaseOptions struct {
 	// no owning execution and leaves it empty.
 	ExecutionID string
 
+	// AttemptJournal, when non-nil, durably records purchase attempts per
+	// IdempotencyToken (go#107). Nil means no journal (today's behavior).
+	// Only Redshift reads it, honored by providers/aws from the follow-up
+	// change onward; other providers ignore it. Used only with a non-empty
+	// IdempotencyToken; see AttemptJournal for the caller contract.
+	// A journal that also implements the optional ClaimReader lets Redshift
+	// skip nodes another purchase recorded, from the follow-up change to
+	// providers/aws onward (go#700).
+	AttemptJournal AttemptJournal
+
 	// OfferingClass is the EC2 Reserved Instance offering class for this
 	// purchase: "convertible" (exchangeable) or "standard" (locked, ~5%
 	// cheaper). Empty means the caller has not set one; the EC2 client
@@ -549,6 +559,11 @@ type Commitment struct {
 
 	Count int     `json:"count"`
 	Cost  float64 `json:"cost"`
+	// CostKnown reports whether Cost holds a price the provider reported. The zero
+	// value means unknown, so a Cost of 0 on a commitment that did not set
+	// CostKnown must not be read as free. Set it true only where the amount was
+	// read from the provider (a real 0 included).
+	CostKnown bool `json:"cost_known"`
 
 	// StartDateIsDay marks StartDate as a UTC calendar date. The zero value
 	// means StartDate is a precise timestamp; true means the real instant
