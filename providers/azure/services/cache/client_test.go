@@ -16,6 +16,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	azpricing "github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/pricing"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/mocks"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations/reservationstest"
 )
 
 // MockReservationsDetailsPager mocks the ReservationsDetailsPager interface.
@@ -860,4 +861,33 @@ func TestNewClientWithHTTP_NilFallbackIsHardened(t *testing.T) {
 	}
 	require.Error(t, err, "nil-fallback client must reject IMDS connections")
 	assert.Contains(t, err.Error(), "blocked")
+}
+
+func TestCacheClient_GetExistingCommitments_DoesNotInventRegionOrState(t *testing.T) {
+	t.Parallel()
+	for _, region := range []string{"eastus", "westeurope"} {
+		t.Run(region, func(t *testing.T) {
+			t.Parallel()
+			client := NewClient(nil, "test-subscription", region)
+			reservationID, skuName := "res-1", "redis-premium-p1"
+			client.SetReservationsPager(&MockReservationsDetailsPager{
+				pages: []armconsumption.ReservationsDetailsClientListResponse{{
+					ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{
+						Value: []*armconsumption.ReservationDetail{{
+							Properties: &armconsumption.ReservationDetailProperties{
+								ReservationID: &reservationID,
+								SKUName:       &skuName,
+							},
+						}},
+					},
+				}},
+			})
+
+			commitments, err := client.GetExistingCommitments(context.Background())
+
+			require.NoError(t, err)
+			require.Len(t, commitments, 1)
+			reservationstest.AssertUnknownInventory(t, commitments[0])
+		})
+	}
 }

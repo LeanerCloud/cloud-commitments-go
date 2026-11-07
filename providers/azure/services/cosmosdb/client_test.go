@@ -21,6 +21,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/mocks"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations/reservationstest"
 )
 
 // MockRecommendationsPager mocks the RecommendationsPager interface.
@@ -1767,4 +1768,33 @@ func TestGetCosmosPricing_LegitimateSKUBuildsExactFilter(t *testing.T) {
 	req := mockHTTP.Calls[0].Arguments.Get(0).(*http.Request)
 	assert.Equal(t, "serviceName eq 'Azure Cosmos DB' and productName eq 'Azure Cosmos DB' and armRegionName eq 'Global' and armSkuName eq 'Cosmos_DB_100_RUs' and priceType eq 'Reservation'", req.URL.Query().Get("$filter"))
 	mockHTTP.AssertExpectations(t)
+}
+
+func TestCosmosDBClient_GetExistingCommitments_DoesNotInventRegionOrState(t *testing.T) {
+	t.Parallel()
+	for _, region := range []string{"eastus", "westeurope"} {
+		t.Run(region, func(t *testing.T) {
+			t.Parallel()
+			client := NewClient(nil, "test-subscription", region)
+			reservationID, skuName := "res-1", "cosmos-db-standard"
+			client.SetReservationsPager(&MockReservationsDetailsPager{
+				pages: []armconsumption.ReservationsDetailsClientListResponse{{
+					ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{
+						Value: []*armconsumption.ReservationDetail{{
+							Properties: &armconsumption.ReservationDetailProperties{
+								ReservationID: &reservationID,
+								SKUName:       &skuName,
+							},
+						}},
+					},
+				}},
+			})
+
+			commitments, err := client.GetExistingCommitments(context.Background())
+
+			require.NoError(t, err)
+			require.Len(t, commitments, 1)
+			reservationstest.AssertUnknownInventory(t, commitments[0])
+		})
+	}
 }
