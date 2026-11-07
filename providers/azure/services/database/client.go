@@ -299,36 +299,6 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 	return commitments, nil
 }
 
-// convertSQLReservation converts a reservation detail to a commitment if it's a SQL reservation.
-func (c *Client) convertSQLReservation(detail *armconsumption.ReservationDetail) *common.Commitment {
-	if detail.Properties == nil {
-		return nil
-	}
-
-	props := detail.Properties
-	if props.SKUName == nil || !strings.Contains(strings.ToLower(*props.SKUName), "sql") {
-		return nil
-	}
-
-	commitment := &common.Commitment{
-		Provider:       common.ProviderAzure,
-		Account:        c.subscriptionID,
-		CommitmentType: common.CommitmentReservedInstance,
-		Service:        common.ServiceRelationalDB,
-		Region:         c.region,
-		State:          common.CommitmentStateActive,
-	}
-
-	if props.ReservationID != nil {
-		commitment.CommitmentID = *props.ReservationID
-	}
-	if props.SKUName != nil {
-		commitment.ResourceType = *props.SKUName
-	}
-
-	return commitment
-}
-
 // PurchaseCommitment purchases SQL Database reserved capacity using the two-step
 // calculatePrice->purchase flow required by Azure's Reservations API (issue #677).
 func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
