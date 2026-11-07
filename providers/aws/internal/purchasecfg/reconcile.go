@@ -20,6 +20,7 @@ const (
 	ReasonNoCandidate        = "no-candidate"
 	ReasonAmbiguous          = "ambiguous"
 	ReasonUncertainCandidate = "uncertain-candidate"
+	ReasonClaimLookupFailed  = "claim-lookup-failed"
 )
 
 // ReconcileWindow returns the padded interval a candidate's start time must fall in.

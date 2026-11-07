@@ -32,17 +32,27 @@ var jToken = common.DeriveIdempotencyToken("journal", 0)
 type journalCall struct {
 	Method string
 	Rec    common.AttemptRecord
+	// Token and IDs are set on ClaimedByOthers calls.
+	Token string
+	IDs   []string
 }
 
 // fakeJournal enforces the transition table and keeps the first OfferingID of
-// each (token, execution) row, as a store must.
+// each (token, execution) row, as a store must. It also enforces the platform's
+// unique index: a reservation ID is purchased at most once across all rows.
+// ClaimedByOthers reads the stored rows, as the platform query does; onPrior
+// runs after PriorAttempts reads, to model a race.
 type fakeJournal struct {
 	mu       sync.Mutex
 	rows     []common.AttemptRecord
 	calls    []journalCall
 	priorErr error
 	failOn   map[common.AttemptState]error
+	claimErr error
+	onPrior  func(*fakeJournal)
 }
+
+var _ common.ClaimReader = (*fakeJournal)(nil)
 
 func newFakeJournal() *fakeJournal {
 	return &fakeJournal{failOn: map[common.AttemptState]error{}}
@@ -69,7 +79,49 @@ func (f *fakeJournal) PriorAttempts(_ context.Context, token string) ([]common.A
 			out = append(out, r)
 		}
 	}
+	if f.onPrior != nil {
+		f.onPrior(f)
+	}
 	return out, nil
+}
+
+func (f *fakeJournal) ClaimedByOthers(_ context.Context, token string, ids []string) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls = append(f.calls, journalCall{Method: "ClaimedByOthers", Token: token, IDs: slices.Clone(ids)})
+	if f.claimErr != nil {
+		return nil, f.claimErr
+	}
+	var out []string
+	for _, id := range ids {
+		if slices.ContainsFunc(f.rows, func(r common.AttemptRecord) bool {
+			return r.State == common.AttemptPurchased && r.ReservationID == id && r.IdempotencyToken != token
+		}) {
+			out = append(out, id)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeJournal) claimCalls() []journalCall {
+	var out []journalCall
+	for _, c := range f.calls {
+		if c.Method == "ClaimedByOthers" {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// purchasedElsewhere reports whether a row other than index self holds id as
+// purchased, whatever its token or execution.
+func (f *fakeJournal) purchasedElsewhere(self int, id string) bool {
+	for i, r := range f.rows {
+		if i != self && r.State == common.AttemptPurchased && r.ReservationID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *fakeJournal) RecordAttempt(ctx context.Context, rec common.AttemptRecord) error {
@@ -92,6 +144,9 @@ func (f *fakeJournal) RecordAttempt(ctx context.Context, rec common.AttemptRecor
 	}
 	if !validTransition(from, rec) {
 		return errors.New("fake journal: invalid transition")
+	}
+	if rec.State == common.AttemptPurchased && f.purchasedElsewhere(i, rec.ReservationID) {
+		return errors.New("fake journal: reservation already recorded as purchased")
 	}
 	if i < 0 {
 		f.rows = append(f.rows, rec)
@@ -414,6 +469,22 @@ func TestFakeJournalEnforcesTable(t *testing.T) {
 	j = newFakeJournal()
 	require.NoError(t, j.RecordAttempt(ctx, rec(common.AttemptPurchased, "rn-1")))
 	require.Error(t, j.RecordAttempt(ctx, rec(common.AttemptPurchased, "rn-2")))
+}
+
+func TestFakeJournalPurchasedUnique(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	rec := func(token, exec string, s common.AttemptState, id string) common.AttemptRecord {
+		return common.AttemptRecord{IdempotencyToken: token, ExecutionID: exec, State: s, ReservationID: id}
+	}
+	j := newFakeJournal()
+	require.NoError(t, j.RecordAttempt(ctx, rec(jToken, "e1", common.AttemptPurchased, "rn-1")))
+	require.NoError(t, j.RecordAttempt(ctx, rec(jToken, "e1", common.AttemptPurchased, "rn-1")), "same row re-record")
+	require.Error(t, j.RecordAttempt(ctx, rec(jToken, "e2", common.AttemptPurchased, "rn-1")), "other execution")
+	require.Error(t, j.RecordAttempt(ctx, rec("other-token", "e3", common.AttemptPurchased, "rn-1")), "other token")
+	require.NoError(t, j.RecordAttempt(ctx, rec("other-token", "e3", common.AttemptPurchased, "rn-2")), "different ID")
+	require.NoError(t, j.RecordAttempt(ctx, rec(jToken, "e4", common.AttemptSending, "")), "sending holds no ID")
+	require.Error(t, j.RecordAttempt(ctx, rec(jToken, "e4", common.AttemptPurchased, "rn-2")), "sending row to taken ID")
 }
 
 func TestJournal_CancelledCtxAfterSendStillRecords(t *testing.T) {
