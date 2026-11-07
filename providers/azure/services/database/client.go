@@ -34,6 +34,10 @@ const reservationResourceTypeSQLDB = "SQLDatabases"
 // maxRecsPages caps Consumption API recommendation pagination.
 const maxRecsPages = 10
 
+// sqlServerEngine is the engine every Azure SQL Database recommendation and
+// held reservation carries.
+const sqlServerEngine = "sqlserver"
+
 // maxReservationsPages caps reservation-detail pagination.
 const maxReservationsPages = 50
 
@@ -58,12 +62,6 @@ type HTTPClient interface {
 type RecommendationsPager interface {
 	More() bool
 	NextPage(ctx context.Context) (armconsumption.ReservationRecommendationsClientListResponse, error)
-}
-
-// ReservationsDetailsPager interface for reservations details pager (enables mocking).
-type ReservationsDetailsPager interface {
-	More() bool
-	NextPage(ctx context.Context) (armconsumption.ReservationsDetailsClientListResponse, error)
 }
 
 // CapabilitiesClient interface for SQL capabilities (enables mocking).
@@ -96,7 +94,7 @@ type Client struct {
 	cred                  azcore.TokenCredential
 	httpClient            HTTPClient
 	recommendationsPager  RecommendationsPager
-	reservationsPager     ReservationsDetailsPager
+	inventoryFactories    *reservations.InventoryFactories
 	capabilitiesClient    CapabilitiesClient
 	serversPager          SQLServersPager
 	managedInstancesPager SQLManagedInstancesPager
@@ -117,8 +115,12 @@ type Client struct {
 	// Only a complete walk is cached (serverInfoLoaded); a failed or
 	// canceled walk is retried, but not before serverInfoRetryAfter so a
 	// persistently failing subscription is not re-walked per recommendation.
-	azConfig             string
-	deployment           string
+	azConfig   string
+	deployment string
+	// recAZConfig is the AZConfig the recommendation path last stamped, so
+	// held reservations are keyed identically even if a later walk answers
+	// differently. Guarded by serverInfoMu.
+	recAZConfig          string
 	serverInfoRetryDelay time.Duration
 
 	// Lazy SKU catalog cache. Populated once on the first
@@ -136,6 +138,7 @@ type Client struct {
 	// persistently failing subscription is not re-walked per recommendation.
 	serverInfoMu     sync.Mutex
 	serverInfoLoaded bool
+	recAZConfigSet   bool
 }
 
 // serverInfoRetryDelayDefault is the minimum wait before re-walking the
@@ -174,9 +177,18 @@ func (c *Client) SetRecommendationsPager(pager RecommendationsPager) {
 	c.recommendationsPager = pager
 }
 
-// SetReservationsPager sets the reservations pager (for testing).
-func (c *Client) SetReservationsPager(pager ReservationsDetailsPager) {
-	c.reservationsPager = pager
+// SetInventoryFactories injects reservation-inventory factories (for testing).
+func (c *Client) SetInventoryFactories(f *reservations.InventoryFactories) {
+	c.inventoryFactories = f
+}
+
+// factories returns the injected inventory factories, or the real SDK-backed
+// ones when none were injected (production only calls NewClient).
+func (c *Client) factories() reservations.InventoryFactories {
+	if c.inventoryFactories != nil {
+		return *c.inventoryFactories
+	}
+	return reservations.DefaultInventoryFactories(c.cred)
 }
 
 // SetCapabilitiesClient sets the capabilities client (for testing).
@@ -268,91 +280,34 @@ func (c *Client) appendPage(ctx context.Context, pricer *azrecs.Pricer, recs []c
 	return recs, nil
 }
 
-// GetExistingCommitments retrieves existing SQL Database reserved capacity using Azure Resource Graph.
+// GetExistingCommitments retrieves the SQL Database reservations that apply to
+// this subscription from the Reservations API, which carries the purchase
+// date, quantity, location and lifecycle state the duplicate-purchase guard
+// needs (issue #705). Any failure or incomplete live row is returned as an
+// error rather than as an empty or partial inventory.
+//
+// The dedupe key includes engine and deployment, and recommendations carry
+// Engine "sqlserver" and the subscription's dominant AZConfig, so held
+// reservations are stamped with the same values. The server walk is skipped
+// when nothing is held.
 func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitment, error) {
-	pager, err := c.createReservationsPager()
-	if err != nil {
-		return nil, fmt.Errorf("database: create reservations pager: %w", err)
+	commitments, err := reservations.StrictCommitments(ctx, c.subscriptionID, c.factories(), maxReservationsPages, common.ServiceRelationalDB,
+		armreservations.ReservedResourceTypeSQLDatabases, reservations.StrictLabels{Service: "database", Resource: "SQL"})
+	if err != nil || len(commitments) == 0 {
+		return commitments, err
 	}
-
-	return c.collectSQLReservations(ctx, pager)
-}
-
-// createReservationsPager creates a pager for listing reservations.
-func (c *Client) createReservationsPager() (ReservationsDetailsPager, error) {
-	// Use injected pager if available (for testing)
-	if c.reservationsPager != nil {
-		return c.reservationsPager, nil
+	az, ok := c.recommendationAZConfig()
+	if !ok {
+		az = c.cachedDominantAZConfig(ctx)
 	}
-
-	client, err := armconsumption.NewReservationsDetailsClient(c.cred, nil)
-	if err != nil {
-		return nil, err
+	if err := ctx.Err(); err != nil {
+		return nil, fmt.Errorf("database: enrich held reservations: %w", err)
 	}
-
-	scope := fmt.Sprintf("subscriptions/%s", c.subscriptionID)
-	return client.NewListPager(scope, &armconsumption.ReservationsDetailsClientListOptions{}), nil
-}
-
-// collectSQLReservations collects SQL Database reservations from the pager.
-// Returns an error on first pagination failure so callers can't silently act
-// on a partial list — see the compute client for the full rationale.
-func (c *Client) collectSQLReservations(ctx context.Context, pager ReservationsDetailsPager) ([]common.Commitment, error) {
-	commitments := make([]common.Commitment, 0)
-
-	for pageIdx := 0; pager.More(); pageIdx++ {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context canceled during pagination: %w", err)
-		}
-		if pageIdx >= maxReservationsPages {
-			return nil, fmt.Errorf("database: GetExistingCommitments pagination cap (%d pages) reached", maxReservationsPages)
-		}
-		page, err := slot.NextPage(ctx, pager)
-		if err != nil {
-			return nil, fmt.Errorf("database: list reservations: %w", err)
-		}
-
-		for _, detail := range page.Value {
-			if commitment := c.convertSQLReservation(detail); commitment != nil {
-				commitments = append(commitments, *commitment)
-			}
-		}
+	for i := range commitments {
+		commitments[i].Engine = sqlServerEngine
+		commitments[i].Deployment = az
 	}
-
-	// ReservationsDetails is a daily usage API: one row per reservation per
-	// usage day. Without this, a single reservation held for N days would
-	// surface as N commitments sharing one CommitmentID (issue #73).
-	return reservations.DedupeCommitmentsByID(commitments), nil
-}
-
-// convertSQLReservation converts a reservation detail to a commitment if it's a SQL reservation.
-func (c *Client) convertSQLReservation(detail *armconsumption.ReservationDetail) *common.Commitment {
-	if detail.Properties == nil {
-		return nil
-	}
-
-	props := detail.Properties
-	if props.SKUName == nil || !strings.Contains(strings.ToLower(*props.SKUName), "sql") {
-		return nil
-	}
-
-	commitment := &common.Commitment{
-		Provider:       common.ProviderAzure,
-		Account:        c.subscriptionID,
-		CommitmentType: common.CommitmentReservedInstance,
-		Service:        common.ServiceRelationalDB,
-		Region:         c.region,
-		State:          common.CommitmentStateActive,
-	}
-
-	if props.ReservationID != nil {
-		commitment.CommitmentID = *props.ReservationID
-	}
-	if props.SKUName != nil {
-		commitment.ResourceType = *props.SKUName
-	}
-
-	return commitment
+	return commitments, nil
 }
 
 // PurchaseCommitment purchases SQL Database reserved capacity using the two-step
@@ -674,7 +629,9 @@ func (c *Client) convertAzureSQLRecommendation(ctx context.Context, azureRec arm
 	if entry, ok := c.cachedSKULookup(ctx, f.ResourceType); ok && entry.engineVersion != "" {
 		details.EngineVersion = entry.engineVersion
 	}
-	if az := c.cachedDominantAZConfig(ctx); az != "" {
+	az := c.cachedDominantAZConfig(ctx)
+	c.recordRecommendationAZConfig(az)
+	if az != "" {
 		details.AZConfig = az
 	}
 	if dep := c.cachedDominantDeployment(ctx); dep != "" {
@@ -781,6 +738,18 @@ func populateSQLSKUMapFromVersion(out map[string]sqlSKUEntry, engineVersion stri
 func (c *Client) cachedDominantAZConfig(ctx context.Context) string {
 	az, _ := c.serverInfo(ctx)
 	return az
+}
+
+func (c *Client) recordRecommendationAZConfig(az string) {
+	c.serverInfoMu.Lock()
+	defer c.serverInfoMu.Unlock()
+	c.recAZConfig, c.recAZConfigSet = az, true
+}
+
+func (c *Client) recommendationAZConfig() (string, bool) {
+	c.serverInfoMu.Lock()
+	defer c.serverInfoMu.Unlock()
+	return c.recAZConfig, c.recAZConfigSet
 }
 
 // cachedDominantDeployment returns the dominant Deployment observed
@@ -995,7 +964,7 @@ func (c *Client) createServersPager() (SQLServersPager, error) {
 func detailsFromSQLSKU(sku string) *common.DatabaseDetails {
 	// Engine is always SQL Server for an Azure SQL Database reservation.
 	return &common.DatabaseDetails{
-		Engine:        "sqlserver",
+		Engine:        sqlServerEngine,
 		InstanceClass: sku,
 	}
 }

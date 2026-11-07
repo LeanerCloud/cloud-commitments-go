@@ -8,9 +8,12 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/consumption/armconsumption"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/sql/armsql"
 
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/slot/slottest"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations/reservationstest"
 )
 
 // onePager yields a single empty page and asserts the slot is held while
@@ -26,6 +29,14 @@ func (p *onePager[T]) NextPage(context.Context) (T, error) {
 	p.probe.Check()
 	var zero T
 	return zero, nil
+}
+
+// slotLister reports one order so the order pager is exercised too.
+type slotLister struct{ probe *slottest.Probe }
+
+func (l slotLister) GetAppliedReservationList(ctx context.Context, sub string, o *armreservations.AzureReservationAPIClientGetAppliedReservationListOptions) (armreservations.AzureReservationAPIClientGetAppliedReservationListResponse, error) {
+	l.probe.Check()
+	return reservationstest.AppliedLister{}.GetAppliedReservationList(ctx, sub, o)
 }
 
 type probeCaps struct{ probe *slottest.Probe }
@@ -50,7 +61,14 @@ func TestClientCallsHoldSharedSlot(t *testing.T) {
 			_, _ = c.GetRecommendations(ctx, nil)
 		},
 		"GetExistingCommitments": func(ctx context.Context, p *slottest.Probe, c *Client) {
-			c.SetReservationsPager(&onePager[armconsumption.ReservationsDetailsClientListResponse]{probe: p})
+			c.SetManagedInstancesPager(&MockSQLManagedInstancesPager{})
+			c.SetServersPager(&MockSQLServersPager{})
+			c.SetInventoryFactories(&reservations.InventoryFactories{
+				NewAppliedLister: func() (reservations.AppliedReservationsLister, error) { return slotLister{p}, nil },
+				NewOrderPager: func(string) reservations.OrderReservationsPager {
+					return &onePager[armreservations.ReservationClientListResponse]{probe: p}
+				},
+			})
 			_, _ = c.GetExistingCommitments(ctx)
 		},
 		"GetValidResourceTypes": func(ctx context.Context, p *slottest.Probe, c *Client) {
