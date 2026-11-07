@@ -470,6 +470,9 @@ type PurchaseOptions struct {
 	// Only Redshift reads it, honored by providers/aws from the follow-up
 	// change onward; other providers ignore it. Used only with a non-empty
 	// IdempotencyToken; see AttemptJournal for the caller contract.
+	// A journal that also implements the optional ClaimReader lets Redshift
+	// skip nodes another purchase recorded, from the follow-up change to
+	// providers/aws onward (go#700).
 	AttemptJournal AttemptJournal
 
 	// OfferingClass is the EC2 Reserved Instance offering class for this

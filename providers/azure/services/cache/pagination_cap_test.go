@@ -2,10 +2,8 @@ package cache
 
 import (
 	"context"
-	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/redis/armredis/v3"
-	"github.com/stretchr/testify/assert"
 )
 
 // countingRedisPager reports More() until limit pages were requested, so a
@@ -18,28 +16,6 @@ func (p *countingRedisPager) More() bool { return p.calls < p.limit }
 func (p *countingRedisPager) NextPage(_ context.Context) (armredis.ClientListBySubscriptionResponse, error) {
 	p.calls++
 	return armredis.ClientListBySubscriptionResponse{}, nil
-}
-
-func TestFetchSKUCatalogue_PageCapStopsEndlessPager(t *testing.T) {
-	t.Parallel()
-	pager := &countingRedisPager{limit: 1000}
-	client := NewClient(nil, "test-subscription", "eastus")
-	client.SetRedisCachesPager(pager)
-
-	assert.Nil(t, client.fetchSKUCatalogue(context.Background()))
-	assert.Equal(t, maxCachesPages, pager.calls)
-}
-
-func TestFetchSKUCatalogue_CancelledContextStopsWalk(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	pager := &countingRedisPager{limit: 1000}
-	client := NewClient(nil, "test-subscription", "eastus")
-	client.SetRedisCachesPager(pager)
-
-	assert.Nil(t, client.fetchSKUCatalogue(ctx))
-	assert.Zero(t, pager.calls)
 }
 
 // finalPartialRedisPager serves exactly pages pages: each full page holds
@@ -63,15 +39,4 @@ func (p *finalPartialRedisPager) NextPage(_ context.Context) (armredis.ClientLis
 	}
 	p.calls++
 	return armredis.ClientListBySubscriptionResponse{ListResult: armredis.ListResult{Value: caches}}, nil
-}
-
-func TestFetchSKUCatalogue_ExactlyCapPagesWithPartialLastPageSucceeds(t *testing.T) {
-	t.Parallel()
-	pager := &finalPartialRedisPager{pages: maxCachesPages, perPage: 2}
-	client := NewClient(nil, "test-subscription", "eastus")
-	client.SetRedisCachesPager(pager)
-
-	got := client.fetchSKUCatalogue(context.Background())
-	assert.Len(t, got, 2*(maxCachesPages-1)+1)
-	assert.Equal(t, maxCachesPages, pager.calls)
 }

@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Notices
 
+- **Azure Redis purchases must go through managedredis (`ServiceMemoryDB`).**
+  The Azure recommendations adapter still labels Redis recommendations
+  `ServiceCache`, and the cache client now refuses every purchase (#538), so
+  route Azure Redis purchases to the managedredis client. The refusal wraps
+  `common.ErrRefusedBeforePurchase` (nothing was sent), not an upfront-approval
+  failure, so approving and retrying does not help.
 - **Federation IaC bundles downloaded before 2026-04-22 need to be
   re-downloaded** to get zero-touch registration. Older bundles silently
   skip auto-registration unless manually edited (Terraform `registration.tf`
@@ -32,6 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **`pkg`:** optional `common.ClaimReader` (`ClaimedByOthers(ctx, token, ids)`), which an `AttemptJournal` may implement so a provider can skip commitments another purchase recorded as bought (#700).
 - **`pkg`:** `common.Commitment.CostKnown` reports whether `Cost` holds a price the provider reported. The zero value means unknown, so a `Cost` of 0 without `CostKnown` must not be read as free. Producers set it in a follow-up (#74).
 
 - **`common`:** `AttemptJournal`, `AttemptRecord` and an optional `PurchaseOptions.AttemptJournal`, a caller-backed durable record of purchase attempts per idempotency token (#107). Nothing reads it yet.
@@ -178,6 +185,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
+- **BREAKING `azure`:** Azure Redis recommendations now come only from managedredis and are labelled `memorydb` (`ServiceMemoryDB`), both from Consumption and from Advisor rows. The cache client's `GetRecommendations` returns none, so `GetRecommendationsForService(ServiceCache)` is empty for Azure, and consumers that stored Azure Redis plans or settings under `cache` must also match `memorydb`. Azure Redis recommendations keep `CacheDetails` `Engine` and `NodeType` but no longer report `Shards` (0, unknown) (#692).
+- **`azure`:** the cache service no longer purchases Azure Redis reservations;
+  managedredis (`ServiceMemoryDB`) is the only service that buys `RedisCache`,
+  so one Redis recommendation cannot be bought once through each service.
+  `cache.PurchaseCommitment` now refuses before any API call with an error
+  wrapping `common.ErrRefusedBeforePurchase`. Consumers that buy an Azure
+  `ServiceCache` recommendation must route it to managedredis (#538).
+- Ladder run and tranche statuses now write the US spelling `canceled`
+  (`RunStatusCanceled`, `TrancheStatusCanceled`). Rows holding the legacy
+  `cancelled` still validate, count as terminal, and parse to the new
+  constants through `ParseRunStatus` and `ParseTrancheStatus`. The
+  `RunStatusCancelled` and `TrancheStatusCancelled` names remain as
+  deprecated aliases with the new value. Consumers that compare raw stored
+  strings or filter on `cancelled` in SQL must accept both spellings.
 - `ListTargetOfferings` now walks up to 50 pages (about 5000 offerings)
   instead of 10, and returns an error wrapping the new
   `ec2.ErrTargetOfferingsTruncated` (with no list) when that bound is hit,
@@ -499,6 +520,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Removed
 
+- **BREAKING:** `providers/azure/services/cache` no longer exports `RecommendationsPager`, `(*Client).SetRecommendationsPager` or `(*Client).ReservationUnitPrice`. The cache client no longer collects or prices recommendations; managedredis does. No cli, mcp or platform code references them. (#692)
 - **BREAKING:** `common.Matches` (`pkg/common`) is removed. It compared only
   Provider, Region, Service, ResourceType and engine and had no callers in
   this repo, the CLI, the MCP server or the platform; use `pkg/recfilter`

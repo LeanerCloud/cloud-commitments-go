@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
-	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/cache"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/compute"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/cosmosdb"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/database"
@@ -52,9 +51,6 @@ type goldenCase struct {
 
 func goldenCases() []goldenCase {
 	return []goldenCase{
-		{"cache", "RedisCache", func(c *reservationstest.CountingCred, h *reservationstest.Capture) purchaser {
-			return cache.NewClientWithHTTP(c, "sub", "eastus", h)
-		}, "redis-eastus-GP_Gen5_8-2x-1yr-monthly-" + goldenMarker, regexp.MustCompile(`^redis-eastus-GP_Gen5_8-2x-1yr-monthly-\d{8}T\d{6}-[0-9a-f]{8}$`), nil},
 		{"compute", "VirtualMachines", func(c *reservationstest.CountingCred, h *reservationstest.Capture) purchaser {
 			return compute.NewClientWithHTTP(c, "sub", "eastus", h)
 		}, "vm-eastus-GP_Gen5_8-2x-1yr-monthly-" + goldenMarker, regexp.MustCompile(`^vm-eastus-GP_Gen5_8-2x-1yr-monthly-\d{8}T\d{6}-[0-9a-f]{8}$`), []string{methodGet + " " + urlProvider}},

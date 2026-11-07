@@ -37,9 +37,6 @@ func (h slotHTTP) Do(*http.Request) (*http.Response, error) {
 
 func TestSlotHeldDuringCalls(t *testing.T) {
 	t.Parallel()
-	recs := func(p *slottest.Probe) *slotPager[armconsumption.ReservationRecommendationsClientListResponse] {
-		return &slotPager[armconsumption.ReservationRecommendationsClientListResponse]{p: p}
-	}
 	resv := func(p *slottest.Probe) *slotPager[armconsumption.ReservationsDetailsClientListResponse] {
 		return &slotPager[armconsumption.ReservationsDetailsClientListResponse]{p: p}
 	}
@@ -47,17 +44,11 @@ func TestSlotHeldDuringCalls(t *testing.T) {
 		name string
 		call func(ctx context.Context, p *slottest.Probe)
 	}{
-		{"recommendations", func(ctx context.Context, p *slottest.Probe) {
-			_, _ = (&Client{recommendationsPager: recs(p)}).GetRecommendations(ctx, nil)
-		}},
 		{"reservations", func(ctx context.Context, p *slottest.Probe) {
 			_, _ = (&Client{reservationsPager: resv(p)}).GetExistingCommitments(ctx)
 		}},
 		{"valid resource types", func(ctx context.Context, p *slottest.Probe) {
 			_, _ = (&Client{redisCachesPager: &slotPager[armredis.ClientListBySubscriptionResponse]{p: p}}).GetValidResourceTypes(ctx)
-		}},
-		{"sku catalog", func(ctx context.Context, p *slottest.Probe) {
-			(&Client{region: "eastus", redisCachesPager: &slotPager[armredis.ClientListBySubscriptionResponse]{p: p}}).fetchSKUCatalogue(ctx)
 		}},
 		{"retail pricing", func(ctx context.Context, p *slottest.Probe) {
 			_, _ = (&Client{httpClient: slotHTTP{p}}).getRedisPricing(ctx, "Premium_P1", "eastus", 1)
