@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	redshifttypes "github.com/aws/aws-sdk-go-v2/service/redshift/types"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/offeringprice"
@@ -59,10 +60,34 @@ func (c *Client) ReconcilePurchase(ctx context.Context, req common.ReconcileRequ
 		return purchasecfg.UnknownResult(scanFailure(err))
 	}
 
-	var matches, uncertain []string
+	matches, uncertain := classifyNodes(nodes, offeringID, int(count), rec.ResourceType, months, lo, hi)
+	matches, uncertain, ok := c.reconcileClaims(ctx, req, matches, uncertain)
+	if !ok {
+		return purchasecfg.UnknownResult(purchasecfg.ReasonClaimLookupFailed)
+	}
+	// Tagged is EC2-only: Redshift reserved nodes cannot carry the idempotency tag, so it is always false.
+	return purchasecfg.Decide(matches, uncertain, reconcileCriteria, false)
+}
+
+// reconcileClaims moves a match another token recorded as purchased into uncertain: Found there
+// could hide a failed purchase (go#711). It does nothing without a token; ok is false when the
+// claim read failed.
+func (c *Client) reconcileClaims(ctx context.Context, req common.ReconcileRequest, matches, uncertain []string) (m, u []string, ok bool) {
+	if req.Options.IdempotencyToken == "" {
+		return matches, uncertain, true
+	}
+	kept, claimed, err := c.unclaimed(ctx, matches, req.Options)
+	if err != nil {
+		return nil, nil, false
+	}
+	return kept, append(uncertain, claimed...), true
+}
+
+// classifyNodes splits the scanned nodes into full matches and uncertain candidates.
+func classifyNodes(nodes []redshifttypes.ReservedNode, offeringID string, count int, nodeType string, months int, lo, hi time.Time) (matches, uncertain []string) {
 	for i := range nodes {
 		id := aws.ToString(nodes[i].ReservedNodeId)
-		switch nodeFit(&nodes[i], offeringID, int(count), rec.ResourceType, months, lo, hi) {
+		switch nodeFit(&nodes[i], offeringID, count, nodeType, months, lo, hi) {
 		case fitMatch:
 			matches = append(matches, id)
 		case fitUncertain:
@@ -70,6 +95,5 @@ func (c *Client) ReconcilePurchase(ctx context.Context, req common.ReconcileRequ
 		case fitNo:
 		}
 	}
-	// Tagged is EC2-only: Redshift reserved nodes cannot carry the idempotency tag, so it is always false.
-	return purchasecfg.Decide(matches, uncertain, reconcileCriteria, false)
+	return matches, uncertain
 }
