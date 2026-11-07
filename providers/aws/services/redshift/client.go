@@ -403,16 +403,22 @@ func matchesPaymentOption(offering redshifttypes.ReservedNodeOffering, paymentOp
 	recurring := offeringRecurringRate(offering)
 	hasUpfront := upfront > 0
 	hasRecurring := recurring > 0
-	switch paymentOption {
-	case "all-upfront":
-		return hasUpfront && !hasRecurring
-	case "no-upfront":
-		return !hasUpfront && hasRecurring
-	case "partial-upfront":
-		return hasUpfront && hasRecurring
-	default:
-		return false
-	}
+	match, ok := paymentShapes[paymentOption]
+	return ok && match(hasUpfront, hasRecurring)
+}
+
+// paymentShapes maps each supported payment option to its upfront/recurring price shape.
+// Its key set is the supported-option list (see supportedPaymentOption).
+var paymentShapes = map[string]func(hasUpfront, hasRecurring bool) bool{
+	"all-upfront":     func(u, r bool) bool { return u && !r },
+	"no-upfront":      func(u, r bool) bool { return !u && r },
+	"partial-upfront": func(u, r bool) bool { return u && r },
+}
+
+// supportedPaymentOption reports whether matchesPaymentOption can ever match the option.
+func supportedPaymentOption(paymentOption string) bool {
+	_, ok := paymentShapes[paymentOption]
+	return ok
 }
 
 // requiredMonthsForTerm converts a reservation term string to the offering

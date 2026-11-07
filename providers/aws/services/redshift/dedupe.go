@@ -24,11 +24,14 @@ const (
 	// redshiftClockSkew is the slack between the caller's RequestedAt and AWS's
 	// node StartTime. The window deliberately has no upper bound: a late
 	// StartTime must never cause a double buy.
-	redshiftClockSkew = 5 * time.Minute
+	redshiftClockSkew = purchasecfg.ClockSkew
 	// recoverLookupTimeout bounds the post-error lookup, which runs on a
 	// context detached from the caller's cancellation.
 	recoverLookupTimeout = 30 * time.Second
 )
+
+// errScanCapReached marks an incomplete describeAllNodes scan, so callers can tell it from an API error.
+var errScanCapReached = errors.New("pagination cap reached")
 
 // errRequestedAtRequired refuses a tokenized purchase that cannot be matched.
 var errRequestedAtRequired = errors.New("RequestedAt is required with an idempotency token: Redshift reserved nodes cannot be tagged, so an earlier purchase is found by start time; refusing to purchase to avoid a possible double-buy")
@@ -47,8 +50,24 @@ var errRequestedAtRequired = errors.New("RequestedAt is required with an idempot
 // DescribeReservedNodes to list a node that attempt bought; an AttemptJournal
 // (go#107) records the attempts but cannot close that listing lag.
 func (c *Client) findMatchingNodes(ctx context.Context, offeringID string, count int, requestedAt time.Time) ([]string, error) {
+	nodes, err := c.describeAllNodes(ctx)
+	if err != nil {
+		return nil, err
+	}
 	since := requestedAt.Add(-redshiftClockSkew)
 	var ids []string
+	for i := range nodes {
+		if nodeMatches(&nodes[i], offeringID, count, since) {
+			ids = append(ids, aws.ToString(nodes[i].ReservedNodeId))
+		}
+	}
+	return ids, nil
+}
+
+// describeAllNodes pages through every reserved node, failing if the scan is incomplete
+// (API error, canceled context or page cap) so callers never treat a partial list as complete.
+func (c *Client) describeAllNodes(ctx context.Context) ([]redshifttypes.ReservedNode, error) {
+	var nodes []redshifttypes.ReservedNode
 	var marker *string
 	for page := 0; page < maxReservedNodePages; page++ {
 		if err := ctx.Err(); err != nil {
@@ -61,17 +80,13 @@ func (c *Client) findMatchingNodes(ctx context.Context, offeringID string, count
 		if err != nil {
 			return nil, fmt.Errorf("failed to describe reserved nodes for dedupe: %w", err)
 		}
-		for i := range response.ReservedNodes {
-			if nodeMatches(&response.ReservedNodes[i], offeringID, count, since) {
-				ids = append(ids, aws.ToString(response.ReservedNodes[i].ReservedNodeId))
-			}
-		}
+		nodes = append(nodes, response.ReservedNodes...)
 		if aws.ToString(response.Marker) == "" {
-			return ids, nil
+			return nodes, nil
 		}
 		marker = response.Marker
 	}
-	return nil, fmt.Errorf("pagination cap reached after %d pages for Redshift reserved-node dedupe lookup", maxReservedNodePages)
+	return nil, fmt.Errorf("%w after %d pages for Redshift reserved-node dedupe lookup", errScanCapReached, maxReservedNodePages)
 }
 
 func nodeMatches(node *redshifttypes.ReservedNode, offeringID string, count int, since time.Time) bool {

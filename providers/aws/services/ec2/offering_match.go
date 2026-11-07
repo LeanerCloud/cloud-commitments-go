@@ -73,8 +73,13 @@ var offeringChecks = []struct {
 		if got == "" || want == "" {
 			return false
 		}
-		return strings.TrimSuffix(got, vpcProductSuffix) != strings.TrimSuffix(want, vpcProductSuffix)
+		return !productMatches(got, want)
 	}},
+}
+
+// productMatches compares product descriptions ignoring the " (Amazon VPC)" suffix.
+func productMatches(got, want string) bool {
+	return strings.TrimSuffix(got, vpcProductSuffix) == strings.TrimSuffix(want, vpcProductSuffix)
 }
 
 // offeringMismatch returns the reason o does not satisfy w, or "" on a match.

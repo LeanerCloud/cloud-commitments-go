@@ -43,6 +43,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - **`common`:** `AttemptJournal`, `AttemptRecord` and an optional `PurchaseOptions.AttemptJournal`, a caller-backed durable record of purchase attempts per idempotency token (#107). Nothing reads it yet.
 - **`pkg`:** `provider.PurchaseReconciler`, an optional read-only `ServiceClient` interface with `common.ReconcileRequest`, `common.ReconcileResult` and `common.ReconcileVerdict` (`ReconcileFound`/`ReconcileUnknown`, never NotFound), so a purchase that returned `ErrOutcomeUnknown` can later be checked against the provider. Types only; AWS EC2 and Redshift implementations follow (#298).
+- **`aws`:** the `ec2` and `redshift` service clients now implement `provider.PurchaseReconciler`: a read-only check, after a purchase returned `ErrOutcomeUnknown`, of whether the purchase landed. The verdict is `Found` or `Unknown`, never `NotFound`. It reports `Found` only for exactly one full attribute match inside the attempt window, and `Unknown` otherwise. The other AWS clients (rds, elasticache, memorydb, opensearch, savingsplans) have an idempotency token and do not implement it. The platform consumes it in a follow-up (#298).
 
 - **`ladder`/`aws`:** `ladder.ObservedCommitmentRateCapability` and its AWS implementation report commitment dollars per covered on-demand dollar measured on the account's existing Savings Plans and convertible RIs (account-scoped Cost Explorer utilization). Layers with no usable observation are absent.
 
