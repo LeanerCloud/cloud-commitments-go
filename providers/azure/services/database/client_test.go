@@ -1180,7 +1180,7 @@ func TestDatabaseClient_PurchaseCommitment_Success(t *testing.T) {
 		return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/db-order-001/purchase"
 	})).Return(purchaseResp8, nil).Once()
 
-	rec := common.Recommendation{
+	rec := common.Recommendation{Region: "eastus",
 		ResourceType:   "GP_Gen5_8",
 		Term:           "1yr",
 		Count:          1,
@@ -1219,7 +1219,7 @@ func TestDatabaseClient_PurchaseCommitment_3YearTerm(t *testing.T) {
 		return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/db-order-3yr/purchase"
 	})).Return(purchaseResp10, nil).Once()
 
-	rec := common.Recommendation{
+	rec := common.Recommendation{Region: "eastus",
 		ResourceType:   "GP_Gen5_8",
 		Term:           "3yr",
 		Count:          1,
@@ -1256,7 +1256,7 @@ func TestDatabaseClient_PurchaseCommitment_Accepted(t *testing.T) {
 		return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/db-order-202/purchase"
 	})).Return(purchaseResp12, nil).Once()
 
-	rec := common.Recommendation{
+	rec := common.Recommendation{Region: "eastus",
 		ResourceType:   "GP_Gen5_8",
 		Term:           "1yr",
 		Count:          1,
@@ -1277,7 +1277,7 @@ func TestDatabaseClient_PurchaseCommitment_TokenError(t *testing.T) {
 	mockCred := &MockTokenCredential{err: errors.New("token error")}
 	client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
-	rec := common.Recommendation{
+	rec := common.Recommendation{Region: "eastus",
 		ResourceType:  "GP_Gen5_8",
 		Term:          "1yr",
 		Count:         1,
@@ -1301,7 +1301,7 @@ func TestDatabaseClient_PurchaseCommitment_HTTPError(t *testing.T) {
 		return r.URL.Path == "/providers/Microsoft.Capacity/calculatePrice"
 	})).Return(nil, errors.New("network error")).Once()
 
-	rec := common.Recommendation{
+	rec := common.Recommendation{Region: "eastus",
 		ResourceType:  "GP_Gen5_8",
 		Term:          "1yr",
 		Count:         1,
@@ -1336,7 +1336,7 @@ func TestDatabaseClient_PurchaseCommitment_BadStatus(t *testing.T) {
 		return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/db-order-bad/purchase"
 	})).Return(purchaseResp14, nil).Once()
 
-	rec := common.Recommendation{
+	rec := common.Recommendation{Region: "eastus",
 		ResourceType:  "GP_Gen5_8",
 		Term:          "1yr",
 		Count:         1,
@@ -1387,7 +1387,7 @@ func TestDatabaseClient_PurchaseCommitment_TagInjection(t *testing.T) {
 		return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/"+orderID+"/purchase"
 	})).Return(purchaseResp16, nil).Once()
 
-	rec := common.Recommendation{ResourceType: "GP_Gen5_8", Term: "1yr", Count: 1, CommitmentCost: 5000.0, PaymentOption: "no-upfront"}
+	rec := common.Recommendation{Region: "eastus", ResourceType: "GP_Gen5_8", Term: "1yr", Count: 1, CommitmentCost: 5000.0, PaymentOption: "no-upfront"}
 	result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{Source: source})
 	require.NoError(t, err)
 	assert.True(t, result.Success)
@@ -1426,7 +1426,7 @@ func TestDatabaseClient_PurchaseCommitment_BillingPlan(t *testing.T) {
 			mockCred := &MockTokenCredential{token: "test-token"}
 			client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
-			rec := common.Recommendation{ResourceType: "GP_Gen5_8", Term: "1yr", Count: 1, PaymentOption: tc.paymentOption}
+			rec := common.Recommendation{Region: "eastus", ResourceType: "GP_Gen5_8", Term: "1yr", Count: 1, PaymentOption: tc.paymentOption}
 
 			if tc.wantErrSub != "" {
 				result, err := client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
@@ -1492,7 +1492,7 @@ func TestDatabaseClient_PurchaseCommitment_RequiresSource(t *testing.T) {
 	mockCred := &MockTokenCredential{token: "test-token"}
 	client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
-	rec := common.Recommendation{ResourceType: "GP_Gen5_8", Term: "1yr", Count: 1}
+	rec := common.Recommendation{Region: "eastus", ResourceType: "GP_Gen5_8", Term: "1yr", Count: 1}
 	result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{})
 	require.Error(t, err)
 	assert.False(t, result.Success)
@@ -1653,7 +1653,7 @@ func TestDatabaseClient_PurchaseCommitment_DisplayNameConformsToAzureAllowlist(t
 			r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/"+orderID+"/purchase"
 	})).Return(purchaseResp20, nil).Once()
 
-	rec := common.Recommendation{
+	rec := common.Recommendation{Region: "eastus",
 		ResourceType:   "GP_Gen5_2",
 		Term:           "1yr",
 		Count:          1,
@@ -1715,7 +1715,7 @@ func TestDatabaseClient_PurchaseCommitment_CanonicalReservedResourceType(t *test
 			r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/"+orderID+"/purchase"
 	})).Return(purchaseResp22, nil).Once()
 
-	rec := common.Recommendation{
+	rec := common.Recommendation{Region: "eastus",
 		ResourceType:   "GP_Gen5_2",
 		Term:           "1yr",
 		Count:          1,
@@ -2195,4 +2195,19 @@ func TestNewClientWithHTTP_NilFallbackIsHardened(t *testing.T) {
 	}
 	require.Error(t, err, "nil-fallback client must reject IMDS connections")
 	assert.Contains(t, err.Error(), "blocked")
+}
+
+func TestPurchaseCommitment_RegionMismatchMakesNoHTTPCalls(t *testing.T) {
+	t.Parallel()
+	h := &mocks.MockHTTPClient{}
+	c := NewClientWithHTTP(&MockTokenCredential{token: "t"}, "sub", "eastus", h)
+	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{
+		Region: "westeurope", ResourceType: "GP_Gen5_8", Term: "1yr", Count: 1,
+		PaymentOption: "no-upfront",
+	}, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
+	assert.NotContains(t, err.Error(), "failed to marshal")
+	assert.False(t, result.Success)
+	h.AssertNumberOfCalls(t, "Do", 0)
 }

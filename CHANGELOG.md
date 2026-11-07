@@ -306,6 +306,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **`azure` reservation purchases:** compute, cosmosdb, database, managedredis, search and synapse now refuse a purchase before any API call, wrapping `common.ErrRefusedBeforePurchase`, when the recommendation region (empty, or not the same region as the client after lowercasing and removing spaces) does not match the client region. Previously the reservation was bought in the client region regardless of `rec.Region` (#704).
 - **Breaking (source):** `managedredis.ReservationsDetailsPager` and `(*managedredis.Client).SetReservationsPager` are removed; tests inject reservation inventory with `SetInventoryFactories` instead (#699).
 - **`azure` Redis:** `managedredis.GetExistingCommitments` now reads held reservations from the Reservations API (purchase date, quantity, location, state), so a Redis reservation bought in the last day reduces the matching recommendation instead of being invisible to the duplicate guard (#699). An incomplete live reservation row (missing SKU, location, quantity or purchase date, an unattributable scope, or an expiry falling today) now fails the lookup with an error instead of being skipped, as `azure` compute already does.
 - **`aws` RI recommendations:** a fractional Cost Explorer quantity now rounds

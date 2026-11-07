@@ -744,7 +744,7 @@ func TestPurchaseCommitment_Success(t *testing.T) {
 	})).Return(purchaseResp10, nil).Once()
 	cred := &mockTokenCredential{token: "tok"}
 	c := NewClientWithHTTP(cred, "sub", "eastus", h)
-	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{
+	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{Region: "eastus",
 		ResourceType: "Premium_P1", Term: "1yr", Count: 1, CommitmentCost: 500.0,
 		PaymentOption: "no-upfront",
 	}, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
@@ -775,7 +775,7 @@ func TestPurchaseCommitment_3yr(t *testing.T) {
 	})).Return(purchaseResp12, nil).Once()
 	cred := &mockTokenCredential{token: "tok"}
 	c := NewClientWithHTTP(cred, "sub", "eastus", h)
-	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{
+	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{Region: "eastus",
 		ResourceType: "Premium_P2", Term: "3yr", Count: 2, CommitmentCost: 1200.0,
 		PaymentOption: "no-upfront",
 	}, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
@@ -804,7 +804,7 @@ func TestPurchaseCommitment_Accepted(t *testing.T) {
 	})).Return(purchaseResp14, nil).Once()
 	cred := &mockTokenCredential{token: "tok"}
 	c := NewClientWithHTTP(cred, "sub", "eastus", h)
-	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{
+	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{Region: "eastus",
 		ResourceType: "Premium_P1", Term: "1yr", Count: 1,
 		PaymentOption: "no-upfront",
 	}, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
@@ -818,7 +818,7 @@ func TestPurchaseCommitment_TokenError(t *testing.T) {
 	t.Cleanup(func() { h.AssertExpectations(t) })
 	cred := &mockTokenCredential{err: errors.New("token error")}
 	c := NewClientWithHTTP(cred, "sub", "eastus", h)
-	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{
+	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{Region: "eastus",
 		ResourceType: "Premium_P1", Term: "1yr", Count: 1,
 		PaymentOption: "no-upfront",
 	}, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
@@ -836,7 +836,7 @@ func TestPurchaseCommitment_HTTPError(t *testing.T) {
 	})).Return(nil, errors.New("network error")).Once()
 	cred := &mockTokenCredential{token: "tok"}
 	c := NewClientWithHTTP(cred, "sub", "eastus", h)
-	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{
+	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{Region: "eastus",
 		ResourceType: "Premium_P1", Term: "1yr", Count: 1,
 		PaymentOption: "no-upfront",
 	}, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
@@ -865,7 +865,7 @@ func TestPurchaseCommitment_BadStatus(t *testing.T) {
 	})).Return(purchaseResp16, nil).Once()
 	cred := &mockTokenCredential{token: "tok"}
 	c := NewClientWithHTTP(cred, "sub", "eastus", h)
-	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{
+	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{Region: "eastus",
 		ResourceType: "Premium_P1", Term: "1yr", Count: 1,
 		PaymentOption: "no-upfront",
 	}, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
@@ -879,7 +879,7 @@ func TestPurchaseCommitment_InvalidTerm(t *testing.T) {
 	h := &mocks.MockHTTPClient{}
 	t.Cleanup(func() { h.AssertExpectations(t) })
 	c := NewClientWithHTTP(nil, "sub", "eastus", h)
-	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{
+	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{Region: "eastus",
 		ResourceType: "Premium_P1", Term: "5yr", Count: 1,
 	}, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
 	require.Error(t, err)
@@ -914,7 +914,7 @@ func TestPurchaseCommitment_BillingPlan(t *testing.T) {
 			cred := &mockTokenCredential{token: "tok"}
 			c := NewClientWithHTTP(cred, "sub", "eastus", h)
 
-			rec := common.Recommendation{ResourceType: "Premium_P1", Term: "1yr", Count: 1, PaymentOption: tc.paymentOption}
+			rec := common.Recommendation{Region: "eastus", ResourceType: "Premium_P1", Term: "1yr", Count: 1, PaymentOption: tc.paymentOption}
 
 			if tc.wantErrSub != "" {
 				result, err := c.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
@@ -979,7 +979,7 @@ func TestPurchaseCommitment_RequiresSource(t *testing.T) {
 	t.Cleanup(func() { h.AssertExpectations(t) })
 	cred := &mockTokenCredential{token: "tok"}
 	c := NewClientWithHTTP(cred, "sub", "eastus", h)
-	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{
+	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{Region: "eastus",
 		ResourceType: "Premium_P1", Term: "1yr", Count: 1,
 	}, common.PurchaseOptions{})
 	require.Error(t, err)
@@ -1116,7 +1116,7 @@ func TestPurchaseCommitment_TagInjection(t *testing.T) {
 		return true
 	})).Return(purchaseResp20, nil).Once()
 
-	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{
+	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{Region: "eastus",
 		ResourceType: "Premium_P1", Term: "1yr", Count: 1, CommitmentCost: 500.0,
 		PaymentOption: "no-upfront",
 	}, common.PurchaseOptions{Source: source})
@@ -1141,11 +1141,27 @@ func TestPurchaseCommitment_ZeroCountRejected(t *testing.T) {
 	t.Cleanup(func() { h.AssertExpectations(t) })
 	cred := &mockTokenCredential{token: "tok"}
 	c := NewClientWithHTTP(cred, "sub", "eastus", h)
-	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{
+	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{Region: "eastus",
 		ResourceType: "Premium_P1", Term: "1yr", Count: 0,
 	}, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
 	require.Error(t, err)
 	assert.False(t, result.Success)
 	assert.Contains(t, err.Error(), "quantity must be greater than zero")
 	h.AssertNotCalled(t, "Do", mock.Anything)
+}
+
+func TestPurchaseCommitment_RegionMismatchRefusedBeforeHTTP(t *testing.T) {
+	t.Parallel()
+	h := &mocks.MockHTTPClient{}
+	t.Cleanup(func() { h.AssertNotCalled(t, "Do", mock.Anything) })
+	c := NewClientWithHTTP(&mockTokenCredential{token: "tok"}, "sub", "eastus", h)
+	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{
+		Region: "westeurope", ResourceType: "Premium_P1", Term: "1yr", Count: 1,
+		PaymentOption: "no-upfront",
+	}, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
+	assert.NotContains(t, err.Error(), "failed to marshal")
+	assert.False(t, result.Success)
+	h.AssertNumberOfCalls(t, "Do", 0)
 }

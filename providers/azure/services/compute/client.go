@@ -4,6 +4,7 @@ package compute
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -511,7 +512,10 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 
 	bodyBytes, err := c.buildReservationBody(rec, billingPlan, opts.Source, opts.IdempotencyToken)
 	if err != nil {
-		result.Error = fmt.Errorf("failed to marshal request: %w", err)
+		result.Error = err
+		if !errors.Is(err, common.ErrRefusedBeforePurchase) {
+			result.Error = fmt.Errorf("failed to marshal request: %w", err)
+		}
 		return result, result.Error
 	}
 

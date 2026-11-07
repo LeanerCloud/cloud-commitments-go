@@ -25,7 +25,7 @@ const (
 )
 
 func validRec() common.Recommendation {
-	return common.Recommendation{ResourceType: "GP_Gen5_8", Term: "1yr", Count: 2, PaymentOption: "monthly"}
+	return common.Recommendation{Region: "eastus", ResourceType: "GP_Gen5_8", Term: "1yr", Count: 2, PaymentOption: "monthly"}
 }
 
 func validOpts() common.PurchaseOptions {

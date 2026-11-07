@@ -77,7 +77,7 @@ func goldenPurchase(t *testing.T, gc goldenCase, token string) (*reservationstes
 	h := &reservationstest.Capture{}
 	cred := &reservationstest.CountingCred{}
 	res, err := gc.build(cred, h).PurchaseCommitment(context.Background(),
-		common.Recommendation{ResourceType: "GP_Gen5_8", Term: "1yr", Count: 2, PaymentOption: "monthly"},
+		common.Recommendation{Region: "eastus", ResourceType: "GP_Gen5_8", Term: "1yr", Count: 2, PaymentOption: "monthly"},
 		common.PurchaseOptions{Source: common.PurchaseSourceCLI, IdempotencyToken: token})
 	require.NoError(t, err)
 	require.True(t, res.Success)
