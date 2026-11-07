@@ -62,7 +62,7 @@ func existingCommitmentRun(t *testing.T, h *existingCommitmentHTTP) (common.Purc
 func existingCommitmentRunCurrency(t *testing.T, h *existingCommitmentHTTP, currency string) (common.PurchaseResult, error) {
 	t.Helper()
 	c := NewClientWithHTTP(existingCommitmentCred{}, "sub", "eastus", h)
-	rec := common.Recommendation{
+	rec := common.Recommendation{Region: "eastus",
 		ResourceType:   "Standard_D2s_v3",
 		Term:           "1yr",
 		Count:          1,

@@ -52,7 +52,7 @@ func TestPurchaseBodies(t *testing.T) {
 	}
 	purchase := func(s purchaser, term string) (common.PurchaseResult, error) {
 		return s.PurchaseCommitment(context.Background(),
-			common.Recommendation{ResourceType: "GP_Gen5_8", Term: term, Count: 2, PaymentOption: "no-upfront"},
+			common.Recommendation{Region: "eastus", ResourceType: "GP_Gen5_8", Term: term, Count: 2, PaymentOption: "no-upfront"},
 			common.PurchaseOptions{Source: common.PurchaseSourceCLI})
 	}
 	for _, svc := range services {
