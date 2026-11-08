@@ -9,8 +9,11 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/consumption/armconsumption"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cosmos/armcosmos/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
 
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/slot/slottest"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations/reservationstest"
 )
 
 // onePager yields a single empty page and asserts the slot is held while
@@ -28,6 +31,14 @@ func (p *onePager[T]) NextPage(context.Context) (T, error) {
 	return zero, nil
 }
 
+// slotLister reports one order so the order pager is exercised too.
+type slotLister struct{ p *slottest.Probe }
+
+func (l slotLister) GetAppliedReservationList(ctx context.Context, sub string, o *armreservations.AzureReservationAPIClientGetAppliedReservationListOptions) (armreservations.AzureReservationAPIClientGetAppliedReservationListResponse, error) {
+	l.p.Check()
+	return reservationstest.AppliedLister{}.GetAppliedReservationList(ctx, sub, o)
+}
+
 type probeHTTP struct{ probe *slottest.Probe }
 
 func (h probeHTTP) Do(*http.Request) (*http.Response, error) {
@@ -43,7 +54,12 @@ func TestClientCallsHoldSharedSlot(t *testing.T) {
 			_, _ = c.GetRecommendations(ctx, nil)
 		},
 		"GetExistingCommitments": func(ctx context.Context, p *slottest.Probe, c *Client) {
-			c.SetReservationsPager(&onePager[armconsumption.ReservationsDetailsClientListResponse]{probe: p})
+			c.SetInventoryFactories(&reservations.InventoryFactories{
+				NewAppliedLister: func() (reservations.AppliedReservationsLister, error) { return slotLister{p}, nil },
+				NewOrderPager: func(string) reservations.OrderReservationsPager {
+					return &onePager[armreservations.ReservationClientListResponse]{probe: p}
+				},
+			})
 			_, _ = c.GetExistingCommitments(ctx)
 		},
 		"GetValidResourceTypes": func(ctx context.Context, p *slottest.Probe, c *Client) {

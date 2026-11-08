@@ -15,12 +15,14 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/consumption/armconsumption"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cosmos/armcosmos/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/mocks"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations/reservationstest"
 )
 
@@ -44,32 +46,6 @@ func (m *MockRecommendationsPager) NextPage(ctx context.Context) (armconsumption
 	}
 	if m.index >= len(m.pages) {
 		return armconsumption.ReservationRecommendationsClientListResponse{}, errors.New("no more pages")
-	}
-	page := m.pages[m.index]
-	m.index++
-	return page, nil
-}
-
-// MockReservationsDetailsPager mocks the ReservationsDetailsPager interface.
-type MockReservationsDetailsPager struct {
-	pages []armconsumption.ReservationsDetailsClientListResponse
-	index int
-	err   error
-}
-
-func (m *MockReservationsDetailsPager) More() bool {
-	if m.err != nil {
-		return true // Return true to allow error to be returned on NextPage
-	}
-	return m.index < len(m.pages)
-}
-
-func (m *MockReservationsDetailsPager) NextPage(ctx context.Context) (armconsumption.ReservationsDetailsClientListResponse, error) {
-	if m.err != nil {
-		return armconsumption.ReservationsDetailsClientListResponse{}, m.err
-	}
-	if m.index >= len(m.pages) {
-		return armconsumption.ReservationsDetailsClientListResponse{}, errors.New("no more pages")
 	}
 	page := m.pages[m.index]
 	m.index++
@@ -570,19 +546,6 @@ func TestCosmosDBClient_GetOfferingDetails_RequestsSKUFilter(t *testing.T) {
 	mockHTTP.AssertExpectations(t)
 }
 
-func TestCosmosDBClient_GetExistingCommitments_Empty(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client := NewClient(nil, "test-subscription", "eastus")
-
-	// Mock pager returns no pages — the empty-subscription case.
-	client.SetReservationsPager(&MockReservationsDetailsPager{})
-
-	commitments, err := client.GetExistingCommitments(ctx)
-	require.NoError(t, err)
-	assert.Empty(t, commitments)
-}
-
 func TestCosmosPricingStructure(t *testing.T) {
 	t.Parallel()
 	pricing := CosmosPricing{
@@ -666,153 +629,113 @@ func TestCosmosDBClient_GetRecommendations_MultiplePages(t *testing.T) {
 	assert.Equal(t, 2, mockPager.index) // Verify both pages were consumed
 }
 
-func TestCosmosDBClient_GetExistingCommitments_WithMockPager(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client := NewClient(nil, "test-subscription", "eastus")
+// factoriesRows injects one order holding rows (and err on the page fetch).
+func factoriesRows(err error, rows ...*armreservations.ReservationResponse) *reservations.InventoryFactories {
+	return factoriesFor(func() reservations.OrderReservationsPager { return &reservationstest.OrderPager{Rows: rows, Err: err} })
+}
 
-	reservationID := "test-reservation-123"
-	skuName := "sql-db-standard" // Does NOT contain "cosmos" so won't be included
-
-	// Create mock pager with test data
-	mockPager := &MockReservationsDetailsPager{
-		pages: []armconsumption.ReservationsDetailsClientListResponse{
-			{
-				ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{
-					Value: []*armconsumption.ReservationDetail{
-						{
-							Properties: &armconsumption.ReservationDetailProperties{
-								ReservationID: &reservationID,
-								SKUName:       &skuName,
-							},
-						},
-					},
-				},
-			},
-		},
+// factoriesFor injects one reservation order whose pager is newPager().
+func factoriesFor(newPager func() reservations.OrderReservationsPager) *reservations.InventoryFactories {
+	return &reservations.InventoryFactories{
+		NewAppliedLister: func() (reservations.AppliedReservationsLister, error) { return reservationstest.AppliedLister{}, nil },
+		NewOrderPager:    func(string) reservations.OrderReservationsPager { return newPager() },
 	}
-	client.SetReservationsPager(mockPager)
+}
 
-	commitments, err := client.GetExistingCommitments(ctx)
+func cosmosRow(id, sku, location string, qty int32) *armreservations.ReservationResponse {
+	return reservationstest.LiveRow(armreservations.ReservedResourceTypeCosmosDb, "sub", id, sku, location, qty)
+}
+
+func TestGetExistingCommitments_Empty(t *testing.T) {
+	t.Parallel()
+	c := NewClient(nil, "sub", "eastus")
+	c.SetInventoryFactories(factoriesRows(nil))
+	commitments, err := c.GetExistingCommitments(context.Background())
 	require.NoError(t, err)
-	assert.NotNil(t, commitments)
-	// The SKU name doesn't contain "cosmos" so won't be included
 	assert.Empty(t, commitments)
 }
 
-func TestCosmosDBClient_GetExistingCommitments_CosmosCommitments(t *testing.T) {
+func TestGetExistingCommitments_CosmosRowConverted(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-	client := NewClient(nil, "test-subscription", "eastus")
-
-	reservationID := "test-reservation-123"
-	skuName := "cosmos-db-standard" // Contains "cosmos"
-
-	// Create mock pager with cosmos commitment
-	mockPager := &MockReservationsDetailsPager{
-		pages: []armconsumption.ReservationsDetailsClientListResponse{
-			{
-				ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{
-					Value: []*armconsumption.ReservationDetail{
-						{
-							Properties: &armconsumption.ReservationDetailProperties{
-								ReservationID: &reservationID,
-								SKUName:       &skuName,
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	client.SetReservationsPager(mockPager)
-
-	commitments, err := client.GetExistingCommitments(ctx)
+	c := NewClient(nil, "sub", "eastus")
+	c.SetInventoryFactories(factoriesRows(nil, cosmosRow("res-123", "Cosmos_DB_Standard", "westus2", 3)))
+	commitments, err := c.GetExistingCommitments(context.Background())
 	require.NoError(t, err)
 	require.Len(t, commitments, 1)
-	assert.Equal(t, reservationID, commitments[0].CommitmentID)
-	assert.Equal(t, skuName, commitments[0].ResourceType)
+	assert.Equal(t, reservationstest.OrderPath+"/reservations/res-123", commitments[0].CommitmentID)
+	assert.Equal(t, "Cosmos_DB_Standard", commitments[0].ResourceType)
+	assert.Equal(t, "westus2", commitments[0].Region, "reservation location must win over the client region")
+	assert.Equal(t, 3, commitments[0].Count)
+	assert.Equal(t, common.CommitmentStateActive, commitments[0].State)
 	assert.Equal(t, common.ServiceNoSQL, commitments[0].Service)
+	assert.Empty(t, commitments[0].Engine, "NoSQLDetails keys carry no engine")
+	assert.Empty(t, commitments[0].Deployment, "NoSQLDetails keys carry no deployment")
 }
 
-// TestCosmosDBClient_GetExistingCommitments_DedupesDailyUsageRows is the
-// regression test for #73: armconsumption.ReservationsDetails is a daily
-// usage API, one row per reservation per usage day. A pager returning three
-// rows for the same ReservationID must surface as a single commitment.
-func TestCosmosDBClient_GetExistingCommitments_DedupesDailyUsageRows(t *testing.T) {
+func TestGetExistingCommitments_NonCosmosFiltered(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-	client := NewClient(nil, "test-subscription", "eastus")
-
-	reservationID := "test-reservation-123"
-	skuName := "cosmos-db-standard"
-
-	dailyRow := &armconsumption.ReservationDetail{
-		Properties: &armconsumption.ReservationDetailProperties{
-			ReservationID: &reservationID,
-			SKUName:       &skuName,
-		},
-	}
-
-	mockPager := &MockReservationsDetailsPager{
-		pages: []armconsumption.ReservationsDetailsClientListResponse{
-			{
-				ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{
-					Value: []*armconsumption.ReservationDetail{dailyRow, dailyRow, dailyRow},
-				},
-			},
-		},
-	}
-	client.SetReservationsPager(mockPager)
-
-	commitments, err := client.GetExistingCommitments(ctx)
+	c := NewClient(nil, "sub", "eastus")
+	sqlRow := cosmosRow("res-1", "Standard_S0", "eastus", 1)
+	sqlType := armreservations.ReservedResourceTypeSQLDatabases
+	sqlRow.Properties.ReservedResourceType = &sqlType
+	c.SetInventoryFactories(factoriesRows(nil, sqlRow, cosmosRow("res-2", "Cosmos_DB_Standard", "eastus", 1)))
+	commitments, err := c.GetExistingCommitments(context.Background())
 	require.NoError(t, err)
-	require.Len(t, commitments, 1, "three daily rows for one reservation must collapse to one commitment (issue #73)")
-	assert.Equal(t, reservationID, commitments[0].CommitmentID)
+	require.Len(t, commitments, 1)
+	assert.Equal(t, reservationstest.OrderPath+"/reservations/res-2", commitments[0].CommitmentID)
 }
 
-func TestCosmosDBClient_GetExistingCommitments_PagerError(t *testing.T) {
+// A row the guard cannot classify may be the reservation bought an hour ago,
+// so it fails closed instead of being dropped.
+func TestGetExistingCommitments_NilPropertiesFailsClosed(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-	client := NewClient(nil, "test-subscription", "eastus")
-
-	mockPager := &MockReservationsDetailsPager{
-		err: errors.New("API error"),
-	}
-	client.SetReservationsPager(mockPager)
-
-	// Pagination errors must propagate — partial lists are unsafe for the
-	// purchase flow (duplicate-purchase risk). See the compute client.
-	commitments, err := client.GetExistingCommitments(ctx)
+	c := NewClient(nil, "sub", "eastus")
+	c.SetInventoryFactories(factoriesRows(nil, &armreservations.ReservationResponse{}))
+	_, err := c.GetExistingCommitments(context.Background())
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "cosmosdb: list reservations")
-	assert.Nil(t, commitments)
 }
 
-func TestCosmosDBClient_GetExistingCommitments_NilProperties(t *testing.T) {
+func TestGetExistingCommitments_PagerError(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-	client := NewClient(nil, "test-subscription", "eastus")
+	c := NewClient(nil, "sub", "eastus")
+	c.SetInventoryFactories(factoriesRows(errors.New("api error")))
+	_, err := c.GetExistingCommitments(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "api error")
+}
 
-	// Create mock pager with nil properties
-	mockPager := &MockReservationsDetailsPager{
-		pages: []armconsumption.ReservationsDetailsClientListResponse{
-			{
-				ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{
-					Value: []*armconsumption.ReservationDetail{
-						{
-							Properties: nil, // Nil properties should be skipped
-						},
-					},
-				},
-			},
+func TestGetExistingCommitments_ListerError(t *testing.T) {
+	t.Parallel()
+	c := NewClient(nil, "sub", "eastus")
+	c.SetInventoryFactories(&reservations.InventoryFactories{
+		NewAppliedLister: func() (reservations.AppliedReservationsLister, error) {
+			return reservationstest.AppliedLister{Err: errors.New("boom")}, nil
 		},
-	}
-	client.SetReservationsPager(mockPager)
+		NewOrderPager: func(string) reservations.OrderReservationsPager { return &reservationstest.OrderPager{} },
+	})
+	_, err := c.GetExistingCommitments(context.Background())
+	require.Error(t, err, "a failed inventory lookup must not masquerade as an empty list")
+	assert.Contains(t, err.Error(), "cosmosdb: list applied reservations")
+}
 
-	commitments, err := client.GetExistingCommitments(ctx)
-	require.NoError(t, err)
-	assert.Empty(t, commitments)
+func TestNewClient_DefaultInventoryFactories(t *testing.T) {
+	t.Parallel()
+	for name, c := range map[string]*Client{
+		"NewClient":         NewClient(nil, "sub", "eastus"),
+		"NewClientWithHTTP": NewClientWithHTTP(nil, "sub", "eastus", nil),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require.Nil(t, c.inventoryFactories, "production wiring injects nothing")
+			f := c.factories()
+			assert.NotNil(t, f.NewAppliedLister)
+			assert.NotNil(t, f.NewOrderPager)
+		})
+	}
+	injected := &reservations.InventoryFactories{}
+	c := NewClient(nil, "sub", "eastus")
+	c.SetInventoryFactories(injected)
+	assert.Equal(t, *injected, c.factories())
 }
 
 func TestCosmosDBClient_GetValidResourceTypes_WithMockPager(t *testing.T) {
@@ -1022,10 +945,10 @@ func TestCosmosDBClient_SetterMethods(t *testing.T) {
 	client.SetRecommendationsPager(mockRecPager)
 	assert.Equal(t, mockRecPager, client.recommendationsPager)
 
-	// Test SetReservationsPager
-	mockResPager := &MockReservationsDetailsPager{}
-	client.SetReservationsPager(mockResPager)
-	assert.Equal(t, mockResPager, client.reservationsPager)
+	// Test SetInventoryFactories
+	factories := &reservations.InventoryFactories{}
+	client.SetInventoryFactories(factories)
+	assert.Same(t, factories, client.inventoryFactories)
 
 	// Test SetCosmosAccountsPager
 	mockAccountsPager := &MockCosmosAccountsPager{}
@@ -1768,33 +1691,4 @@ func TestGetCosmosPricing_LegitimateSKUBuildsExactFilter(t *testing.T) {
 	req := mockHTTP.Calls[0].Arguments.Get(0).(*http.Request)
 	assert.Equal(t, "serviceName eq 'Azure Cosmos DB' and productName eq 'Azure Cosmos DB' and armRegionName eq 'Global' and armSkuName eq 'Cosmos_DB_100_RUs' and priceType eq 'Reservation'", req.URL.Query().Get("$filter"))
 	mockHTTP.AssertExpectations(t)
-}
-
-func TestCosmosDBClient_GetExistingCommitments_DoesNotInventRegionOrState(t *testing.T) {
-	t.Parallel()
-	for _, region := range []string{"eastus", "westeurope"} {
-		t.Run(region, func(t *testing.T) {
-			t.Parallel()
-			client := NewClient(nil, "test-subscription", region)
-			reservationID, skuName := "res-1", "cosmos-db-standard"
-			client.SetReservationsPager(&MockReservationsDetailsPager{
-				pages: []armconsumption.ReservationsDetailsClientListResponse{{
-					ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{
-						Value: []*armconsumption.ReservationDetail{{
-							Properties: &armconsumption.ReservationDetailProperties{
-								ReservationID: &reservationID,
-								SKUName:       &skuName,
-							},
-						}},
-					},
-				}},
-			})
-
-			commitments, err := client.GetExistingCommitments(context.Background())
-
-			require.NoError(t, err)
-			require.Len(t, commitments, 1)
-			reservationstest.AssertUnknownInventory(t, commitments[0])
-		})
-	}
 }

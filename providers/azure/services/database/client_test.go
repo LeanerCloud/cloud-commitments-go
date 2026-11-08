@@ -22,6 +22,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	azpricing "github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/pricing"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/mocks"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations/reservationstest"
 )
 
@@ -38,29 +39,6 @@ func (m *MockRecommendationsPager) More() bool {
 func (m *MockRecommendationsPager) NextPage(ctx context.Context) (armconsumption.ReservationRecommendationsClientListResponse, error) {
 	if m.index >= len(m.pages) {
 		return armconsumption.ReservationRecommendationsClientListResponse{}, errors.New("no more pages")
-	}
-	page := m.pages[m.index]
-	m.index++
-	return page, nil
-}
-
-// MockReservationsDetailsPager mocks the ReservationsDetailsPager interface.
-type MockReservationsDetailsPager struct {
-	pages []armconsumption.ReservationsDetailsClientListResponse
-	index int
-	err   error
-}
-
-func (m *MockReservationsDetailsPager) More() bool {
-	return m.index < len(m.pages)
-}
-
-func (m *MockReservationsDetailsPager) NextPage(ctx context.Context) (armconsumption.ReservationsDetailsClientListResponse, error) {
-	if m.err != nil {
-		return armconsumption.ReservationsDetailsClientListResponse{}, m.err
-	}
-	if m.index >= len(m.pages) {
-		return armconsumption.ReservationsDetailsClientListResponse{}, errors.New("no more pages")
 	}
 	page := m.pages[m.index]
 	m.index++
@@ -619,20 +597,6 @@ func TestDatabaseClient_GetOfferingDetails_ReservationAcrossPages(t *testing.T) 
 	}
 }
 
-func TestDatabaseClient_GetExistingCommitments_Empty(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client := NewClient(nil, "test-subscription", "eastus")
-
-	// Mock pager returns no pages — the empty-subscription case. See the
-	// cache client for the full rationale.
-	client.SetReservationsPager(&MockReservationsDetailsPager{})
-
-	commitments, err := client.GetExistingCommitments(ctx)
-	require.NoError(t, err)
-	assert.Empty(t, commitments)
-}
-
 func TestDatabaseClient_GetRecommendations_WithMockPager(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -684,167 +648,170 @@ func TestDatabaseClient_GetRecommendations_MultiplePages(t *testing.T) {
 	assert.Empty(t, recs)
 }
 
-func TestDatabaseClient_GetExistingCommitments_WithMockPager(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client := NewClient(nil, "test-subscription", "eastus")
-
-	reservationID := "test-reservation-123"
-	skuName := "sql-standard-s0"
-
-	// Create mock pager with SQL commitment
-	mockPager := &MockReservationsDetailsPager{
-		pages: []armconsumption.ReservationsDetailsClientListResponse{
-			{
-				ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{
-					Value: []*armconsumption.ReservationDetail{
-						{
-							Properties: &armconsumption.ReservationDetailProperties{
-								ReservationID: &reservationID,
-								SKUName:       &skuName,
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	client.SetReservationsPager(mockPager)
-
-	commitments, err := client.GetExistingCommitments(ctx)
-	require.NoError(t, err)
-	require.Len(t, commitments, 1)
-	assert.Equal(t, reservationID, commitments[0].CommitmentID)
-	assert.Equal(t, skuName, commitments[0].ResourceType)
-	assert.Equal(t, common.ServiceRelationalDB, commitments[0].Service)
+// factoriesRows injects one order holding rows (and err on the page fetch).
+func factoriesRows(err error, rows ...*armreservations.ReservationResponse) *reservations.InventoryFactories {
+	return factoriesFor(func() reservations.OrderReservationsPager { return &reservationstest.OrderPager{Rows: rows, Err: err} })
 }
 
-// TestDatabaseClient_GetExistingCommitments_DedupesDailyUsageRows is the
-// regression test for #73: armconsumption.ReservationsDetails is a daily
-// usage API, one row per reservation per usage day. A pager returning three
-// rows for the same ReservationID must surface as a single commitment.
-func TestDatabaseClient_GetExistingCommitments_DedupesDailyUsageRows(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client := NewClient(nil, "test-subscription", "eastus")
-
-	reservationID := "test-reservation-123"
-	skuName := "sql-standard-s0"
-
-	dailyRow := &armconsumption.ReservationDetail{
-		Properties: &armconsumption.ReservationDetailProperties{
-			ReservationID: &reservationID,
-			SKUName:       &skuName,
-		},
+// factoriesFor injects one reservation order whose pager is newPager().
+func factoriesFor(newPager func() reservations.OrderReservationsPager) *reservations.InventoryFactories {
+	return &reservations.InventoryFactories{
+		NewAppliedLister: func() (reservations.AppliedReservationsLister, error) { return reservationstest.AppliedLister{}, nil },
+		NewOrderPager:    func(string) reservations.OrderReservationsPager { return newPager() },
 	}
-
-	mockPager := &MockReservationsDetailsPager{
-		pages: []armconsumption.ReservationsDetailsClientListResponse{
-			{
-				ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{
-					Value: []*armconsumption.ReservationDetail{dailyRow, dailyRow, dailyRow},
-				},
-			},
-		},
-	}
-
-	client.SetReservationsPager(mockPager)
-
-	commitments, err := client.GetExistingCommitments(ctx)
-	require.NoError(t, err)
-	require.Len(t, commitments, 1, "three daily rows for one reservation must collapse to one commitment (issue #73)")
-	assert.Equal(t, reservationID, commitments[0].CommitmentID)
 }
 
-func TestDatabaseClient_GetExistingCommitments_FilterNonSQL(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client := NewClient(nil, "test-subscription", "eastus")
-
-	// Test that non-SQL SKUs are filtered out
-	nonSQLSKU := "redis-premium-p1"
-	sqlSKU := "sql-premium-p2"
-	reservationID1 := "test-reservation-1"
-	reservationID2 := "test-reservation-2"
-
-	mockPager := &MockReservationsDetailsPager{
-		pages: []armconsumption.ReservationsDetailsClientListResponse{
-			{
-				ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{
-					Value: []*armconsumption.ReservationDetail{
-						{
-							Properties: &armconsumption.ReservationDetailProperties{
-								ReservationID: &reservationID1,
-								SKUName:       &nonSQLSKU,
-							},
-						},
-						{
-							Properties: &armconsumption.ReservationDetailProperties{
-								ReservationID: &reservationID2,
-								SKUName:       &sqlSKU,
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	client.SetReservationsPager(mockPager)
-
-	commitments, err := client.GetExistingCommitments(ctx)
-	require.NoError(t, err)
-	require.Len(t, commitments, 1)
-	assert.Equal(t, reservationID2, commitments[0].CommitmentID)
+func sqlRow(id, sku, location string, qty int32) *armreservations.ReservationResponse {
+	return reservationstest.LiveRow(armreservations.ReservedResourceTypeSQLDatabases, "sub", id, sku, location, qty)
 }
 
-func TestDatabaseClient_GetExistingCommitments_NilProperties(t *testing.T) {
+// inventoryClient returns a client with empty server pagers injected, so no
+// inventory test can reach the network, and the pagers for call counting.
+func inventoryClient(rows ...*armreservations.ReservationResponse) (*Client, *MockSQLManagedInstancesPager, *MockSQLServersPager) {
+	c := NewClient(nil, "sub", "eastus")
+	mi, servers := &MockSQLManagedInstancesPager{}, &MockSQLServersPager{}
+	c.SetManagedInstancesPager(mi)
+	c.SetServersPager(servers)
+	c.SetInventoryFactories(factoriesRows(nil, rows...))
+	return c, mi, servers
+}
+
+// An empty inventory must not walk the subscription's SQL servers.
+func TestGetExistingCommitments_EmptySkipsServerWalk(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-	client := NewClient(nil, "test-subscription", "eastus")
-
-	// Test that nil properties are handled gracefully
-	mockPager := &MockReservationsDetailsPager{
-		pages: []armconsumption.ReservationsDetailsClientListResponse{
-			{
-				ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{
-					Value: []*armconsumption.ReservationDetail{
-						{
-							Properties: nil,
-						},
-					},
-				},
-			},
-		},
-	}
-
-	client.SetReservationsPager(mockPager)
-
-	commitments, err := client.GetExistingCommitments(ctx)
+	c, mi, servers := inventoryClient()
+	mi.pages = []armsql.ManagedInstancesClientListResponse{buildMIPage(true)}
+	servers.pages = []armsql.ServersClientListResponse{buildServerPage(1)}
+	commitments, err := c.GetExistingCommitments(context.Background())
 	require.NoError(t, err)
 	assert.Empty(t, commitments)
+	assert.Zero(t, mi.CallCount)
+	assert.Zero(t, servers.CallCount)
 }
 
-func TestDatabaseClient_GetExistingCommitments_PagerError(t *testing.T) {
+func TestGetExistingCommitments_SQLRowConverted(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-	client := NewClient(nil, "test-subscription", "eastus")
+	c, _, _ := inventoryClient(sqlRow("res-123", "GP_Gen5_2", "westus2", 3))
+	commitments, err := c.GetExistingCommitments(context.Background())
+	require.NoError(t, err)
+	require.Len(t, commitments, 1)
+	assert.Equal(t, reservationstest.OrderPath+"/reservations/res-123", commitments[0].CommitmentID)
+	assert.Equal(t, "GP_Gen5_2", commitments[0].ResourceType)
+	assert.Equal(t, "westus2", commitments[0].Region, "reservation location must win over the client region")
+	assert.Equal(t, 3, commitments[0].Count)
+	assert.Equal(t, common.CommitmentStateActive, commitments[0].State)
+	assert.Equal(t, common.ServiceRelationalDB, commitments[0].Service)
+	assert.Equal(t, "sqlserver", commitments[0].Engine)
+}
 
-	// Pagination errors must propagate — returning a partial commitment list
-	// silently is unsafe for the purchase flow (it could trigger duplicate
-	// purchases for reservations we didn't see).
-	mockPager := &MockReservationsDetailsPager{
-		pages: []armconsumption.ReservationsDetailsClientListResponse{{}},
-		err:   errors.New("API error"),
+func TestGetExistingCommitments_DeploymentStamp(t *testing.T) {
+	t.Parallel()
+	for name, tc := range map[string]struct {
+		pages []armsql.ManagedInstancesClientListResponse
+		want  string
+	}{
+		"no managed instances":   {nil, ""},
+		"all zone-redundant":     {[]armsql.ManagedInstancesClientListResponse{buildMIPage(true, true)}, "zoneRedundant"},
+		"none zone-redundant":    {[]armsql.ManagedInstancesClientListResponse{buildMIPage(false)}, "none"},
+		"mixed fleet is unknown": {[]armsql.ManagedInstancesClientListResponse{buildMIPage(true, false)}, ""},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			c, mi, _ := inventoryClient(sqlRow("a", "GP_Gen5_2", "eastus", 1), sqlRow("b", "GP_Gen5_4", "eastus", 1))
+			mi.pages = tc.pages
+			commitments, err := c.GetExistingCommitments(context.Background())
+			require.NoError(t, err)
+			require.Len(t, commitments, 2)
+			for _, commitment := range commitments {
+				assert.Equal(t, tc.want, commitment.Deployment)
+			}
+		})
 	}
+}
 
-	client.SetReservationsPager(mockPager)
+func TestGetExistingCommitments_NonSQLFiltered(t *testing.T) {
+	t.Parallel()
+	redisRow := sqlRow("res-1", "Premium_P1", "eastus", 1)
+	redisType := armreservations.ReservedResourceTypeRedisCache
+	redisRow.Properties.ReservedResourceType = &redisType
+	c, _, _ := inventoryClient(redisRow, sqlRow("res-2", "GP_Gen5_2", "eastus", 1))
+	commitments, err := c.GetExistingCommitments(context.Background())
+	require.NoError(t, err)
+	require.Len(t, commitments, 1)
+	assert.Equal(t, reservationstest.OrderPath+"/reservations/res-2", commitments[0].CommitmentID)
+}
 
-	commitments, err := client.GetExistingCommitments(ctx)
+// A row the guard cannot classify may be the reservation bought an hour ago,
+// so it fails closed instead of being dropped, without walking servers.
+func TestGetExistingCommitments_NilPropertiesFailsClosed(t *testing.T) {
+	t.Parallel()
+	c, mi, servers := inventoryClient(&armreservations.ReservationResponse{})
+	mi.pages = []armsql.ManagedInstancesClientListResponse{buildMIPage(true)}
+	servers.pages = []armsql.ServersClientListResponse{buildServerPage(1)}
+	_, err := c.GetExistingCommitments(context.Background())
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "database: list reservations")
+	assert.Zero(t, mi.CallCount)
+	assert.Zero(t, servers.CallCount)
+}
+
+// A cancellation during the enrichment walk must surface, not return
+// inventory stamped with a blank deployment.
+func TestGetExistingCommitments_CancelDuringEnrichmentWalk(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	c, _, servers := inventoryClient(sqlRow("res-1", "GP_Gen5_2", "eastus", 1))
+	c.SetManagedInstancesPager(&cancelAfterPagesMIPager{
+		MockSQLManagedInstancesPager: MockSQLManagedInstancesPager{pages: []armsql.ManagedInstancesClientListResponse{buildMIPage(true)}},
+		cancel:                       cancel,
+	})
+	servers.pages = []armsql.ServersClientListResponse{buildServerPage(1)}
+	commitments, err := c.GetExistingCommitments(ctx)
+	require.ErrorIs(t, err, context.Canceled)
 	assert.Nil(t, commitments)
+}
+
+func TestGetExistingCommitments_PagerError(t *testing.T) {
+	t.Parallel()
+	c, _, _ := inventoryClient()
+	c.SetInventoryFactories(factoriesRows(errors.New("api error")))
+	_, err := c.GetExistingCommitments(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "api error")
+}
+
+func TestGetExistingCommitments_ListerError(t *testing.T) {
+	t.Parallel()
+	c, _, _ := inventoryClient()
+	c.SetInventoryFactories(&reservations.InventoryFactories{
+		NewAppliedLister: func() (reservations.AppliedReservationsLister, error) {
+			return reservationstest.AppliedLister{Err: errors.New("boom")}, nil
+		},
+		NewOrderPager: func(string) reservations.OrderReservationsPager { return &reservationstest.OrderPager{} },
+	})
+	_, err := c.GetExistingCommitments(context.Background())
+	require.Error(t, err, "a failed inventory lookup must not masquerade as an empty list")
+	assert.Contains(t, err.Error(), "database: list applied reservations")
+}
+
+func TestNewClient_DefaultInventoryFactories(t *testing.T) {
+	t.Parallel()
+	for name, c := range map[string]*Client{
+		"NewClient":         NewClient(nil, "sub", "eastus"),
+		"NewClientWithHTTP": NewClientWithHTTP(nil, "sub", "eastus", nil),
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			require.Nil(t, c.inventoryFactories, "production wiring injects nothing")
+			f := c.factories()
+			assert.NotNil(t, f.NewAppliedLister)
+			assert.NotNil(t, f.NewOrderPager)
+		})
+	}
+	injected := &reservations.InventoryFactories{}
+	c := NewClient(nil, "sub", "eastus")
+	c.SetInventoryFactories(injected)
+	assert.Equal(t, *injected, c.factories())
 }
 
 func TestDatabaseClient_GetValidResourceTypes_WithMock(t *testing.T) {
@@ -960,10 +927,10 @@ func TestDatabaseClient_SetterMethods(t *testing.T) {
 	client.SetRecommendationsPager(mockRecPager)
 	assert.Equal(t, mockRecPager, client.recommendationsPager)
 
-	// Test SetReservationsPager
-	mockResPager := &MockReservationsDetailsPager{}
-	client.SetReservationsPager(mockResPager)
-	assert.Equal(t, mockResPager, client.reservationsPager)
+	// Test SetInventoryFactories
+	factories := &reservations.InventoryFactories{}
+	client.SetInventoryFactories(factories)
+	assert.Same(t, factories, client.inventoryFactories)
 
 	// Test SetCapabilitiesClient
 	mockCapClient := &MockCapabilitiesClient{}
@@ -2196,33 +2163,4 @@ func TestNewClientWithHTTP_NilFallbackIsHardened(t *testing.T) {
 	}
 	require.Error(t, err, "nil-fallback client must reject IMDS connections")
 	assert.Contains(t, err.Error(), "blocked")
-}
-
-func TestDatabaseClient_GetExistingCommitments_DoesNotInventRegionOrState(t *testing.T) {
-	t.Parallel()
-	for _, region := range []string{"eastus", "westeurope"} {
-		t.Run(region, func(t *testing.T) {
-			t.Parallel()
-			client := NewClient(nil, "test-subscription", region)
-			reservationID, skuName := "res-1", "sql-standard-s0"
-			client.SetReservationsPager(&MockReservationsDetailsPager{
-				pages: []armconsumption.ReservationsDetailsClientListResponse{{
-					ReservationDetailsListResult: armconsumption.ReservationDetailsListResult{
-						Value: []*armconsumption.ReservationDetail{{
-							Properties: &armconsumption.ReservationDetailProperties{
-								ReservationID: &reservationID,
-								SKUName:       &skuName,
-							},
-						}},
-					},
-				}},
-			})
-
-			commitments, err := client.GetExistingCommitments(context.Background())
-
-			require.NoError(t, err)
-			require.Len(t, commitments, 1)
-			reservationstest.AssertUnknownInventory(t, commitments[0])
-		})
-	}
 }
