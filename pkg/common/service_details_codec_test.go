@@ -310,3 +310,66 @@ func TestDecodeServiceDetailsFor_EveryEmittedPair(t *testing.T) {
 		})
 	}
 }
+
+func TestRecommendation_DetailsJSONRoundTrip(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name    string
+		rec     Recommendation
+		details ServiceDetails
+	}{
+		{"ec2 compute", Recommendation{Service: ServiceEC2, Details: &ComputeDetails{InstanceType: "m5.large", Platform: "Linux/UNIX", Tenancy: "default", Scope: "Region"}}, &ComputeDetails{InstanceType: "m5.large", Platform: "Linux/UNIX", Tenancy: "default", Scope: "Region"}},
+		{"value compute decodes to a pointer", Recommendation{Service: ServiceCompute, Details: ComputeDetails{InstanceType: "n2-standard-4"}}, &ComputeDetails{InstanceType: "n2-standard-4"}},
+		{"rds database", Recommendation{Service: ServiceRDS, Details: &DatabaseDetails{Engine: "postgres", AZConfig: "multi-az", InstanceClass: "db.r6g.large"}}, &DatabaseDetails{Engine: "postgres", AZConfig: "multi-az", InstanceClass: "db.r6g.large"}},
+		{"no details stays nil", Recommendation{Service: ServiceEC2}, nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			payload, err := json.Marshal(tt.rec)
+			require.NoError(t, err)
+			var got Recommendation
+			require.NoError(t, json.Unmarshal(payload, &got))
+			assert.Equal(t, tt.details, got.Details)
+			assert.Equal(t, tt.rec.Service, got.Service)
+		})
+	}
+
+	t.Run("explicit null details stays nil", func(t *testing.T) {
+		t.Parallel()
+		var got Recommendation
+		require.NoError(t, json.Unmarshal([]byte(`{"service":"ec2","details":null}`), &got))
+		assert.Nil(t, got.Details)
+	})
+
+	t.Run("decoding into a filled recommendation follows encoding/json", func(t *testing.T) {
+		t.Parallel()
+		prior := &ComputeDetails{InstanceType: "m5.large"}
+		absent := Recommendation{Service: ServiceEC2, Details: prior}
+		require.NoError(t, json.Unmarshal([]byte(`{"count":2}`), &absent))
+		assert.Same(t, prior, absent.Details, "absent details leave Details unchanged")
+		null := Recommendation{Service: ServiceEC2, Details: prior}
+		require.NoError(t, json.Unmarshal([]byte(`{"details":null}`), &null))
+		assert.Nil(t, null.Details, "null details set Details nil")
+	})
+
+	t.Run("details for a service with no typed details fail", func(t *testing.T) {
+		t.Parallel()
+		var got Recommendation
+		err := json.Unmarshal([]byte(`{"service":"no-such-service","details":{"x":1}}`), &got)
+		require.ErrorIs(t, err, ErrUntypedServiceDetails)
+	})
+
+	t.Run("purchase result with details keeps its offering class", func(t *testing.T) {
+		t.Parallel()
+		in := PurchaseResult{
+			Success: true, CommitmentID: "ri-1", ExistingCommitment: true, OfferingClass: "convertible",
+			Recommendation: Recommendation{Service: ServiceEC2, Details: &ComputeDetails{InstanceType: "m5.large"}},
+		}
+		payload, err := json.Marshal(in)
+		require.NoError(t, err)
+		var got PurchaseResult
+		require.NoError(t, json.Unmarshal(payload, &got))
+		assert.Equal(t, "convertible", got.OfferingClass)
+		assert.Equal(t, &ComputeDetails{InstanceType: "m5.large"}, got.Recommendation.Details)
+	})
+}
