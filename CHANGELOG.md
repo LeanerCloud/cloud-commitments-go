@@ -304,12 +304,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   longer compiles; keyed literals are unaffected. The field is true when a
   provider adopted a commitment that already existed for the same idempotency
   token (#211)
+- **Breaking (source):** `common.PurchaseResult` gained an `OfferingClass` field.
+  Downstream code that builds it with unkeyed composite literals no longer
+  compiles; keyed literals are unaffected. On an adopted re-drive it carries the
+  offering class AWS reports for the existing RI (the EC2 provider sets it in a
+  follow-up change); empty otherwise (#211).
 
 ### Fixed
 
 - **Duplicate check:** a recent purchase now reduces every term and payment variant of a recommendation, not only the first one in input order, for EC2 as well as every other service. Each `term|payment` group starts from the full held quantity and consumes it in input order, so one held unit against four variants of 2 yields 1, 1, 1, 1 (was 1, 2, 2, 2). Providers pick this up on their next `pkg` pin bump. Fixes #703.
+- **`common`:** a `Recommendation`, and a `PurchaseResult` carrying one (with
+  no `Error`), now decodes from JSON when `details` holds an object. `details`
+  is decoded into the typed pointer for the recommendation's service through
+  `DecodeServiceDetailsFor`; absent `details` leave the field unchanged and
+  null sets it nil, as encoding/json does, and details for a service with no
+  typed details fail with `ErrUntypedServiceDetails`. Before this,
+  encoding/json could not decode an object into the `ServiceDetails` interface
+  (#211).
 - **Breaking (source):** `managedredis.ReservationsDetailsPager` and `(*managedredis.Client).SetReservationsPager` are removed; tests inject reservation inventory with `SetInventoryFactories` instead (#699).
 - **`azure` Redis:** `managedredis.GetExistingCommitments` now reads held reservations from the Reservations API (purchase date, quantity, location, state), so a Redis reservation bought in the last day reduces the matching recommendation instead of being invisible to the duplicate guard (#699). An incomplete live reservation row (missing SKU, location, quantity or purchase date, an unattributable scope, or an expiry falling today) now fails the lookup with an error instead of being skipped, as `azure` compute already does.
+- **Breaking (source):** `cosmosdb.ReservationsDetailsPager` and `(*cosmosdb.Client).SetReservationsPager` are removed; tests inject reservation inventory with `SetInventoryFactories` instead (#705).
+- **`azure` Cosmos DB:** `cosmosdb.GetExistingCommitments` now reads held reservations from the Reservations API (purchase date, quantity, location, state), so a Cosmos DB reservation bought in the last day reduces the matching recommendation instead of being invisible to the duplicate guard. `Region` is now the reservation location, not the client region. An incomplete live reservation row fails the lookup with an error instead of being skipped (#705).
+- **Breaking (source):** `synapse.ReservationsDetailsPager` and `(*synapse.Client).SetReservationsPager` are removed; tests inject reservation inventory with `SetInventoryFactories` instead (#705).
+- **`azure` Synapse:** `synapse.GetExistingCommitments` now reads held reservations from the Reservations API (purchase date, quantity, location, state), so a Synapse reservation bought in the last day reduces the matching recommendation instead of being invisible to the duplicate guard. `Region` is now the reservation location, not the client region. An incomplete live reservation row fails the lookup with an error instead of being skipped (#705).
+- **Breaking (source):** `database.ReservationsDetailsPager` and `(*database.Client).SetReservationsPager` are removed; tests inject reservation inventory with `SetInventoryFactories` instead (#705).
+- **`azure` SQL Database:** `database.GetExistingCommitments` now reads held reservations from the Reservations API (purchase date, quantity, location, state), so a SQL Database reservation bought in the last day reduces the matching recommendation instead of being invisible to the duplicate guard. Held reservations carry engine `sqlserver` and the subscription's dominant zone-redundancy setting, as recommendations do. `Region` is now the reservation location, not the client region. An incomplete live reservation row fails the lookup with an error instead of being skipped (#705).
 - **`aws` RI recommendations:** a fractional Cost Explorer quantity now rounds
   down instead of to the nearest integer, so a purchase never exceeds CE's
   quantity. The upfront, recurring monthly cost, monthly savings and savings

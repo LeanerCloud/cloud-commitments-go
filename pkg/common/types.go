@@ -390,10 +390,21 @@ type PurchaseResult struct {
 	Error     error     `json:"error,omitempty"`
 
 	// Cost is the total upfront charge for the whole purchase (unit price x count).
-	// Nil means unknown; a non-nil zero means no upfront charge.
+	// Nil means unknown; a non-nil zero means no upfront charge. On an adopted
+	// re-drive (ExistingCommitment) the original purchase's charge is not known:
+	// the AWS RI services (EC2, RDS, ElastiCache, MemoryDB, OpenSearch, Redshift)
+	// return nil. GCP Compute Engine reports 0 today and returns nil after a
+	// follow-up change for #211. Azure reports 0 for a monthly billing plan and
+	// nil for an upfront one, as on a fresh purchase.
 	Cost *float64 `json:"cost"`
 
-	CommitmentID   string         `json:"commitment_id,omitempty"`
+	CommitmentID string `json:"commitment_id,omitempty"`
+
+	// OfferingClass is, on an adopted re-drive, the offering class AWS reports
+	// for the existing commitment; empty otherwise. The EC2 provider sets it in
+	// a follow-up change for #211.
+	OfferingClass string `json:"offering_class,omitempty"`
+
 	Recommendation Recommendation `json:"recommendation"`
 	Success        bool           `json:"success"`
 	DryRun         bool           `json:"dry_run"`
@@ -401,8 +412,8 @@ type PurchaseResult struct {
 	// ExistingCommitment is true when the provider adopted a commitment that
 	// already existed for the same idempotency token (a re-drive of an earlier
 	// attempt) instead of creating a new one. Success stays true and
-	// CommitmentID names the adopted commitment. Cost semantics on adoption are
-	// unspecified until the provider changes land. False on a fresh purchase.
+	// CommitmentID names the adopted commitment. See Cost for its value on
+	// adoption. False on a fresh purchase.
 	ExistingCommitment bool `json:"existing_commitment,omitempty"`
 }
 
@@ -527,12 +538,12 @@ const (
 
 // Commitment represents an existing commitment (RI/SP/CUD/etc).
 //
-// Deployment is RDS-specific (Multi-AZ vs Single-AZ); it stays empty for
-// services that don't have a deployment dimension (EC2, ElastiCache,
-// etc). When populated, it carries the same vocabulary as
-// DatabaseDetails.AZConfig on Recommendation ("single-az" / "multi-az")
-// so pool-key matching can collapse both sides via normaliseDeployment
-// in the recommendations package. Without this field, RDS expiry
+// Deployment is set for AWS RDS and Azure SQL Database and stays empty for
+// services without a deployment dimension (EC2, ElastiCache, etc). When
+// populated, it carries the same vocabulary as DatabaseDetails.AZConfig on
+// Recommendation ("single-az" / "multi-az" on AWS, "zoneRedundant" / "none"
+// on Azure) so pool-key matching can collapse both sides via
+// normaliseDeployment in the recommendations package. Without this field, RDS expiry
 // adjustments would silently miss because Recommendation lookup keys
 // are deployment-aware while commitment keys defaulted to empty.
 type Commitment struct {
@@ -546,7 +557,7 @@ type Commitment struct {
 	Region         string          `json:"region"`
 	ResourceType   string          `json:"resource_type"`
 	Engine         string          `json:"engine,omitempty"`     // Database engine for RDS/ElastiCache (e.g., "mysql", "aurora-postgresql")
-	Deployment     string          `json:"deployment,omitempty"` // RDS Multi-AZ vs Single-AZ; empty for non-RDS
+	Deployment     string          `json:"deployment,omitempty"` // RDS Multi-AZ vs Single-AZ, Azure SQL zone redundancy; empty otherwise
 	State          CommitmentState `json:"state"`
 
 	// EC2 reserved-instance dimensions. Empty means unknown or a wildcard.

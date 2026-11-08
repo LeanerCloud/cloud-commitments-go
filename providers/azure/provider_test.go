@@ -13,6 +13,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/consumption/armconsumption"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -469,8 +470,6 @@ func TestAzureClients_GetExistingCommitments_PagerConstructionError(t *testing.T
 		client provider.ServiceClient
 	}{
 		{"cache", NewCacheClient(nil, "test-subscription", "eastus")},
-		{"cosmosdb", NewCosmosDBClient(nil, "test-subscription", "eastus")},
-		{"database", NewDatabaseClient(nil, "test-subscription", "eastus")},
 		{"search", NewSearchClient(nil, "test-subscription", "eastus")},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -481,6 +480,36 @@ func TestAzureClients_GetExistingCommitments_PagerConstructionError(t *testing.T
 			cause := errors.Unwrap(err)
 			require.NotNil(t, cause)
 			assert.Equal(t, sdkErr.Error(), cause.Error())
+		})
+	}
+}
+
+// Held reservations come from the Reservations API, so a client-construction
+// failure of the default inventory factories surfaces under the shared
+// "<service>: list applied reservations" prefix.
+func TestAzureClients_ReservationInventory_DefaultFactoryError(t *testing.T) {
+	// Keep this test sequential: the SDK reads this process-wide configuration.
+	originalCloud := cloud.AzurePublic
+	t.Cleanup(func() { cloud.AzurePublic = originalCloud })
+	cloud.AzurePublic = cloud.Configuration{}
+
+	_, sdkErr := armreservations.NewAzureReservationAPIClient(nil, nil)
+	require.Error(t, sdkErr)
+
+	for _, tc := range []struct {
+		name   string
+		client provider.ServiceClient
+	}{
+		{"cosmosdb", NewCosmosDBClient(nil, "test-subscription", "eastus")},
+		{"database", NewDatabaseClient(nil, "test-subscription", "eastus")},
+		{"synapse", NewSynapseClient(nil, "test-subscription", "eastus")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			commitments, err := tc.client.GetExistingCommitments(context.Background())
+			require.Error(t, err)
+			assert.Nil(t, commitments)
+			assert.Contains(t, err.Error(), tc.name+": list applied reservations: ")
+			assert.Contains(t, err.Error(), sdkErr.Error())
 		})
 	}
 }
