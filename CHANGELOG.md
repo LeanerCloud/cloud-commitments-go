@@ -307,6 +307,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **`CostKnown` producers (#74):** providers now set `common.Commitment.CostKnown` where the price is reported, and stop inventing inventory fields.
+  - **AWS ladder RI costs:** `CostKnown` is true only when EC2 reported the price (FixedPrice plus a recurring price) and either a Duration is present or the upfront is 0.
+  - **AWS ladder SP costs:** `CostKnown` is true.
+  - **Azure savings plans:** a reported `Commitment.Amount`, including 0, is marked known.
+  - **Azure inventory:** the cache and search consumption inventory no longer invent `Region` or `State`. Both are now empty, meaning unknown. Cosmos DB, SQL and Synapse moved to the Reservations API in #717.
+  - **Known log noise:** an empty `State` still logs one recfilter WARNING per such commitment.
+
 - **Breaking (source):** `managedredis.ReservationsDetailsPager` and `(*managedredis.Client).SetReservationsPager` are removed; tests inject reservation inventory with `SetInventoryFactories` instead (#699).
 - **`azure` Redis:** `managedredis.GetExistingCommitments` now reads held reservations from the Reservations API (purchase date, quantity, location, state), so a Redis reservation bought in the last day reduces the matching recommendation instead of being invisible to the duplicate guard (#699). An incomplete live reservation row (missing SKU, location, quantity or purchase date, an unattributable scope, or an expiry falling today) now fails the lookup with an error instead of being skipped, as `azure` compute already does.
 - **Breaking (source):** `cosmosdb.ReservationsDetailsPager` and `(*cosmosdb.Client).SetReservationsPager` are removed; tests inject reservation inventory with `SetInventoryFactories` instead (#705).
