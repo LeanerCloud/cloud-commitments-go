@@ -16,8 +16,7 @@ const (
 	// computeServiceID is the Cloud Billing catalog service for Compute Engine.
 	computeServiceID = "services/6F81-5844-456A"
 
-	usageUnitHour    = "h"
-	usageUnitGiBHour = "GiBy.h"
+	usageUnitHour = "h"
 
 	usageTypeCommit1Yr = "Commit1Yr"
 	usageTypeCommit3Yr = "Commit3Yr"
@@ -192,6 +191,33 @@ func (r *rateSlot) set(price float64, sku *cloudbilling.Sku) error {
 	return nil
 }
 
+// ramUnitToGiBHour maps each RAM usage unit the catalog quotes to the factor
+// that converts its price to per GiB-hour. GBy.h is decimal (the catalog's
+// base-unit factor is 1e9*3600, against 2^30*3600 for GiBy.h), used by C4D and
+// M4Ultramem224.
+var ramUnitToGiBHour = map[string]float64{"GiBy.h": 1, "GBy.h": (1 << 30) / 1e9}
+
+// ramPricePerGiBHour converts a RAM SKU price to per GiB-hour, failing closed on
+// any unit not in ramUnitToGiBHour.
+func ramPricePerGiBHour(price float64, unit, skuID string) (float64, error) {
+	factor, ok := ramUnitToGiBHour[unit]
+	if !ok {
+		return 0, fmt.Errorf("SKU %s: unsupported RAM usage unit %q", skuID, unit)
+	}
+	return price * factor, nil
+}
+
+// normalizedPrice returns the SKU price per core-hour, or per GiB-hour for RAM.
+func normalizedPrice(sku *cloudbilling.Sku, price float64, unit string, isRAM bool) (float64, error) {
+	if isRAM {
+		return ramPricePerGiBHour(price, unit, sku.SkuId)
+	}
+	if unit != usageUnitHour {
+		return 0, fmt.Errorf("SKU %s (%q) is priced per %q, expected %q", sku.SkuId, sku.Description, unit, usageUnitHour)
+	}
+	return price, nil
+}
+
 // rateCollector accumulates the four prices wanted from matched SKUs.
 type rateCollector struct {
 	currency                 string
@@ -203,12 +229,8 @@ func (c *rateCollector) add(sku *cloudbilling.Sku, isCommit, isRAM bool) error {
 	if err != nil {
 		return err
 	}
-	wantUnit := usageUnitHour
-	if isRAM {
-		wantUnit = usageUnitGiBHour
-	}
-	if unit != wantUnit {
-		return fmt.Errorf("SKU %s (%q) is priced per %q, expected %q", sku.SkuId, sku.Description, unit, wantUnit)
+	if price, err = normalizedPrice(sku, price, unit, isRAM); err != nil {
+		return err
 	}
 	if c.currency != "" && c.currency != currency {
 		return fmt.Errorf("SKU %s (%q) is in %s but other matching SKUs are in %s", sku.SkuId, sku.Description, currency, c.currency)
