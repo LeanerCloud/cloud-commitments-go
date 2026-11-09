@@ -41,13 +41,15 @@ var ErrOutcomeUnknown = errors.New("purchase outcome unknown")
 
 // ErrRefusedBeforePurchase wraps an error from a check that refused the
 // purchase before the purchase request was built or sent. It says nothing
-// about why: the cause may be a missing upfront approval, a count bound, a
-// service-ownership rule, or a duplicate-purchase guard, and retrying or
-// asking for approval may not help, so callers that act on the cause must
-// inspect the wrapped error. Its presence is sufficient to know that this call
-// sent no purchase request, but its absence proves nothing: other refusals do
-// not carry it. It describes only the call that returned it and says nothing
-// about earlier calls with the same idempotency token. A wrapper that combines several purchase calls must not
+// about why: the cause may be an offering upfront above the approved amount
+// (or one that cannot be compared with it), a count bound, a service-ownership
+// rule, or a duplicate-purchase guard, and retrying or asking for approval may
+// not help. Some producers wrap only the sentinel and carry the cause in the
+// message, so callers cannot rely on unwrapping to tell the causes apart. Its
+// presence is sufficient to know that this call sent no purchase request, but
+// its absence proves nothing: other refusals do not carry it. It describes only
+// the call that returned it and says nothing about earlier calls with the same
+// idempotency token. A wrapper that combines several purchase calls must not
 // propagate it unless none of them sent a request. Detect it with
 // errors.Is(err, ErrRefusedBeforePurchase).
 var ErrRefusedBeforePurchase = errors.New("refused before purchase")
