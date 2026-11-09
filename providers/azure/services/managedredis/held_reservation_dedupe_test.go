@@ -201,6 +201,29 @@ func TestHeldReservation_Table(t *testing.T) {
 	}
 }
 
+// TestHeldReservation_VariantPin pins the recent-purchase guard on
+// GetRecommendations-shaped output: the held quantity is netted from every term
+// and payment variant, not consumed by the first one in input order (#703).
+func TestHeldReservation_VariantPin(t *testing.T) {
+	t.Parallel()
+	c := NewClient(nil, "sub", "eastus")
+	recs := variantsOf(t, c, legacyRedisRec("P1Y"), legacyRedisRec("P3Y"))
+	require.Len(t, recs, 4)
+	c.SetInventoryFactories(factoriesRows(nil, redisRow("held", "Premium_P1", "eastus", 1)))
+
+	passed, err := adjust(t, c, recs)
+	require.NoError(t, err)
+	type variant struct{ term, payment string }
+	got := map[variant]int{}
+	for _, r := range passed {
+		got[variant{r.Term, r.PaymentOption}] = r.Count
+	}
+	assert.Equal(t, map[variant]int{
+		{"1yr", "upfront"}: 1, {"1yr", "monthly"}: 1,
+		{"3yr", "upfront"}: 1, {"3yr", "monthly"}: 1,
+	}, got)
+}
+
 func TestNewClient_DefaultInventoryFactories(t *testing.T) {
 	t.Parallel()
 	for name, c := range map[string]*Client{
