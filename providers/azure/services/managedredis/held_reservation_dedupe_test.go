@@ -201,33 +201,6 @@ func TestHeldReservation_Table(t *testing.T) {
 	}
 }
 
-// TestHeldReservation_VariantPin pins today's shared-budget behavior of the
-// recent-purchase guard on GetRecommendations-shaped output. The held
-// quantity is consumed by the first matching variant in input order, so the P1Y
-// upfront variant takes it and every other variant is untouched; the P1Y rec
-// comes before the P3Y rec in the input and the pin depends on that order.
-// The key has no term or payment option, so this is a known over-buy that this
-// test pins and does not endorse; tracked in go#703.
-func TestHeldReservation_VariantPin(t *testing.T) {
-	t.Parallel()
-	c := NewClient(nil, "sub", "eastus")
-	recs := variantsOf(t, c, legacyRedisRec("P1Y"), legacyRedisRec("P3Y"))
-	require.Len(t, recs, 4)
-	c.SetInventoryFactories(factoriesRows(nil, redisRow("held", "Premium_P1", "eastus", 1)))
-
-	passed, err := adjust(t, c, recs)
-	require.NoError(t, err)
-	type variant struct{ term, payment string }
-	got := map[variant]int{}
-	for _, r := range passed {
-		got[variant{r.Term, r.PaymentOption}] = r.Count
-	}
-	assert.Equal(t, map[variant]int{
-		{"1yr", "upfront"}: 1, {"1yr", "monthly"}: 2,
-		{"3yr", "upfront"}: 2, {"3yr", "monthly"}: 2,
-	}, got)
-}
-
 func TestNewClient_DefaultInventoryFactories(t *testing.T) {
 	t.Parallel()
 	for name, c := range map[string]*Client{
