@@ -778,10 +778,10 @@ func TestGetUsageBaseline_SingleDaySeries_ReturnsThatValue(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, bl.LowWaterUSDPerHour)
 	assert.InDelta(t, 3.0, *bl.LowWaterUSDPerHour, 1e-9)
-	// StableUSDPerHour must be nil: no stable-usage estimator exists yet, and
-	// the pkg/ladder contract defines Stable as post-buffer-fraction (aliasing
-	// it to LowWater would make the engine over-commit the base layer). nil
-	// triggers the engine's documented "route all core gap to flex" degradation.
+	// StableUSDPerHour must be nil without WithBufferFraction: the pkg/ladder
+	// contract defines Stable as post-buffer-fraction (aliasing it to LowWater
+	// would make the engine over-commit the base layer). nil triggers the
+	// engine's documented "route all core gap to flex" degradation.
 	assert.Nil(t, bl.StableUSDPerHour)
 	assert.Equal(t, 7, bl.LookbackDays)
 	assert.InDelta(t, 5.0, bl.Percentile, 1e-9)

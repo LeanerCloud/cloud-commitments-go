@@ -3,12 +3,17 @@ package ladder
 import (
 	"context"
 	"math"
+	"math/big"
 	"math/rand/v2"
 	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/ladder"
 )
 
 // rep returns n copies of v.
@@ -176,5 +181,66 @@ func TestGetUsageBaseline_StableUsage(t *testing.T) {
 		stable, _ = stablePublic(t, rep(14, 10), 14, &f)
 		require.NotNil(t, stable)
 		assert.InDelta(t, 9.0, *stable, 1e-9)
+	})
+}
+
+// allocateFromBaseline feeds a real GetUsageBaseline result to the engine with
+// no existing commitment and a unit rate on every layer.
+func allocateFromBaseline(t *testing.T, vals []float64, f float64) *ladder.AllocateResult {
+	t.Helper()
+	points := makeRecentPoints(len(vals))
+	for i := range points {
+		points[i].USDPerHour = vals[i]
+	}
+	a := newTestLadder(t, &fakeRILister{}, &fakeSPLister{}, &fakeCoverageSource{onDemandPoints: points}, &fakeUtilizationSource{})
+	_, err := a.WithBufferFraction(f)
+	require.NoError(t, err)
+	bl, err := a.GetUsageBaseline(context.Background(), testScope(), len(vals), 5)
+	require.NoError(t, err)
+
+	zero := 0.0
+	states := map[ladder.LayerType]ladder.LayerState{}
+	rates := map[ladder.LayerType]float64{}
+	for _, spec := range a.SupportedLayers() {
+		states[spec.Type] = ladder.LayerState{Layer: spec.Type, ExistingUSDPerHour: &zero, ExpiringUSDPerHour: &zero}
+		rates[spec.Type] = 1
+	}
+	res, err := ladder.Allocate(&ladder.AllocationInput{
+		Config: ladder.LadderConfig{Scope: testScope(), Mode: ladder.ModeEmailApproval, Cadence: ladder.CadenceWeekly,
+			TargetCoveragePct: 100, BaselinePercentile: 5, LookbackDays: len(vals), MaxActionsPerRun: 10,
+			BufferFraction:                f,
+			BufferUtilizationThresholdPct: ladder.DefaultBufferUtilizationThresholdPct,
+			Ramp:                          ladder.RampSchedule{Steps: []ladder.RampStep{{AfterDays: 0, Fraction: 1}}}},
+		Layers: a.SupportedLayers(), LayerStates: states, CommitmentRates: rates, InFlight: []ladder.InFlightTranche{},
+		Baseline: bl, Now: time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC), DataSources: []string{"constructed"},
+	})
+	require.NoError(t, err)
+	return res
+}
+
+func TestStableUsage_EndToEndAllocate(t *testing.T) {
+	t.Parallel()
+	t.Run("stable series gives the base layer a share capped at Stable", func(t *testing.T) {
+		t.Parallel()
+		res := allocateFromBaseline(t, rep(30, 10), 0.1)
+		var base *ladder.Allocation
+		for i := range res.Allocations {
+			if res.Allocations[i].Layer == ladder.LayerEC2InstanceSP {
+				base = &res.Allocations[i]
+			}
+		}
+		require.NotNil(t, base, "%+v", res)
+		assert.Equal(t, 1, base.OnDemandEquivalentUSDPerHour.Sign())
+		assert.LessOrEqual(t, base.OnDemandEquivalentUSDPerHour.Cmp(big.NewRat(9, 1)), 0)
+	})
+	t.Run("volatile series routes the whole core gap to flex", func(t *testing.T) {
+		t.Parallel()
+		res := allocateFromBaseline(t, slices.Concat(rep(3, 1), rep(27, 10)), 0.1)
+		noted := false
+		for _, al := range res.Allocations {
+			assert.NotEqual(t, ladder.LayerEC2InstanceSP, al.Layer)
+			noted = noted || strings.Contains(al.Rationale, "stable usage unknown")
+		}
+		assert.True(t, noted, "flex allocation should carry the stable-usage-unknown note")
 	})
 }
