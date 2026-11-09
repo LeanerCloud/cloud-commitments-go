@@ -37,16 +37,17 @@ const maxSeriesAgeDays = 3
 // GetUsageBaseline computes a statistical low-water-mark from a daily
 // on-demand-equivalent USD/hour series returned by the injected onDemandSeriesSource.
 //
-// Series semantics: each element is the average on-demand-equivalent USD/hour
-// for one calendar day over the lookback window, ordered oldest-to-newest.
-// The series is sourced from onDemandSeriesSource.GetOnDemandSeries, which is wired
-// in a later PR to call CE GetCostAndUsage (Granularity=Daily, on-demand
-// usage-type filter). Until that wiring lands, callers receive a data-source
-// error from GetOnDemandSeries.
+// Series semantics: each element is the average USD/hour of on-demand usage
+// left uncovered by existing commitments for one calendar day over the lookback
+// window, ordered oldest-to-newest. The series is sourced from
+// onDemandSeriesSource.GetOnDemandSeries (CE GetCostAndUsage, Granularity=Daily,
+// "On Demand Instances" purchase type), so covered RI and Savings Plan usage is
+// excluded. The returned baseline therefore declares BaselineBasisResidual:
+// Allocate must not subtract existing commitment from it a second time (go#282).
 //
 // Limitations:
 //   - The series covers only the on-demand costs reported by the coverage
-//     source. Until the CE GetCostAndUsage wiring lands, this will be an error.
+//     source.
 //   - The series is EC2-scoped (the initial coverage source implementation
 //     covers EC2 on-demand cost only, not RDS/ElastiCache/etc.).
 //   - LowWaterUSDPerHour is the nearest-rank percentile of the daily series
@@ -127,6 +128,7 @@ func (a *AWSLadder) GetUsageBaseline(ctx context.Context, scope ladder.Scope, lo
 	return ladder.UsageBaseline{
 		LowWaterUSDPerHour: ptr(lowWater),
 		StableUSDPerHour:   nil,
+		Basis:              ladder.BaselineBasisResidual,
 		Series:             series,
 		LookbackDays:       lookbackDays,
 		Percentile:         percentile,
