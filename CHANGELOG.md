@@ -316,6 +316,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Duplicate check:** a recent purchase now reduces every term and payment variant of a recommendation, not only the first one in input order, for EC2 as well as every other service. Each `term|payment` group starts from the full held quantity and consumes it in input order, so one held unit against four variants of 2 yields 1, 1, 1, 1 (was 1, 2, 2, 2). Providers pick this up on their next `pkg` pin bump. Fixes #703.
 - **`common`:** a `Recommendation`, and a `PurchaseResult` carrying one (with
   no `Error`), now decodes from JSON when `details` holds an object. `details`
   is decoded into the typed pointer for the recommendation's service through
