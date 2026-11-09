@@ -95,6 +95,8 @@ func TestEstimateStableUSDPerHour_InvalidInputsAreNil(t *testing.T) {
 		{"NaN lowWater", ok, math.NaN(), 0.1},
 		{"Inf lowWater", ok, math.Inf(1), 0.1},
 		{"fraction one", ok, 10, 1},
+		{"fraction negative", ok, 10, -0.5},
+		{"fraction above one", ok, 10, 1.5},
 		{"fraction NaN", ok, 10, math.NaN()},
 	}
 	for _, tt := range tests {
@@ -111,10 +113,11 @@ func TestEstimateStableUSDPerHour_Property(t *testing.T) {
 	t.Parallel()
 	rng := rand.New(rand.NewPCG(1, 2)) //nolint:gosec // Deterministic test data, not security.
 	percentiles := []float64{1, 5, 10, 50, 100}
+	nonNil := 0
 	for range 1000 {
 		series := make([]float64, 14+rng.IntN(47))
 		for i := range series {
-			series[i] = float64(rng.IntN(200)) / 10
+			series[i] = 10 + float64(rng.IntN(61)-30)/10 // Steady: 10 plus noise in [-3, 3].
 		}
 		p := percentiles[rng.IntN(len(percentiles))]
 		f := rng.Float64()
@@ -129,11 +132,13 @@ func TestEstimateStableUSDPerHour_Property(t *testing.T) {
 		if got == nil {
 			continue
 		}
+		nonNil++
 		assert.Greater(t, *got, 0.0)
 		assert.LessOrEqual(t, *got, lw*(1-f)+1e-12)
 		assert.LessOrEqual(t, *got, p10*(1-f)+1e-12)
 		assert.LessOrEqual(t, *got, min3*(1-f)+1e-12)
 	}
+	assert.Greater(t, nonNil, 500, "generator must mostly pass the gate or the checks are vacuous")
 }
 
 // stablePublic runs GetUsageBaseline on vals (oldest first); f nil leaves the option unset.
@@ -220,18 +225,22 @@ func allocateFromBaseline(t *testing.T, vals []float64, f float64) *ladder.Alloc
 
 func TestStableUsage_EndToEndAllocate(t *testing.T) {
 	t.Parallel()
-	t.Run("stable series gives the base layer a share capped at Stable", func(t *testing.T) {
+	t.Run("stable series caps the base layer at Stable", func(t *testing.T) {
 		t.Parallel()
-		res := allocateFromBaseline(t, rep(30, 10), 0.1)
-		var base *ladder.Allocation
-		for i := range res.Allocations {
-			if res.Allocations[i].Layer == ladder.LayerEC2InstanceSP {
-				base = &res.Allocations[i]
-			}
+		// min3 = 6 gives Stable 5.4 < coreGap 9, so the cap binds.
+		res := allocateFromBaseline(t, slices.Concat(rep(27, 10), []float64{6, 10, 10}), 0.1)
+		got := map[ladder.LayerType]*big.Rat{}
+		for _, al := range res.Allocations {
+			got[al.Layer] = al.OnDemandEquivalentUSDPerHour
 		}
-		require.NotNil(t, base, "%+v", res)
-		assert.Equal(t, 1, base.OnDemandEquivalentUSDPerHour.Sign())
-		assert.LessOrEqual(t, base.OnDemandEquivalentUSDPerHour.Cmp(big.NewRat(9, 1)), 0)
+		require.Len(t, got, 3)
+		// Amounts derive from float64 inputs (0.9 * 6), so compare within 1e-12.
+		base, _ := got[ladder.LayerEC2InstanceSP].Float64()
+		assert.InDelta(t, 5.4, base, 1e-12)
+		flex, _ := got[ladder.LayerComputeSP].Float64()
+		assert.InDelta(t, 3.6, flex, 1e-12)
+		buffer, _ := got[ladder.LayerConvertibleRI].Float64()
+		assert.InDelta(t, 1.0, buffer, 1e-12)
 	})
 	t.Run("volatile series routes the whole core gap to flex", func(t *testing.T) {
 		t.Parallel()
