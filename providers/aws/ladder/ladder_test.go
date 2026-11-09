@@ -1140,3 +1140,59 @@ func makeConstantPoints(n int, value float64) []DailyPoint {
 	}
 	return out
 }
+
+// ---------------------------------------------------------------------------
+// WithBufferFraction
+// ---------------------------------------------------------------------------
+
+func TestWithBufferFraction_Validation(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		f       float64
+		wantErr string
+	}{
+		{"NaN", math.NaN(), "AWSLadder.WithBufferFraction: buffer_fraction NaN must be in [0, 1)"},
+		{"+Inf", math.Inf(1), "AWSLadder.WithBufferFraction: buffer_fraction +Inf must be in [0, 1)"},
+		{"negative", -0.1, "AWSLadder.WithBufferFraction: buffer_fraction -0.1 must be in [0, 1)"},
+		{"one", 1.0, "AWSLadder.WithBufferFraction: buffer_fraction 1 must be in [0, 1)"},
+		{"above one", 1.5, "AWSLadder.WithBufferFraction: buffer_fraction 1.5 must be in [0, 1)"},
+		{"zero accepted", 0, ""},
+		{"just below one accepted", 0.999, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			a := newTestLadder(t, &fakeRILister{}, &fakeSPLister{}, &fakeCoverageSource{}, &fakeUtilizationSource{})
+			prev := 0.25
+			_, err := a.WithBufferFraction(prev)
+			require.NoError(t, err)
+
+			got, err := a.WithBufferFraction(tt.f)
+			if tt.wantErr != "" {
+				require.EqualError(t, err, tt.wantErr)
+				assert.Nil(t, got)
+				require.NotNil(t, a.bufferFraction)
+				assert.Equal(t, prev, *a.bufferFraction, "failed call must leave the stored value unchanged")
+				return
+			}
+			require.NoError(t, err)
+			assert.Same(t, a, got)
+			require.NotNil(t, a.bufferFraction)
+			assert.Equal(t, tt.f, *a.bufferFraction)
+		})
+	}
+}
+
+func TestWithBufferFraction_UnsetAndLastCallWins(t *testing.T) {
+	t.Parallel()
+	a := newTestLadder(t, &fakeRILister{}, &fakeSPLister{}, &fakeCoverageSource{}, &fakeUtilizationSource{})
+	assert.Nil(t, a.bufferFraction)
+
+	_, err := a.WithBufferFraction(0.1)
+	require.NoError(t, err)
+	_, err = a.WithBufferFraction(0.3)
+	require.NoError(t, err)
+	require.NotNil(t, a.bufferFraction)
+	assert.Equal(t, 0.3, *a.bufferFraction)
+}
