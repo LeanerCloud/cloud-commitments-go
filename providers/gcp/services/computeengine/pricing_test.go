@@ -2,6 +2,7 @@ package computeengine
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -278,4 +279,68 @@ func TestFindFamilyRates_C2V1AndLegacyDisagreeIsAmbiguous(t *testing.T) {
 	}
 	_, err := findFamilyRates(skus, "c2-standard-8", "us-central1", 1)
 	require.ErrorContains(t, err, "ambiguous catalog")
+}
+
+// m4AndUltramemSKUs carries plain M4 rows next to M4Ultramem224 rows. The
+// catalog writes the Ultramem family with no space after "M4". Ultramem RAM is
+// GBy.h live; GiBy.h here keeps the fixture independent of #394.
+func m4AndUltramemSKUs() []*cloudbilling.Sku {
+	return []*cloudbilling.Sku{
+		catalogSKU("m4-od-core", "M4 Instance Core running in Americas", "CPU", "OnDemand", "h", 4000000, americas),
+		catalogSKU("m4-od-ram", "M4 Instance Ram running in Americas", "RAM", "OnDemand", "GiBy.h", 4570000, americas),
+		catalogSKU("m4-c1-core", "Commitment v1: M4 Cpu in Americas for 1 Year", "CPU", "Commit1Yr", "h", 2500000, americas),
+		catalogSKU("m4-c1-ram", "Commitment v1: M4 Ram in Americas for 1 Year", "RAM", "Commit1Yr", "GiBy.h", 2900000, americas),
+		catalogSKU("mu-od-core", "M4Ultramem224 Instance Core running in Americas", "CPU", "OnDemand", "h", 8000000, americas),
+		catalogSKU("mu-od-ram", "M4Ultramem224 Instance Ram running in Americas", "RAM", "OnDemand", "GiBy.h", 5675880, americas),
+		catalogSKU("mu-c1-core", "Commitment v1: M4Ultramem224 Cpu in Americas for 1 Year", "CPU", "Commit1Yr", "h", 5000000, americas),
+		catalogSKU("mu-c1-ram", "Commitment v1: M4Ultramem224 Ram in Americas for 1 Year", "RAM", "Commit1Yr", "GiBy.h", 3500000, americas),
+	}
+}
+
+func TestFamilyLabels_M4Ultramem(t *testing.T) {
+	t.Parallel()
+	labels, err := familyLabels("m4-ultramem-224")
+	require.NoError(t, err)
+	assert.Equal(t, "M4Ultramem224", labels.onDemand)
+	assert.Equal(t, []string{"M4Ultramem224"}, labels.commit)
+
+	for _, mt := range []string{"m4-ultramem-999", "m4-ultramem", "m4-ultramem-", "m4n-ultramem-224"} {
+		_, err := familyLabels(mt)
+		require.ErrorIs(t, err, errUnknownCatalogFamily, mt)
+	}
+}
+
+func TestClassify_M4UltramemNeverMatchesPlainM4AndViceVersa(t *testing.T) {
+	t.Parallel()
+	ultra, err := familyLabels("m4-ultramem-224")
+	require.NoError(t, err)
+	plain, err := familyLabels("m4-megamem-28")
+	require.NoError(t, err)
+
+	for _, sku := range m4AndUltramemSKUs() {
+		isUltraSKU := strings.Contains(sku.Description, "M4Ultramem224")
+		_, _, gotUltra, err := newRateMatcher(ultra, "us-central1", 1).classify(sku)
+		require.NoError(t, err)
+		assert.Equal(t, isUltraSKU, gotUltra, "ultramem shape vs %q", sku.Description)
+		_, _, gotPlain, err := newRateMatcher(plain, "us-central1", 1).classify(sku)
+		require.NoError(t, err)
+		assert.Equal(t, !isUltraSKU, gotPlain, "plain m4 shape vs %q", sku.Description)
+	}
+}
+
+func TestFindFamilyRates_M4UltramemUsesOwnRows(t *testing.T) {
+	t.Parallel()
+	skus := m4AndUltramemSKUs()
+	ultra, err := findFamilyRates(skus, "m4-ultramem-224", "us-central1", 1)
+	require.NoError(t, err)
+	assert.InDelta(t, 0.008, ultra.onDemand.cpu, 1e-9)
+	assert.InDelta(t, 0.005, ultra.commitment.cpu, 1e-9)
+
+	plain, err := findFamilyRates(skus, "m4-megamem-28", "us-central1", 1)
+	require.NoError(t, err)
+	assert.InDelta(t, 0.004, plain.onDemand.cpu, 1e-9)
+	assert.InDelta(t, 0.0025, plain.commitment.cpu, 1e-9)
+
+	_, err = findFamilyRates(skus, "m4-ultramem-999", "us-central1", 1)
+	require.ErrorIs(t, err, errUnknownCatalogFamily)
 }
