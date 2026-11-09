@@ -279,3 +279,111 @@ func TestFindFamilyRates_C2V1AndLegacyDisagreeIsAmbiguous(t *testing.T) {
 	_, err := findFamilyRates(skus, "c2-standard-8", "us-central1", 1)
 	require.ErrorContains(t, err, "ambiguous catalog")
 }
+
+// c4dAmericasSKUs: live C4D SKUs for us-central1 (Americas, read 2026-11-08).
+// C4D quotes RAM in decimal GBy.h, on demand and for commitments.
+func c4dAmericasSKUs() []*cloudbilling.Sku {
+	return []*cloudbilling.Sku{
+		catalogSKU("80C2-B3C5-BD5E", "C4D Instance Core running in Americas", "CPU", "OnDemand", "h", 32703500, americas),
+		catalogSKU("159A-6F40-D544", "C4D Instance Ram running in Americas", "RAM", "OnDemand", "GBy.h", 3495578, americas),
+		catalogSKU("9865-5346-2DAF", "Commitment v1: C4D Cpu in Americas for 1 Year", "CPU", "Commit1Yr", "h", 20603200, americas),
+		catalogSKU("1180-00E6-9F2F", "Commitment v1: C4D Ram in Americas for 1 Year", "RAM", "Commit1Yr", "GBy.h", 2202232, americas),
+		catalogSKU("353D-9F68-E3A8", "Commitment v1: C4D Cpu in Americas for 3 Years", "CPU", "Commit3Yr", "h", 14716600, americas),
+		catalogSKU("D00F-CFA2-8CD4", "Commitment v1: C4D Ram in Americas for 3 Years", "RAM", "Commit3Yr", "GBy.h", 1572996, americas),
+	}
+}
+
+// gibPerGB converts a per-GB (1e9 bytes) price to per-GiB (2^30 bytes).
+const gibPerGB = (1 << 30) / 1e9
+
+func TestFindFamilyRates_RAMUsageUnits(t *testing.T) {
+	t.Parallel()
+
+	t.Run("C4D GBy.h on demand and commitment convert to per GiB", func(t *testing.T) {
+		t.Parallel()
+		one, err := findFamilyRates(c4dAmericasSKUs(), "c4d-standard-8", "us-central1", 1)
+		require.NoError(t, err)
+		assert.InDelta(t, 0.0327035, one.onDemand.cpu, 1e-12)
+		assert.InDelta(t, 0.003495578*gibPerGB, one.onDemand.ram, 1e-12)
+		assert.InDelta(t, 0.0206032, one.commitment.cpu, 1e-12)
+		assert.InDelta(t, 0.002202232*gibPerGB, one.commitment.ram, 1e-12)
+		assert.InDelta(t, 0.0037533, one.onDemand.ram, 1e-6)
+
+		three, err := findFamilyRates(c4dAmericasSKUs(), "c4d-standard-8", "us-central1", 3)
+		require.NoError(t, err)
+		assert.InDelta(t, 0.0147166, three.commitment.cpu, 1e-12)
+		assert.InDelta(t, 0.001572996*gibPerGB, three.commitment.ram, 1e-12)
+	})
+
+	t.Run("N2 GiBy.h is unchanged", func(t *testing.T) {
+		t.Parallel()
+		r, err := findFamilyRates(n2AmericasSKUs(), "n2-standard-8", "us-central1", 1)
+		require.NoError(t, err)
+		assert.InDelta(t, 0.004237, r.onDemand.ram, 1e-12)
+		assert.InDelta(t, 0.002669, r.commitment.ram, 1e-12)
+	})
+
+	t.Run("M4Ultramem224 GBy.h through the collector", func(t *testing.T) {
+		t.Parallel()
+		var one, three rateCollector
+		require.NoError(t, one.add(catalogSKU("451F-FFFB-68C2", "Commitment v1: M4Ultramem224 Ram in Americas for 1 Year", "RAM", "Commit1Yr", "GBy.h", 3348770, americas), true, true))
+		require.NoError(t, three.add(catalogSKU("A188-9304-A5E6", "Commitment v1: M4Ultramem224 Ram in Americas for 3 Years", "RAM", "Commit3Yr", "GBy.h", 1702760, americas), true, true))
+		assert.InDelta(t, 0.00334877*gibPerGB, one.cRAM.value, 1e-12)
+		assert.InDelta(t, 0.00170276*gibPerGB, three.cRAM.value, 1e-12)
+	})
+
+	t.Run("helper converts per allowed unit", func(t *testing.T) {
+		t.Parallel()
+		got, err := ramPricePerGiBHour(0.00334877, "GBy.h", "451F-FFFB-68C2")
+		require.NoError(t, err)
+		assert.InDelta(t, 0.00334877*1.073741824, got, 1e-15)
+		got, err = ramPricePerGiBHour(0.004237, "GiBy.h", "x")
+		require.NoError(t, err)
+		assert.Equal(t, 0.004237, got)
+	})
+
+	for _, unit := range []string{"MiBy.h", "GiBy.mo", ""} {
+		t.Run("unsupported RAM unit "+unit, func(t *testing.T) {
+			t.Parallel()
+			skus := c4dAmericasSKUs()
+			skus[1].PricingInfo[0].PricingExpression.UsageUnit = unit
+			_, err := findFamilyRates(skus, "c4d-standard-8", "us-central1", 1)
+			require.ErrorContains(t, err, "unsupported RAM usage unit")
+		})
+	}
+
+	t.Run("mixed units at the same raw price are ambiguous", func(t *testing.T) {
+		t.Parallel()
+		skus := append(c4dAmericasSKUs(),
+			catalogSKU("dup-gib", "C4D Instance Ram running in Americas", "RAM", "OnDemand", "GiBy.h", 3495578, americas))
+		_, err := findFamilyRates(skus, "c4d-standard-8", "us-central1", 1)
+		require.ErrorContains(t, err, "ambiguous catalog")
+	})
+}
+
+// Live us-central1 C4D rows, c4d-standard-8 (8 vCPU, 30 GiB), 1 year:
+//
+//	on demand  8*0.0327035 + 30*0.003495578*1.073741824
+//	commitment 8*0.0206032 + 30*0.002202232*1.073741824
+func TestGetComputePricing_C4DGBytePricedRAM(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	client, _ := NewClient("p", "us-central1")
+	client.SetBillingService(&MockBillingService{skus: &cloudbilling.ListSkusResponse{Skus: c4dAmericasSKUs()}})
+	res := computeResources{vcpus: 8, memoryGiB: 30}
+
+	one, err := client.getComputePricing(ctx, "c4d-standard-8", "us-central1", 1, res)
+	require.NoError(t, err)
+	wantCommit := 8*0.0206032 + 30*0.002202232*gibPerGB
+	wantOD := 8*0.0327035 + 30*0.003495578*gibPerGB
+	assert.Equal(t, "USD", one.Currency)
+	assert.InDelta(t, wantCommit, one.HourlyRate, 1e-9)
+	assert.InDelta(t, wantCommit*8760, one.CommitmentPrice, 1e-6)
+	assert.InDelta(t, wantOD*8760, one.OnDemandPrice, 1e-6)
+	assert.Greater(t, one.SavingsPercentage, 0.0)
+
+	three, err := client.getComputePricing(ctx, "c4d-standard-8", "us-central1", 3, res)
+	require.NoError(t, err)
+	assert.InDelta(t, (8*0.0147166+30*0.001572996*gibPerGB)*8760*3, three.CommitmentPrice, 1e-6)
+	assert.Greater(t, three.SavingsPercentage, one.SavingsPercentage)
+}
