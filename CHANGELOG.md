@@ -44,6 +44,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **`aws`/`recommendations`:** `recommendations.GetRICommitmentRate` derives the commitment dollars per covered on-demand dollar of a new Convertible EC2 Reserved Instance from Cost Explorer's reservation purchase recommendations: used share of the effective monthly RI cost (recurring plus upfront amortized over the term) over the covered on-demand cost, filtered by account and region, with `ErrNoRICommitmentRate` when no usable detail exists. (#732)
 - **`ladder`/`aws`:** `AWSLadder.WithBufferFraction` and a stable-usage estimator: when the fraction is set, `GetUsageBaseline` fills `StableUSDPerHour` with the lowest of the low-water mark, the 10th percentile and the last 3 days, times `1 - fraction`. It stays nil when the option is unset, the series has fewer than 14 days, or the 10th percentile is under half the median (#31).
 - **AWS/Redshift:** when the `AttemptJournal` also implements `common.ClaimReader`, the reserved-node dedupe skips nodes another purchase recorded as bought, before and after the send. A claim read error refuses before the send or leaves the outcome unknown after it; if the skip leaves one of several matches and the token has no sending or outcome_unknown record, the purchase is refused as ambiguous (#700).
 - **`pkg`:** optional `common.ClaimReader` (`ClaimedByOthers(ctx, token, ids)`), which an `AttemptJournal` may implement so a provider can skip commitments another purchase recorded as bought (#700).
