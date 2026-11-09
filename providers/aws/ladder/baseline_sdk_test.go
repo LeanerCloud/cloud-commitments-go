@@ -120,6 +120,15 @@ func TestScopedBaselineParentCompatible(t *testing.T) {
 			if mode == "account" || mode == "reverse" {
 				assert.Equal(t, int32(2), calls.Load())
 			}
+			if mode == "account" {
+				// 28 days at 10/h then 2 days at 2/h: P10 = 10, min3 = 2, so 2 * (1 - 0.1).
+				_, err = a.WithBufferFraction(0.1)
+				require.NoError(t, err)
+				bl, err = a.GetUsageBaseline(context.Background(), scope, 30, 5)
+				require.NoError(t, err)
+				require.NotNil(t, bl.StableUSDPerHour)
+				assert.InDelta(t, 1.8, *bl.StableUSDPerHour, 1e-9)
+			}
 		})
 	}
 }
