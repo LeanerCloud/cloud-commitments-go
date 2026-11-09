@@ -311,6 +311,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   follow-up change); empty otherwise (#211).
 - **`aws`/EC2:** an adopted re-drive now reports the existing RI's offering
   class in `PurchaseResult.OfferingClass` (#211).
+- GCP Compute Engine adoption now returns a nil `Cost` instead of a pointer to 0;
+  a fresh purchase is unchanged (#211).
 
 ### Fixed
 

@@ -926,8 +926,7 @@ func TestComputeEngineClient_PurchaseCommitment_ReDriveAlreadyExists(t *testing.
 				assert.True(t, result.Success)
 				assert.Equal(t, name, result.CommitmentID)
 				assert.True(t, result.ExistingCommitment, "an adopted commitment must be flagged")
-				require.NotNil(t, result.Cost)
-				assert.Zero(t, *result.Cost)
+				assert.Nil(t, result.Cost, "an adopted commitment made no charge in this call")
 				return
 			}
 			require.Error(t, err)
@@ -971,6 +970,7 @@ func TestComputeEngineClient_PurchaseCommitment_ReDriveAlreadyExistsOnWait(t *te
 	assert.True(t, result.Success)
 	assert.Equal(t, name, result.CommitmentID)
 	assert.True(t, result.ExistingCommitment)
+	assert.Nil(t, result.Cost)
 }
 
 // A first purchase that succeeds outright is not an adoption, even with a token.
@@ -987,6 +987,8 @@ func TestComputeEngineClient_PurchaseCommitment_FreshPurchaseNotExisting(t *test
 	require.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.False(t, result.ExistingCommitment)
+	require.NotNil(t, result.Cost)
+	assert.Zero(t, *result.Cost)
 }
 
 func TestComputeEngineClient_PurchaseCommitment_3Year(t *testing.T) {

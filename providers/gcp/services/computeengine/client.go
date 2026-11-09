@@ -768,8 +768,13 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 
 	result.Success = true
 	result.CommitmentID = commitmentName
-	upfrontCost := 0.0 // Compute Engine CUDs are billed monthly, with no upfront charge.
-	result.Cost = &upfrontCost
+	if !result.ExistingCommitment {
+		// Compute Engine CUDs are billed monthly, with no upfront charge. An
+		// adopted commitment made no charge in this call, so its Cost stays nil
+		// (unknown) rather than a claimed zero (issue #211).
+		upfrontCost := 0.0
+		result.Cost = &upfrontCost
+	}
 
 	return result, nil
 }
