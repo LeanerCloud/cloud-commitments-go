@@ -344,3 +344,30 @@ func TestFindFamilyRates_M4UltramemUsesOwnRows(t *testing.T) {
 	_, err = findFamilyRates(skus, "m4-ultramem-999", "us-central1", 1)
 	require.ErrorIs(t, err, errUnknownCatalogFamily)
 }
+
+func TestFamilyLabels_NonM4UltramemKeepOverrides(t *testing.T) {
+	t.Parallel()
+	cases := map[string]string{
+		"m1-ultramem-40":  "Memory-optimized",
+		"m2-ultramem-208": "Memory-optimized",
+		"m3-ultramem-32":  "M3 Memory-optimized",
+	}
+	for mt, want := range cases {
+		labels, err := familyLabels(mt)
+		require.NoError(t, err, mt)
+		assert.Equal(t, want, labels.onDemand, mt)
+		assert.Equal(t, []string{want}, labels.commit, mt)
+	}
+}
+
+func TestFindFamilyRates_M4UltramemLiveGBHRamRefused(t *testing.T) {
+	t.Parallel()
+	skus := m4AndUltramemSKUs()
+	for _, sku := range skus {
+		if sku.SkuId == "mu-od-ram" {
+			sku.PricingInfo[0].PricingExpression.UsageUnit = "GBy.h"
+		}
+	}
+	_, err := findFamilyRates(skus, "m4-ultramem-224", "us-central1", 1)
+	require.ErrorContains(t, err, `expected "GiBy.h"`)
+}

@@ -312,10 +312,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
-- **`providers/gcp`:** `m4-ultramem-224` is now priced from its own
-  `M4Ultramem224` catalog rows instead of the plain `M4` rows, which understated
-  RAM cost by about 25%. Other `*-ultramem-*` machine types are refused with an
-  unknown-catalog-family error rather than priced at another family's rates (#719).
+- **`providers/gcp`:** `m4-ultramem-224` now matches its own `M4Ultramem224`
+  catalog SKUs instead of the plain `M4` rows, which understated RAM cost by
+  about 25%. It stays refused until #394 handles the live `GBy.h` RAM unit. Other
+  `m4-ultramem-*` sizes and `m4n-ultramem-*` are refused with an
+  unknown-catalog-family error rather than priced at M4 rates (#719).
 - **`common`:** a `Recommendation`, and a `PurchaseResult` carrying one (with
   no `Error`), now decodes from JSON when `details` holds an object. `details`
   is decoded into the typed pointer for the recommendation's service through
