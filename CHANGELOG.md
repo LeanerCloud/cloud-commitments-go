@@ -7,6 +7,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Notices
 
+- **EC2 re-drives now refuse when several RIs carry the idempotency token.**
+  If more than one active or payment-pending RI has the token (#724), the
+  purchase is refused instead of adopting the first one: no purchase is sent and
+  the error wraps `common.ErrRefusedBeforePurchase`, names the count and the
+  masked token, and needs a human to reconcile.
+
 - **Azure Redis purchases must go through managedredis (`ServiceMemoryDB`).**
   The Azure recommendations adapter still labels Redis recommendations
   `ServiceCache`, and the cache client now refuses every purchase (#538), so

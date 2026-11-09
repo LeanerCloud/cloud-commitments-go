@@ -2525,3 +2525,79 @@ func TestListTargetOfferings_CancelMidWalk_StopsWithContextError(t *testing.T) {
 	assert.Nil(t, offs)
 	assert.Equal(t, 3, calls)
 }
+
+// TestPurchaseCommitment_IdempotencyTokenMatchCount covers issue #724: a
+// re-drive adopts exactly one tagged RI, buys on zero, ignores ID-less entries
+// and fails closed (no purchase) when several RIs carry the token.
+func TestPurchaseCommitment_IdempotencyTokenMatchCount(t *testing.T) {
+	token := common.DeriveIdempotencyToken("exec-724", 0)
+	ri := func(id string) types.ReservedInstances {
+		return types.ReservedInstances{ReservedInstancesId: aws.String(id)}
+	}
+
+	tests := []struct {
+		name        string
+		ris         []types.ReservedInstances
+		wantAdopt   string
+		wantBuy     bool
+		wantAmbig   bool
+		wantCountIn string
+	}{
+		{name: "zero matches buys", ris: nil, wantBuy: true},
+		{name: "only id-less entries buys", ris: []types.ReservedInstances{{}, {}}, wantBuy: true},
+		{name: "one match adopts", ris: []types.ReservedInstances{ri("ri-a")}, wantAdopt: "ri-a"},
+		{name: "two matches fail closed", ris: []types.ReservedInstances{ri("ri-a"), ri("ri-b")}, wantAmbig: true, wantCountIn: "2 "},
+		{name: "three matches fail closed", ris: []types.ReservedInstances{ri("ri-a"), ri("ri-b"), ri("ri-c")}, wantAmbig: true, wantCountIn: "3 "},
+		{name: "id-less entry plus one RI adopts", ris: []types.ReservedInstances{{}, ri("ri-a")}, wantAdopt: "ri-a"},
+		{name: "two entries one id-less adopts", ris: []types.ReservedInstances{ri("ri-a"), {}}, wantAdopt: "ri-a"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockEC2 := &MockEC2Client{}
+			client := &Client{client: mockEC2, region: "us-east-1"}
+			mockEC2.On("DescribeReservedInstances", mock.Anything, mock.Anything).
+				Return(&ec2.DescribeReservedInstancesOutput{ReservedInstances: tt.ris}, nil).Once()
+			if tt.wantBuy {
+				// Reaching the offering lookup proves the guard fell through to a purchase.
+				mockEC2.On("DescribeReservedInstancesOfferings", mock.Anything, mock.Anything).
+					Return(nil, errors.New("offering lookup reached")).Once()
+			}
+			rec := common.Recommendation{
+				ResourceType:  "t3.micro",
+				Count:         1,
+				PaymentOption: "all-upfront",
+				Term:          "1yr",
+				Details:       &common.ComputeDetails{Platform: "Linux/UNIX", Tenancy: "default", Scope: "Region"},
+			}
+
+			result, err := client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{IdempotencyToken: token})
+
+			switch {
+			case tt.wantAdopt != "":
+				require.NoError(t, err)
+				assert.True(t, result.Success)
+				assert.True(t, result.ExistingCommitment)
+				assert.Equal(t, tt.wantAdopt, result.CommitmentID)
+			case tt.wantAmbig:
+				require.Error(t, err)
+				assert.False(t, result.Success)
+				assert.False(t, result.ExistingCommitment)
+				assert.Empty(t, result.CommitmentID)
+				assert.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
+				assert.NotErrorIs(t, err, common.ErrOutcomeUnknown)
+				assert.Contains(t, err.Error(), tt.wantCountIn)
+				assert.Contains(t, err.Error(), common.MaskToken(token))
+				assert.NotContains(t, err.Error(), token)
+				assert.Contains(t, err.Error(), "ambiguous")
+				assert.NotContains(t, err.Error(), "idempotency lookup failed")
+				assert.Equal(t, err, result.Error)
+				mockEC2.AssertNotCalled(t, "PurchaseReservedInstancesOffering", mock.Anything, mock.Anything)
+				mockEC2.AssertNotCalled(t, "DescribeReservedInstancesOfferings", mock.Anything, mock.Anything)
+			case tt.wantBuy:
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "offering lookup reached")
+			}
+			mockEC2.AssertExpectations(t)
+		})
+	}
+}
