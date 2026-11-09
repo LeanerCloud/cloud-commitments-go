@@ -2,6 +2,7 @@ package computeengine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -82,10 +83,29 @@ var skuFamilyOverrides = map[string]skuFamilyLabels{
 	"m3":  {onDemand: "M3 Memory-optimized", commit: []string{"M3 Memory-optimized"}},
 }
 
+// errUnknownCatalogFamily marks a machine type whose catalog SKU family cannot
+// be derived exactly; pricing it would risk taking another family's rates.
+var errUnknownCatalogFamily = errors.New("unknown catalog family")
+
+// m4UltramemSizes lists the M4 Ultramem sizes the code accepts. The label
+// "M4Ultramem224" (no space) is from the live catalog's on-demand rows; the
+// commitment text "Commitment v1: M4Ultramem224 Cpu/Ram" is assumed by analogy,
+// and a wrong text fails closed with "no commitment pricing found".
+var m4UltramemSizes = map[string]bool{"224": true}
+
 func familyLabels(machineType string) (skuFamilyLabels, error) {
-	family, _, _ := strings.Cut(strings.ToLower(strings.TrimSpace(machineType)), "-")
+	mt := strings.ToLower(strings.TrimSpace(machineType))
+	family, rest, _ := strings.Cut(mt, "-")
 	if family == "" {
 		return skuFamilyLabels{}, fmt.Errorf("no machine family in machine type %q", machineType)
+	}
+	if (family == "m4" || family == "m4n") && strings.HasPrefix(rest, "ultramem") {
+		size, ok := strings.CutPrefix(rest, "ultramem-")
+		if family != "m4" || !ok || !m4UltramemSizes[size] {
+			return skuFamilyLabels{}, fmt.Errorf("%w: cannot derive the catalog label for machine type %q", errUnknownCatalogFamily, machineType)
+		}
+		label := "M4Ultramem" + size
+		return skuFamilyLabels{onDemand: label, commit: []string{label}}, nil
 	}
 	if labels, ok := skuFamilyOverrides[family]; ok {
 		return labels, nil
