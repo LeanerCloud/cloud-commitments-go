@@ -24,6 +24,11 @@ type spSDKRequest struct {
 	LookbackPeriodInDays string
 	AccountScope         string
 	NextPageToken        string
+	// Reservation (RI) request fields; zero for Savings Plans requests.
+	Service              string
+	ServiceSpecification struct {
+		EC2Specification struct{ OfferingClass string }
+	}
 }
 
 type spSDKFixture struct {
@@ -31,6 +36,10 @@ type spSDKFixture struct {
 	requests []spSDKRequest
 	respond  func(spSDKRequest) (map[string]any, error)
 	otherErr bool
+	// riRespond serves GetReservationPurchaseRecommendation when set; the
+	// requests it saw are recorded in riRequests.
+	riRespond  func(spSDKRequest) (map[string]any, error)
+	riRequests []spSDKRequest
 }
 
 func (f *spSDKFixture) Do(req *http.Request) (*http.Response, error) {
@@ -51,7 +60,14 @@ func (f *spSDKFixture) Do(req *http.Request) (*http.Response, error) {
 		body, err = f.respond(input)
 	case "AWSInsightsIndexService.GetReservationPurchaseRecommendation":
 		body = map[string]any{}
-		if f.otherErr {
+		if f.riRespond != nil {
+			var input spSDKRequest
+			if err = json.NewDecoder(req.Body).Decode(&input); err != nil {
+				return nil, err
+			}
+			f.riRequests = append(f.riRequests, input)
+			body, err = f.riRespond(input)
+		} else if f.otherErr {
 			err = errors.New("fixture API failure")
 		}
 	default:
