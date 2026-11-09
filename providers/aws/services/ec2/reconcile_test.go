@@ -187,9 +187,9 @@ func TestReconcilePurchase_LostResponseUntaggedRI(t *testing.T) {
 	_, err := c.PurchaseCommitment(context.Background(), req.Recommendation, req.Options)
 	require.ErrorIs(t, err, common.ErrOutcomeUnknown)
 
-	_, found, err := c.findRIByIdempotencyToken(context.Background(), req.Options.IdempotencyToken)
+	found, err := c.findRIByIdempotencyToken(context.Background(), req.Options.IdempotencyToken)
 	require.NoError(t, err)
-	assert.False(t, found, "the token lookup alone misses an untagged RI")
+	assert.Nil(t, found, "the token lookup alone misses an untagged RI")
 
 	got := c.ReconcilePurchase(context.Background(), req)
 	assert.True(t, got.IsFound())

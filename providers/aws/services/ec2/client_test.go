@@ -1711,6 +1711,8 @@ func TestPurchaseCommitment_ExistingCommitmentFlag(t *testing.T) {
 		assert.True(t, result.Success)
 		assert.Equal(t, "ri-fresh-211", result.CommitmentID)
 		assert.False(t, result.ExistingCommitment)
+		assert.Empty(t, result.OfferingClass)
+		assert.NotNil(t, result.Cost)
 		m.AssertExpectations(t)
 	})
 
@@ -1731,27 +1733,76 @@ func TestPurchaseCommitment_ExistingCommitmentFlag(t *testing.T) {
 		assert.False(t, result.ExistingCommitment)
 	})
 
-	// The wrong-class incident: the RI an earlier attempt bought is Standard but
-	// the operator has since configured Convertible. The re-drive still adopts it
-	// (no offering lookup, no second purchase), and the flag is what lets the
-	// caller avoid recording the configured class for it.
-	t.Run("re-drive with a different configured class is flagged", func(t *testing.T) {
+	// The wrong-class incident: the RI an earlier attempt bought differs from the
+	// class now requested. The re-drive still adopts it (no offering lookup, no
+	// second purchase) and reports the RI's real class, not the requested one.
+	for _, tc := range []struct {
+		name      string
+		riClass   types.OfferingClassType
+		requested string
+	}{
+		{"standard-ri-convertible-requested", types.OfferingClassTypeStandard, "convertible"},
+		{"convertible-ri-standard-requested", types.OfferingClassTypeConvertible, "standard"},
+	} {
+		t.Run("re-drive adopts the RI's class/"+tc.name, func(t *testing.T) {
+			t.Parallel()
+			m := &MockEC2Client{}
+			client := &Client{client: m, region: "us-east-1"}
+			m.On("DescribeReservedInstances", mock.Anything, tokenLookup).
+				Return(&ec2.DescribeReservedInstancesOutput{ReservedInstances: []types.ReservedInstances{
+					{ReservedInstancesId: aws.String("ri-adopted-211"), OfferingClass: tc.riClass},
+				}}, nil).Once()
+
+			result, err := client.PurchaseCommitment(context.Background(), rec,
+				common.PurchaseOptions{IdempotencyToken: token, OfferingClass: tc.requested})
+			require.NoError(t, err)
+			assert.True(t, result.Success)
+			assert.Equal(t, "ri-adopted-211", result.CommitmentID)
+			assert.True(t, result.ExistingCommitment)
+			assert.Equal(t, string(tc.riClass), result.OfferingClass)
+			assert.Nil(t, result.Cost)
+			m.AssertExpectations(t)
+			m.AssertNotCalled(t, "PurchaseReservedInstancesOffering", mock.Anything, mock.Anything)
+		})
+	}
+
+	t.Run("nil-ID entry is skipped", func(t *testing.T) {
 		t.Parallel()
 		m := &MockEC2Client{}
 		client := &Client{client: m, region: "us-east-1"}
 		m.On("DescribeReservedInstances", mock.Anything, tokenLookup).
 			Return(&ec2.DescribeReservedInstancesOutput{ReservedInstances: []types.ReservedInstances{
-				{ReservedInstancesId: aws.String("ri-standard-211"), OfferingClass: types.OfferingClassTypeStandard},
+				{ReservedInstancesId: nil, OfferingClass: types.OfferingClassTypeStandard},
+				{ReservedInstancesId: aws.String("ri-valid"), OfferingClass: types.OfferingClassTypeConvertible},
 			}}, nil).Once()
 
-		result, err := client.PurchaseCommitment(context.Background(), rec,
-			common.PurchaseOptions{IdempotencyToken: token, OfferingClass: "convertible"})
+		result, err := client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{IdempotencyToken: token})
 		require.NoError(t, err)
-		assert.True(t, result.Success)
-		assert.Equal(t, "ri-standard-211", result.CommitmentID)
 		assert.True(t, result.ExistingCommitment)
-		m.AssertExpectations(t)
+		assert.Equal(t, "ri-valid", result.CommitmentID)
+		assert.Equal(t, "convertible", result.OfferingClass)
 		m.AssertNotCalled(t, "PurchaseReservedInstancesOffering", mock.Anything, mock.Anything)
+	})
+
+	t.Run("nil-ID-only lookup takes the fresh path", func(t *testing.T) {
+		t.Parallel()
+		m := &MockEC2Client{}
+		client := &Client{client: m, region: "us-east-1"}
+		m.On("DescribeReservedInstances", mock.Anything, tokenLookup).
+			Return(&ec2.DescribeReservedInstancesOutput{ReservedInstances: []types.ReservedInstances{
+				{ReservedInstancesId: nil, OfferingClass: types.OfferingClassTypeStandard},
+			}}, nil).Once()
+		m.On("DescribeReservedInstancesOfferings", mock.Anything, mock.Anything).Return(offerings, nil)
+		m.On("PurchaseReservedInstancesOffering", mock.Anything, mock.Anything).
+			Return(&ec2.PurchaseReservedInstancesOfferingOutput{ReservedInstancesId: aws.String("ri-fresh-211")}, nil)
+		m.On("CreateTags", mock.Anything, mock.Anything).Return(&ec2.CreateTagsOutput{}, nil)
+
+		result, err := client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{IdempotencyToken: token})
+		require.NoError(t, err)
+		assert.False(t, result.ExistingCommitment)
+		assert.Equal(t, "ri-fresh-211", result.CommitmentID)
+		assert.Empty(t, result.OfferingClass)
+		m.AssertExpectations(t)
 	})
 }
 

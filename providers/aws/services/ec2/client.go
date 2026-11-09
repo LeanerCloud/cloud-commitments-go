@@ -154,7 +154,7 @@ func (c *Client) purchase(ctx context.Context, rec common.Recommendation, count 
 	// already succeeded, so short-circuit and return the existing RI rather
 	// than buying a second one.
 	if opts.IdempotencyToken != "" {
-		existingID, found, lookupErr := c.findRIByIdempotencyToken(ctx, opts.IdempotencyToken)
+		existingRI, lookupErr := c.findRIByIdempotencyToken(ctx, opts.IdempotencyToken)
 		if lookupErr != nil {
 			// A failed lookup must NOT fall through to a purchase: doing so
 			// would defeat the guard and risk a double-buy on a re-drive. Fail
@@ -163,11 +163,8 @@ func (c *Client) purchase(ctx context.Context, rec common.Recommendation, count 
 			result.Error = fmt.Errorf("idempotency lookup failed before EC2 RI purchase (refusing to purchase to avoid a possible double-buy): %w", lookupErr)
 			return result, result.Error
 		}
-		if found {
-			log.Printf("EC2 RI for idempotency token %s already exists (%s); skipping purchase (issue #636 re-drive)", common.MaskToken(opts.IdempotencyToken), existingID)
-			result.Success = true
-			result.ExistingCommitment = true
-			result.CommitmentID = existingID
+		if existingRI != nil {
+			adoptExistingRI(&result, existingRI, opts.IdempotencyToken)
 			return result, nil
 		}
 	}
@@ -262,13 +259,30 @@ func checkApprovedUpfront(rec common.Recommendation, offering *types.ReservedIns
 	return nil
 }
 
+// adoptExistingRI records a re-driven purchase that found the RI an earlier
+// attempt bought (issue #636). The offering class comes from the RI itself, not
+// the request, so a caller never mislabels an adopted RI (issue #211). Cost
+// stays nil: no charge was made by this call.
+func adoptExistingRI(result *common.PurchaseResult, ri *types.ReservedInstances, token string) {
+	id := aws.ToString(ri.ReservedInstancesId)
+	log.Printf("EC2 RI for idempotency token %s already exists (%s); skipping purchase (issue #636 re-drive)", common.MaskToken(token), id)
+	result.Success = true
+	result.ExistingCommitment = true
+	result.CommitmentID = id
+	result.OfferingClass = string(ri.OfferingClass)
+	if result.OfferingClass == "" {
+		log.Printf("EC2 RI %s adopted for idempotency token %s reports no offering class", id, common.MaskToken(token))
+	}
+}
+
 // findRIByIdempotencyToken looks for an active or payment-pending Reserved
 // Instance tagged with the given idempotency token (issue #636). It returns the
-// RI ID and true when exactly such an RI exists, so a re-driven purchase can
-// short-circuit instead of buying a second commitment. Retired/canceled RIs are
+// first such RI, or nil when none exists, so a re-driven purchase can
+// short-circuit instead of buying a second commitment and report the adopted
+// RI's real offering class (issue #211). Retired/canceled RIs are
 // excluded (they carry the same state filter as GetExistingCommitments) so a
 // returned or expired commitment does not suppress a legitimate fresh purchase.
-func (c *Client) findRIByIdempotencyToken(ctx context.Context, token string) (riID string, found bool, err error) {
+func (c *Client) findRIByIdempotencyToken(ctx context.Context, token string) (*types.ReservedInstances, error) {
 	input := &ec2.DescribeReservedInstancesInput{
 		Filters: []types.Filter{
 			{
@@ -284,15 +298,15 @@ func (c *Client) findRIByIdempotencyToken(ctx context.Context, token string) (ri
 
 	response, err := c.client.DescribeReservedInstances(ctx, input)
 	if err != nil {
-		return "", false, fmt.Errorf("failed to describe reserved instances for idempotency check: %w", err)
+		return nil, fmt.Errorf("failed to describe reserved instances for idempotency check: %w", err)
 	}
 	for i := range response.ReservedInstances {
 		ri := &response.ReservedInstances[i]
 		if ri.ReservedInstancesId != nil {
-			return aws.ToString(ri.ReservedInstancesId), true, nil
+			return ri, nil
 		}
 	}
-	return "", false, nil
+	return nil, nil
 }
 
 // tagReservedInstance applies the standard CUDly tag set (including the
