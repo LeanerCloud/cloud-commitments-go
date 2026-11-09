@@ -160,7 +160,7 @@ func (c *Client) purchase(ctx context.Context, rec common.Recommendation, count 
 			// would defeat the guard and risk a double-buy on a re-drive. Fail
 			// loudly so the recovery sweep treats it as not-yet-purchased and
 			// retries the whole guarded path, rather than silently buying.
-			result.Error = fmt.Errorf("idempotency lookup failed before EC2 RI purchase (refusing to purchase to avoid a possible double-buy): %w", lookupErr)
+			result.Error = idempotencyLookupError(lookupErr)
 			return result, result.Error
 		}
 		if existingRI != nil {
@@ -230,6 +230,15 @@ func (c *Client) purchase(ctx context.Context, rec common.Recommendation, count 
 	return result, nil
 }
 
+// idempotencyLookupError passes an ambiguity refusal through unchanged and
+// wraps any other lookup failure as a refusal to purchase.
+func idempotencyLookupError(lookupErr error) error {
+	if errors.Is(lookupErr, common.ErrRefusedBeforePurchase) {
+		return lookupErr
+	}
+	return fmt.Errorf("idempotency lookup failed before EC2 RI purchase (refusing to purchase to avoid a possible double-buy): %w", lookupErr)
+}
+
 // checkApprovedUpfront refuses an offering whose total upfront exceeds the
 // approved recommendation's upfront by more than offeringprice.UpfrontTolerance,
 // or whose price cannot be compared with it. The API's LimitPrice is not used:
@@ -276,12 +285,17 @@ func adoptExistingRI(result *common.PurchaseResult, ri *types.ReservedInstances,
 }
 
 // findRIByIdempotencyToken looks for an active or payment-pending Reserved
-// Instance tagged with the given idempotency token (issue #636). It returns the
-// first such RI, or nil when none exists, so a re-driven purchase can
+// Instance tagged with the given idempotency token (issue #636). It returns
+// the single such RI, or nil when none exists, so a re-driven purchase can
 // short-circuit instead of buying a second commitment and report the adopted
-// RI's real offering class (issue #211). Retired/canceled RIs are
-// excluded (they carry the same state filter as GetExistingCommitments) so a
-// returned or expired commitment does not suppress a legitimate fresh purchase.
+// RI's real offering class (issue #211). Entries without a ReservedInstancesId
+// are ignored. When more than one RI carries the token the commitment state is
+// ambiguous (issue #724), so it fails closed: the error wraps
+// common.ErrRefusedBeforePurchase (this call sent no purchase; ErrOutcomeUnknown
+// would wrongly claim it may have), names the count and the masked token, and
+// needs a human to reconcile. Retired/canceled RIs are excluded (they carry the
+// same state filter as GetExistingCommitments) so a returned or expired
+// commitment does not suppress a legitimate fresh purchase.
 func (c *Client) findRIByIdempotencyToken(ctx context.Context, token string) (*types.ReservedInstances, error) {
 	input := &ec2.DescribeReservedInstancesInput{
 		Filters: []types.Filter{
@@ -300,13 +314,21 @@ func (c *Client) findRIByIdempotencyToken(ctx context.Context, token string) (*t
 	if err != nil {
 		return nil, fmt.Errorf("failed to describe reserved instances for idempotency check: %w", err)
 	}
+	var matches []*types.ReservedInstances
 	for i := range response.ReservedInstances {
-		ri := &response.ReservedInstances[i]
-		if ri.ReservedInstancesId != nil {
-			return ri, nil
+		if ri := &response.ReservedInstances[i]; ri.ReservedInstancesId != nil {
+			matches = append(matches, ri)
 		}
 	}
-	return nil, nil
+	switch len(matches) {
+	case 0:
+		return nil, nil
+	case 1:
+		return matches[0], nil
+	default:
+		return nil, fmt.Errorf("%w: %d active or payment-pending EC2 RIs carry idempotency token %s; commitment state is ambiguous and needs a human to reconcile",
+			common.ErrRefusedBeforePurchase, len(matches), common.MaskToken(token))
+	}
 }
 
 // tagReservedInstance applies the standard CUDly tag set (including the
