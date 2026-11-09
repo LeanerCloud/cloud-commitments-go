@@ -317,6 +317,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ### Fixed
 
 - **Duplicate check:** a recent purchase now reduces every term and payment variant of a recommendation, not only the first one in input order, for EC2 as well as every other service. Each `term|payment` group starts from the full held quantity and consumes it in input order, so one held unit against four variants of 2 yields 1, 1, 1, 1 (was 1, 2, 2, 2). Providers pick this up on their next `pkg` pin bump. Fixes #703.
+- **`providers/gcp`:** `m4-ultramem-224` now matches its own `M4Ultramem224`
+  catalog rows instead of the plain `M4` rates, which understated RAM cost by
+  about 25%. The commitment SKU text (`Commitment v1: M4Ultramem224 Cpu/Ram in
+  ...`) is assumed by analogy with other families and not verified against the
+  live catalog; a wrong text fails closed with "no commitment pricing found".
+  Other M4 ultramem shapes (`m4n-*` and unknown sizes) are refused with an
+  unknown-catalog-family error. The `m1`, `m2` and `m3` ultramem shapes are
+  unchanged. Fixes #719.
 - **`common`:** a `Recommendation`, and a `PurchaseResult` carrying one (with
   no `Error`), now decodes from JSON when `details` holds an object. `details`
   is decoded into the typed pointer for the recommendation's service through
