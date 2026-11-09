@@ -21,9 +21,10 @@ const ec2ComputeService = "Amazon Elastic Compute Cloud - Compute"
 
 // purchaseTypeOnDemand is the CE PURCHASE_TYPE dimension value for on-demand
 // instances. Filters to usage billed at on-demand rates (excludes RI-covered,
-// SP-covered, and Spot). Using the uncovered on-demand spend as the baseline
-// is conservative: existing coverage is separately counted by GetLayerStates,
-// so the engine correctly nets it into the gap calculation.
+// SP-covered, and Spot). The series is therefore a residual: existing coverage
+// is already excluded from it, so the ladder baseline declares
+// BaselineBasisResidual and Allocate does not subtract existing commitment from
+// it again (go#282).
 const purchaseTypeOnDemand = "On Demand Instances"
 
 // onDemandMetric is the CE metric name for GetCostAndUsage. UnblendedCost is

@@ -487,8 +487,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   met". A residual baseline with a target below 100% and existing commitment
   is held (the gap needs the covered usage the residual excludes). Expiring
   commitment is not added back on that basis. Unknown basis values are an
-  error. Additive: total-basis results are unchanged. The AWS ladder adopts the
-  residual basis in a follow-up once this pkg version is published.
+  error. Additive: total-basis results are unchanged. The AWS ladder baseline
+  now declares the residual basis (its series counts only uncovered On Demand
+  Instances usage), so a partly covered AWS account is no longer held as
+  "target already met"; with a target below 100% and existing commitment it is
+  held ("residual baseline cannot size a partial target") instead of being
+  undersized by subtracting that commitment from the residual again. Part of
+  #282.
 
 - **`azure/savingsplans`:** the commitment currency is no longer hardcoded to
   USD. `SavingsPlanDetails.Currency` (new, additive) is sent in the purchase and
