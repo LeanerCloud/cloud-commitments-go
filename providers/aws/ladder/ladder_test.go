@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"math/big"
 	"testing"
 	"time"
 
@@ -784,6 +785,64 @@ func TestGetUsageBaseline_SingleDaySeries_ReturnsThatValue(t *testing.T) {
 	assert.Nil(t, bl.StableUSDPerHour)
 	assert.Equal(t, 7, bl.LookbackDays)
 	assert.InDelta(t, 5.0, bl.Percentile, 1e-9)
+	// The series counts only usage existing commitments left uncovered.
+	assert.Equal(t, ladder.BaselineBasisResidual, bl.Basis)
+}
+
+// The go#282 replay through the real baseline: a $4/hr uncovered series with a
+// $6/hr Compute SP already held must still buy, not "target already met"
+// (4 - 6 = -2). The control zeroes Basis to show it is what changes the result.
+func TestGetUsageBaseline_PartlyCoveredAccountStillAllocates(t *testing.T) {
+	t.Parallel()
+	cov := &fakeCoverageSource{onDemandPoints: makeConstantPoints(7, 4.0)}
+	a := newTestLadder(t, &fakeRILister{}, &fakeSPLister{}, cov, &fakeUtilizationSource{})
+	bl, err := a.GetUsageBaseline(context.Background(), testScope(), 7, 5.0)
+	require.NoError(t, err)
+
+	input := func(basis ladder.BaselineBasis, target float64) *ladder.AllocationInput {
+		zero, six, rate := 0.0, 6.0, 1.0
+		states := map[ladder.LayerType]ladder.LayerState{}
+		rates := map[ladder.LayerType]float64{}
+		for _, spec := range a.SupportedLayers() {
+			existing := &zero
+			if spec.Type == ladder.LayerComputeSP {
+				existing = &six
+			}
+			states[spec.Type] = ladder.LayerState{Layer: spec.Type, ExistingUSDPerHour: existing, ExpiringUSDPerHour: &zero}
+			rates[spec.Type] = rate
+		}
+		b := bl
+		b.Basis = basis
+		return &ladder.AllocationInput{
+			Config: ladder.LadderConfig{Scope: testScope(), Mode: ladder.ModeEmailApproval, Cadence: ladder.CadenceWeekly,
+				TargetCoveragePct: target, BaselinePercentile: 5, LookbackDays: 7, MaxActionsPerRun: 10,
+				BufferUtilizationThresholdPct: ladder.DefaultBufferUtilizationThresholdPct,
+				Ramp:                          ladder.RampSchedule{Steps: []ladder.RampStep{{AfterDays: 0, Fraction: 1}}}},
+			Layers: a.SupportedLayers(), LayerStates: states, CommitmentRates: rates, InFlight: []ladder.InFlightTranche{},
+			Baseline: b, Now: time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC), DataSources: []string{"constructed"},
+		}
+	}
+
+	res, err := ladder.Allocate(input(bl.Basis, 100))
+	require.NoError(t, err)
+	require.Len(t, res.Allocations, 1)
+	assert.Equal(t, ladder.LayerComputeSP, res.Allocations[0].Layer)
+	assert.Equal(t, 0, res.Allocations[0].OnDemandEquivalentUSDPerHour.Cmp(big.NewRat(4, 1)))
+
+	before, err := ladder.Allocate(input(ladder.BaselineBasisTotal, 100))
+	require.NoError(t, err)
+	require.True(t, before.IsNoOp())
+	require.Len(t, before.Holds, 1)
+	assert.Contains(t, before.Holds[0].Rationale, "target already met")
+	assert.Contains(t, before.Holds[0].Rationale, "gap=$-2.0000/hr")
+
+	// A target below 100% with existing commitment is held by design: the gap
+	// needs covered usage the residual series excludes.
+	partial, err := ladder.Allocate(input(bl.Basis, 80))
+	require.NoError(t, err)
+	assert.True(t, partial.IsNoOp())
+	require.Len(t, partial.Holds, 1)
+	assert.Contains(t, partial.Holds[0].Rationale, "residual baseline cannot size a partial target")
 }
 
 func TestGetUsageBaseline_P5OfVariedSeries(t *testing.T) {
