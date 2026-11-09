@@ -52,13 +52,11 @@ const maxSeriesAgeDays = 3
 //     covers EC2 on-demand cost only, not RDS/ElastiCache/etc.).
 //   - LowWaterUSDPerHour is the nearest-rank percentile of the daily series
 //     (see nearestRankPercentile).
-//   - StableUSDPerHour is nil: per the pkg/ladder contract (types.go), Stable
-//     is the post-buffer-fraction estimate — a producer obligation this
-//     implementation cannot yet meet (no stable-usage estimator exists for
-//     AWS). Returning nil triggers the engine's documented degradation
-//     ("stable usage unknown; routing all core gap to flex"), which is honest
-//     and conservative. Do NOT alias it to LowWater: the engine consumes
-//     Stable verbatim as the base-layer cap and would over-commit the base.
+//   - StableUSDPerHour is nil unless WithBufferFraction was called and the
+//     series is long and steady enough (see estimateStableUSDPerHour). When set
+//     it is the post-buffer-fraction estimate the pkg/ladder contract requires.
+//     Do NOT alias it to LowWater: the engine consumes Stable verbatim as the
+//     base-layer cap and would over-commit the base.
 //
 // Error conditions:
 //   - Series empty: hard error (no data from the coverage source).
@@ -115,19 +113,14 @@ func (a *AWSLadder) GetUsageBaseline(ctx context.Context, scope ladder.Scope, lo
 		return ladder.UsageBaseline{}, fmt.Errorf("GetUsageBaseline: %w", vErr)
 	}
 
-	lowWater, err := nearestRankPercentile(series, percentile)
+	lowWater, stable, err := a.baselineStats(series, percentile)
 	if err != nil {
-		return ladder.UsageBaseline{}, fmt.Errorf("GetUsageBaseline: percentile computation failed: %w", err)
+		return ladder.UsageBaseline{}, err
 	}
 
-	// StableUSDPerHour is intentionally nil: the pkg/ladder contract defines
-	// Stable as the post-buffer-fraction estimate (a producer obligation), and
-	// no stable-usage estimator exists for AWS yet. nil triggers the engine's
-	// documented "stable usage unknown; routing all core gap to flex"
-	// degradation — honest and conservative until a real estimator lands.
 	return ladder.UsageBaseline{
 		LowWaterUSDPerHour: ptr(lowWater),
-		StableUSDPerHour:   nil,
+		StableUSDPerHour:   stable,
 		Basis:              ladder.BaselineBasisResidual,
 		Series:             series,
 		LookbackDays:       lookbackDays,
@@ -301,4 +294,22 @@ func nearestRankPercentile(data []float64, p float64) (float64, error) {
 		rank = len(sorted)
 	}
 	return sorted[rank-1], nil
+}
+
+// baselineStats derives the low-water mark and, when a buffer fraction was
+// configured, the stable estimate. Errors are returned fully prefixed. It is
+// split out so GetUsageBaseline stays within the cyclomatic-complexity limit.
+func (a *AWSLadder) baselineStats(series []float64, percentile float64) (lowWater float64, stable *float64, err error) {
+	lowWater, err = nearestRankPercentile(series, percentile)
+	if err != nil {
+		return 0, nil, fmt.Errorf("GetUsageBaseline: percentile computation failed: %w", err)
+	}
+	if a.bufferFraction == nil {
+		return lowWater, nil, nil
+	}
+	stable, err = estimateStableUSDPerHour(series, lowWater, *a.bufferFraction)
+	if err != nil {
+		return 0, nil, fmt.Errorf("GetUsageBaseline: stable usage estimate: %w", err)
+	}
+	return lowWater, stable, nil
 }

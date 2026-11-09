@@ -3,6 +3,7 @@ package ladder
 import (
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/ladder"
@@ -95,7 +96,10 @@ type AWSLadder struct {
 	exchange    exchangeRunner      // write side; nil until WithWriteSide is called
 	spRates     spCommitmentRateSource
 	observed    observedRateSource
-	cfg         Config
+	// bufferFraction is nil until WithBufferFraction is called; nil keeps the
+	// stable-usage estimate off, so callers that never opt in see no change.
+	bufferFraction *float64
+	cfg            Config
 }
 
 // New constructs an AWSLadder. The five required read-side interfaces must be
@@ -186,5 +190,19 @@ func (a *AWSLadder) WithWriteSide(riP riPurchaser, spP spPurchaser, ex exchangeR
 	a.riPurchase = riP
 	a.spPurchase = spP
 	a.exchange = ex
+	return a, nil
+}
+
+// WithBufferFraction sets the buffer fraction used to haircut the stable-usage
+// estimate and returns the same instance for chaining. f must be finite and in
+// [0, 1). A later call overwrites an earlier one, and a failed call leaves the
+// stored value unchanged.
+func (a *AWSLadder) WithBufferFraction(f float64) (*AWSLadder, error) {
+	// Same rule as LadderConfig.Validate in pkg/ladder, which is inline there and
+	// cannot be imported; the negated form also rejects NaN and +Inf.
+	if math.IsNaN(f) || !(f >= 0 && f < 1) {
+		return nil, fmt.Errorf("AWSLadder.WithBufferFraction: buffer_fraction %g must be in [0, 1)", f)
+	}
+	a.bufferFraction = &f
 	return a, nil
 }

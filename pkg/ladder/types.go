@@ -453,7 +453,8 @@ type UsageBaseline struct {
 	// percentile (e.g., the 5th percentile of hourly spend).
 	LowWaterUSDPerHour *float64
 	// StableUSDPerHour is the estimated stable portion after applying the
-	// buffer fraction to LowWaterUSDPerHour.
+	// buffer fraction to LowWaterUSDPerHour. It is nil when the provider cannot
+	// estimate it (short or volatile series, or no buffer fraction configured).
 	StableUSDPerHour *float64
 	// Basis says what the series measures: total demand (the default, empty)
 	// or residual uncovered usage already net of existing commitments. See
