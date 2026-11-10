@@ -150,6 +150,18 @@ func dedupeKey(resourceType, region, engine, deployment string) string {
 	return fmt.Sprintf("%s|%s|%s|%s", resourceType, region, engine, deployment)
 }
 
+// dedupeDeployment normalizes the deployment slot of the dedupe key. Azure SQL
+// Database drops it: a vCore reservation covers standard compute whether or not
+// the database is zone-redundant (only the vCore ZR add-on differs), and the held
+// slot is stamped from the fleet's dominant shape. Dropping it can only over-filter.
+// https://learn.microsoft.com/en-us/azure/azure-sql/database/reserved-capacity-overview
+func dedupeDeployment(providerType common.ProviderType, service common.ServiceType, deployment string) string {
+	if providerType == common.ProviderAzure && service == common.ServiceRelationalDB {
+		return ""
+	}
+	return common.NormalizeDeploymentName(deployment)
+}
+
 const (
 	elastiCacheEnginePrefix    = "elasticache:"
 	unknownElastiCacheEngine   = elastiCacheEnginePrefix + "*"
@@ -233,7 +245,7 @@ func buildExistingCommitmentsMap(commitments []common.Commitment, logf Logf) map
 		if isElastiCache {
 			warnUnrecognizedElastiCacheEngine(normalizedEngine, logf)
 		}
-		normalizedDeployment := common.NormalizeDeploymentName(c.Deployment)
+		normalizedDeployment := dedupeDeployment(c.Provider, c.Service, c.Deployment)
 		resourceType, nodeUnits := c.ResourceType, 1
 		if family, units, ok := rdsFlexKey(c.Provider, c.Service, normalizedEngine, c.ResourceType); ok {
 			resourceType, nodeUnits = family, units*rdsDeploymentFactor(normalizedDeployment)
@@ -311,7 +323,7 @@ func adjustSingleRecommendation(rec common.Recommendation, existingMap map[strin
 		return common.Recommendation{Count: 0}, nil
 	}
 	engine, isElastiCache := dedupeEngine(rec.Provider, rec.Service, common.EngineFromDetails(rec.Details))
-	deployment := common.NormalizeDeploymentName(common.DeploymentFromDetails(rec.Details))
+	deployment := dedupeDeployment(rec.Provider, rec.Service, common.DeploymentFromDetails(rec.Details))
 	resourceType := rec.ResourceType
 	covers := []elastiCacheCover{{engine, 1, 1}}
 	if family, units, ok := rdsFlexKey(rec.Provider, rec.Service, engine, rec.ResourceType); ok {
