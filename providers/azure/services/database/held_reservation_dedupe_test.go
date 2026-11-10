@@ -239,3 +239,10 @@ func TestHeldReservation_UsesRecommendationsAZSnapshot(t *testing.T) {
 	require.Len(t, passed, 1)
 	assert.Equal(t, 1, passed[0].Count)
 }
+
+func TestDetails_BuildsEngineAndInstanceClass(t *testing.T) {
+	t.Parallel()
+	for _, sku := range []string{"GP_Gen5_2", "BC_Gen5_4"} {
+		assert.Equal(t, &common.DatabaseDetails{Engine: "sqlserver", InstanceClass: sku}, Details(sku))
+	}
+}

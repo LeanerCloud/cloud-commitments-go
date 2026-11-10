@@ -651,10 +651,24 @@ func (r *RecommendationsClientAdapter) convertAdvisorRecommendation(ctx context.
 		azrecs.RecordSkip(ctx, "advisor", fmt.Errorf("%s recommendation in %q: %w", service, rec.Region, err))
 		return nil
 	}
-	if rec.Service == common.ServiceMemoryDB && rec.Details == nil {
-		rec.Details = managedredis.Details(rec.ResourceType)
-	}
+	attachAdvisorDetails(rec)
 	return rec
+}
+
+// attachAdvisorDetails gives Advisor reservation rows the same Details the
+// service clients put on their own recommendations: the dedupe key includes
+// the engine, so a row without it never matches a held commitment (#735).
+// Savings Plan rows have no resource type and get none.
+func attachAdvisorDetails(rec *common.Recommendation) {
+	if rec.Details != nil || rec.CommitmentType != common.CommitmentReservedInstance {
+		return
+	}
+	switch rec.Service {
+	case common.ServiceMemoryDB:
+		rec.Details = managedredis.Details(rec.ResourceType)
+	case common.ServiceRelationalDB:
+		rec.Details = database.Details(rec.ResourceType)
+	}
 }
 
 // populateFromExtendedProperties fills savings, SKU, term and count from the
