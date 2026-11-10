@@ -95,6 +95,7 @@ type AWSLadder struct {
 	spPurchase  spPurchaser         // write side; nil until WithWriteSide is called
 	exchange    exchangeRunner      // write side; nil until WithWriteSide is called
 	spRates     spCommitmentRateSource
+	riRates     riCommitmentRateSource
 	observed    observedRateSource
 	// bufferFraction is nil until WithBufferFraction is called; nil keeps the
 	// stable-usage estimate off, so callers that never opt in see no change.
