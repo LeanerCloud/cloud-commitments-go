@@ -13,6 +13,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   the error wraps `common.ErrRefusedBeforePurchase`, names the count and the
   masked token, and needs a human to reconcile.
 
+- **Azure savings plan inventory fails closed for Shared plans billed to a
+  billing account (#272).** `savingsplans.Client.GetExistingCommitments` and
+  `GetCoveringCommitments` (the one the duplicate check reads) list plans
+  billed to `/subscriptions/<client subscription>`, plus
+  billing-account-billed Single-scope plans whose applied scope names exactly
+  the client subscription. A billing-account plan with Shared, management
+  group or unresolvable scope cannot be attributed to one subscription, so the
+  whole call returns an error starting "incomplete savings plan inventory for
+  subscription ..., page N: row M: " (for example "billing-account plan is
+  not single-subscription scoped", or a "single-scope plan ..." message when a
+  Single scope cannot be resolved) instead of a partial list. Plans billed to a
+  subscription are not affected by this scope check, and `GetCoveringCommitments` also returns the
+  plans billed to other subscriptions that may cover this one. The duplicate
+  check therefore sees an error, not a silently incomplete inventory, and no
+  recommendation is purchased on top of a plan it could not see. This affects
+  EA and MCA tenants that buy savings plans at billing-account scope with
+  Shared applied scope. Workaround: buy Single-scope plans attributed to the
+  subscription. A consumer that catches the error and skips Azure savings
+  plan inventory also removes the duplicate-purchase guard for that
+  subscription, so it can buy on top of the Shared plan it could not see; only
+  do that where no Shared billing-account plan can cover the subscription.
+  Tracked in #272; revisit when a tenant needs Shared attribution.
 - **Azure Redis purchases must go through managedredis (`ServiceMemoryDB`).**
   The Azure recommendations adapter still labels Redis recommendations
   `ServiceCache`, and the cache client now refuses every purchase (#538), so
