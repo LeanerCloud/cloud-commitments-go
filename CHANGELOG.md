@@ -323,6 +323,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Duplicate check:** the Azure SQL Database dedupe key no longer includes the zone-redundancy slot, so a held reservation stamped `zoneRedundant` now covers a recommendation stamped `none` or empty, and the reverse. A `vCore` reservation covers standard compute either way; the slot only split one pool in two and let duplicates through when the two sides disagreed. It can only over-filter: a held `vCore ZR` add-on reservation now counts toward the same pool (#715).
 - **Duplicate check:** a recent purchase now reduces every term and payment variant of a recommendation, not only the first one in input order, for EC2 as well as every other service. Each `term|payment` group starts from the full held quantity and consumes it in input order, so one held unit against four variants of 2 yields 1, 1, 1, 1 (was 1, 2, 2, 2). Providers pick this up on their next `pkg` pin bump. Fixes #703.
 - **`providers/gcp`:** `m4-ultramem-224` now matches its own `M4Ultramem224`
   catalog rows instead of the plain `M4` rates, which understated RAM cost by
