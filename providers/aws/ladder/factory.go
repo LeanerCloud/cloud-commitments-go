@@ -95,6 +95,7 @@ func NewFromConfig(awsCfg aws.Config, cfg Config) (*AWSLadder, error) {
 		return nil, fmt.Errorf("awsladder.NewFromConfig: %w", err)
 	}
 	l.spRates = recoClient
+	l.riRates = recoClient
 	l.observed = recoClient
 	return l, nil
 }

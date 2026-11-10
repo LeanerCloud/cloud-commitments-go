@@ -61,29 +61,58 @@ func ratePage(details, token string) string {
 	return fmt.Sprintf(`{"NextPageToken":%q,"SavingsPlansPurchaseRecommendation":{"SavingsPlansPurchaseRecommendationDetails":[%s]}}`, token, details)
 }
 
-// sdkRateLadder serves pages per Savings Plans type and asserts that exactly
-// those pages are requested for each type.
-func sdkRateLadder(t *testing.T, pagesByType map[string][]string) *awsladder.AWSLadder {
+func riRateDetail(account, region, recurring, savings string) string {
+	return fmt.Sprintf(`{"AccountId":%q,"InstanceDetails":{"EC2InstanceDetails":{"Region":%q}},"RecurringStandardMonthlyCost":%q,"UpfrontCost":"0","EstimatedMonthlySavingsAmount":%q,"AverageUtilization":"100"}`,
+		account, region, recurring, savings)
+}
+
+func riRatePage(details, token string) string {
+	return fmt.Sprintf(`{"NextPageToken":%q,"Recommendations":[{"RecommendationDetails":[%s]}]}`, token, details)
+}
+
+const (
+	spTarget = "AWSInsightsIndexService.GetSavingsPlansPurchaseRecommendation"
+	riTarget = "AWSInsightsIndexService.GetReservationPurchaseRecommendation"
+)
+
+// sdkRateLadder serves pages per Savings Plans type and for the Reservation
+// recommendation (riPages, nil means one empty page), asserting each request
+// and that exactly those pages are requested.
+func sdkRateLadder(t *testing.T, pagesByType map[string][]string, riPages []string) *awsladder.AWSLadder {
 	t.Helper()
-	calls := map[string]*atomic.Int32{"EC2_INSTANCE_SP": {}, "COMPUTE_SP": {}}
+	if riPages == nil {
+		riPages = []string{"{}"}
+	}
+	calls := map[string]*atomic.Int32{"EC2_INSTANCE_SP": {}, "COMPUTE_SP": {}, "RI": {}}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodPost, r.Method)
-		assert.Equal(t, "AWSInsightsIndexService.GetSavingsPlansPurchaseRecommendation", r.Header.Get("X-Amz-Target"))
 		var input map[string]any
 		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&input)) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		planType, _ := input["SavingsPlansType"].(string)
-		counter, known := calls[planType]
-		if !assert.True(t, known, "unexpected plan type %q", planType) {
+		want := map[string]any{"AccountScope": "LINKED",
+			"TermInYears": "THREE_YEARS", "PaymentOption": "PARTIAL_UPFRONT", "LookbackPeriodInDays": "SEVEN_DAYS"}
+		var key string
+		var pages []string
+		switch target := r.Header.Get("X-Amz-Target"); target {
+		case spTarget:
+			key, _ = input["SavingsPlansType"].(string)
+			pages = pagesByType[key]
+			want["SavingsPlansType"] = key
+		case riTarget:
+			key, pages = "RI", riPages
+			want["Service"] = "Amazon Elastic Compute Cloud - Compute"
+			want["ServiceSpecification"] = map[string]any{"EC2Specification": map[string]any{"OfferingClass": "CONVERTIBLE"}}
+		default:
+			assert.Fail(t, "unexpected operation", target)
+		}
+		counter, known := calls[key]
+		if !assert.True(t, known, "unexpected request key %q", key) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		pages := pagesByType[planType]
 		page := int(counter.Add(1)) - 1
-		want := map[string]any{"SavingsPlansType": planType, "AccountScope": "LINKED",
-			"TermInYears": "THREE_YEARS", "PaymentOption": "PARTIAL_UPFRONT", "LookbackPeriodInDays": "SEVEN_DAYS"}
 		if page > 0 {
 			want["NextPageToken"] = "second"
 		}
@@ -99,8 +128,12 @@ func sdkRateLadder(t *testing.T, pagesByType map[string][]string) *awsladder.AWS
 	}))
 	t.Cleanup(func() {
 		srv.Close()
-		for planType, counter := range calls {
-			assert.Equal(t, int32(len(pagesByType[planType])), counter.Load(), planType)
+		for key, counter := range calls {
+			want := len(pagesByType[key])
+			if key == "RI" {
+				want = len(riPages)
+			}
+			assert.Equal(t, int32(want), counter.Load(), key)
 		}
 	})
 	endpoint, err := url.Parse(srv.URL)
@@ -130,16 +163,24 @@ func TestCommitmentRates_PublicSDKConsumer(t *testing.T) {
 		"COMPUTE_SP": {ratePage(rateDetail("fixture-account", "eu-west-1", "", "20", "20")+","+
 			rateDetail("fixture-account", "us-east-1", "", "30", "10")+","+
 			rateDetail("other-fixture-account", "eu-west-1", "", "999", "1"), "")},
+	}, []string{
+		// Region-filtered: the display name matches eu-west-1, other regions
+		// and accounts do not. r = 60/100 across the two pages.
+		riRatePage(riRateDetail("fixture-account", "EU (Ireland)", "30", "20")+","+
+			riRateDetail("fixture-account", "US East (N. Virginia)", "999", "1")+","+
+			riRateDetail("other-fixture-account", "EU (Ireland)", "999", "1"), "second"),
+		riRatePage(riRateDetail("fixture-account", "EU (Ireland)", "30", "20"), ""),
 	})
 	scope := ladder.Scope{Provider: common.ProviderAWS, AccountID: "fixture-account"}
 	rates, err := a.GetCommitmentRates(context.Background(), scope, ladder.Term3Year, ladder.PaymentPartialUpfront)
 	require.NoError(t, err)
-	require.Equal(t, map[ladder.LayerType]float64{ladder.LayerEC2InstanceSP: 0.7, ladder.LayerComputeSP: 0.625}, rates)
+	require.Equal(t, map[ladder.LayerType]float64{ladder.LayerEC2InstanceSP: 0.7, ladder.LayerComputeSP: 0.625, ladder.LayerConvertibleRI: 0.6}, rates)
 	in := consumerInput(a, scope, rates)
 	result, err := ladder.Allocate(in)
 	require.NoError(t, err)
-	// With both rates present, the base gap buys EC2 Instance SP at 0.7 and the
-	// flex gap buys Compute SP at the account-wide 0.625 (#349 option A).
+	// With both SP rates present, the base gap buys EC2 Instance SP at 0.7 and
+	// the flex gap buys Compute SP at the account-wide 0.625 (#349 option A).
+	// The buffer share is zero here; see TestCommitmentRates_SDKBufferAtRIRate.
 	require.Len(t, result.Allocations, 2)
 	byLayer := map[ladder.LayerType]ladder.Allocation{}
 	for _, a := range result.Allocations {
@@ -216,7 +257,13 @@ func TestCommitmentRates_SDKMissingAndMalformed(t *testing.T) {
 			if cost == "" {
 				pages["COMPUTE_SP"] = []string{ratePage(detail, "")}
 			}
-			a := sdkRateLadder(t, pages)
+			// A hard SP error stops before the RI request; the missing-SP case
+			// reaches the RI layer, which answers an empty page.
+			var riPages []string
+			if cost != "" {
+				riPages = []string{}
+			}
+			a := sdkRateLadder(t, pages, riPages)
 			scope := ladder.Scope{Provider: common.ProviderAWS, AccountID: "fixture-account"}
 			rates, err := a.GetCommitmentRates(context.Background(), scope, ladder.Term3Year, ladder.PaymentPartialUpfront)
 			if cost != "" {
@@ -234,4 +281,50 @@ func TestCommitmentRates_SDKMissingAndMalformed(t *testing.T) {
 			assertMissingRateHold(t, result, ladder.LayerComputeSP)
 		})
 	}
+}
+
+func TestCommitmentRates_SDKRIMissingAndMalformed(t *testing.T) {
+	t.Parallel()
+	sp := map[string][]string{
+		"EC2_INSTANCE_SP": {ratePage(rateDetail("fixture-account", "eu-west-1", "m5", "70", "30"), "")},
+		"COMPUTE_SP":      {ratePage(rateDetail("fixture-account", "eu-west-1", "", "80", "20"), "")},
+	}
+	scope := ladder.Scope{Provider: common.ProviderAWS, AccountID: "fixture-account"}
+	t.Run("no matching detail", func(t *testing.T) {
+		a := sdkRateLadder(t, sp, []string{riRatePage(riRateDetail("fixture-account", "US East (N. Virginia)", "70", "30"), "")})
+		rates, err := a.GetCommitmentRates(context.Background(), scope, ladder.Term3Year, ladder.PaymentPartialUpfront)
+		require.NoError(t, err)
+		assert.Equal(t, map[ladder.LayerType]float64{ladder.LayerEC2InstanceSP: 0.7, ladder.LayerComputeSP: 0.8}, rates)
+	})
+	t.Run("malformed detail", func(t *testing.T) {
+		a := sdkRateLadder(t, sp, []string{riRatePage(riRateDetail("fixture-account", "EU (Ireland)", "bad", "30"), "")})
+		rates, err := a.GetCommitmentRates(context.Background(), scope, ladder.Term3Year, ladder.PaymentPartialUpfront)
+		require.ErrorContains(t, err, string(ladder.LayerConvertibleRI))
+		assert.Nil(t, rates)
+	})
+}
+
+func TestCommitmentRates_SDKBufferAtRIRate(t *testing.T) {
+	t.Parallel()
+	a := sdkRateLadder(t, map[string][]string{
+		"EC2_INSTANCE_SP": {ratePage(rateDetail("fixture-account", "eu-west-1", "m5", "70", "30"), "")},
+		"COMPUTE_SP":      {ratePage(rateDetail("fixture-account", "eu-west-1", "", "80", "20"), "")},
+	}, []string{riRatePage(riRateDetail("fixture-account", "EU (Ireland)", "60", "40"), "")})
+	scope := ladder.Scope{Provider: common.ProviderAWS, AccountID: "fixture-account"}
+	rates, err := a.GetCommitmentRates(context.Background(), scope, ladder.Term3Year, ladder.PaymentPartialUpfront)
+	require.NoError(t, err)
+	require.InDelta(t, 0.6, rates[ladder.LayerConvertibleRI], 1e-12)
+	in := consumerInput(a, scope, rates)
+	in.Config.BufferFraction = 0.5
+	result, err := ladder.Allocate(in)
+	require.NoError(t, err)
+	for _, alloc := range result.Allocations {
+		if alloc.Layer == ladder.LayerConvertibleRI {
+			assert.InDelta(t, 0.6, ratFloat(alloc.Rate), 1e-12)
+			assert.InDelta(t, 10, ratFloat(alloc.OnDemandEquivalentUSDPerHour), 1e-12)
+			assert.InDelta(t, 6, ratFloat(alloc.GapUSDPerHour), 1e-12)
+			return
+		}
+	}
+	t.Errorf("no convertible-ri allocation: %+v", result)
 }
