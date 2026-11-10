@@ -186,8 +186,6 @@ func (c *Client) convertRedisReservation(detail *armconsumption.ReservationDetai
 		Account:        c.subscriptionID,
 		CommitmentType: common.CommitmentReservedInstance,
 		Service:        common.ServiceCache,
-		Region:         c.region,
-		State:          common.CommitmentStateActive,
 	}
 
 	if props.ReservationID != nil {

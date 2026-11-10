@@ -106,3 +106,30 @@ func TestListingFeedsDuplicateChecker(t *testing.T) {
 		})
 	}
 }
+
+func TestListConvertibleReservedInstances_PriceReported(t *testing.T) {
+	t.Parallel()
+	unpriced := sdkRI("ri-unpriced", "Linux/UNIX", types.TenancyDefault, types.ScopeRegional, nil)
+	fixedOnly := sdkRI("ri-fixed", "Linux/UNIX", types.TenancyDefault, types.ScopeRegional, nil)
+	fixedOnly.FixedPrice = aws.Float32(0)
+	fixedOnly.UsagePrice = aws.Float32(0.1)
+	recurring := sdkRI("ri-recurring", "Linux/UNIX", types.TenancyDefault, types.ScopeRegional, nil)
+	recurring.FixedPrice = aws.Float32(0)
+	recurring.RecurringCharges = []types.RecurringCharge{{Amount: aws.Float64(0.2)}}
+	noAmount := sdkRI("ri-noamount", "Linux/UNIX", types.TenancyDefault, types.ScopeRegional, nil)
+	noAmount.FixedPrice = aws.Float32(0)
+	noAmount.RecurringCharges = []types.RecurringCharge{{}}
+	noFixed := sdkRI("ri-nofixed", "Linux/UNIX", types.TenancyDefault, types.ScopeRegional, nil)
+	noFixed.UsagePrice = aws.Float32(0.1)
+
+	got, err := listingClient(unpriced, fixedOnly, recurring, noAmount, noFixed).
+		ListConvertibleReservedInstances(context.Background())
+	require.NoError(t, err)
+	require.Len(t, got, 5)
+
+	assert.False(t, got[0].PriceReported, "all price fields nil")
+	assert.True(t, got[1].PriceReported, "fixed and usage price reported")
+	assert.True(t, got[2].PriceReported, "fixed price and recurring charge reported")
+	assert.False(t, got[3].PriceReported, "recurring entry without amount")
+	assert.False(t, got[4].PriceReported, "nil FixedPrice")
+}

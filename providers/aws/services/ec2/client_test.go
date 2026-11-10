@@ -278,6 +278,30 @@ func TestClient_GetExistingCommitments(t *testing.T) {
 	}
 }
 
+func TestClient_GetExistingCommitments_CostIsUnknown(t *testing.T) {
+	t.Parallel()
+	mockClient := &MockEC2Client{}
+	mockClient.On("DescribeReservedInstances", mock.Anything, mock.Anything).
+		Return(&ec2.DescribeReservedInstancesOutput{
+			ReservedInstances: []types.ReservedInstances{{
+				ReservedInstancesId: aws.String("ri-123"),
+				InstanceType:        types.InstanceTypeT3Micro,
+				InstanceCount:       aws.Int32(1),
+				State:               types.ReservedInstanceStateActive,
+				Duration:            aws.Int64(31536000),
+				Start:               aws.Time(time.Now()),
+			}},
+		}, nil).Once()
+	client := &Client{client: mockClient, region: "us-east-1"}
+
+	result, err := client.GetExistingCommitments(context.Background())
+
+	assert.NoError(t, err)
+	if assert.Len(t, result, 1) {
+		assert.False(t, result[0].CostKnown)
+	}
+}
+
 func TestClient_GetValidResourceTypes(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

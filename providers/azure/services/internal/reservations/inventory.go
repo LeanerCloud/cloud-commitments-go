@@ -224,11 +224,8 @@ func appliedOrderIDs(resp armreservations.AzureReservationAPIClientGetAppliedRes
 // The SDK exposes PurchaseDate at day precision, so this cannot establish
 // whether a purchase yesterday occurred within the last 24 hours.
 //
-// Cost stays at zero. The reservations API carries no per-reservation price,
-// so zero here means "unknown", not "free". The shared common.Commitment.Cost
-// scalar has no absent-value representation (tracked by issue #62); the only
-// in-repo consumer of GetExistingCommitments (the pkg/recfilter
-// DuplicateChecker) never reads Cost, so the zero value is harmless there.
+// Cost is unknown: the reservations API carries no per-reservation price, so
+// CostKnown stays false and a zero Cost must not be read as free.
 func CommitmentFromReservation(r *armreservations.ReservationResponse, account string, service common.ServiceType, wantType armreservations.ReservedResourceType, now time.Time) *common.Commitment {
 	if r == nil || r.Properties == nil {
 		return nil

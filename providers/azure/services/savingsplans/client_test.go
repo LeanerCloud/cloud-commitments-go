@@ -907,3 +907,52 @@ func TestPurchaseCommitment_NonCurrencyErrorIsNotCurrencyRefusal(t *testing.T) {
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, common.ErrCurrencyNotAccepted)
 }
+
+func TestConvertSavingsPlan_CostKnown(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	zero, rate := 0.0, 2.5
+	plan := func(c *armbillingbenefits.Commitment) *armbillingbenefits.SavingsPlanModel {
+		return &armbillingbenefits.SavingsPlanModel{
+			ID:  toPtr("/subscriptions/sub/savingsPlans/sp1"),
+			SKU: &armbillingbenefits.SKU{Name: toPtr("Compute_Savings_Plan")},
+			Properties: &armbillingbenefits.SavingsPlanModelProperties{
+				EffectiveDateTime: &now,
+				Commitment:        c,
+			},
+		}
+	}
+	tests := []struct {
+		name      string
+		commit    *armbillingbenefits.Commitment
+		wantKnown bool
+		wantCost  float64
+	}{
+		{"zero amount is known", &armbillingbenefits.Commitment{Amount: &zero}, true, 0},
+		{"reported amount is known", &armbillingbenefits.Commitment{Amount: &rate}, true, 2.5},
+		{"nil amount is unknown", &armbillingbenefits.Commitment{}, false, 0},
+		{"nil commitment is unknown", nil, false, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := convertSavingsPlan(plan(tt.commit), "sub")
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantKnown, got.CostKnown)
+			assert.Equal(t, tt.wantCost, got.Cost)
+		})
+	}
+}
+
+func TestConvertSavingsPlan_NilPropertiesIsRejected(t *testing.T) {
+	t.Parallel()
+	sp := &armbillingbenefits.SavingsPlanModel{
+		ID:  toPtr("/subscriptions/sub/savingsPlans/sp1"),
+		SKU: &armbillingbenefits.SKU{Name: toPtr("Compute_Savings_Plan")},
+	}
+
+	got, err := convertSavingsPlan(sp, "sub")
+
+	require.Error(t, err)
+	assert.Nil(t, got, "no commitment is returned, so no cost can be claimed known")
+}
