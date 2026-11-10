@@ -825,7 +825,7 @@ func TestComputeClient_PurchaseCommitment_Success(t *testing.T) {
 		return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/order-vm-001/purchase"
 	})).Return(purchaseResp8, nil).Once()
 
-	rec := common.Recommendation{
+	rec := common.Recommendation{Region: "eastus",
 		ResourceType:   "Standard_D2s_v3",
 		Term:           "1yr",
 		Count:          1,
@@ -881,7 +881,7 @@ func TestComputeClient_PurchaseCommitment_UpfrontCost(t *testing.T) {
 					return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/cost-order/purchase"
 				})).Return(bought, nil).Once()
 			}
-			rec := common.Recommendation{ResourceType: "Standard_D2s_v3", Term: "1yr", Count: 3,
+			rec := common.Recommendation{Region: "eastus", ResourceType: "Standard_D2s_v3", Term: "1yr", Count: 3,
 				PaymentOption: tt.payment, CommitmentCost: tt.estimate}
 			result, err := client.PurchaseCommitment(context.Background(), rec, opts)
 			require.NoError(t, err)
@@ -921,7 +921,7 @@ func TestComputeClient_PurchaseCommitment_3YearTerm(t *testing.T) {
 		return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/order-vm-3yr/purchase"
 	})).Return(purchaseResp10, nil).Once()
 
-	rec := common.Recommendation{
+	rec := common.Recommendation{Region: "eastus",
 		ResourceType:   "Standard_D2s_v3",
 		Term:           "3yr",
 		Count:          1,
@@ -959,7 +959,7 @@ func TestComputeClient_PurchaseCommitment_Accepted(t *testing.T) {
 		return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/order-vm-202/purchase"
 	})).Return(purchaseResp12, nil).Once()
 
-	rec := common.Recommendation{
+	rec := common.Recommendation{Region: "eastus",
 		ResourceType:   "Standard_D2s_v3",
 		Term:           "1yr",
 		Count:          1,
@@ -980,7 +980,7 @@ func TestComputeClient_PurchaseCommitment_TokenError(t *testing.T) {
 	mockCred := &MockTokenCredential{err: errors.New("token error")}
 	client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
-	rec := common.Recommendation{
+	rec := common.Recommendation{Region: "eastus",
 		ResourceType:  "Standard_D2s_v3",
 		Term:          "1yr",
 		Count:         1,
@@ -1006,7 +1006,7 @@ func TestComputeClient_PurchaseCommitment_HTTPError(t *testing.T) {
 		return r.URL.Path == "/providers/Microsoft.Capacity/calculatePrice"
 	})).Return(nil, errors.New("network error")).Once()
 
-	rec := common.Recommendation{
+	rec := common.Recommendation{Region: "eastus",
 		ResourceType:  "Standard_D2s_v3",
 		Term:          "1yr",
 		Count:         1,
@@ -1045,7 +1045,7 @@ func TestComputeClient_PurchaseCommitment_BadStatus(t *testing.T) {
 		nil,
 	).Once()
 
-	rec := common.Recommendation{
+	rec := common.Recommendation{Region: "eastus",
 		ResourceType:  "Standard_D2s_v3",
 		Term:          "1yr",
 		Count:         1,
@@ -1092,7 +1092,7 @@ func TestComputeClient_PurchaseCommitment_TwoStepFlow(t *testing.T) {
 			r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/"+azureMintedOrderID+"/purchase"
 	})).Return(purchaseResp16, nil).Once()
 
-	rec := common.Recommendation{
+	rec := common.Recommendation{Region: "eastus",
 		ResourceType:   "Standard_B2ats_v2", // The SKU that triggered issue #677.
 		Term:           "1yr",
 		Count:          1,
@@ -1157,7 +1157,7 @@ func TestComputeClient_PurchaseCommitment_SessionTimeoutRetry(t *testing.T) {
 		return r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/order-second/purchase"
 	})).Return(purchaseResp20, nil).Once()
 
-	rec := common.Recommendation{ResourceType: "Standard_B2ats_v2", Term: "1yr", Count: 1, PaymentOption: "no-upfront"}
+	rec := common.Recommendation{Region: "eastus", ResourceType: "Standard_B2ats_v2", Term: "1yr", Count: 1, PaymentOption: "no-upfront"}
 	result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
 	require.NoError(t, err)
 	assert.True(t, result.Success)
@@ -1205,7 +1205,7 @@ func TestComputeClient_PurchaseCommitment_TagInjection(t *testing.T) {
 			r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/"+orderID+"/purchase"
 	})).Return(purchaseResp22, nil).Once()
 
-	rec := common.Recommendation{ResourceType: "Standard_D2s_v3", Term: "1yr", Count: 1, CommitmentCost: 2000.0, PaymentOption: "monthly"}
+	rec := common.Recommendation{Region: "eastus", ResourceType: "Standard_D2s_v3", Term: "1yr", Count: 1, CommitmentCost: 2000.0, PaymentOption: "monthly"}
 	result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{Source: source})
 	require.NoError(t, err)
 	assert.True(t, result.Success)
@@ -1232,7 +1232,7 @@ func TestComputeClient_PurchaseCommitment_RequiresSource(t *testing.T) {
 	mockCred := &MockTokenCredential{token: "test-token"}
 	client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
-	rec := common.Recommendation{ResourceType: "Standard_D2s_v3", Term: "1yr", Count: 1}
+	rec := common.Recommendation{Region: "eastus", ResourceType: "Standard_D2s_v3", Term: "1yr", Count: 1}
 	result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{})
 	require.Error(t, err)
 	assert.False(t, result.Success)
@@ -1257,7 +1257,7 @@ func TestComputeClient_PurchaseCommitment_RejectsInvalidPaymentOptionBeforeSideE
 	mockCred := &MockTokenCredential{token: "test-token"}
 	client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
-	rec := common.Recommendation{ResourceType: "Standard_D2s_v3", Term: "1yr", Count: 1, PaymentOption: "partial-upfront"}
+	rec := common.Recommendation{Region: "eastus", ResourceType: "Standard_D2s_v3", Term: "1yr", Count: 1, PaymentOption: "partial-upfront"}
 	result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
 	require.Error(t, err)
 	assert.False(t, result.Success)
@@ -1281,7 +1281,7 @@ func TestComputeClient_PurchaseCommitment_RejectsInvalidTermBeforeSideEffects(t 
 	mockCred := &MockTokenCredential{token: "test-token"}
 	client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
-	rec := common.Recommendation{ResourceType: "Standard_D2s_v3", Term: "5yr", Count: 1, PaymentOption: "no-upfront"}
+	rec := common.Recommendation{Region: "eastus", ResourceType: "Standard_D2s_v3", Term: "5yr", Count: 1, PaymentOption: "no-upfront"}
 	result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
 	require.Error(t, err)
 	assert.False(t, result.Success)
@@ -1412,7 +1412,7 @@ func TestBuildReservationBody_BillingPlan(t *testing.T) {
 			require.NoError(t, err)
 
 			c := &Client{region: "eastus", subscriptionID: "sub-abc"}
-			rec := common.Recommendation{ResourceType: "Standard_D2s_v3", Count: 1, Term: "1yr", PaymentOption: tc.paymentOption}
+			rec := common.Recommendation{Region: "eastus", ResourceType: "Standard_D2s_v3", Count: 1, Term: "1yr", PaymentOption: tc.paymentOption}
 
 			body, err := c.buildReservationBody(rec, billingPlan, common.PurchaseSourceWeb, "")
 			require.NoError(t, err)
@@ -1428,7 +1428,7 @@ func TestBuildReservationBody_BillingPlan(t *testing.T) {
 func TestBuildReservationBody_IncludesPurchaseAutomationTag(t *testing.T) {
 	t.Parallel()
 	c := &Client{region: "eastus", subscriptionID: "sub-abc"}
-	rec := common.Recommendation{ResourceType: "Standard_D2s_v3", Count: 1, Term: "1yr", PaymentOption: "no-upfront"}
+	rec := common.Recommendation{Region: "eastus", ResourceType: "Standard_D2s_v3", Count: 1, Term: "1yr", PaymentOption: "no-upfront"}
 	billingPlan, err := reservations.BillingPlanForPaymentOption(rec.PaymentOption)
 	require.NoError(t, err)
 
@@ -1445,7 +1445,7 @@ func TestBuildReservationBody_IncludesPurchaseAutomationTag(t *testing.T) {
 func TestBuildReservationBody_OmitsTagsWhenSourceAndTokenEmpty(t *testing.T) {
 	t.Parallel()
 	c := &Client{region: "eastus", subscriptionID: "sub-abc"}
-	rec := common.Recommendation{ResourceType: "Standard_D2s_v3", Count: 1, Term: "1yr", PaymentOption: "no-upfront"}
+	rec := common.Recommendation{Region: "eastus", ResourceType: "Standard_D2s_v3", Count: 1, Term: "1yr", PaymentOption: "no-upfront"}
 	billingPlan, err := reservations.BillingPlanForPaymentOption(rec.PaymentOption)
 	require.NoError(t, err)
 
@@ -1466,7 +1466,7 @@ func TestBuildReservationBody_OmitsTagsWhenSourceAndTokenEmpty(t *testing.T) {
 func TestBuildReservationBody_IncludesIdempotencyTokenTag(t *testing.T) {
 	t.Parallel()
 	c := &Client{region: "eastus", subscriptionID: "sub-abc"}
-	rec := common.Recommendation{ResourceType: "Standard_D2s_v3", Count: 1, Term: "1yr", PaymentOption: "no-upfront"}
+	rec := common.Recommendation{Region: "eastus", ResourceType: "Standard_D2s_v3", Count: 1, Term: "1yr", PaymentOption: "no-upfront"}
 	token := common.DeriveIdempotencyToken("exec-721-compute", 0)
 	billingPlan, err := reservations.BillingPlanForPaymentOption(rec.PaymentOption)
 	require.NoError(t, err)
@@ -1736,7 +1736,7 @@ func TestComputeClient_PurchaseCommitment_DisplayNameConformsToAzureAllowlist(t 
 			r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/"+orderID+"/purchase"
 	})).Return(purchaseResp25, nil).Once()
 
-	rec := common.Recommendation{
+	rec := common.Recommendation{Region: "eastus",
 		ResourceType:   "Standard_D2s_v3",
 		Term:           "1yr",
 		Count:          1,
@@ -1823,7 +1823,7 @@ func TestComputeClient_PurchaseCommitment_ZeroCountRejected(t *testing.T) {
 	cred := &MockTokenCredential{token: "tok"}
 	client := NewClientWithHTTP(cred, "sub", "eastus", mockHTTP)
 
-	result, err := client.PurchaseCommitment(ctx, common.Recommendation{
+	result, err := client.PurchaseCommitment(ctx, common.Recommendation{Region: "eastus",
 		ResourceType: "Standard_D2s_v3", Term: "1yr", Count: 0,
 	}, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
 	require.Error(t, err)
@@ -2011,4 +2011,19 @@ func TestPopulateVMSKUMapFromPage_SkipsSKUWithUnparseableCapability(t *testing.T
 	if e, ok := out["Good"]; !ok || e.vCPUs != 2 || e.memoryGB != 8 {
 		t.Fatalf("Good entry wrong: %+v ok=%v", e, ok)
 	}
+}
+
+func TestPurchaseCommitment_RegionMismatchMakesNoHTTPCalls(t *testing.T) {
+	t.Parallel()
+	h := &mocks.MockHTTPClient{}
+	c := NewClientWithHTTP(&MockTokenCredential{token: "t"}, "sub", "eastus", h)
+	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{
+		Region: "westeurope", ResourceType: "Standard_D2s_v3", Term: "1yr", Count: 1,
+		PaymentOption: "no-upfront",
+	}, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
+	assert.NotContains(t, err.Error(), "failed to marshal")
+	assert.False(t, result.Success)
+	h.AssertNumberOfCalls(t, "Do", 0)
 }

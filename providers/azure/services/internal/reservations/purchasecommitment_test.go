@@ -20,7 +20,7 @@ var testParams = PurchaseParams{
 	DisplayName:          func(common.Recommendation) string { return "dn" },
 }
 
-var testRec = common.Recommendation{ResourceType: "sku1", Count: 3, Term: "1yr", PaymentOption: "all-upfront"}
+var testRec = common.Recommendation{Region: "westus", ResourceType: "sku1", Count: 3, Term: "1yr", PaymentOption: "all-upfront"}
 
 func TestBuildPurchaseBody_Shape(t *testing.T) {
 	t.Parallel()
@@ -48,7 +48,7 @@ func TestBuildPurchaseBody_BadTermReturnedRaw(t *testing.T) {
 	t.Parallel()
 	rec := testRec
 	rec.Term = "2yr"
-	_, err := BuildPurchaseBody(testParams, rec, common.PurchaseOptions{}, "r", "s", armreservations.ReservationBillingPlanUpfront)
+	_, err := BuildPurchaseBody(testParams, rec, common.PurchaseOptions{}, "westus", "s", armreservations.ReservationBillingPlanUpfront)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported reservation term")
 	assert.NotContains(t, err.Error(), "failed to marshal")
@@ -97,4 +97,52 @@ func TestSubmit_CommitmentCurrencyMismatchRefusesBeforePurchase(t *testing.T) {
 	for _, r := range capt.Requests {
 		assert.False(t, strings.HasSuffix(r.URL, "/purchase"), "no purchase request: %s", r.URL)
 	}
+}
+
+func TestBuildPurchaseBody_RegionMismatchRefused(t *testing.T) {
+	t.Parallel()
+	rec := testRec
+	rec.Region = "westeurope"
+	b, err := BuildPurchaseBody(testParams, rec, common.PurchaseOptions{}, "eastus", "sub1", armreservations.ReservationBillingPlanUpfront)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
+	assert.Contains(t, err.Error(), "westeurope")
+	assert.Nil(t, b)
+}
+
+func TestBuildPurchaseBody_EmptyRecRegionRefused(t *testing.T) {
+	t.Parallel()
+	rec := testRec
+	rec.Region = ""
+	_, err := BuildPurchaseBody(testParams, rec, common.PurchaseOptions{}, "westus", "sub1", armreservations.ReservationBillingPlanUpfront)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
+}
+
+func TestBuildPurchaseBody_RegionMatchVariants(t *testing.T) {
+	t.Parallel()
+	for _, recRegion := range []string{"eastus", "East US", "EastUS", " east us "} {
+		rec := testRec
+		rec.Region = recRegion
+		b, err := BuildPurchaseBody(testParams, rec, common.PurchaseOptions{}, "eastus", "sub1", armreservations.ReservationBillingPlanUpfront)
+		require.NoError(t, err, recRegion)
+		assert.Contains(t, string(b), `"location":"eastus"`)
+	}
+}
+
+func TestBuildPurchaseBody_ClientRegionIsNormalizedToo(t *testing.T) {
+	t.Parallel()
+	rec := testRec
+	rec.Region = "eastus"
+	_, err := BuildPurchaseBody(testParams, rec, common.PurchaseOptions{}, "East US", "sub1", armreservations.ReservationBillingPlanUpfront)
+	require.NoError(t, err)
+}
+
+func TestBuildPurchaseBody_BothRegionsEmptyRefused(t *testing.T) {
+	t.Parallel()
+	rec := testRec
+	rec.Region = ""
+	_, err := BuildPurchaseBody(testParams, rec, common.PurchaseOptions{}, "", "sub1", armreservations.ReservationBillingPlanUpfront)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
 }

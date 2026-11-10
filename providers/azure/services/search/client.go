@@ -3,6 +3,7 @@ package search
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -279,7 +280,10 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		},
 	}, rec, opts, c.region, c.subscriptionID, billingPlan)
 	if err != nil {
-		result.Error = fmt.Errorf("failed to marshal request: %w", err)
+		result.Error = err
+		if !errors.Is(err, common.ErrRefusedBeforePurchase) {
+			result.Error = fmt.Errorf("failed to marshal request: %w", err)
+		}
 		return result, result.Error
 	}
 

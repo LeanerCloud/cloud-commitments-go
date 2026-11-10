@@ -560,13 +560,7 @@ func (r *RecommendationsClientAdapter) appendAdvisorPageRecs(
 // embeds /locations/{region}/. Pulled out of convertAdvisorRecommendation
 // to keep that function under the cyclomatic limit.
 func resolveAdvisorRegion(advisorRec *armadvisor.ResourceRecommendationBase) string {
-	return armRegion(advisorRegionRaw(advisorRec))
-}
-
-// armRegion converts a display region ("East US") to the ARM form ("eastus")
-// that Retail Prices and the purchase body expect.
-func armRegion(s string) string {
-	return strings.ToLower(strings.ReplaceAll(s, " ", ""))
+	return azrecs.ARMRegion(advisorRegionRaw(advisorRec))
 }
 
 func advisorRegionRaw(advisorRec *armadvisor.ResourceRecommendationBase) string {
