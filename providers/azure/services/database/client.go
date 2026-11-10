@@ -625,7 +625,7 @@ func (c *Client) convertAzureSQLRecommendation(ctx context.Context, azureRec arm
 	if f == nil {
 		return nil
 	}
-	details := detailsFromSQLSKU(f.ResourceType)
+	details := Details(f.ResourceType)
 	if entry, ok := c.cachedSKULookup(ctx, f.ResourceType); ok && entry.engineVersion != "" {
 		details.EngineVersion = entry.engineVersion
 	}
@@ -950,7 +950,7 @@ func (c *Client) createServersPager() (SQLServersPager, error) {
 	return client.NewListPager(nil), nil
 }
 
-// detailsFromSQLSKU parses an Azure SQL SKU string into a
+// Details parses an Azure SQL SKU string into a
 // *common.DatabaseDetails. The Azure Reservation Recommendations
 // API returns SKU strings like "GeneralPurpose_Gen5_2" (edition, compute
 // generation, vcore count) or "BusinessCritical_Gen5_4". The parser is
@@ -961,7 +961,7 @@ func (c *Client) createServersPager() (SQLServersPager, error) {
 // Engine is always "sqlserver". EngineVersion, AZConfig, and Deployment
 // are enriched by the lazy subscription-wide cached lookups in
 // convertAzureSQLRecommendation; they are left empty here.
-func detailsFromSQLSKU(sku string) *common.DatabaseDetails {
+func Details(sku string) *common.DatabaseDetails {
 	// Engine is always SQL Server for an Azure SQL Database reservation.
 	return &common.DatabaseDetails{
 		Engine:        sqlServerEngine,
