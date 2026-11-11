@@ -1,6 +1,6 @@
 module github.com/LeanerCloud/cloud-commitments-go/ci_cd_sanity_tests
 
-go 1.26.10
+go 1.26.11
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.47.5
