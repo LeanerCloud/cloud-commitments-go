@@ -904,8 +904,12 @@ func TestParseRecommendationDetail_FloorsFractionalQuantityAndScalesCosts(t *tes
 			require.NotNil(t, rec.RecurringMonthlyCost)
 			assert.InDelta(t, 100*tt.scale, *rec.RecurringMonthlyCost, 1e-9, "recurring")
 			assert.InDelta(t, 50*tt.scale, rec.EstimatedSavings, 1e-9, "savings")
-			assert.InDelta(t, 40*tt.scale, rec.SavingsPercentage, 1e-9, "savings %% of an unchanged on-demand baseline")
-			assert.InDelta(t, 125, rec.OnDemandCost, 1e-9, "on-demand spend does not depend on the quantity bought")
+			assert.InDelta(t, 125*tt.scale, rec.OnDemandCost, 1e-9, "on-demand money scales with the bought count (go#687)")
+			wantPct := 40.0
+			if tt.count == 0 {
+				wantPct = 0
+			}
+			assert.InDelta(t, wantPct, rec.SavingsPercentage, 1e-9, "savings %% is a ratio; a Count-0 row carries none")
 			assert.InDelta(t, 7, rec.BreakEvenMonths, 1e-9, "upfront/savings is unchanged by scaling")
 			assert.InDelta(t, 2.7, rec.AverageInstancesUsedPerHour, 1e-9, "demand is not scaled")
 		})

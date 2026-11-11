@@ -147,23 +147,20 @@ func (c *Client) parseRIUtilizationSignals(rec *common.Recommendation, details *
 
 // scaleToRoundedCount makes the figures CE reports for its (fractional)
 // quantity agree with the rounded-down count that is actually bought (go#635
-// option C): the upfront, the recurring monthly charge, the monthly savings and
-// the savings percentage scale by count/qty. The on-demand baseline, break-even
-// (upfront over savings) and the usage signals do not depend on the quantity.
-// A quantity that rounds to 0 scales every cost to 0, so the row never carries
-// an upfront or savings for instances it does not buy; the caller warns.
+// option C). Money fields scale by count/qty through ScaleRecommendationCosts,
+// the same row-extensive convention every sizing path uses (go#687); the
+// savings percentage and break-even are ratios and stay as CE reported them.
+// A quantity that rounds to 0 scales every money field to 0, and the percentage
+// is zeroed too so the row cannot pass the savings gate for instances it does
+// not buy; the caller warns.
 func scaleToRoundedCount(rec *common.Recommendation, count int, qty float64) {
 	if float64(count) == qty {
 		return
 	}
-	f := float64(count) / qty
-	rec.CommitmentCost *= f
-	if rec.RecurringMonthlyCost != nil {
-		v := *rec.RecurringMonthlyCost * f
-		rec.RecurringMonthlyCost = &v
+	*rec = common.ScaleRecommendationCosts(*rec, float64(count)/qty)
+	if count == 0 {
+		rec.SavingsPercentage = 0
 	}
-	rec.EstimatedSavings *= f
-	rec.SavingsPercentage *= f
 }
 
 // parseRecommendedQuantity extracts the recommended quantity from details,
