@@ -791,6 +791,8 @@ type SavingsPlanDetails struct {
 	// it is empty or malformed; empty is never treated as USD.
 	Currency string `json:"currency,omitempty"`
 
+	// Deprecated: never populated; it once held the savings percentage, which is
+	// Recommendation.SavingsPercentage. Kept so stored rows still decode.
 	Coverage string `json:"coverage,omitempty"`
 
 	// InstanceFamily is the EC2 instance family recommended by Cost Explorer

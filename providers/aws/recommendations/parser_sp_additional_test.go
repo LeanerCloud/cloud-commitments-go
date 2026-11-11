@@ -56,7 +56,7 @@ func TestParseSavingsPlanDetail(t *testing.T) {
 				require.True(t, ok)
 				assert.Equal(t, "Compute", spDetails.PlanType)
 				assert.Equal(t, 2.50, spDetails.HourlyCommitment)
-				assert.Equal(t, "35.5%", spDetails.Coverage)
+				assert.Empty(t, spDetails.Coverage, "savings % lives in SavingsPercentage, not Coverage (go#555)") //nolint:staticcheck // SA1019: asserting the deprecated field is no longer populated
 			},
 		},
 		{

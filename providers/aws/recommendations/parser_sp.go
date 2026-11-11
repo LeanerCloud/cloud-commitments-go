@@ -283,7 +283,6 @@ func (c *Client) parseSavingsPlanDetail(
 		Details: &common.SavingsPlanDetails{
 			PlanType:         planTypeStr,
 			HourlyCommitment: hourlyCommitment,
-			Coverage:         fmt.Sprintf("%.1f%%", savingsPercent),
 			InstanceFamily:   ec2Fields.instanceFamily,
 			Region:           ec2Fields.region,
 			OfferingID:       ec2Fields.offeringID,
