@@ -501,3 +501,41 @@ func TestPoolExpiryUnknownDimensionFailsLoud(t *testing.T) {
 		})
 	}
 }
+
+// The listers and the parser use different names for the same pools
+// (search and data-warehouse). A real OpenSearch or Redshift commitment must
+// net with the matching recommendation, not abort the whole call.
+func TestPoolExpiryAcceptsProducerServiceAliases(t *testing.T) {
+	t.Parallel()
+	expiringSearch := common.Commitment{Service: common.ServiceSearch, Region: "us-east-1", ResourceType: "g5.xlarge",
+		Count: 5, State: "active", EndDate: daysFromNow(15)}
+	expiringWarehouse := common.Commitment{Service: common.ServiceDataWarehouse, Region: "us-east-1", ResourceType: "ra3.xlplus",
+		Count: 5, State: "active", EndDate: daysFromNow(15)}
+	search := common.Recommendation{Service: common.ServiceOpenSearch, Region: "us-east-1", ResourceType: "g5.xlarge",
+		AverageInstancesUsedPerHour: 30, ExistingCoveragePct: 60, ExistingCoverageKnown: true}
+	warehouse := common.Recommendation{Service: common.ServiceRedshift, Region: "us-east-1", ResourceType: "ra3.xlplus",
+		AverageInstancesUsedPerHour: 30, ExistingCoveragePct: 60, ExistingCoverageKnown: true}
+	coverage := PoolCoverageMap{
+		poolKey("us-east-1", "g5.xlarge"):  {Pct: 60, AvgInstancesPerHour: 30},
+		poolKey("us-east-1", "ra3.xlplus"): {Pct: 60, AvgInstancesPerHour: 30},
+	}
+	recs := []common.Recommendation{search, warehouse}
+	adjusted, _, err := AdjustExistingCoverageForExpiringCommitmentsWithCoverageOptions(recs,
+		[]common.Commitment{expiringSearch, expiringWarehouse}, coverage, PoolExpiryOptions{WindowDays: 30})
+	require.NoError(t, err)
+	assert.Equal(t, 2, adjusted)
+}
+
+// A compute-named recommendation is an EC2 pool, so it nets with EC2 commitments.
+func TestPoolExpiryAcceptsComputeRecommendationAlias(t *testing.T) {
+	t.Parallel()
+	rec := common.Recommendation{Service: common.ServiceCompute, Region: "us-east-1", ResourceType: "g5.xlarge",
+		AverageInstancesUsedPerHour: 30, ExistingCoveragePct: 60, ExistingCoverageKnown: true}
+	coverage := PoolCoverageMap{poolKey("us-east-1", "g5.xlarge"): {Pct: 60, AvgInstancesPerHour: 30}}
+	recs := []common.Recommendation{rec}
+	adjusted, _, err := AdjustExistingCoverageForExpiringCommitmentsWithCoverageOptions(recs,
+		[]common.Commitment{{Service: common.ServiceEC2, Region: "us-east-1", ResourceType: "g5.xlarge", Count: 5, State: "active", EndDate: daysFromNow(15)}},
+		coverage, PoolExpiryOptions{WindowDays: 30})
+	require.NoError(t, err)
+	assert.Equal(t, 1, adjusted)
+}

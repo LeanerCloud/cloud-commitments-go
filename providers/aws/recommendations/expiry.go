@@ -258,8 +258,9 @@ func recExpiryPool(rec common.Recommendation) (expiryPool, error) {
 // excludes stay per exact type. An unknown service or an EC2 size without a
 // normalization factor is an error, never a default weight.
 func nonRDSExpiryPool(service common.ServiceType, region, resourceType, engine string) (expiryPool, error) {
-	switch {
-	case service == common.ServiceEC2:
+	service = canonicalNonRDSService(service)
+	switch service {
+	case common.ServiceEC2:
 		family, size, ok := strings.Cut(resourceType, ".")
 		if !ok || family == "" {
 			return expiryPool{}, fmt.Errorf("EC2 instance type %q has no family and size", resourceType)
@@ -272,10 +273,26 @@ func nonRDSExpiryPool(service common.ServiceType, region, resourceType, engine s
 			return expiryPool{}, fmt.Errorf("EC2 instance type %q has no normalization factor for size-flexible netting", resourceType)
 		}
 		return expiryPool{key: "ec2:" + poolKey(region, family), units: factor}, nil
-	case isElastiCacheService(service):
+	case common.ServiceElastiCache:
 		return expiryPool{key: "elasticache:" + elastiCachePoolKey(region, resourceType, engine), units: 1}, nil
-	case service == common.ServiceOpenSearch, service == common.ServiceRedshift, service == common.ServiceMemoryDB:
+	case common.ServiceOpenSearch, common.ServiceRedshift, common.ServiceMemoryDB:
 		return expiryPool{key: string(service) + ":" + poolKey(region, resourceType), units: 1}, nil
 	}
 	return expiryPool{}, fmt.Errorf("expiry pool: unknown service %q for %q", service, resourceType)
+}
+
+// canonicalNonRDSService maps the aliases that producers emit for the same
+// pool (the parser and the lister use different names) onto one service name.
+func canonicalNonRDSService(service common.ServiceType) common.ServiceType {
+	switch service {
+	case common.ServiceCompute:
+		return common.ServiceEC2
+	case common.ServiceCache:
+		return common.ServiceElastiCache
+	case common.ServiceSearch:
+		return common.ServiceOpenSearch
+	case common.ServiceDataWarehouse:
+		return common.ServiceRedshift
+	}
+	return service
 }
