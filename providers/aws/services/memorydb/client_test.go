@@ -263,68 +263,6 @@ func TestClient_GetExistingCommitments(t *testing.T) {
 	}
 }
 
-func TestClient_GetValidResourceTypes(t *testing.T) {
-	t.Parallel()
-	mockMDB := new(MockMemoryDBClient)
-	client := &Client{
-		client: mockMDB,
-		region: "us-east-1",
-	}
-
-	mockMDB.On("DescribeReservedNodesOfferings", mock.Anything, mock.Anything).
-		Return(&memorydb.DescribeReservedNodesOfferingsOutput{
-			ReservedNodesOfferings: []types.ReservedNodesOffering{
-				{NodeType: aws.String("db.t4g.small")},
-				{NodeType: aws.String("db.r6g.large")},
-				{NodeType: aws.String("db.r7g.xlarge")},
-			},
-		}, nil)
-
-	result, err := client.GetValidResourceTypes(context.Background())
-
-	assert.NoError(t, err)
-	assert.NotEmpty(t, result)
-	assert.Contains(t, result, "db.t4g.small")
-	assert.Contains(t, result, "db.r6g.large")
-	assert.Contains(t, result, "db.r7g.xlarge")
-}
-
-func TestClient_ValidateOffering(t *testing.T) {
-	t.Parallel()
-	mockMDB := &MockMemoryDBClient{}
-	client := &Client{
-		client: mockMDB,
-		region: "us-east-1",
-	}
-
-	rec := common.Recommendation{
-		Service:       common.ServiceCache,
-		ResourceType:  "db.r6gd.xlarge",
-		PaymentOption: "partial-upfront",
-		Term:          "1yr",
-		Details: &common.CacheDetails{
-			Engine:   "redis",
-			NodeType: "db.r6gd.xlarge",
-		},
-	}
-
-	mockMDB.On("DescribeReservedNodesOfferings", mock.Anything, mock.Anything).
-		Return(&memorydb.DescribeReservedNodesOfferingsOutput{
-			ReservedNodesOfferings: []types.ReservedNodesOffering{
-				{
-					ReservedNodesOfferingId: aws.String("offering-123"),
-					NodeType:                aws.String("db.r6gd.xlarge"),
-					Duration:                31536000,
-					OfferingType:            aws.String("Partial Upfront"),
-				},
-			},
-		}, nil)
-
-	err := client.ValidateOffering(context.Background(), rec)
-	assert.NoError(t, err)
-	mockMDB.AssertExpectations(t)
-}
-
 func TestClient_PurchaseCommitment(t *testing.T) {
 	t.Parallel()
 	mockMDB := &MockMemoryDBClient{}
@@ -1096,7 +1034,7 @@ func TestFindOfferingID_InvalidTerm_ErrorsBeforeAPICall(t *testing.T) {
 		Term:          "0",
 	}
 
-	err := client.ValidateOffering(context.Background(), rec)
+	_, err := client.findOfferingID(context.Background(), rec, "")
 
 	assert.EqualError(t, err, "unsupported MemoryDB reservation term \"0\": must be one of 1yr, 1, 12, 3yr, 3, 36")
 	assert.Empty(t, mockMDB.Calls, "invalid terms must fail before any SDK call")
@@ -1157,39 +1095,4 @@ func TestGetExistingCommitments_MultiPage(t *testing.T) {
 	got, err := c.GetExistingCommitments(context.Background())
 	require.NoError(t, err)
 	assert.Len(t, got, 2)
-}
-
-func TestGetValidResourceTypes_PageCapAndCtx(t *testing.T) {
-	t.Parallel()
-	m := &MockMemoryDBClient{}
-	m.On("DescribeReservedNodesOfferings", mock.Anything, mock.Anything).
-		Return(&memorydb.DescribeReservedNodesOfferingsOutput{NextToken: aws.String("more")}, nil).Times(maxListPages)
-	c := &Client{client: m, region: "us-east-1"}
-	_, err := c.GetValidResourceTypes(context.Background())
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "pagination cap reached")
-	m.AssertNumberOfCalls(t, "DescribeReservedNodesOfferings", maxListPages)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	m2 := &MockMemoryDBClient{}
-	c2 := &Client{client: m2, region: "us-east-1"}
-	_, err = c2.GetValidResourceTypes(ctx)
-	assert.ErrorIs(t, err, context.Canceled)
-}
-
-func TestGetValidResourceTypes_MultiPage(t *testing.T) {
-	t.Parallel()
-	m := &MockMemoryDBClient{}
-	m.On("DescribeReservedNodesOfferings", mock.Anything, mock.Anything).Return(&memorydb.DescribeReservedNodesOfferingsOutput{
-		ReservedNodesOfferings: []types.ReservedNodesOffering{{NodeType: aws.String("db.r6g.large")}},
-		NextToken:              aws.String("t2"),
-	}, nil).Once()
-	m.On("DescribeReservedNodesOfferings", mock.Anything, mock.Anything).Return(&memorydb.DescribeReservedNodesOfferingsOutput{
-		ReservedNodesOfferings: []types.ReservedNodesOffering{{NodeType: aws.String("db.t4g.small")}},
-	}, nil).Once()
-	c := &Client{client: m, region: "us-east-1"}
-	got, err := c.GetValidResourceTypes(context.Background())
-	require.NoError(t, err)
-	assert.ElementsMatch(t, []string{"db.r6g.large", "db.t4g.small"}, got)
 }

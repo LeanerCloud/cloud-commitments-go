@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -283,7 +282,7 @@ const maxListPages = 50
 
 // findOfferingID finds the appropriate Reserved Cache Node offering ID.
 // execID is the purchase execution UUID for log correlation; pass "" when
-// calling outside of a purchase flow (ValidateOffering, GetOfferingDetails).
+// calling outside of a purchase flow (GetOfferingDetails).
 func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation, execID string) (string, error) {
 	details, ok := rec.Details.(*common.CacheDetails)
 	if !ok || details == nil {
@@ -388,12 +387,6 @@ func scanElastiCacheOfferingPage(offerings []types.ReservedCacheNodesOffering, r
 	return id, nil
 }
 
-// ValidateOffering checks if an offering exists without purchasing.
-func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
-	_, err := c.findOfferingID(ctx, rec, "")
-	return err
-}
-
 // GetOfferingDetails retrieves offering details.
 // All prices are per ONE reservation (callers multiply by rec.Count): UpfrontCost is
 // FixedPrice, RecurringCost the hourly rate, TotalCost upfront plus hourly over the
@@ -449,49 +442,6 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	}
 
 	return details, nil
-}
-
-// GetValidResourceTypes returns valid ElastiCache node types.
-func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
-	instanceTypesMap := make(map[string]bool)
-	var marker *string
-
-	for page := 0; ; page++ {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if page >= maxListPages {
-			return nil, fmt.Errorf("pagination cap reached after %d pages for ElastiCache offerings (issue #561)", maxListPages)
-		}
-		input := &elasticache.DescribeReservedCacheNodesOfferingsInput{
-			Marker:     marker,
-			MaxRecords: aws.Int32(100),
-		}
-
-		result, err := c.client.DescribeReservedCacheNodesOfferings(ctx, input)
-		if err != nil {
-			return nil, fmt.Errorf("failed to describe ElastiCache offerings: %w", err)
-		}
-
-		for _, offering := range result.ReservedCacheNodesOfferings {
-			if offering.CacheNodeType != nil {
-				instanceTypesMap[*offering.CacheNodeType] = true
-			}
-		}
-
-		if result.Marker == nil || aws.ToString(result.Marker) == "" {
-			break
-		}
-		marker = result.Marker
-	}
-
-	instanceTypes := make([]string, 0, len(instanceTypesMap))
-	for instanceType := range instanceTypesMap {
-		instanceTypes = append(instanceTypes, instanceType)
-	}
-
-	sort.Strings(instanceTypes)
-	return instanceTypes, nil
 }
 
 // Duration constants for RI term calculations. Aliased from purchasecfg so

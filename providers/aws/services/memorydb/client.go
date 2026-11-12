@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"sort"
 	"strings"
 	"time"
 
@@ -336,7 +335,7 @@ const ReservedNodeEngine = "redis"
 const maxOfferingPages = 5
 
 // maxListPages bounds the full-list scans (DescribeReservedNodes and the
-// offerings sweep in GetValidResourceTypes). At MaxResults=100 per page this
+// offerings sweep). At MaxResults=100 per page this
 // is 5000 entries, far above any real account; hitting it means a token cycle
 // or runaway API, so the scan fails loud instead of looping (issue #556).
 const maxListPages = 50
@@ -361,7 +360,7 @@ func convertMemoryDBPaymentOption(option string) (string, error) {
 // directly on the request to minimize the result set (issue #688).
 //
 // execID is the purchase execution UUID for log correlation; pass "" when
-// calling outside of a purchase flow (ValidateOffering, GetOfferingDetails).
+// calling outside of a purchase flow (GetOfferingDetails).
 func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation, execID string) (string, error) {
 	wantOfferingType, err := convertMemoryDBPaymentOption(rec.PaymentOption)
 	if err != nil {
@@ -483,12 +482,6 @@ func (c *Client) getDurationStringForAPI(term string) (string, error) {
 	return duration, nil
 }
 
-// ValidateOffering checks if an offering exists without purchasing.
-func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
-	_, err := c.findOfferingID(ctx, rec, "")
-	return err
-}
-
 // GetOfferingDetails retrieves offering details.
 // All prices are per ONE reservation (callers multiply by rec.Count): UpfrontCost is
 // FixedPrice, RecurringCost the hourly rate, TotalCost upfront plus hourly over the
@@ -545,49 +538,6 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	}
 
 	return details, nil
-}
-
-// GetValidResourceTypes returns valid MemoryDB node types by querying the API.
-func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
-	nodeTypesMap := make(map[string]bool)
-	var nextToken *string
-
-	for page := 0; ; page++ {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if page >= maxListPages {
-			return nil, fmt.Errorf("pagination cap reached after %d pages for MemoryDB offerings (issue #556)", maxListPages)
-		}
-		input := &memorydb.DescribeReservedNodesOfferingsInput{
-			NextToken:  nextToken,
-			MaxResults: aws.Int32(100),
-		}
-
-		result, err := c.client.DescribeReservedNodesOfferings(ctx, input)
-		if err != nil {
-			return nil, fmt.Errorf("failed to describe MemoryDB offerings: %w", err)
-		}
-
-		for _, offering := range result.ReservedNodesOfferings {
-			if offering.NodeType != nil {
-				nodeTypesMap[*offering.NodeType] = true
-			}
-		}
-
-		if result.NextToken == nil || *result.NextToken == "" {
-			break
-		}
-		nextToken = result.NextToken
-	}
-
-	nodeTypes := make([]string, 0, len(nodeTypesMap))
-	for nodeType := range nodeTypesMap {
-		nodeTypes = append(nodeTypes, nodeType)
-	}
-
-	sort.Strings(nodeTypes)
-	return nodeTypes, nil
 }
 
 // createPurchaseTags creates standard tags for the purchase. The tag shape
