@@ -226,7 +226,9 @@ func TestReservationExpirySDKSizing(t *testing.T) {
 			commits, err := client.GetExistingCommitments(context.Background())
 			require.NoError(t, err)
 			recs := []common.Recommendation{expiryRecommendation("cache.r6g.large"), expiryRecommendation("cache.r7g.large")}
-			require.Equal(t, tc.adjusted, recommendations.AdjustExistingCoverageForExpiringCommitments(recs, commits, tc.window))
+			adjusted, err := recommendations.AdjustExistingCoverageForExpiringCommitments(recs, commits, tc.window)
+			require.NoError(t, err)
+			require.Equal(t, tc.adjusted, adjusted)
 			require.Equal(t, float64(80), recs[1].ExistingCoveragePct)
 			got := recfilter.ApplyTargetCoverage(recs, 80, nil, nil)
 			if tc.adjusted == 0 {
@@ -262,6 +264,8 @@ func TestReservationExpirySDKRDSAdjustment(t *testing.T) {
 	rec.Service = common.ServiceRelationalDB
 	rec.Details = &common.DatabaseDetails{Engine: "mysql", AZConfig: "multi-az"}
 	recs := []common.Recommendation{rec}
-	require.Zero(t, recommendations.AdjustExistingCoverageForExpiringCommitments(recs, commits, 30))
+	adjusted, err := recommendations.AdjustExistingCoverageForExpiringCommitments(recs, commits, 30)
+	require.NoError(t, err)
+	require.Zero(t, adjusted)
 	require.Equal(t, rec, recs[0])
 }

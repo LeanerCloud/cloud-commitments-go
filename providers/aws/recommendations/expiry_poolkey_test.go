@@ -15,8 +15,8 @@ import (
 )
 
 // poolKeyShapes holds, per service, the ResourceType the real producers emit
-// for the same underlying size. The non-RDS pool key is region:type with no
-// service dimension, so these shapes must stay disjoint (see commitmentPoolKey).
+// for the same underlying size. Non-RDS expiry keys carry the service name, so
+// these shapes must stay disjoint per service (see nonRDSExpiryPool).
 //
 //	EC2         services/ec2/client.go:111          string(ri.InstanceType)      m5.large
 //	ElastiCache services/elasticache/client.go:106  aws.ToString(CacheNodeType)  cache.m5.large + engine
@@ -106,7 +106,7 @@ func TestElastiCacheExpiryDoesNotNetAcrossEngines(t *testing.T) {
 	}}
 
 	ApplyCoverageMapToRecommendations(recs, coverage)
-	adjusted, missing := AdjustExistingCoverageForExpiringCommitmentsWithCoverage(recs, commits, 30, coverage)
+	adjusted, missing := mustAdjustCoverage(AdjustExistingCoverageForExpiringCommitmentsWithCoverage(recs, commits, 30, coverage))
 
 	assert.Equal(t, 1, adjusted, "only the Redis pool has an expiring RI")
 	assert.Zero(t, missing)
@@ -133,27 +133,27 @@ func TestPoolKeys_DisjointAcrossServices(t *testing.T) {
 	const region = "us-east-1"
 	seen := map[string]string{}
 	for i, s := range poolKeyShapes {
-		key := commitmentPoolKey(shapeCommitment(region, i))
-		if prev, dup := seen[key]; dup {
-			t.Errorf("commitment key %q collides: %s and %s", key, prev, s.name)
+		pool, err := commitmentExpiryPool(shapeCommitment(region, i))
+		require.NoError(t, err, s.name)
+		if prev, dup := seen[pool.key]; dup {
+			t.Errorf("expiry key %q collides: %s and %s", pool.key, prev, s.name)
 		}
-		seen[key] = s.name
+		seen[pool.key] = s.name
 	}
 	assert.Len(t, seen, len(poolKeyShapes))
 }
 
-func TestPoolKeys_CommitmentCoverageAndLookupAgree(t *testing.T) {
+func TestPoolKeys_CommitmentAndRecordAgree(t *testing.T) {
 	t.Parallel()
 	const region = "eu-west-1"
 	lookups := map[string]string{}
 	for i, s := range poolKeyShapes {
-		ck := commitmentPoolKey(shapeCommitment(region, i))
+		ck, err := commitmentExpiryPool(shapeCommitment(region, i))
+		require.NoError(t, err, s.name)
+		rk, err := recExpiryPool(shapeRec(region, i))
+		require.NoError(t, err, s.name)
+		assert.Equal(t, ck, rk, "%s: commitment and recommendation expiry pools must agree", s.name)
 		lk := lookupPoolKey(shapeRec(region, i))
-		assert.Equal(t, ck, lk, "%s: commitment and lookup keys must agree", s.name)
-		if s.engine == "" {
-			assert.Equal(t, ck, poolKey(region, s.resourceType),
-				"%s: commitment and coverage keys must agree", s.name)
-		}
 		if prev, dup := lookups[lk]; dup {
 			t.Errorf("lookup key %q collides: %s and %s", lk, prev, s.name)
 		}

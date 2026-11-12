@@ -51,9 +51,9 @@ func TestExpiringCoverageExactSizing(t *testing.T) {
 				commits[0].Count = tc.expiring
 				ApplyCoverageMapToRecommendations(recs, coverage)
 				if api == "legacy" {
-					assert.Equal(t, 2, AdjustExistingCoverageForExpiringCommitments(recs, commits, 30))
+					assert.Equal(t, 2, mustAdjust(AdjustExistingCoverageForExpiringCommitments(recs, commits, 30)))
 				} else {
-					adjusted, missing := AdjustExistingCoverageForExpiringCommitmentsWithCoverage(recs, commits, 30, coverage)
+					adjusted, missing := mustAdjustCoverage(AdjustExistingCoverageForExpiringCommitmentsWithCoverage(recs, commits, 30, coverage))
 					assert.Equal(t, 2, adjusted)
 					assert.Zero(t, missing)
 				}
@@ -86,7 +86,7 @@ func TestExpiringCoverageExactFractionRoundsUp(t *testing.T) {
 	recs, commits, coverage := expiryPrecisionFixture()
 	demand := math.Nextafter(30, math.Inf(1))
 	coverage[poolKey("us-east-1", "m5.large")] = PoolCoverage{Pct: 60, AvgInstancesPerHour: demand}
-	adjusted, missing := AdjustExistingCoverageForExpiringCommitmentsWithCoverage(recs, commits, 30, coverage)
+	adjusted, missing := mustAdjustCoverage(AdjustExistingCoverageForExpiringCommitmentsWithCoverage(recs, commits, 30, coverage))
 	assert.Equal(t, 2, adjusted)
 	assert.Zero(t, missing)
 	sized := recfilter.ApplyTargetCoverage(recs, 80, nil, nil)
@@ -114,9 +114,9 @@ func TestExpiringCoverageExactRepeatedAndReplaced(t *testing.T) {
 			adjust := func(rows []common.Recommendation, count int) {
 				commits[0].Count = count
 				if api == "legacy" {
-					assert.Equal(t, len(rows), AdjustExistingCoverageForExpiringCommitments(rows, commits, 30))
+					assert.Equal(t, len(rows), mustAdjust(AdjustExistingCoverageForExpiringCommitments(rows, commits, 30)))
 				} else {
-					n, missing := AdjustExistingCoverageForExpiringCommitmentsWithCoverage(rows, commits, 30, coverage)
+					n, missing := mustAdjustCoverage(AdjustExistingCoverageForExpiringCommitmentsWithCoverage(rows, commits, 30, coverage))
 					assert.Equal(t, len(rows), n)
 					assert.Zero(t, missing)
 				}
@@ -168,7 +168,7 @@ func TestExpiringCoverageExactNonfiniteReplacement(t *testing.T) {
 			recs[i].ExistingCoveragePct = pct
 			recs[i].ExistingCoveragePercentExact = big.NewRat(60, 1)
 		}
-		adjusted, missing := AdjustExistingCoverageForExpiringCommitmentsWithCoverage(recs, commits, 30, coverage)
+		adjusted, missing := mustAdjustCoverage(AdjustExistingCoverageForExpiringCommitmentsWithCoverage(recs, commits, 30, coverage))
 		assert.Equal(t, 2, adjusted)
 		assert.Zero(t, missing)
 		for _, rec := range recs {

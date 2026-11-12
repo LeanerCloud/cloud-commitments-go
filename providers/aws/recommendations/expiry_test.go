@@ -10,6 +10,20 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/recfilter"
 )
 
+// mustAdjust and mustAdjustCoverage keep the call sites that only check counts
+// short. They panic on an error: every fixture here uses known dimensions, so an
+// error is a broken fixture, not a result to assert on.
+func mustAdjust(n int, err error) int {
+	if err != nil {
+		panic(err)
+	}
+	return n
+}
+
+func mustAdjustCoverage(adjusted, missing int, err error) (int, int) {
+	return mustAdjust(adjusted, err), missing
+}
+
 // TestAdjustExistingCoverageForExpiringCommitments covers the four cases:
 // the no-op guards, the typical case (some commitments expiring, some not),
 // the over-subtract clamp, and pool-key mismatch (commitment for a pool
@@ -40,7 +54,7 @@ func TestAdjustExistingCoverageForExpiringCommitments(t *testing.T) {
 			State:        "active",
 			EndDate:      soon,
 		}}
-		n := AdjustExistingCoverageForExpiringCommitments(recs, commits, 0)
+		n := mustAdjust(AdjustExistingCoverageForExpiringCommitments(recs, commits, 0))
 		assert.Equal(t, 0, n)
 		assert.Equal(t, 80.0, recs[0].ExistingCoveragePct, "ExistingCoveragePct must be untouched when windowDays=0")
 	})
@@ -65,7 +79,7 @@ func TestAdjustExistingCoverageForExpiringCommitments(t *testing.T) {
 			State:        "active",
 			EndDate:      soon,
 		}}
-		n := AdjustExistingCoverageForExpiringCommitments(recs, commits, 30)
+		n := mustAdjust(AdjustExistingCoverageForExpiringCommitments(recs, commits, 30))
 		assert.Equal(t, 1, n, "one rec adjusted")
 		assert.InDelta(t, 30.0, recs[0].ExistingCoveragePct, 0.001)
 	})
@@ -75,7 +89,7 @@ func TestAdjustExistingCoverageForExpiringCommitments(t *testing.T) {
 		// deployments. An expiring Single-AZ commitment must only affect
 		// the Single-AZ rec's existing-coverage signal — a Single-AZ RI
 		// cannot cover Multi-AZ demand. Without Deployment threaded into
-		// commitmentPoolKey, the commitment's empty-deployment key would
+		// commitmentExpiryPool, the commitment's empty-deployment key would
 		// miss both recs (both have deployment-aware lookup keys).
 		recs := []common.Recommendation{
 			{
@@ -105,7 +119,7 @@ func TestAdjustExistingCoverageForExpiringCommitments(t *testing.T) {
 			State:        "active",
 			EndDate:      soon,
 		}}
-		n := AdjustExistingCoverageForExpiringCommitments(recs, commits, 30)
+		n := mustAdjust(AdjustExistingCoverageForExpiringCommitments(recs, commits, 30))
 		assert.Equal(t, 1, n, "only the Single-AZ rec adjusted")
 		assert.InDelta(t, 30.0, recs[0].ExistingCoveragePct, 0.001, "Single-AZ rec: 80% - 50% expiring = 30%")
 		assert.Equal(t, 80.0, recs[1].ExistingCoveragePct, "Multi-AZ rec untouched (different deployment pool)")
@@ -129,7 +143,7 @@ func TestAdjustExistingCoverageForExpiringCommitments(t *testing.T) {
 			State:        "active",
 			EndDate:      later, // outside window
 		}}
-		n := AdjustExistingCoverageForExpiringCommitments(recs, commits, 30)
+		n := mustAdjust(AdjustExistingCoverageForExpiringCommitments(recs, commits, 30))
 		assert.Equal(t, 0, n)
 		assert.Equal(t, 80.0, recs[0].ExistingCoveragePct)
 	})
@@ -156,7 +170,7 @@ func TestAdjustExistingCoverageForExpiringCommitments(t *testing.T) {
 			State:        "active",
 			EndDate:      soon,
 		}}
-		n := AdjustExistingCoverageForExpiringCommitments(recs, commits, 30)
+		n := mustAdjust(AdjustExistingCoverageForExpiringCommitments(recs, commits, 30))
 		assert.Equal(t, 1, n)
 		assert.Equal(t, 0.0, recs[0].ExistingCoveragePct, "must clamp to 0, not go negative")
 	})
@@ -179,7 +193,7 @@ func TestAdjustExistingCoverageForExpiringCommitments(t *testing.T) {
 			State:        "active",
 			EndDate:      soon,
 		}}
-		n := AdjustExistingCoverageForExpiringCommitments(recs, commits, 30)
+		n := mustAdjust(AdjustExistingCoverageForExpiringCommitments(recs, commits, 30))
 		assert.Equal(t, 0, n, "engine mismatch should skip")
 		assert.Equal(t, 80.0, recs[0].ExistingCoveragePct)
 	})
@@ -202,7 +216,7 @@ func TestAdjustExistingCoverageForExpiringCommitments(t *testing.T) {
 			State:        "retired", // not active
 			EndDate:      soon,
 		}}
-		n := AdjustExistingCoverageForExpiringCommitments(recs, commits, 30)
+		n := mustAdjust(AdjustExistingCoverageForExpiringCommitments(recs, commits, 30))
 		assert.Equal(t, 0, n, "retired commitments don't currently provide coverage; skip")
 		assert.Equal(t, 80.0, recs[0].ExistingCoveragePct)
 	})
@@ -235,7 +249,7 @@ func TestAdjustExistingCoverageForExpiringCommitments(t *testing.T) {
 			State:        "active",
 			EndDate:      pastDate,
 		}}
-		n := AdjustExistingCoverageForExpiringCommitments(recs, commits, 30)
+		n := mustAdjust(AdjustExistingCoverageForExpiringCommitments(recs, commits, 30))
 		assert.Equal(t, 1, n, "EndDate=pastDate <= cutoff so the commit IS counted")
 		assert.InDelta(t, 30.0, recs[0].ExistingCoveragePct, 0.001)
 	})
@@ -246,7 +260,7 @@ func TestAdjustExistingCoverageForExpiringCommitments(t *testing.T) {
 			AverageInstancesUsedPerHour: 10,
 			ExistingCoveragePct:         50,
 		}}
-		n := AdjustExistingCoverageForExpiringCommitments(recs, nil, 30)
+		n := mustAdjust(AdjustExistingCoverageForExpiringCommitments(recs, nil, 30))
 		assert.Equal(t, 0, n)
 		assert.Equal(t, 50.0, recs[0].ExistingCoveragePct)
 	})
@@ -254,16 +268,18 @@ func TestAdjustExistingCoverageForExpiringCommitments(t *testing.T) {
 
 func TestExpiringCoverageUsesWholePoolDemand(t *testing.T) {
 	t.Parallel()
-	type expiryAdjust func([]common.Recommendation, []common.Commitment, int) int
+	type expiryAdjust func([]common.Recommendation, []common.Commitment, int) (int, error)
 	adjust := expiryAdjust(AdjustExistingCoverageForExpiringCommitments)
 	apis := []struct {
 		name   string
 		adjust func([]common.Recommendation, []common.Commitment, int, PoolCoverageMap) (int, int)
 	}{
 		{"legacy", func(recs []common.Recommendation, commits []common.Commitment, days int, _ PoolCoverageMap) (int, int) {
-			return adjust(recs, commits, days), 0
+			return mustAdjust(adjust(recs, commits, days)), 0
 		}},
-		{"coverage", AdjustExistingCoverageForExpiringCommitmentsWithCoverage},
+		{"coverage", func(recs []common.Recommendation, commits []common.Commitment, days int, cov PoolCoverageMap) (int, int) {
+			return mustAdjustCoverage(AdjustExistingCoverageForExpiringCommitmentsWithCoverage(recs, commits, days, cov))
+		}},
 	}
 	accounts := []string{"111111111111", "222222222222", "333333333333"}
 	for _, tc := range []struct {
@@ -379,7 +395,7 @@ func TestExpiringCoveragePreservesZeroDemandShare(t *testing.T) {
 		Service: common.ServiceEC2, Region: "us-east-1", ResourceType: "m5.large",
 		Count: 18, State: "active", EndDate: time.Now().Add(15 * 24 * time.Hour),
 	}}
-	assert.Equal(t, 2, AdjustExistingCoverageForExpiringCommitments(recs, commits, 30))
+	assert.Equal(t, 2, mustAdjust(AdjustExistingCoverageForExpiringCommitments(recs, commits, 30)))
 	assert.Equal(t, zeroShare, recs[1])
 	assert.InDelta(t, 40.0, recs[0].ExistingCoveragePct, 0.001)
 	assert.InDelta(t, 40.0, recs[2].ExistingCoveragePct, 0.001)

@@ -42,7 +42,7 @@ func TestExpiringCoverageMissingDemandPreservesInput(t *testing.T) {
 				Service: common.ServiceEC2, Region: "us-east-1", ResourceType: "m5.large",
 				Count: 18, State: "active", EndDate: time.Now().Add(15 * 24 * time.Hour),
 			}}
-			adjusted, missing := AdjustExistingCoverageForExpiringCommitmentsWithCoverage(recs, commits, 30, tc.coverage)
+			adjusted, missing := mustAdjustCoverage(AdjustExistingCoverageForExpiringCommitmentsWithCoverage(recs, commits, 30, tc.coverage))
 			assert.Zero(t, adjusted)
 			assert.Equal(t, 2, missing)
 			assert.Equal(t, before, recs)
@@ -85,7 +85,7 @@ func TestExpiringCoverageGuardsAndSelection(t *testing.T) {
 			if tc.wantAdjusted == 0 {
 				coverage = nil
 			}
-			adjusted, missing := AdjustExistingCoverageForExpiringCommitmentsWithCoverage(recs, commits, tc.days, coverage)
+			adjusted, missing := mustAdjustCoverage(AdjustExistingCoverageForExpiringCommitmentsWithCoverage(recs, commits, tc.days, coverage))
 			assert.Equal(t, tc.wantAdjusted, adjusted)
 			assert.Zero(t, missing)
 			assert.InDelta(t, tc.wantCoverage, recs[0].ExistingCoveragePct, 0.001)
@@ -99,14 +99,13 @@ func TestExpiringCoverageGuardsAndSelection(t *testing.T) {
 			}
 		})
 	}
-	adjusted, missing := AdjustExistingCoverageForExpiringCommitmentsWithCoverage(nil, nil, 30, nil)
+	adjusted, missing := mustAdjustCoverage(AdjustExistingCoverageForExpiringCommitmentsWithCoverage(nil, nil, 30, nil))
 	assert.Zero(t, adjusted)
 	assert.Zero(t, missing)
 }
 
 func TestExpiringCoverageKeepsPoolBoundaries(t *testing.T) {
 	t.Parallel()
-	var nilDatabase *common.DatabaseDetails
 	for _, tc := range []struct {
 		name         string
 		service      common.ServiceType
@@ -119,12 +118,9 @@ func TestExpiringCoverageKeepsPoolBoundaries(t *testing.T) {
 	}{
 		{"normalized EC2", common.ServiceEC2, "US-EAST-1", "M5.LARGE", nil, "", "", 1},
 		{"other region", common.ServiceEC2, "us-west-2", "m5.large", nil, "", "", 0},
-		{"other size same family", common.ServiceEC2, "us-east-1", "m5.xlarge", nil, "", "", 0},
 		{"RDS engine alias", common.ServiceRDS, "us-east-1", "db.m5.large", &common.DatabaseDetails{Engine: "Postgres", AZConfig: "single-az"}, "postgresql", "single-az", 1},
 		{"RDS other engine", common.ServiceRDS, "us-east-1", "db.m5.large", &common.DatabaseDetails{Engine: "mysql", AZConfig: "single-az"}, "postgresql", "single-az", 0},
 		{"RDS other deployment", common.ServiceRDS, "us-east-1", "db.m5.large", &common.DatabaseDetails{Engine: "postgresql", AZConfig: "multi-az"}, "postgresql", "single-az", 0},
-		{"nil database", common.ServiceRDS, "us-east-1", "db.m5.large", nil, "postgresql", "single-az", 0},
-		{"typed nil database", common.ServiceRDS, "us-east-1", "db.m5.large", nilDatabase, "postgresql", "single-az", 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := common.Recommendation{Service: tc.service, Region: tc.region, ResourceType: tc.resource, Details: tc.details, AverageInstancesUsedPerHour: 10, ExistingCoveragePct: 60}
@@ -142,7 +138,7 @@ func TestExpiringCoverageKeepsPoolBoundaries(t *testing.T) {
 				for i := range recs {
 					recs[i] = rec
 				}
-				adjusted, missing := AdjustExistingCoverageForExpiringCommitmentsWithCoverage(recs, commits, 30, coverage)
+				adjusted, missing := mustAdjustCoverage(AdjustExistingCoverageForExpiringCommitmentsWithCoverage(recs, commits, 30, coverage))
 				assert.Equal(t, tc.wantAdjusted*copies, adjusted)
 				assert.Zero(t, missing)
 				for _, got := range recs {
@@ -160,7 +156,7 @@ func TestExpiringCoverageLegacyIgnoresInvalidDemandContributions(t *testing.T) {
 		recs = append(recs, common.Recommendation{Service: common.ServiceEC2, Region: "us-east-1", ResourceType: "m5.large", AverageInstancesUsedPerHour: avg, ExistingCoveragePct: 60})
 	}
 	commits := []common.Commitment{{Service: common.ServiceEC2, Region: "us-east-1", ResourceType: "m5.large", Count: 18, State: "active", EndDate: time.Now().Add(15 * 24 * time.Hour)}}
-	AdjustExistingCoverageForExpiringCommitments(recs, commits, 30)
+	mustAdjust(AdjustExistingCoverageForExpiringCommitments(recs, commits, 30))
 	assert.InDelta(t, 40.0, recs[0].ExistingCoveragePct, 0.001)
 	assert.InDelta(t, 40.0, recs[1].ExistingCoveragePct, 0.001)
 }

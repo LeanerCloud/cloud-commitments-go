@@ -44,7 +44,7 @@ func runLookback(t *testing.T, commits []common.Commitment, opts PoolExpiryOptio
 	ApplyCoverageMapToRecommendations(recs, coverage)
 	before = make([]common.Recommendation, len(recs))
 	copy(before, recs)
-	adjusted, missing = AdjustExistingCoverageForExpiringCommitmentsWithCoverageOptions(recs, commits, coverage, opts)
+	adjusted, missing = mustAdjustCoverage(AdjustExistingCoverageForExpiringCommitmentsWithCoverageOptions(recs, commits, coverage, opts))
 	return before, recs, adjusted, missing, recfilter.ApplyTargetCoverage(recs, 80, nil, nil)
 }
 
@@ -145,7 +145,8 @@ func TestPoolExpiryReplacementPoolMatching(t *testing.T) {
 		credited bool
 	}{
 		{"region mismatch", func(c *common.Commitment) { c.Region = "us-west-2" }, false},
-		{"type mismatch", func(c *common.Commitment) { c.ResourceType = "m5.xlarge" }, false},
+		{"family mismatch", func(c *common.Commitment) { c.ResourceType = "c5.large" }, false},
+		{"size flex in same family", func(c *common.Commitment) { c.ResourceType = "m5.xlarge" }, true},
 		{"service mismatch", func(c *common.Commitment) { c.Service = common.ServiceRDS }, false},
 		{"account ignored", func(c *common.Commitment) { c.Account = "other-linked-account" }, true},
 	} {
@@ -199,8 +200,8 @@ func TestPoolExpirySkippedRecsKeepExactState(t *testing.T) {
 		seeded[i] = big.NewRat(1, 2)
 		recs[i].ExistingCoveragePercentExact = seeded[i]
 	}
-	adjusted, _ := AdjustExistingCoverageForExpiringCommitmentsWithCoverageOptions(recs,
-		[]common.Commitment{expiringRI(2), replacementRI(2, 5)}, coverage, defaultOpts())
+	adjusted, _ := mustAdjustCoverage(AdjustExistingCoverageForExpiringCommitmentsWithCoverageOptions(recs,
+		[]common.Commitment{expiringRI(2), replacementRI(2, 5)}, coverage, defaultOpts()))
 	require.Zero(t, adjusted)
 	for i := range recs {
 		assert.Same(t, seeded[i], recs[i].ExistingCoveragePercentExact)
@@ -215,15 +216,15 @@ func TestPoolExpiryZeroOptionsMatchLegacyCoverageAPI(t *testing.T) {
 	recsB, _, _ := expiryPrecisionFixture()
 	ApplyCoverageMapToRecommendations(recsA, coverage)
 	ApplyCoverageMapToRecommendations(recsB, coverage)
-	a1, m1 := AdjustExistingCoverageForExpiringCommitmentsWithCoverage(recsA, commits, 30, coverage)
-	a2, m2 := AdjustExistingCoverageForExpiringCommitmentsWithCoverageOptions(recsB, commits, coverage,
-		PoolExpiryOptions{WindowDays: 30})
+	a1, m1 := mustAdjustCoverage(AdjustExistingCoverageForExpiringCommitmentsWithCoverage(recsA, commits, 30, coverage))
+	a2, m2 := mustAdjustCoverage(AdjustExistingCoverageForExpiringCommitmentsWithCoverageOptions(recsB, commits, coverage,
+		PoolExpiryOptions{WindowDays: 30}))
 	assert.Equal(t, a1, a2)
 	assert.Equal(t, m1, m2)
 	assert.Equal(t, recsA, recsB)
 
-	a, m := AdjustExistingCoverageForExpiringCommitmentsWithCoverageOptions(recsB, commits, coverage,
-		PoolExpiryOptions{CoverageLookbackDays: lookbackDays})
+	a, m := mustAdjustCoverage(AdjustExistingCoverageForExpiringCommitmentsWithCoverageOptions(recsB, commits, coverage,
+		PoolExpiryOptions{CoverageLookbackDays: lookbackDays}))
 	assert.Zero(t, a)
 	assert.Zero(t, m)
 }
