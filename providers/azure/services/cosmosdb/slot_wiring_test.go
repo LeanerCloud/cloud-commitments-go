@@ -62,10 +62,6 @@ func TestClientCallsHoldSharedSlot(t *testing.T) {
 			})
 			_, _ = c.GetExistingCommitments(ctx)
 		},
-		"GetValidResourceTypes": func(ctx context.Context, p *slottest.Probe, c *Client) {
-			c.SetCosmosAccountsPager(&onePager[armcosmos.DatabaseAccountsClientListResponse]{probe: p})
-			_, _ = c.GetValidResourceTypes(ctx)
-		},
 		"fetchDominantAPIType": func(ctx context.Context, p *slottest.Probe, c *Client) {
 			c.SetCosmosAccountsPager(&onePager[armcosmos.DatabaseAccountsClientListResponse]{probe: p})
 			c.fetchDominantAPIType(ctx)

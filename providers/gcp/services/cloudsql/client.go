@@ -76,23 +76,6 @@ func (c *Client) SetBillingService(svc BillingService) {
 // Deprecated: Cloud SQL has no project-scoped commitment recommender (issue #294).
 func (c *Client) SetRecommenderClient(_ RecommenderClient) {}
 
-// realSQLAdminService wraps the real sqladmin.Service.
-type realSQLAdminService struct {
-	service *sqladmin.Service
-}
-
-func (r *realSQLAdminService) ListInstances(projectID string) (*sqladmin.InstancesListResponse, error) {
-	return r.service.Instances.List(projectID).Do()
-}
-
-func (r *realSQLAdminService) InsertInstance(projectID string, instance *sqladmin.DatabaseInstance) (*sqladmin.Operation, error) {
-	return r.service.Instances.Insert(projectID, instance).Do()
-}
-
-func (r *realSQLAdminService) ListTiers(projectID string) (*sqladmin.TiersListResponse, error) {
-	return r.service.Tiers.List(projectID).Do()
-}
-
 // GetServiceType returns the service type.
 func (c *Client) GetServiceType() common.ServiceType {
 	return common.ServiceRelationalDB
@@ -161,41 +144,6 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 
 	offeringID := fmt.Sprintf("gcp-cloudsql-%s-%s-%s", rec.ResourceType, c.region, rec.Term)
 	return skumatch.OfferingDetails(rec, offeringID, termYears, pricing.CommitmentPrice, pricing.HourlyRate, pricing.Currency)
-}
-
-// GetValidResourceTypes returns valid Cloud SQL tiers.
-func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
-	// Use injected service if available (for testing)
-	var svc SQLAdminService
-	if c.sqlAdminService != nil {
-		svc = c.sqlAdminService
-	} else {
-		service, err := sqladmin.NewService(ctx, c.clientOpts...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create SQL admin service: %w", err)
-		}
-		svc = &realSQLAdminService{service: service}
-	}
-
-	// List available tiers for the region
-	tiers, err := svc.ListTiers(c.projectID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list SQL tiers: %w", err)
-	}
-
-	validTiers := make([]string, 0)
-	for _, tier := range tiers.Items {
-		// Filter for tiers available in the region
-		if len(tier.Region) == 0 || contains(tier.Region, c.region) {
-			validTiers = append(validTiers, tier.Tier)
-		}
-	}
-
-	if len(validTiers) == 0 {
-		return nil, fmt.Errorf("no Cloud SQL tiers found for region %s", c.region)
-	}
-
-	return validTiers, nil
 }
 
 // SQLPricing contains pricing information for Cloud SQL.

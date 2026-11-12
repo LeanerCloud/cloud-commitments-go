@@ -299,65 +299,6 @@ func TestCloudSQLClient_GetExistingCommitments_ReturnsEmpty(t *testing.T) {
 	assert.Empty(t, commitments, "Cloud SQL GetExistingCommitments must return empty (10-L3)")
 }
 
-func TestCloudSQLClient_GetValidResourceTypes_WithMock(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	mockService := &MockSQLAdminService{
-		tiers: &sqladmin.TiersListResponse{
-			Items: []*sqladmin.Tier{
-				{Tier: "db-n1-standard-1", Region: []string{"us-central1", "us-east1"}},
-				{Tier: "db-n1-standard-2", Region: []string{"us-central1"}},
-				{Tier: "db-n1-standard-4", Region: []string{"us-east1"}}, // Different region
-				{Tier: "db-n1-highmem-2", Region: []string{}},            // All regions
-			},
-		},
-	}
-	client.SetSQLAdminService(mockService)
-
-	tiers, err := client.GetValidResourceTypes(ctx)
-	require.NoError(t, err)
-	assert.Contains(t, tiers, "db-n1-standard-1")
-	assert.Contains(t, tiers, "db-n1-standard-2")
-	assert.Contains(t, tiers, "db-n1-highmem-2")
-	assert.NotContains(t, tiers, "db-n1-standard-4")
-}
-
-func TestCloudSQLClient_GetValidResourceTypes_Error(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	mockService := &MockSQLAdminService{
-		err: errors.New("API error"),
-	}
-	client.SetSQLAdminService(mockService)
-
-	_, err := client.GetValidResourceTypes(ctx)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to list SQL tiers")
-}
-
-func TestCloudSQLClient_GetValidResourceTypes_NoTiers(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	mockService := &MockSQLAdminService{
-		tiers: &sqladmin.TiersListResponse{
-			Items: []*sqladmin.Tier{
-				{Tier: "db-n1-standard-4", Region: []string{"us-east1"}}, // Different region only
-			},
-		},
-	}
-	client.SetSQLAdminService(mockService)
-
-	_, err := client.GetValidResourceTypes(ctx)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "no Cloud SQL tiers found")
-}
-
 // TestCloudSQLClient_PurchaseCommitment_NotSupported is the regression test for
 // issue #640: Cloud SQL CUDs are spend-based and have no programmatic purchase API,
 // so PurchaseCommitment must return ErrCommitmentPurchaseNotSupported and MUST NOT

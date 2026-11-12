@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -346,27 +345,6 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	}, nil
 }
 
-// GetValidResourceTypes returns valid Cosmos DB SKUs from Azure API.
-func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
-	pager, err := c.createCosmosAccountsPager()
-	if err != nil {
-		return c.getCommonSKUs(), nil
-	}
-
-	skuSet, err := c.collectCapabilitiesFromAccounts(ctx, pager)
-	if err != nil {
-		return nil, err
-	}
-
-	// If we found SKUs from existing accounts, use those
-	if len(skuSet) > 0 {
-		return convertCapabilitySetToSlice(skuSet), nil
-	}
-
-	// Otherwise, return common SKU types that support reservations
-	return c.getCommonSKUs(), nil
-}
-
 // createCosmosAccountsPager creates a pager for listing Cosmos DB accounts.
 func (c *Client) createCosmosAccountsPager() (CosmosAccountsPager, error) {
 	// Use injected pager if available (for testing)
@@ -380,74 +358,6 @@ func (c *Client) createCosmosAccountsPager() (CosmosAccountsPager, error) {
 	}
 
 	return client.NewListPager(nil), nil
-}
-
-// collectCapabilitiesFromAccounts collects capabilities from existing Cosmos DB accounts.
-// Returns (nil, err) on context cancellation so callers can propagate the error
-// instead of silently using a partial result set.
-func (c *Client) collectCapabilitiesFromAccounts(ctx context.Context, pager CosmosAccountsPager) (map[string]bool, error) {
-	skuSet := make(map[string]bool)
-
-	for pageIdx := 0; pager.More(); pageIdx++ {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("cosmosdb: GetValidResourceTypes context canceled after %d pages: %w", pageIdx, err)
-		}
-		if pageIdx >= maxAccountsPages {
-			log.Printf("WARNING: cosmosdb: GetValidResourceTypes pagination cap (%d pages) reached", maxAccountsPages)
-			break
-		}
-		page, err := slot.NextPage(ctx, pager)
-		if err != nil {
-			// If we can't list existing accounts, fall back to known SKU types
-			break
-		}
-
-		for _, account := range page.Value {
-			capabilities := extractCapabilitiesFromAccount(account)
-			for _, capability := range capabilities {
-				skuSet[capability] = true
-			}
-		}
-	}
-
-	return skuSet, nil
-}
-
-// extractCapabilitiesFromAccount extracts capability names from a Cosmos DB account.
-func extractCapabilitiesFromAccount(account *armcosmos.DatabaseAccountGetResults) []string {
-	if account.Properties == nil || account.Properties.Capabilities == nil {
-		return nil
-	}
-
-	capabilities := make([]string, 0, len(account.Properties.Capabilities))
-	for _, capability := range account.Properties.Capabilities {
-		if capability.Name != nil {
-			capabilities = append(capabilities, *capability.Name)
-		}
-	}
-
-	return capabilities
-}
-
-// convertCapabilitySetToSlice converts a map of capabilities to a slice.
-func convertCapabilitySetToSlice(skuSet map[string]bool) []string {
-	skus := make([]string, 0, len(skuSet))
-	for sku := range skuSet {
-		skus = append(skus, sku)
-	}
-	return skus
-}
-
-// getCommonSKUs returns common Cosmos DB SKUs.
-func (c *Client) getCommonSKUs() []string {
-	return []string{
-		// Cosmos DB API types
-		"EnableCassandra",
-		"EnableMongo",
-		"EnableGremlin",
-		"EnableTable",
-		"EnableServerless",
-	}
 }
 
 // CosmosPricing contains pricing information for Cosmos DB.
