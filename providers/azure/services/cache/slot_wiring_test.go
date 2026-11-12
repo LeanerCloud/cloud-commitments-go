@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/consumption/armconsumption"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/redis/armredis/v3"
 
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/slot/slottest"
 )
@@ -46,9 +45,6 @@ func TestSlotHeldDuringCalls(t *testing.T) {
 	}{
 		{"reservations", func(ctx context.Context, p *slottest.Probe) {
 			_, _ = (&Client{reservationsPager: resv(p)}).GetExistingCommitments(ctx)
-		}},
-		{"valid resource types", func(ctx context.Context, p *slottest.Probe) {
-			_, _ = (&Client{redisCachesPager: &slotPager[armredis.ClientListBySubscriptionResponse]{p: p}}).GetValidResourceTypes(ctx)
 		}},
 		{"retail pricing", func(ctx context.Context, p *slottest.Probe) {
 			_, _ = (&Client{httpClient: slotHTTP{p}}).getRedisPricing(ctx, "Premium_P1", "eastus", 1)

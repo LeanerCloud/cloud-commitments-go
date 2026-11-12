@@ -23,9 +23,6 @@ import (
 // maxReservationsPages caps reservation-detail pagination.
 const maxReservationsPages = 50
 
-// maxCachesPages caps Redis cache list pagination.
-const maxCachesPages = 20
-
 // HTTPClient interface for HTTP operations (enables mocking).
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
@@ -246,113 +243,6 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 		EffectiveHourlyRate: redisPricing.HourlyRate,
 		Currency:            redisPricing.Currency,
 	}, nil
-}
-
-// GetValidResourceTypes returns valid Redis Cache SKUs from Azure API.
-func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
-	pager, err := c.createRedisCachesPager()
-	if err != nil {
-		// Fall back to common SKUs if we can't create client
-		return c.getCommonSKUs(), nil
-	}
-
-	skuSet, err := c.collectSKUsFromCaches(ctx, pager)
-	if err != nil {
-		return nil, err
-	}
-
-	// If we found SKUs from existing caches, use those
-	if len(skuSet) > 0 {
-		return convertSKUSetToSlice(skuSet), nil
-	}
-
-	// Otherwise, return common SKU families that support reservations
-	return c.getCommonSKUs(), nil
-}
-
-// createRedisCachesPager creates a pager for listing Redis caches.
-func (c *Client) createRedisCachesPager() (RedisCachesPager, error) {
-	// Use injected pager if available (for testing)
-	if c.redisCachesPager != nil {
-		return c.redisCachesPager, nil
-	}
-
-	client, err := armredis.NewClient(c.subscriptionID, c.cred, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return client.NewListBySubscriptionPager(nil), nil
-}
-
-// collectSKUsFromCaches collects SKUs from existing Redis caches.
-// Returns (nil, err) on context cancellation or when the page cap is reached
-// so callers can propagate the error instead of silently using a partial
-// result set.
-func (c *Client) collectSKUsFromCaches(ctx context.Context, pager RedisCachesPager) (map[string]bool, error) {
-	skuSet := make(map[string]bool)
-
-	for pageIdx := 0; pager.More(); pageIdx++ {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("cache: GetValidResourceTypes context canceled after %d pages: %w", pageIdx, err)
-		}
-		if pageIdx >= maxCachesPages {
-			return nil, fmt.Errorf("cache: GetValidResourceTypes pagination cap (%d pages) reached", maxCachesPages)
-		}
-		page, err := slot.NextPage(ctx, pager)
-		if err != nil {
-			// If we can't list existing caches, fall back to known SKU families
-			break
-		}
-
-		for _, cache := range page.Value {
-			if fullSKU := extractSKUFromCache(cache); fullSKU != "" {
-				skuSet[fullSKU] = true
-			}
-		}
-	}
-
-	return skuSet, nil
-}
-
-// extractSKUFromCache extracts the full SKU name from a cache resource.
-func extractSKUFromCache(cache *armredis.ResourceInfo) string {
-	if cache.Properties == nil || cache.Properties.SKU == nil {
-		return ""
-	}
-
-	sku := cache.Properties.SKU
-	if sku.Name == nil || sku.Family == nil || sku.Capacity == nil {
-		return ""
-	}
-
-	skuName := string(*sku.Name)
-	family := string(*sku.Family)
-	capacity := *sku.Capacity
-
-	// Build full SKU name like "Premium_P1"
-	return fmt.Sprintf("%s_%s%d", skuName, family, capacity)
-}
-
-// convertSKUSetToSlice converts a map of SKUs to a sorted slice.
-func convertSKUSetToSlice(skuSet map[string]bool) []string {
-	skus := make([]string, 0, len(skuSet))
-	for sku := range skuSet {
-		skus = append(skus, sku)
-	}
-	return skus
-}
-
-// getCommonSKUs returns common Redis Cache SKUs.
-func (c *Client) getCommonSKUs() []string {
-	return []string{
-		// Basic tier
-		"Basic_C0", "Basic_C1", "Basic_C2", "Basic_C3", "Basic_C4", "Basic_C5", "Basic_C6",
-		// Standard tier
-		"Standard_C0", "Standard_C1", "Standard_C2", "Standard_C3", "Standard_C4", "Standard_C5", "Standard_C6",
-		// Premium tier (most commonly reserved)
-		"Premium_P1", "Premium_P2", "Premium_P3", "Premium_P4", "Premium_P5",
-	}
 }
 
 // RedisPricing contains pricing information for Redis Cache.
