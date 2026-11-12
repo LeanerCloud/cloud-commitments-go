@@ -230,39 +230,6 @@ func (m *MockOperation) Wait(ctx context.Context, opts ...gax.CallOption) error 
 	return m.err
 }
 
-// MockMachineTypesService mocks the MachineTypesService interface.
-type MockMachineTypesService struct {
-	err          error
-	machineTypes []*computepb.MachineType
-}
-
-func (m *MockMachineTypesService) List(ctx context.Context, req *computepb.ListMachineTypesRequest) MachineTypesIterator {
-	return &MockMachineTypesIterator{machineTypes: m.machineTypes, err: m.err}
-}
-
-func (m *MockMachineTypesService) Close() error {
-	return nil
-}
-
-// MockMachineTypesIterator mocks the MachineTypesIterator interface.
-type MockMachineTypesIterator struct {
-	err          error
-	machineTypes []*computepb.MachineType
-	index        int
-}
-
-func (m *MockMachineTypesIterator) Next() (*computepb.MachineType, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	if m.index >= len(m.machineTypes) {
-		return nil, iterator.Done
-	}
-	mt := m.machineTypes[m.index]
-	m.index++
-	return mt, nil
-}
-
 // MockBillingService mocks the BillingService interface.
 type MockBillingService struct {
 	skus *cloudbilling.ListSkusResponse
@@ -1133,11 +1100,6 @@ func TestComputeEngineClient_SetterMethods(t *testing.T) {
 	mockCommit := &MockCommitmentsService{}
 	client.SetCommitmentsService(mockCommit)
 	assert.Equal(t, mockCommit, client.commitmentsService)
-
-	// Test SetMachineTypesService
-	mockMT := &MockMachineTypesService{}
-	client.SetMachineTypesService(mockMT)
-	assert.Equal(t, mockMT, client.machineTypesService)
 
 	// Test SetBillingService
 	mockBilling := &MockBillingService{}

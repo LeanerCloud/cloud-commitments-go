@@ -4,13 +4,11 @@ package cloudsql
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"cloud.google.com/go/recommender/apiv1/recommenderpb"
 	"google.golang.org/api/cloudbilling/v1"
 	"google.golang.org/api/option"
-	"google.golang.org/api/sqladmin/v1"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skulist"
@@ -19,13 +17,6 @@ import (
 
 // BillingService lists SKUs of one Cloud Billing service (enables mocking).
 type BillingService = skulist.BillingService
-
-// SQLAdminService interface for SQL admin operations (enables mocking).
-type SQLAdminService interface {
-	ListInstances(projectID string) (*sqladmin.InstancesListResponse, error)
-	InsertInstance(projectID string, instance *sqladmin.DatabaseInstance) (*sqladmin.Operation, error)
-	ListTiers(projectID string) (*sqladmin.TiersListResponse, error)
-}
 
 // RecommenderIterator preserves the legacy iteration API for source compatibility.
 //
@@ -44,12 +35,11 @@ type RecommenderClient interface {
 
 // Client handles GCP Cloud SQL commitments.
 type Client struct {
-	skus            skulist.Cache
-	projectID       string
-	region          string
-	sqlAdminService SQLAdminService
-	billingService  BillingService
-	clientOpts      []option.ClientOption
+	skus           skulist.Cache
+	projectID      string
+	region         string
+	billingService BillingService
+	clientOpts     []option.ClientOption
 }
 
 // NewClient creates a new GCP Cloud SQL client.
@@ -59,11 +49,6 @@ func NewClient(ctx context.Context, projectID, region string, opts ...option.Cli
 		region:     region,
 		clientOpts: opts,
 	}, nil
-}
-
-// SetSQLAdminService sets the SQL admin service (for testing).
-func (c *Client) SetSQLAdminService(svc SQLAdminService) {
-	c.sqlAdminService = svc
 }
 
 // SetBillingService sets the billing service (for testing).
@@ -193,16 +178,6 @@ func extractSQLPricingFromSKUs(skus []*cloudbilling.Sku, tier, region string, te
 	return skumatch.ExtractPricing(skus, func(sku *cloudbilling.Sku) bool {
 		return skumatch.MatchesTier(sku, tier, region)
 	}, skumatch.HourlyUnitPrice, termYears)
-}
-
-// contains checks if a slice contains a string.
-func contains(slice []string, str string) bool {
-	for _, s := range slice {
-		if strings.EqualFold(s, str) {
-			return true
-		}
-	}
-	return false
 }
 
 // listSKUs returns the service's SKU catalog, listing it once per client so

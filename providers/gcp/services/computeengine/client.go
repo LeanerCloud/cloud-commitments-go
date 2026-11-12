@@ -224,17 +224,6 @@ type CommitmentsOperation interface {
 	Wait(ctx context.Context, opts ...gax.CallOption) error
 }
 
-// MachineTypesService interface for machine types operations (enables mocking).
-type MachineTypesService interface {
-	List(ctx context.Context, req *computepb.ListMachineTypesRequest) MachineTypesIterator
-	Close() error
-}
-
-// MachineTypesIterator interface for machine types iteration (enables mocking).
-type MachineTypesIterator interface {
-	Next() (*computepb.MachineType, error)
-}
-
 // BillingService interface for billing operations (enables mocking).
 type BillingService interface {
 	ListSKUs(ctx context.Context, serviceID string) (*cloudbilling.ListSkusResponse, error)
@@ -253,15 +242,14 @@ type RecommenderClient interface {
 
 // Client handles GCP Compute Engine Committed Use Discounts.
 type Client struct {
-	commitmentsService  CommitmentsService
-	machineTypesService MachineTypesService
-	billingService      BillingService
-	recommenderClient   RecommenderClient
-	projectID           string
-	region              string
-	clientOpts          []option.ClientOption
-	skuCache            []*cloudbilling.Sku
-	skuMu               sync.Mutex
+	commitmentsService CommitmentsService
+	billingService     BillingService
+	recommenderClient  RecommenderClient
+	projectID          string
+	region             string
+	clientOpts         []option.ClientOption
+	skuCache           []*cloudbilling.Sku
+	skuMu              sync.Mutex
 }
 
 // NewClient creates a new GCP Compute Engine client.
@@ -276,11 +264,6 @@ func NewClient(projectID, region string, opts ...option.ClientOption) (*Client, 
 // SetCommitmentsService sets the commitments service (for testing).
 func (c *Client) SetCommitmentsService(svc CommitmentsService) {
 	c.commitmentsService = svc
-}
-
-// SetMachineTypesService sets the machine types service (for testing).
-func (c *Client) SetMachineTypesService(svc MachineTypesService) {
-	c.machineTypesService = svc
 }
 
 // SetBillingService sets the billing service (for testing).

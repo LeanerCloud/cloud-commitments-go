@@ -10,43 +10,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/cloudbilling/v1"
 	"google.golang.org/api/iterator"
-	"google.golang.org/api/sqladmin/v1"
 	"google.golang.org/genproto/googleapis/type/money"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skumatch"
 )
-
-// MockSQLAdminService mocks the SQLAdminService interface.
-type MockSQLAdminService struct {
-	instances    *sqladmin.InstancesListResponse
-	tiers        *sqladmin.TiersListResponse
-	operation    *sqladmin.Operation
-	err          error
-	insertCalled bool
-}
-
-func (m *MockSQLAdminService) ListInstances(projectID string) (*sqladmin.InstancesListResponse, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	return m.instances, nil
-}
-
-func (m *MockSQLAdminService) InsertInstance(projectID string, instance *sqladmin.DatabaseInstance) (*sqladmin.Operation, error) {
-	m.insertCalled = true
-	if m.err != nil {
-		return nil, m.err
-	}
-	return m.operation, nil
-}
-
-func (m *MockSQLAdminService) ListTiers(projectID string) (*sqladmin.TiersListResponse, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	return m.tiers, nil
-}
 
 // MockBillingService mocks the BillingService interface.
 type MockBillingService struct {
@@ -128,55 +96,6 @@ func TestCloudSQLClient_GetRegion(t *testing.T) {
 			t.Parallel()
 			client, _ := NewClient(ctx, "project", tt.region)
 			assert.Equal(t, tt.expected, client.GetRegion())
-		})
-	}
-}
-
-func TestContains(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name     string
-		slice    []string
-		str      string
-		expected bool
-	}{
-		{
-			name:     "String found in slice",
-			slice:    []string{"us-central1", "us-east1", "us-west1"},
-			str:      "us-central1",
-			expected: true,
-		},
-		{
-			name:     "String not found in slice",
-			slice:    []string{"us-central1", "us-east1", "us-west1"},
-			str:      "europe-west1",
-			expected: false,
-		},
-		{
-			name:     "Case insensitive match",
-			slice:    []string{"US-CENTRAL1", "US-EAST1"},
-			str:      "us-central1",
-			expected: true,
-		},
-		{
-			name:     "Empty slice",
-			slice:    []string{},
-			str:      "any",
-			expected: false,
-		},
-		{
-			name:     "Empty string search",
-			slice:    []string{"us-central1"},
-			str:      "",
-			expected: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			result := contains(tt.slice, tt.str)
-			assert.Equal(t, tt.expected, result)
 		})
 	}
 }
@@ -308,13 +227,6 @@ func TestCloudSQLClient_PurchaseCommitment_NotSupported(t *testing.T) {
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
-	mockService := &MockSQLAdminService{
-		// If PurchaseCommitment ever calls InsertInstance, this would report a
-		// completed operation; the assertions below ensure it is never invoked.
-		operation: &sqladmin.Operation{Status: "DONE"},
-	}
-	client.SetSQLAdminService(mockService)
-
 	rec := common.Recommendation{
 		ResourceType:   "db-n1-standard-1",
 		CommitmentCost: 1000.0,
@@ -327,8 +239,6 @@ func TestCloudSQLClient_PurchaseCommitment_NotSupported(t *testing.T) {
 	assert.False(t, result.Success)
 	assert.Empty(t, result.CommitmentID)
 	assert.ErrorIs(t, result.Error, common.ErrCommitmentPurchaseNotSupported)
-	// The critical guarantee: a "purchase" must never create infrastructure.
-	assert.False(t, mockService.insertCalled, "PurchaseCommitment must not call InsertInstance")
 }
 
 // sqlMockSkus returns a slice with both an on-demand and a commitment SKU for
@@ -480,11 +390,6 @@ func TestCloudSQLClient_SetterMethods(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	// Test SetSQLAdminService
-	mockSQL := &MockSQLAdminService{}
-	client.SetSQLAdminService(mockSQL)
-	assert.Equal(t, mockSQL, client.sqlAdminService)
 
 	// Test SetBillingService
 	mockBilling := &MockBillingService{}
