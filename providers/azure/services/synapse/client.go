@@ -331,31 +331,6 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	}, nil
 }
 
-// GetValidResourceTypes returns the known Synapse Dedicated SQL Pool DWU SKUs
-// that support reservations. Azure Synapse reservations are available for
-// DW100c through DW30000c performance levels.
-func (c *Client) GetValidResourceTypes(_ context.Context) ([]string, error) {
-	return []string{
-		// Dedicated SQL Pool DWU levels (cDWU generation)
-		"DW100c",
-		"DW200c",
-		"DW300c",
-		"DW400c",
-		"DW500c",
-		"DW1000c",
-		"DW1500c",
-		"DW2000c",
-		"DW2500c",
-		"DW3000c",
-		"DW5000c",
-		"DW6000c",
-		"DW7500c",
-		"DW10000c",
-		"DW15000c",
-		"DW30000c",
-	}, nil
-}
-
 // Pricing holds pricing information for Synapse Analytics.
 type Pricing struct {
 	Currency         string

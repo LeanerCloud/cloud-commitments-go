@@ -277,78 +277,6 @@ func TestClient_GetExistingCommitments(t *testing.T) {
 	}
 }
 
-func TestClient_GetValidResourceTypes(t *testing.T) {
-	t.Parallel()
-	mockRS := new(MockRedshiftClient)
-	client := &Client{
-		client: mockRS,
-		region: "us-east-1",
-	}
-
-	mockRS.On("DescribeReservedNodeOfferings", mock.Anything, mock.Anything).
-		Return(&redshift.DescribeReservedNodeOfferingsOutput{
-			ReservedNodeOfferings: []types.ReservedNodeOffering{
-				{NodeType: aws.String("dc2.large")},
-				{NodeType: aws.String("dc2.8xlarge")},
-				{NodeType: aws.String("ra3.xlplus")},
-				{NodeType: aws.String("ra3.4xlarge")},
-				{NodeType: aws.String("ra3.16xlarge")},
-			},
-		}, nil)
-
-	result, err := client.GetValidResourceTypes(context.Background())
-
-	assert.NoError(t, err)
-	assert.NotEmpty(t, result)
-	assert.Contains(t, result, "dc2.large")
-	assert.Contains(t, result, "dc2.8xlarge")
-	assert.Contains(t, result, "ra3.xlplus")
-	assert.Contains(t, result, "ra3.4xlarge")
-	assert.Contains(t, result, "ra3.16xlarge")
-}
-
-func TestClient_ValidateOffering(t *testing.T) {
-	t.Parallel()
-	mockRS := &MockRedshiftClient{}
-	client := &Client{
-		client: mockRS,
-		region: "us-east-1",
-	}
-
-	rec := common.Recommendation{
-		Service:       common.ServiceDataWarehouse,
-		ResourceType:  "dc2.large",
-		PaymentOption: "partial-upfront",
-		Term:          "1yr",
-		Details: common.DataWarehouseDetails{
-			NodeType:      "dc2.large",
-			NumberOfNodes: 2,
-		},
-	}
-
-	mockRS.On("DescribeReservedNodeOfferings", mock.Anything, mock.Anything).
-		Return(&redshift.DescribeReservedNodeOfferingsOutput{
-			ReservedNodeOfferings: []types.ReservedNodeOffering{
-				{
-					ReservedNodeOfferingId:   aws.String("offering-123"),
-					NodeType:                 aws.String("dc2.large"),
-					Duration:                 aws.Int32(31536000),
-					ReservedNodeOfferingType: types.ReservedNodeOfferingType("Regular"),
-					// partial-upfront price shape: upfront + recurring (08-H2).
-					FixedPrice: aws.Float64(500.0),
-					RecurringCharges: []types.RecurringCharge{{
-						RecurringChargeAmount:    aws.Float64(0.10),
-						RecurringChargeFrequency: aws.String("Hourly"),
-					}},
-				},
-			},
-		}, nil)
-
-	err := client.ValidateOffering(context.Background(), rec)
-	assert.NoError(t, err)
-	mockRS.AssertExpectations(t)
-}
-
 func TestClient_PurchaseCommitment(t *testing.T) {
 	t.Parallel()
 	mockRS := &MockRedshiftClient{}
@@ -933,7 +861,7 @@ func TestClient_FindOfferingID_NoMatchingNodeType(t *testing.T) {
 			},
 		}, nil).Once()
 
-	err := client.ValidateOffering(context.Background(), rec)
+	_, err := client.findOfferingID(context.Background(), rec, "")
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no offerings found")
@@ -968,7 +896,7 @@ func TestClient_FindOfferingID_NoMatchingDuration(t *testing.T) {
 			},
 		}, nil).Once()
 
-	err := client.ValidateOffering(context.Background(), rec)
+	_, err := client.findOfferingID(context.Background(), rec, "")
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no offerings found")
@@ -1006,7 +934,7 @@ func TestClient_FindOfferingID_UnknownOfferingType(t *testing.T) {
 			},
 		}, nil).Once()
 
-	err := client.ValidateOffering(context.Background(), rec)
+	_, err := client.findOfferingID(context.Background(), rec, "")
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unexpected type")

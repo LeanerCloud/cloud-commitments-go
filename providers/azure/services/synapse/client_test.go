@@ -122,19 +122,6 @@ func TestGetRegion(t *testing.T) {
 	assert.Equal(t, "eastus", c.GetRegion())
 }
 
-// ---- GetValidResourceTypes ------------------------------------------------
-
-func TestGetValidResourceTypes(t *testing.T) {
-	t.Parallel()
-	c := newTestClient()
-	skus, err := c.GetValidResourceTypes(context.Background())
-	require.NoError(t, err)
-	assert.NotEmpty(t, skus)
-	assert.Contains(t, skus, "DW100c")
-	assert.Contains(t, skus, "DW30000c")
-	assert.Contains(t, skus, "DW1000c")
-}
-
 // ---- GetRecommendations ---------------------------------------------------
 
 func TestGetRecommendations_empty(t *testing.T) {

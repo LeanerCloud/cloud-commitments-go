@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"sort"
 	"strings"
 	"time"
 
@@ -279,7 +278,7 @@ const maxListPages = 50
 // payment-option filter, so matching is done client-side with a pagination cap
 // to prevent indefinite runtime (issue #688).
 // execID is the purchase execution UUID for log correlation; pass "" when
-// calling outside of a purchase flow (ValidateOffering, GetOfferingDetails).
+// calling outside of a purchase flow (GetOfferingDetails).
 func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation, execID string) (string, error) {
 	requiredMonths, err := requiredMonthsForTerm(rec.Term)
 	if err != nil {
@@ -448,12 +447,6 @@ func (c *Client) matchesOfferingType(offeringType string) bool {
 	return offeringType == "Regular" || offeringType == "Upgradable"
 }
 
-// ValidateOffering checks if an offering exists without purchasing.
-func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
-	_, err := c.findOfferingID(ctx, rec, "")
-	return err
-}
-
 // GetOfferingDetails retrieves offering details.
 // All prices are per ONE reservation (callers multiply by rec.Count): UpfrontCost is
 // FixedPrice, RecurringCost the hourly rate, TotalCost upfront plus hourly over the
@@ -531,48 +524,6 @@ func derivePaymentOption(offering redshifttypes.ReservedNodeOffering) string {
 	default:
 		return "unknown"
 	}
-}
-
-// GetValidResourceTypes returns valid Redshift node types by querying the API.
-func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
-	nodeTypes := make(map[string]bool)
-	var marker *string
-
-	for page := 0; ; page++ {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if page >= maxListPages {
-			return nil, fmt.Errorf("pagination cap reached after %d pages for Redshift offerings (issue #561)", maxListPages)
-		}
-		input := &redshift.DescribeReservedNodeOfferingsInput{
-			MaxRecords: aws.Int32(100),
-			Marker:     marker,
-		}
-
-		result, err := c.client.DescribeReservedNodeOfferings(ctx, input)
-		if err != nil {
-			return nil, fmt.Errorf("failed to describe offerings: %w", err)
-		}
-
-		for _, offering := range result.ReservedNodeOfferings {
-			if offering.NodeType != nil {
-				nodeTypes[*offering.NodeType] = true
-			}
-		}
-
-		if result.Marker == nil || aws.ToString(result.Marker) == "" {
-			break
-		}
-		marker = result.Marker
-	}
-
-	types := make([]string, 0, len(nodeTypes))
-	for nodeType := range nodeTypes {
-		types = append(types, nodeType)
-	}
-	sort.Strings(types)
-	return types, nil
 }
 
 // redshiftStatePendingPayment is how Redshift spells a just-purchased node whose
