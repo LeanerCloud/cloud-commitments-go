@@ -133,10 +133,6 @@ type Provider struct {
 
 // NewAzureProvider creates a new Azure provider instance.
 //
-// Subscription resolution order:
-//  1. config.AzureSubscriptionID (typed field, preferred)
-//  2. config.Profile (deprecated overload — kept for backwards compatibility)
-//
 // Credential resolution: if config.AzureTokenCredential is a non-nil
 // azcore.TokenCredential, it is installed directly so all downstream clients
 // use those credentials. Otherwise, GetCredentials lazily falls back to
@@ -146,7 +142,7 @@ func NewAzureProvider(config *provider.Config) (*Provider, error) {
 
 	if config != nil {
 		p.region = config.Region
-		p.subscriptionID = resolveAzureSubscriptionID(config)
+		p.subscriptionID = config.AzureSubscriptionID
 		if config.AzureTokenCredential != nil {
 			if cred, ok := config.AzureTokenCredential.(azcore.TokenCredential); ok {
 				p.cred = cred
@@ -161,15 +157,6 @@ func NewAzureProvider(config *provider.Config) (*Provider, error) {
 	}
 
 	return p, nil
-}
-
-// resolveAzureSubscriptionID picks the subscription ID from the typed field,
-// falling back to the deprecated Profile field.
-func resolveAzureSubscriptionID(config *provider.Config) string {
-	if config.AzureSubscriptionID != "" {
-		return config.AzureSubscriptionID
-	}
-	return config.Profile //nolint:staticcheck // SA1019: this is the one intentional read of the deprecated field, implementing its documented fallback
 }
 
 // SetSubscriptionsClient sets the subscriptions client (for testing).
@@ -367,7 +354,7 @@ func (p *Provider) ValidateCredentials(ctx context.Context) error {
 // GetAccounts returns all accessible Azure subscriptions.
 //
 // IsDefault is set to true for the subscription that matches (in priority order):
-//  1. The AzureSubscriptionID set in Config (or the Profile fallback).
+//  1. The AzureSubscriptionID set in Config.
 //  2. The AZURE_SUBSCRIPTION_ID environment variable.
 //  3. The sole subscription, when exactly one is visible (mirrors AWS behavior
 //     where the STS-identified account is always the default).
@@ -381,9 +368,8 @@ func (p *Provider) GetAccounts(ctx context.Context) ([]common.Account, error) {
 // configuredSubscriptionTarget returns the subscription this provider was
 // explicitly told to operate on, together with a label naming the knob it came
 // from so an error can tell the operator what to fix. It mirrors
-// resolveDefaultSubscription's priority: the Config field first (which
-// resolveAzureSubscriptionID may itself have taken from the deprecated Profile
-// overload, hence the generic label), then AZURE_SUBSCRIPTION_ID. Both return
+// resolveDefaultSubscription's priority: the Config field first, then
+// AZURE_SUBSCRIPTION_ID. Both return
 // values are empty when nothing was configured.
 //
 // p.subscriptionID is written once in NewAzureProvider and never mutated

@@ -104,8 +104,7 @@ type Provider struct {
 //
 // Project resolution order:
 //  1. config.GCPProjectID (typed field, preferred)
-//  2. config.Profile (deprecated overload — kept for backwards compatibility)
-//  3. Application Default Credentials' default project
+//  2. Application Default Credentials' default project
 //
 // Credential resolution: if config.GCPTokenSource is a non-nil
 // oauth2.TokenSource, it is installed via option.WithTokenSource so all
@@ -143,17 +142,13 @@ func NewProvider(config *provider.Config) (*Provider, error) {
 	}, nil
 }
 
-// resolveGCPProjectID picks the project ID from the typed field, falling
-// back to the deprecated Profile field. Returns "" if neither is set, which
+// resolveGCPProjectID returns the typed project ID, or "" if unset, which
 // signals the caller to consult ADC.
 func resolveGCPProjectID(config *provider.Config) string {
 	if config == nil {
 		return ""
 	}
-	if config.GCPProjectID != "" {
-		return config.GCPProjectID
-	}
-	return config.Profile //nolint:staticcheck // SA1019: this is the one intentional read of the deprecated field, implementing its documented fallback
+	return config.GCPProjectID
 }
 
 // NewProviderWithProject creates a new GCP provider with a specific project.

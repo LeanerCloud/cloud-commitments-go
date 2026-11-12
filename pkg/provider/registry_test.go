@@ -225,14 +225,12 @@ func TestProviderConfig_Struct(t *testing.T) {
 	t.Parallel()
 	config := Config{
 		Name:           "aws",
-		Profile:        "production",
 		Region:         "us-east-1",
 		CredentialPath: "/home/user/.aws/credentials",
 		Endpoint:       "https://custom.endpoint.com",
 	}
 
 	assert.Equal(t, "aws", config.Name)
-	assert.Equal(t, "production", config.Profile)
 	assert.Equal(t, "us-east-1", config.Region)
 	assert.Equal(t, "/home/user/.aws/credentials", config.CredentialPath)
 	assert.Equal(t, "https://custom.endpoint.com", config.Endpoint)

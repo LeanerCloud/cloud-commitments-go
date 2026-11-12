@@ -96,15 +96,9 @@ type Config struct {
 
 	Name string
 
-	// Deprecated: Profile is overloaded with provider-specific semantics
-	// (AWS: named profile, Azure: subscription ID, GCP: project ID). Prefer
-	// the typed AWSProfile/AzureSubscriptionID/GCPProjectID fields below;
-	// when both are set, the typed field wins.
-	Profile string
-
-	// Typed per-provider identity fields. When set, these take precedence
-	// over Profile. Each provider only reads its own field and ignores the
-	// others, so a single Config can be reused across providers.
+	// Typed per-provider identity fields. Each provider only reads its own
+	// field and ignores the others, so a single Config can be reused across
+	// providers.
 	AWSProfile          string // AWS named profile from ~/.aws/credentials or ~/.aws/config
 	AzureSubscriptionID string // Azure subscription ID (UUID)
 	GCPProjectID        string // GCP project ID (e.g. "my-project")

@@ -133,33 +133,24 @@ func TestNewAzureProvider(t *testing.T) {
 			expectedSubID:  "",
 		},
 		{
-			name: "With profile (subscription ID)",
+			name: "With AzureSubscriptionID",
 			config: &provider.Config{
-				Profile: "subscription-id-123",
+				AzureSubscriptionID: "subscription-id-123",
 			},
 			expectedRegion: "",
 			expectedSubID:  "subscription-id-123",
 		},
 		{
-			name: "With both region and profile",
+			name: "With both region and AzureSubscriptionID",
 			config: &provider.Config{
-				Region:  "eastus",
-				Profile: "my-subscription",
+				Region:              "eastus",
+				AzureSubscriptionID: "my-subscription",
 			},
 			expectedRegion: "eastus",
 			expectedSubID:  "my-subscription",
 		},
 		{
-			name: "Typed AzureSubscriptionID takes precedence over deprecated Profile",
-			config: &provider.Config{
-				AzureSubscriptionID: "typed-sub-id",
-				Profile:             "deprecated-sub-id",
-			},
-			expectedRegion: "",
-			expectedSubID:  "typed-sub-id",
-		},
-		{
-			name: "Typed AzureSubscriptionID alone (no Profile fallback needed)",
+			name: "Typed AzureSubscriptionID alone",
 			config: &provider.Config{
 				AzureSubscriptionID: "only-typed",
 			},

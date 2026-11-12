@@ -181,7 +181,6 @@ func TestProviderConfig_DefaultValues(t *testing.T) {
 
 	// Test zero values
 	assert.Equal(t, "", config.Name)
-	assert.Equal(t, "", config.Profile)
 	assert.Equal(t, "", config.Region)
 	assert.Equal(t, "", config.CredentialPath)
 	assert.Equal(t, "", config.Endpoint)
@@ -191,14 +190,12 @@ func TestProviderConfig_WithAllFields(t *testing.T) {
 	t.Parallel()
 	config := &Config{
 		Name:           "aws",
-		Profile:        "prod",
 		Region:         "us-west-2",
 		CredentialPath: "/etc/aws/creds",
 		Endpoint:       "https://localhost:4566",
 	}
 
 	assert.Equal(t, "aws", config.Name)
-	assert.Equal(t, "prod", config.Profile)
 	assert.Equal(t, "us-west-2", config.Region)
 	assert.Equal(t, "/etc/aws/creds", config.CredentialPath)
 	assert.Equal(t, "https://localhost:4566", config.Endpoint)

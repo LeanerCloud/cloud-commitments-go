@@ -103,33 +103,24 @@ func TestNewAWSProvider(t *testing.T) {
 			expectedRegion:  "us-west-2",
 		},
 		{
-			name: "With profile only",
+			name: "With AWSProfile only",
 			config: &provider.Config{
-				Profile: "my-profile",
+				AWSProfile: "my-profile",
 			},
 			expectedProfile: "my-profile",
 			expectedRegion:  "",
 		},
 		{
-			name: "With both profile and region",
+			name: "With both AWSProfile and region",
 			config: &provider.Config{
-				Profile: "production",
-				Region:  "eu-west-1",
+				AWSProfile: "production",
+				Region:     "eu-west-1",
 			},
 			expectedProfile: "production",
 			expectedRegion:  "eu-west-1",
 		},
 		{
-			name: "Typed AWSProfile takes precedence over deprecated Profile",
-			config: &provider.Config{
-				AWSProfile: "typed-profile",
-				Profile:    "deprecated-profile",
-			},
-			expectedProfile: "typed-profile",
-			expectedRegion:  "",
-		},
-		{
-			name: "Typed AWSProfile alone (no Profile fallback needed)",
+			name: "Typed AWSProfile alone",
 			config: &provider.Config{
 				AWSProfile: "only-typed",
 			},
@@ -1021,8 +1012,8 @@ func TestProviderRegistration(t *testing.T) {
 		registry := provider.GetRegistry()
 
 		config := &provider.Config{
-			Profile: "test-profile",
-			Region:  "us-west-2",
+			AWSProfile: "test-profile",
+			Region:     "us-west-2",
 		}
 
 		p, err := registry.GetProviderWithConfig("aws", config)

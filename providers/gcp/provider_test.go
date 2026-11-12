@@ -210,9 +210,8 @@ func TestGetDefaultProject_ListerError(t *testing.T) {
 }
 
 // TestNewProvider_ProjectIDResolution verifies the precedence chain when
-// resolving the project ID: typed GCPProjectID > deprecated Profile. The
-// "fall through to ADC" branch is exercised separately because it requires
-// ambient credentials.
+// resolving the project ID: typed GCPProjectID. The "fall through to
+// ADC" branch is exercised separately because it requires ambient credentials.
 func TestNewProvider_ProjectIDResolution(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -221,26 +220,11 @@ func TestNewProvider_ProjectIDResolution(t *testing.T) {
 		expected string
 	}{
 		{
-			name: "Typed GCPProjectID takes precedence over deprecated Profile",
-			config: &provider.Config{
-				GCPProjectID: "typed-project",
-				Profile:      "deprecated-project",
-			},
-			expected: "typed-project",
-		},
-		{
-			name: "Typed GCPProjectID alone (no Profile fallback needed)",
+			name: "Typed GCPProjectID is used",
 			config: &provider.Config{
 				GCPProjectID: "only-typed",
 			},
 			expected: "only-typed",
-		},
-		{
-			name: "Deprecated Profile is honored when typed field is empty",
-			config: &provider.Config{
-				Profile: "legacy-project",
-			},
-			expected: "legacy-project",
 		},
 		{
 			name:     "Nil config resolves to empty (caller falls through to ADC)",
@@ -403,7 +387,7 @@ func TestNewProvider_WithConfig(t *testing.T) {
 	t.Parallel()
 	// Test NewProvider with a config containing a project ID
 	config := &provider.Config{
-		Profile: "test-project-id",
+		GCPProjectID: "test-project-id",
 	}
 
 	p, err := NewProvider(config)

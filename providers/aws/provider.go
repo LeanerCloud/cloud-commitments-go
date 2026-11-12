@@ -94,29 +94,16 @@ type Provider struct {
 }
 
 // NewAWSProvider creates a new AWS provider instance.
-//
-// Profile resolution order:
-//  1. config.AWSProfile (typed field, preferred)
-//  2. config.Profile (deprecated overload — kept for backwards compatibility)
 func NewAWSProvider(cfg *provider.Config) (*Provider, error) {
 	p := &Provider{}
 
 	if cfg != nil {
-		p.profile = resolveAWSProfile(cfg)
+		p.profile = cfg.AWSProfile
 		p.region = cfg.Region
 		p.credentialsProvider = cfg.AWSCredentialsProvider
 	}
 
 	return p, nil
-}
-
-// resolveAWSProfile picks the AWS profile name from the typed field,
-// falling back to the deprecated Profile field.
-func resolveAWSProfile(cfg *provider.Config) string {
-	if cfg.AWSProfile != "" {
-		return cfg.AWSProfile
-	}
-	return cfg.Profile //nolint:staticcheck // SA1019: this is the one intentional read of the deprecated field, implementing its documented fallback
 }
 
 // SetConfigLoader sets the config loader (for testing).
