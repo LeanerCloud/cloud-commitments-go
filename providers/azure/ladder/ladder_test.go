@@ -256,9 +256,7 @@ func TestAzureLadder_GetUsageBaselineIsBlocked(t *testing.T) {
 func TestAzureLadder_WriteSideNotWired(t *testing.T) {
 	t.Parallel()
 	a, f := newTestLadder(t)
-	_, err := a.PurchaseLayer(context.Background(), ladder.LayerAzureSavingsPlan, common.Recommendation{}, common.PurchaseOptions{})
-	assert.ErrorIs(t, err, ErrWriteNotWired)
-	_, err = a.ReshapeBuffer(context.Background(), testScope(), ladder.BufferReshapeConfig{})
+	_, err := a.ReshapeBuffer(context.Background(), testScope(), ladder.BufferReshapeConfig{})
 	assert.ErrorIs(t, err, ErrWriteNotWired)
 	assert.Zero(t, f.totalCalls())
 }

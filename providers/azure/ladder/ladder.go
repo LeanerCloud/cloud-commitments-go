@@ -22,9 +22,8 @@ const (
 // existing commitment twice or not at all.
 var ErrBaselineBasisUnresolved = errors.New("azure usage baseline blocked: the basis decision (residual or total usage) recorded in the go#28 plan is not settled")
 
-// ErrWriteNotWired is returned by PurchaseLayer and ReshapeBuffer until the
-// write side (slice C of go#28) is wired.
-var ErrWriteNotWired = errors.New("azure ladder write side not wired: PurchaseLayer and ReshapeBuffer arrive with go#28 slice C")
+// ErrWriteNotWired is returned by ReshapeBuffer until go#28 slice C2 wires it.
+var ErrWriteNotWired = errors.New("azure ladder write side not wired: ReshapeBuffer arrives with go#28 slice C2")
 
 type commitmentLister interface {
 	GetExistingCommitments(ctx context.Context) ([]common.Commitment, error)
@@ -45,14 +44,18 @@ type AzureLadder struct {
 	savingsPlans commitmentLister
 	spUtil       savingsPlanUtilizationSource
 	riUtil       riUtilizationSource
-	subscription string
+	spPurchase   commitmentPurchaser
+	riPurchase   commitmentPurchaser
+
+	subscription     string
+	executionEnabled bool
 }
 
 var _ ladder.LadderCapability = (*AzureLadder)(nil)
 
-// NewAzureLadder wires the existing Azure clients into a read-only ladder
-// capability for the given subscription.
-func NewAzureLadder(subscriptionID string, reservations, savingsPlans commitmentLister, spUtil savingsPlanUtilizationSource, riUtil riUtilizationSource) (*AzureLadder, error) {
+// NewAzureLadder wires the existing Azure clients into a ladder capability for
+// the given subscription; purchases stay off unless WithPurchase enables them.
+func NewAzureLadder(subscriptionID string, reservations, savingsPlans commitmentLister, spUtil savingsPlanUtilizationSource, riUtil riUtilizationSource, opts ...Option) (*AzureLadder, error) {
 	switch {
 	case subscriptionID == "":
 		return nil, errors.New("AzureLadder: subscription ID must not be empty")
@@ -65,7 +68,16 @@ func NewAzureLadder(subscriptionID string, reservations, savingsPlans commitment
 	case riUtil == nil:
 		return nil, errors.New("AzureLadder: reservation utilization source must not be nil")
 	}
-	return &AzureLadder{subscription: subscriptionID, reservations: reservations, savingsPlans: savingsPlans, spUtil: spUtil, riUtil: riUtil}, nil
+	a := &AzureLadder{subscription: subscriptionID, reservations: reservations, savingsPlans: savingsPlans, spUtil: spUtil, riUtil: riUtil}
+	for _, opt := range opts {
+		if opt == nil {
+			return nil, errors.New("AzureLadder: option must not be nil")
+		}
+		if err := opt(a); err != nil {
+			return nil, fmt.Errorf("AzureLadder: %w", err)
+		}
+	}
+	return a, nil
 }
 
 // Provider returns common.ProviderAzure.
@@ -293,12 +305,7 @@ func (a *AzureLadder) GetUsageBaseline(context.Context, ladder.Scope, int, float
 	return ladder.UsageBaseline{}, ErrBaselineBasisUnresolved
 }
 
-// PurchaseLayer is not wired until slice C.
-func (a *AzureLadder) PurchaseLayer(context.Context, ladder.LayerType, common.Recommendation, common.PurchaseOptions) (common.PurchaseResult, error) {
-	return common.PurchaseResult{}, ErrWriteNotWired
-}
-
-// ReshapeBuffer is not wired until slice C.
+// ReshapeBuffer is not wired until slice C2.
 func (a *AzureLadder) ReshapeBuffer(context.Context, ladder.Scope, ladder.BufferReshapeConfig) (ladder.ReshapeSummary, error) {
 	return ladder.ReshapeSummary{}, ErrWriteNotWired
 }
