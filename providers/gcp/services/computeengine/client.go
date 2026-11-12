@@ -49,9 +49,6 @@ const maxCommitmentsPages = 50
 var liveCommitmentsFilter = fmt.Sprintf("(status != %s) (status != %s)",
 	computepb.Commitment_EXPIRED.String(), computepb.Commitment_CANCELLED.String()) //nolint:misspell // SDK identifier
 
-// maxMachineTypeItems caps GCP machine types iteration (one item per Next() call).
-const maxMachineTypeItems = 20
-
 // termPlan converts a commitment term string to the canonical GCP Compute API
 // commitment plan value derived from the SDK enum constants. Term parsing is
 // delegated to skumatch.TermYears; unlike it, an empty term is an error here
@@ -317,19 +314,6 @@ func (r *realCommitmentsService) Get(ctx context.Context, req *computepb.GetRegi
 }
 
 func (r *realCommitmentsService) Close() error {
-	return r.client.Close()
-}
-
-// realMachineTypesService wraps the real compute.MachineTypesClient.
-type realMachineTypesService struct {
-	client *compute.MachineTypesClient
-}
-
-func (r *realMachineTypesService) List(ctx context.Context, req *computepb.ListMachineTypesRequest) MachineTypesIterator {
-	return r.client.List(ctx, req)
-}
-
-func (r *realMachineTypesService) Close() error {
 	return r.client.Close()
 }
 
@@ -901,56 +885,6 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 
 	offeringID := fmt.Sprintf("gcp-compute-%s-%s-%s", rec.ResourceType, c.region, rec.Term)
 	return skumatch.OfferingDetails(rec, offeringID, termYears, pricing.CommitmentPrice, pricing.HourlyRate, pricing.Currency)
-}
-
-// GetValidResourceTypes returns valid machine types from GCP Compute API.
-func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
-	// Use injected service if available (for testing)
-	var svc MachineTypesService
-	if c.machineTypesService != nil {
-		svc = c.machineTypesService
-	} else {
-		client, err := compute.NewMachineTypesRESTClient(ctx, c.clientOpts...)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create machine types client: %w", err)
-		}
-		svc = &realMachineTypesService{client: client}
-	}
-	defer svc.Close()
-
-	req := &computepb.ListMachineTypesRequest{
-		Project: c.projectID,
-		Zone:    c.region + "-a", // Use zone a for the region
-	}
-
-	machineTypes := make([]string, 0)
-	it := svc.List(ctx, req)
-
-	for itemIdx := 0; ; itemIdx++ {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context canceled during pagination: %w", err)
-		}
-		if itemIdx >= maxMachineTypeItems {
-			return nil, fmt.Errorf("computeengine: GetValidResourceTypes iteration cap (%d items) reached", maxMachineTypeItems)
-		}
-		machineType, err := it.Next()
-		if errors.Is(err, iterator.Done) {
-			break
-		}
-		if err != nil {
-			return nil, fmt.Errorf("failed to list machine types: %w", err)
-		}
-
-		if machineType.Name != nil {
-			machineTypes = append(machineTypes, *machineType.Name)
-		}
-	}
-
-	if len(machineTypes) == 0 {
-		return nil, fmt.Errorf("no machine types found for region %s", c.region)
-	}
-
-	return machineTypes, nil
 }
 
 // getOrCreateBillingService returns the billing service, creating it if needed.

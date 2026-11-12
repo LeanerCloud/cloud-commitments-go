@@ -476,57 +476,6 @@ func TestComputeEngineClient_GetExistingCommitments_NilName(t *testing.T) {
 	assert.Empty(t, commitments)
 }
 
-func TestComputeEngineClient_GetValidResourceTypes_WithMock(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client, _ := NewClient("test-project", "us-central1")
-
-	name1, name2 := "n1-standard-1", "n1-standard-2"
-	mockService := &MockMachineTypesService{
-		machineTypes: []*computepb.MachineType{
-			{Name: &name1},
-			{Name: &name2},
-		},
-	}
-	client.SetMachineTypesService(mockService)
-
-	types, err := client.GetValidResourceTypes(ctx)
-	require.NoError(t, err)
-	assert.Len(t, types, 2)
-	assert.Contains(t, types, "n1-standard-1")
-	assert.Contains(t, types, "n1-standard-2")
-}
-
-func TestComputeEngineClient_GetValidResourceTypes_Error(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client, _ := NewClient("test-project", "us-central1")
-
-	mockService := &MockMachineTypesService{
-		err: errors.New("API error"),
-	}
-	client.SetMachineTypesService(mockService)
-
-	_, err := client.GetValidResourceTypes(ctx)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to list machine types")
-}
-
-func TestComputeEngineClient_GetValidResourceTypes_Empty(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client, _ := NewClient("test-project", "us-central1")
-
-	mockService := &MockMachineTypesService{
-		machineTypes: []*computepb.MachineType{},
-	}
-	client.SetMachineTypesService(mockService)
-
-	_, err := client.GetValidResourceTypes(ctx)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "no machine types found")
-}
-
 func TestComputeEngineClient_PurchaseCommitment_WithMock(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
