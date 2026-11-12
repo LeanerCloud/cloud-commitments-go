@@ -847,7 +847,6 @@ func TestSearchClient_SetterMethods(t *testing.T) {
 	mockResPager := &MockReservationsDetailsPager{}
 	client.SetReservationsPager(mockResPager)
 	assert.Equal(t, mockResPager, client.reservationsPager)
-
 }
 
 // TestSearchClient_ConvertAzureSearchRecommendation_NilGuards pins the contract:
