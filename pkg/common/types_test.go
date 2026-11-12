@@ -703,3 +703,17 @@ func TestRecommendation_CrossAttributionsJSON(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotContains(t, string(b), "cross_attributions")
 }
+
+func TestRecommendationPricedJSONRoundTrip(t *testing.T) {
+	b, err := json.Marshal(Recommendation{})
+	require.NoError(t, err)
+	assert.NotContains(t, string(b), `"priced"`)
+
+	b, err = json.Marshal(Recommendation{Priced: true})
+	require.NoError(t, err)
+	assert.Contains(t, string(b), `"priced":true`)
+
+	var out Recommendation
+	require.NoError(t, json.Unmarshal(b, &out))
+	assert.True(t, out.Priced)
+}

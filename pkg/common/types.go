@@ -338,6 +338,12 @@ type Recommendation struct {
 	// genuine zero-coverage pools. RI --target-coverage sizing drops recs
 	// with Known=false and positive average demand (target-coverage-unknown).
 	ExistingCoverageKnown bool `json:"existing_coverage_known,omitempty" csv:"-"`
+
+	// Priced is true only when the parser got OnDemandCost and EstimatedSavings
+	// from the provider source, so a reported 0 is distinguishable from an
+	// absent figure (go#326). False means unknown, not zero; parsers that have
+	// not been audited leave it unset.
+	Priced bool `json:"priced,omitempty" csv:"-"`
 }
 
 // ServiceDetails is an interface for service-specific details.
