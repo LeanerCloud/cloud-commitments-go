@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -22,8 +23,9 @@ const (
 // existing commitment twice or not at all.
 var ErrBaselineBasisUnresolved = errors.New("azure usage baseline blocked: the basis decision (residual or total usage) recorded in the go#28 plan is not settled")
 
-// ErrWriteNotWired is returned by ReshapeBuffer until go#28 slice C2 wires it.
-var ErrWriteNotWired = errors.New("azure ladder write side not wired: ReshapeBuffer arrives with go#28 slice C2")
+// ErrWriteNotWired is returned by ReshapeBuffer when execution is enabled but no
+// exchange client was supplied through WithExchange.
+var ErrWriteNotWired = errors.New("azure ladder exchange client not wired: pass WithExchange")
 
 type commitmentLister interface {
 	GetExistingCommitments(ctx context.Context) ([]common.Commitment, error)
@@ -46,8 +48,12 @@ type AzureLadder struct {
 	riUtil       riUtilizationSource
 	spPurchase   commitmentPurchaser
 	riPurchase   commitmentPurchaser
+	exchange     exchangeClient
 
+	now              func() time.Time
 	subscription     string
+	dailySpend       dailySpend
+	reshapeMu        sync.Mutex
 	executionEnabled bool
 }
 
@@ -303,9 +309,4 @@ func savingsPlanOrderID(planID string) (string, error) {
 // GetUsageBaseline is blocked on the basis decision; it never computes a baseline.
 func (a *AzureLadder) GetUsageBaseline(context.Context, ladder.Scope, int, float64) (ladder.UsageBaseline, error) {
 	return ladder.UsageBaseline{}, ErrBaselineBasisUnresolved
-}
-
-// ReshapeBuffer is not wired until slice C2.
-func (a *AzureLadder) ReshapeBuffer(context.Context, ladder.Scope, ladder.BufferReshapeConfig) (ladder.ReshapeSummary, error) {
-	return ladder.ReshapeSummary{}, ErrWriteNotWired
 }
