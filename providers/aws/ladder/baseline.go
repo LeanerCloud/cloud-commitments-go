@@ -3,6 +3,7 @@ package ladder
 import (
 	"context"
 	"fmt"
+	"log"
 	"math"
 	"sort"
 	"time"
@@ -113,7 +114,7 @@ func (a *AWSLadder) GetUsageBaseline(ctx context.Context, scope ladder.Scope, lo
 		return ladder.UsageBaseline{}, fmt.Errorf("GetUsageBaseline: %w", vErr)
 	}
 
-	lowWater, stable, err := a.baselineStats(series, percentile)
+	lowWater, stable, err := a.baselineStats(ctx, series, percentile, lookbackDays, today)
 	if err != nil {
 		return ladder.UsageBaseline{}, err
 	}
@@ -299,7 +300,7 @@ func nearestRankPercentile(data []float64, p float64) (float64, error) {
 // baselineStats derives the low-water mark and, when a buffer fraction was
 // configured, the stable estimate. Errors are returned fully prefixed. It is
 // split out so GetUsageBaseline stays within the cyclomatic-complexity limit.
-func (a *AWSLadder) baselineStats(series []float64, percentile float64) (lowWater float64, stable *float64, err error) {
+func (a *AWSLadder) baselineStats(ctx context.Context, series []float64, percentile float64, lookbackDays int, today time.Time) (lowWater float64, stable *float64, err error) {
 	lowWater, err = nearestRankPercentile(series, percentile)
 	if err != nil {
 		return 0, nil, fmt.Errorf("GetUsageBaseline: percentile computation failed: %w", err)
@@ -311,5 +312,43 @@ func (a *AWSLadder) baselineStats(series []float64, percentile float64) (lowWate
 	if err != nil {
 		return 0, nil, fmt.Errorf("GetUsageBaseline: stable usage estimate: %w", err)
 	}
+	if a.family != nil {
+		stable, err = a.familyStable(ctx, lookbackDays, today, stable)
+		if err != nil {
+			return 0, nil, err
+		}
+	}
 	return lowWater, stable, nil
+}
+
+// familyStable replaces the flat stable estimate with the per-family one. A nil
+// flat estimate stays nil without a family fetch. A family fetch error logs a
+// warning and keeps the flat estimate, so base-layer availability is unchanged.
+// Family series get the same freshness checks as the flat series.
+func (a *AWSLadder) familyStable(ctx context.Context, lookbackDays int, today time.Time, flat *float64) (*float64, error) {
+	if flat == nil {
+		return nil, nil
+	}
+	fams, err := a.family.GetOnDemandFamilySeries(ctx, a.cfg.Region, lookbackDays)
+	if err != nil {
+		// Keep base-layer availability: a family fetch failure falls back to the
+		// flat estimate, loudly, instead of failing the whole baseline.
+		log.Printf("WARNING: AWSLadder GetUsageBaseline: family stable degraded to flat estimate (source=GetOnDemandFamilySeries, region=%s): %v", a.cfg.Region, err)
+		return flat, nil
+	}
+	values := make(map[string][]float64, len(fams))
+	for family, points := range fams {
+		if len(points) == 0 {
+			return nil, fmt.Errorf("GetUsageBaseline: family %s: series is empty", family)
+		}
+		if fErr := validateSeriesFreshness(points, today); fErr != nil {
+			return nil, fmt.Errorf("GetUsageBaseline: family %s: %w", family, fErr)
+		}
+		values[family] = extractValues(points)
+	}
+	stable, err := familyStableUSDPerHour(values, flat, *a.bufferFraction)
+	if err != nil {
+		return nil, fmt.Errorf("GetUsageBaseline: family stable estimate: %w", err)
+	}
+	return stable, nil
 }

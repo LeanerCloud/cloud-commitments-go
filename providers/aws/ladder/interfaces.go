@@ -102,6 +102,14 @@ type onDemandSeriesSource interface {
 	GetOnDemandSeries(ctx context.Context, region string, lookbackDays int) ([]DailyPoint, error)
 }
 
+// onDemandFamilySource is the optional per-instance-family companion of
+// onDemandSeriesSource. Keys are EC2 instance families (for example "m5"); a
+// family absent from the map has no spend in the window. It is wired only by
+// the factory: a nil family source keeps the flat stable estimate unchanged.
+type onDemandFamilySource interface {
+	GetOnDemandFamilySeries(ctx context.Context, region string, lookbackDays int) (map[string][]DailyPoint, error)
+}
+
 // utilizationSource is the narrow interface for RI utilization data.
 // The real implementation is RecommendationsClientAdapter.GetRIUtilization.
 type utilizationSource interface {

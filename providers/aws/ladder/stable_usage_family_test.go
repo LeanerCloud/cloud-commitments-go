@@ -1,0 +1,182 @@
+package ladder
+
+import (
+	"context"
+	"errors"
+	"math/rand/v2"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// fakeFamilySource serves a fixed per-family series or a fixed error.
+type fakeFamilySource struct {
+	err      error
+	families map[string][]DailyPoint
+}
+
+func (f *fakeFamilySource) GetOnDemandFamilySeries(_ context.Context, _ string, _ int) (map[string][]DailyPoint, error) {
+	return f.families, f.err
+}
+
+// TestFamilyStable_NeverExceedsSumOfFamilyMinimums: with two or more families
+// the estimate is the sum over families of min(series) * (1 - f), capped by the
+// flat estimate. The flat value here is large so the family sum is what binds.
+func TestFamilyStable_NeverExceedsSumOfFamilyMinimums(t *testing.T) {
+	rng := rand.New(rand.NewPCG(731, 1))
+	const f = 0.1
+	flat := ptr(1e9)
+	for iter := 0; iter < 200; iter++ {
+		n := 2 + rng.IntN(3)
+		families := make(map[string][]float64, n)
+		sumMin := 0.0
+		for i := 0; i < n; i++ {
+			series := make([]float64, 14+rng.IntN(20))
+			for j := range series {
+				series[j] = rng.Float64() * 100
+			}
+			families[string(rune('a'+i))] = series
+			sumMin += minOf(series) * (1 - f)
+		}
+		got, err := familyStableUSDPerHour(families, flat, f)
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assert.LessOrEqual(t, *got, sumMin+1e-9, "iteration %d: estimate exceeds sum of family minima", iter)
+		assert.InDelta(t, sumMin, *got, 1e-9, "iteration %d: family sum must equal sum of minima when flat does not bind", iter)
+	}
+}
+
+// TestFamilyStable_CappedByFlat: when the flat estimate is smaller, it wins.
+func TestFamilyStable_CappedByFlat(t *testing.T) {
+	families := map[string][]float64{"m5": {10, 10, 10}, "c5": {4, 4, 4}}
+	got, err := familyStableUSDPerHour(families, ptr(2.0), 0.1)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.InDelta(t, 2.0, *got, 1e-9)
+}
+
+// TestFamilyStable_NoFamilyDataUsesFlat: no family rows means the caller keeps
+// the non-family estimate, returned as the same value.
+func TestFamilyStable_NoFamilyDataUsesFlat(t *testing.T) {
+	flat := ptr(7.5)
+	got, err := familyStableUSDPerHour(map[string][]float64{}, flat, 0.1)
+	require.NoError(t, err)
+	assert.Equal(t, flat, got)
+}
+
+// TestFamilyStable_NilFlatStaysNil: a volatile or short flat series keeps the
+// base layer off; per-family data cannot switch it on.
+func TestFamilyStable_NilFlatStaysNil(t *testing.T) {
+	families := map[string][]float64{"m5": {10, 10, 10}, "c5": {4, 4, 4}}
+	got, err := familyStableUSDPerHour(families, nil, 0.1)
+	require.NoError(t, err)
+	assert.Nil(t, got)
+}
+
+// TestFamilyStable_SingleFamilyMatchesFlat: one family is the flat series, so
+// the result equals the existing estimator exactly.
+func TestFamilyStable_SingleFamilyMatchesFlat(t *testing.T) {
+	series := make([]float64, 30)
+	for i := range series {
+		series[i] = float64(10 + i%7)
+	}
+	const p, f = 5.0, 0.1
+	lowWater := nearestRank(t, series, p)
+	flat, err := estimateStableUSDPerHour(series, lowWater, f)
+	require.NoError(t, err)
+	got, err := familyStableUSDPerHour(map[string][]float64{"m5": series}, flat, f)
+	require.NoError(t, err)
+	assert.Equal(t, flat, got)
+}
+
+// TestFamilyStable_RejectsBadFamilySeries: fail loud on empty, negative or
+// non-finite family values.
+func TestFamilyStable_RejectsBadFamilySeries(t *testing.T) {
+	flat := ptr(5.0)
+	cases := map[string]map[string][]float64{
+		"empty":    {"m5": {}, "c5": {4}},
+		"negative": {"m5": {1, -1}, "c5": {4, 4}},
+		"nan":      {"m5": {1, 1}, "c5": {4, nanValue()}},
+	}
+	for name, fams := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := familyStableUSDPerHour(fams, flat, 0.1)
+			require.Error(t, err)
+		})
+	}
+}
+
+// TestGetUsageBaseline_FamilyPathSetsStable: the family path replaces the flat
+// stable value end to end, and a family fetch error falls back to flat.
+func TestGetUsageBaseline_FamilyPathSetsStable(t *testing.T) {
+	const days = 30
+	yesterday := utcDay(time.Now()).AddDate(0, 0, -1)
+	series := func(v func(i int) float64) []DailyPoint {
+		out := make([]DailyPoint, days)
+		for i := range out {
+			out[i] = DailyPoint{Date: yesterday.AddDate(0, 0, -(days - 1 - i)), USDPerHour: v(i)}
+		}
+		return out
+	}
+	// m5 dips to 1 on the last day; c5 is flat at 4. Family minima sum to 5.
+	fams := map[string][]DailyPoint{
+		"m5": series(func(i int) float64 {
+			if i == days-1 {
+				return 1
+			}
+			return 10
+		}),
+		"c5": series(func(int) float64 { return 4 }),
+	}
+	// Flat is min(14, 14, 9) * 0.9 = 8.1, above the family total 4.5, so the
+	// assertion below fails if the family path is not used.
+	flat := series(func(i int) float64 { return 14 })
+	flat[days-1].USDPerHour = 9
+	cov := &fakeCoverageSource{onDemandPoints: flat}
+	a := newTestLadder(t, &fakeRILister{}, &fakeSPLister{}, cov, &fakeUtilizationSource{})
+	_, err := a.WithBufferFraction(0.1)
+	require.NoError(t, err)
+
+	a.family = &fakeFamilySource{families: fams}
+	bl, err := a.GetUsageBaseline(context.Background(), testScope(), days, 5)
+	require.NoError(t, err)
+	require.NotNil(t, bl.StableUSDPerHour)
+	assert.InDelta(t, 4.5, *bl.StableUSDPerHour, 1e-9, "(1 + 4) * 0.9, below flat 8.1")
+
+	a.family = nil
+	flatOnly, err := a.GetUsageBaseline(context.Background(), testScope(), days, 5)
+	require.NoError(t, err)
+	require.NotNil(t, flatOnly.StableUSDPerHour)
+
+	a.family = &fakeFamilySource{err: errors.New("ce down")}
+	bl, err = a.GetUsageBaseline(context.Background(), testScope(), days, 5)
+	require.NoError(t, err, "a family fetch error must not fail the baseline")
+	require.NotNil(t, bl.StableUSDPerHour)
+	assert.InDelta(t, *flatOnly.StableUSDPerHour, *bl.StableUSDPerHour, 1e-9, "fetch error falls back to the flat estimate")
+}
+
+func minOf(v []float64) float64 {
+	m := v[0]
+	for _, x := range v[1:] {
+		if x < m {
+			m = x
+		}
+	}
+	return m
+}
+
+func nanValue() float64 {
+	zero := 0.0
+	return zero / zero
+}
+
+// nearestRank is the test-side percentile used to derive lowWater the same way
+// GetUsageBaseline does.
+func nearestRank(t *testing.T, series []float64, p float64) float64 {
+	t.Helper()
+	v, err := nearestRankPercentile(series, p)
+	require.NoError(t, err)
+	return v
+}

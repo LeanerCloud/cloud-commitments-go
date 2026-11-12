@@ -1,8 +1,10 @@
 package ladder
 
 import (
+	"fmt"
 	"math"
 	"slices"
+	"sort"
 )
 
 const (
@@ -87,4 +89,38 @@ func estimateStableUSDPerHour(series []float64, lowWater, bufferFraction float64
 		return nil, nil
 	}
 	return ptr(v), nil
+}
+
+// familyStableUSDPerHour sizes the base layer per instance family. With two or
+// more families it returns min(flat, sum over families of minimum observed
+// usage * (1 - bufferFraction)): a family-bound commitment is sized from that
+// family's own floor, and the sum of minima never exceeds the flat estimate.
+// With zero or one family the family series is the flat series (or absent), so
+// the flat estimate stands unchanged. A nil flat estimate stays nil. Family
+// series are validated (fail loud) only on the two-or-more path; a family fetch
+// error is handled by the caller, not here.
+func familyStableUSDPerHour(families map[string][]float64, flat *float64, bufferFraction float64) (*float64, error) {
+	if len(families) < 2 {
+		return flat, nil
+	}
+	names := make([]string, 0, len(families))
+	for name := range families {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	total := 0.0
+	for _, name := range names {
+		series := families[name]
+		if len(series) == 0 {
+			return nil, fmt.Errorf("family %s: series is empty", name)
+		}
+		if err := validateSeries(series); err != nil {
+			return nil, fmt.Errorf("family %s: %w", name, err)
+		}
+		total += slices.Min(series) * (1 - bufferFraction)
+	}
+	if flat == nil || total <= 0 {
+		return nil, nil
+	}
+	return ptr(min(total, *flat)), nil
 }

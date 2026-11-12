@@ -81,19 +81,21 @@ func NewFromConfig(awsCfg aws.Config, cfg Config) (*AWSLadder, error) {
 	// need the offering and purchase methods the full API exposes).
 	spSDKClient := sdksp.NewFromConfig(awsCfg)
 
+	odSeries := &onDemandSeriesAdapter{client: recoClient, accountID: cfg.AccountID}
 	l, err := New(
 		cfg,
 		ec2Client, // riLister
 		&spListerAdapter{api: spSDKClient, region: cfg.Region}, // spLister (region-scoped)
-		recoClient, // riCoverageSource
-		&onDemandSeriesAdapter{client: recoClient, accountID: cfg.AccountID}, // onDemandSeriesSource
-		recoClient,                                // utilizationSource
-		&spCoverageAdapter{client: recoClient},    // spCoverageSource
+		recoClient,                             // riCoverageSource
+		odSeries,                               // onDemandSeriesSource
+		recoClient,                             // utilizationSource
+		&spCoverageAdapter{client: recoClient}, // spCoverageSource
 		&spUtilizationAdapter{client: recoClient}, // spUtilizationSource
 	)
 	if err != nil {
 		return nil, fmt.Errorf("awsladder.NewFromConfig: %w", err)
 	}
+	l.family = odSeries
 	l.spRates = recoClient
 	l.riRates = recoClient
 	l.observed = recoClient

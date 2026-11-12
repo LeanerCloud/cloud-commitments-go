@@ -88,6 +88,7 @@ type AWSLadder struct {
 	sps         spLister
 	riCoverage  riCoverageSource
 	onDemand    onDemandSeriesSource
+	family      onDemandFamilySource // nil unless the factory wires the per-family series
 	utilization utilizationSource
 	spCoverage  spCoverageSource    // nil until parallel SP coverage PR (PR 4) lands
 	spUtil      spUtilizationSource // nil until parallel SP utilization PR (PR 4) lands

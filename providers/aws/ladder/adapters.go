@@ -248,6 +248,25 @@ func (a *onDemandSeriesAdapter) GetOnDemandSeries(ctx context.Context, region st
 	return points, nil
 }
 
+// GetOnDemandFamilySeries fetches the per-family daily on-demand series for the
+// usage account and maps each family's entries to DailyPoints. Errors propagate
+// unchanged; an empty map means no family data and is not an error.
+func (a *onDemandSeriesAdapter) GetOnDemandFamilySeries(ctx context.Context, region string, lookbackDays int) (map[string][]DailyPoint, error) {
+	fams, err := a.client.GetOnDemandFamilySeriesForAccount(ctx, a.accountID, region, lookbackDays)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string][]DailyPoint, len(fams))
+	for family, costs := range fams {
+		points := make([]DailyPoint, len(costs))
+		for i, c := range costs {
+			points[i] = DailyPoint{Date: c.Date, USDPerHour: c.USDPerHour}
+		}
+		out[family] = points
+	}
+	return out, nil
+}
+
 // spCoverageAdapter implements spCoverageSource by wrapping *recommendations.Client
 // and mapping its richer SPCoverageSummary to the local SPCoverageSummary type.
 // The mapping preserves the nil-when-Days==0 contract: if CE returned no
