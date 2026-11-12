@@ -79,6 +79,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **`ladder.BuildPlan`:** assembles a validated `LadderPlan` from an `AllocateResult` and its `BuildTranches` output. Each immediate tranche becomes one purchase action with the tranche's own commitment amount; an allocation with no immediate tranche becomes a hold stating when its first tranche fires. Pure, no I/O, no existing caller changes. (#27)
 - **`aws`/`recommendations`:** `recommendations.GetRICommitmentRate` derives the commitment dollars per covered on-demand dollar of a new Convertible EC2 Reserved Instance from Cost Explorer's reservation purchase recommendations: used share of the effective monthly RI cost (recurring plus upfront amortized over the term) over the covered on-demand cost, filtered by account and region, with `ErrNoRICommitmentRate` when no usable detail exists. (#732)
 - **`ladder`/`aws`:** `GetCommitmentRates` also returns a `convertible-ri` sizing rate from `GetRICommitmentRate`. A missing RI rate omits only that layer; any other error fails the call. Costs one extra billed Cost Explorer request (plus pages) per call. (#732)
 - **`ladder`/`aws`:** `AWSLadder.WithBufferFraction` and a stable-usage estimator: when the fraction is set, `GetUsageBaseline` fills `StableUSDPerHour` with the lowest of the low-water mark, the 10th percentile and the last 3 days, times `1 - fraction`. It stays nil when the option is unset, the series has fewer than 14 days, or the 10th percentile is under half the median (#31).
