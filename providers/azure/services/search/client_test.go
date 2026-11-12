@@ -860,79 +860,6 @@ func TestSearchClient_GetExistingCommitments_PagerError(t *testing.T) {
 	assert.Nil(t, commitments)
 }
 
-func TestSearchClient_GetValidResourceTypes_WithMockPager(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client := NewClient(nil, "test-subscription", "eastus")
-
-	skuName := armsearch.SKUNameStandard
-
-	mockPager := &MockSearchServicesPager{
-		pages: []armsearch.ServicesClientListBySubscriptionResponse{
-			{
-				ServiceListResult: armsearch.ServiceListResult{
-					Value: []*armsearch.Service{
-						{
-							SKU: &armsearch.SKU{
-								Name: &skuName,
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	client.SetSearchServicesPager(mockPager)
-
-	skus, err := client.GetValidResourceTypes(ctx)
-	require.NoError(t, err)
-	require.Len(t, skus, 1)
-	assert.Equal(t, string(skuName), skus[0])
-}
-
-func TestSearchClient_GetValidResourceTypes_PagerError(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client := NewClient(nil, "test-subscription", "eastus")
-
-	mockPager := &MockSearchServicesPager{
-		pages: []armsearch.ServicesClientListBySubscriptionResponse{{}},
-		err:   errors.New("API error"),
-	}
-
-	client.SetSearchServicesPager(mockPager)
-
-	skus, err := client.GetValidResourceTypes(ctx)
-	require.NoError(t, err)
-	// Should fall back to common SKUs
-	assert.Contains(t, skus, "standard")
-	assert.Contains(t, skus, "basic")
-}
-
-func TestSearchClient_GetValidResourceTypes_EmptyResults(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client := NewClient(nil, "test-subscription", "eastus")
-
-	mockPager := &MockSearchServicesPager{
-		pages: []armsearch.ServicesClientListBySubscriptionResponse{
-			{
-				ServiceListResult: armsearch.ServiceListResult{
-					Value: []*armsearch.Service{},
-				},
-			},
-		},
-	}
-
-	client.SetSearchServicesPager(mockPager)
-
-	skus, err := client.GetValidResourceTypes(ctx)
-	require.NoError(t, err)
-	// Should fall back to common SKUs
-	assert.Contains(t, skus, "standard")
-}
-
 func TestSearchClient_SetterMethods(t *testing.T) {
 	t.Parallel()
 	client := NewClient(nil, "test-subscription", "eastus")
@@ -948,19 +875,6 @@ func TestSearchClient_SetterMethods(t *testing.T) {
 	mockSearchPager := &MockSearchServicesPager{}
 	client.SetSearchServicesPager(mockSearchPager)
 	assert.Equal(t, mockSearchPager, client.searchServicesPager)
-}
-
-func TestSearchClient_GetCommonSKUs(t *testing.T) {
-	t.Parallel()
-	client := NewClient(nil, "test-subscription", "eastus")
-	skus := client.getCommonSKUs()
-
-	assert.Contains(t, skus, "basic")
-	assert.Contains(t, skus, "standard")
-	assert.Contains(t, skus, "standard2")
-	assert.Contains(t, skus, "standard3")
-	assert.Contains(t, skus, "storage_optimized_l1")
-	assert.Contains(t, skus, "storage_optimized_l2")
 }
 
 // TestSearchClient_ConvertAzureSearchRecommendation_NilGuards pins the contract:

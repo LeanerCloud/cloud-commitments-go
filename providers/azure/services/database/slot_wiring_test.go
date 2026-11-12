@@ -71,10 +71,6 @@ func TestClientCallsHoldSharedSlot(t *testing.T) {
 			})
 			_, _ = c.GetExistingCommitments(ctx)
 		},
-		"GetValidResourceTypes": func(ctx context.Context, p *slottest.Probe, c *Client) {
-			c.SetCapabilitiesClient(probeCaps{p})
-			_, _ = c.GetValidResourceTypes(ctx)
-		},
 		"fetchSKUCatalogue": func(ctx context.Context, p *slottest.Probe, c *Client) {
 			c.SetCapabilitiesClient(probeCaps{p})
 			c.fetchSKUCatalogue(ctx)

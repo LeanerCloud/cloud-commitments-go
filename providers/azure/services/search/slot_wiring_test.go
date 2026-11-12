@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/consumption/armconsumption"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/search/armsearch"
 
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/slot/slottest"
 )
@@ -46,9 +45,6 @@ func TestSlotHeldDuringCalls(t *testing.T) {
 	}{
 		{"reservations", func(ctx context.Context, p *slottest.Probe) {
 			_, _ = (&Client{reservationsPager: resv(p)}).GetExistingCommitments(ctx)
-		}},
-		{"valid resource types", func(ctx context.Context, p *slottest.Probe) {
-			_, _ = (&Client{searchServicesPager: &slotPager[armsearch.ServicesClientListBySubscriptionResponse]{p: p}}).GetValidResourceTypes(ctx)
 		}},
 		{"retail pricing", func(ctx context.Context, p *slottest.Probe) {
 			_, _ = (&Client{httpClient: slotHTTP{p}}).getSearchPricing(ctx, "basic", "eastus", 1)

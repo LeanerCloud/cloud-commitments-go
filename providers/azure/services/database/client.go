@@ -431,42 +431,6 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	}, nil
 }
 
-// GetValidResourceTypes returns valid SQL Database SKUs from Azure API.
-func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
-	capClient, err := c.getOrCreateCapabilitiesClient()
-	if err != nil {
-		return nil, err
-	}
-
-	capabilities, err := slot.Do(ctx, func() (armsql.CapabilitiesClientListByLocationResponse, error) {
-		return capClient.ListByLocation(ctx, c.region, &armsql.CapabilitiesClientListByLocationOptions{
-			Include: nil,
-		})
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list SQL capabilities: %w", err)
-	}
-
-	skuSet := make(map[string]bool)
-
-	// Extract SKUs from server capabilities
-	c.extractServerSKUs(capabilities.LocationCapabilities, skuSet)
-
-	// Extract SKUs from managed instance capabilities
-	c.extractManagedInstanceSKUs(capabilities.LocationCapabilities, skuSet)
-
-	skus := make([]string, 0, len(skuSet))
-	for sku := range skuSet {
-		skus = append(skus, sku)
-	}
-
-	if len(skus) == 0 {
-		return nil, fmt.Errorf("no SQL Database SKUs found for region %s", c.region)
-	}
-
-	return skus, nil
-}
-
 // getOrCreateCapabilitiesClient returns the injected client or creates a new one.
 func (c *Client) getOrCreateCapabilitiesClient() (CapabilitiesClient, error) {
 	if c.capabilitiesClient != nil {
@@ -479,50 +443,6 @@ func (c *Client) getOrCreateCapabilitiesClient() (CapabilitiesClient, error) {
 	}
 
 	return client, nil
-}
-
-// extractServerSKUs extracts SKUs from server version capabilities.
-func (c *Client) extractServerSKUs(capabilities armsql.LocationCapabilities, skuSet map[string]bool) {
-	if capabilities.SupportedServerVersions == nil {
-		return
-	}
-
-	for _, version := range capabilities.SupportedServerVersions {
-		if version.SupportedEditions == nil {
-			continue
-		}
-
-		for _, edition := range version.SupportedEditions {
-			if edition.SupportedServiceLevelObjectives == nil {
-				continue
-			}
-
-			for _, slo := range edition.SupportedServiceLevelObjectives {
-				if slo.SKU != nil && slo.SKU.Name != nil {
-					skuSet[*slo.SKU.Name] = true
-				}
-			}
-		}
-	}
-}
-
-// extractManagedInstanceSKUs extracts SKUs from managed instance capabilities.
-func (c *Client) extractManagedInstanceSKUs(capabilities armsql.LocationCapabilities, skuSet map[string]bool) {
-	if capabilities.SupportedManagedInstanceVersions == nil {
-		return
-	}
-
-	for _, version := range capabilities.SupportedManagedInstanceVersions {
-		if version.SupportedEditions == nil {
-			continue
-		}
-
-		for _, edition := range version.SupportedEditions {
-			if edition.Name != nil {
-				skuSet[*edition.Name] = true
-			}
-		}
-	}
 }
 
 // SQLPricing contains pricing information for SQL Database.

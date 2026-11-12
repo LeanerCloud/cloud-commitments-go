@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -25,9 +24,6 @@ import (
 
 // maxReservationsPages caps reservation-detail pagination.
 const maxReservationsPages = 50
-
-// maxServicesPages caps Search service list pagination.
-const maxServicesPages = 20
 
 // HTTPClient interface for HTTP operations (enables mocking).
 type HTTPClient interface {
@@ -340,75 +336,6 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 		EffectiveHourlyRate: searchPricing.HourlyRate,
 		Currency:            searchPricing.Currency,
 	}, nil
-}
-
-// GetValidResourceTypes returns valid Search SKUs from Azure API.
-func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
-	pager, ok := c.resolveServicesPager()
-	if !ok {
-		return c.getCommonSKUs(), nil
-	}
-
-	skuSet, err := c.collectSKUsFromPager(ctx, pager)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(skuSet) > 0 {
-		skus := make([]string, 0, len(skuSet))
-		for sku := range skuSet {
-			skus = append(skus, sku)
-		}
-		return skus, nil
-	}
-
-	return c.getCommonSKUs(), nil
-}
-
-func (c *Client) resolveServicesPager() (ServicesPager, bool) {
-	if c.searchServicesPager != nil {
-		return c.searchServicesPager, true
-	}
-	client, err := armsearch.NewServicesClient(c.subscriptionID, c.cred, nil)
-	if err != nil {
-		return nil, false
-	}
-	return client.NewListBySubscriptionPager(nil, nil), true
-}
-
-func (c *Client) collectSKUsFromPager(ctx context.Context, pager ServicesPager) (map[string]bool, error) {
-	skuSet := make(map[string]bool)
-	for pageIdx := 0; pager.More(); pageIdx++ {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("search: GetValidResourceTypes context canceled after %d pages: %w", pageIdx, err)
-		}
-		if pageIdx >= maxServicesPages {
-			log.Printf("WARNING: search: GetValidResourceTypes pagination cap (%d pages) reached", maxServicesPages)
-			break
-		}
-		page, err := slot.NextPage(ctx, pager)
-		if err != nil {
-			break
-		}
-		for _, service := range page.Value {
-			if service.SKU != nil && service.SKU.Name != nil {
-				skuSet[string(*service.SKU.Name)] = true
-			}
-		}
-	}
-	return skuSet, nil
-}
-
-// getCommonSKUs returns common Search SKUs.
-func (c *Client) getCommonSKUs() []string {
-	return []string{
-		"basic",
-		"standard",
-		"standard2",
-		"standard3",
-		"storage_optimized_l1",
-		"storage_optimized_l2",
-	}
 }
 
 // Pricing contains pricing information for Azure Search.
