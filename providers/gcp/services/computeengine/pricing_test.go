@@ -169,6 +169,34 @@ func TestEnrichRecWithPricing_MonthlyFiguresPerTerm(t *testing.T) {
 	}
 }
 
+func TestEnrichRecWithPricing_Priced(t *testing.T) {
+	t.Parallel()
+	cases := map[string]struct {
+		skus    []*cloudbilling.Sku
+		savings float64
+		want    bool
+	}{
+		"both present":      {n2AmericasSKUs(), 120, true},
+		"no savings":        {n2AmericasSKUs(), 0, false},
+		"no catalog price":  {nil, 120, false},
+		"neither available": {nil, 0, false},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			client, _ := NewClient("p", "us-central1")
+			client.SetBillingService(&MockBillingService{skus: &cloudbilling.ListSkusResponse{Skus: tc.skus}})
+			rec := newRec("n2-standard-8", 8, 32)
+			rec.Term = "1yr"
+			rec.EstimatedSavings = tc.savings
+
+			client.enrichRecWithPricing(context.Background(), &rec)
+
+			assert.Equal(t, tc.want, rec.Priced)
+		})
+	}
+}
+
 func TestEnrichRecWithPricing_TermSpellingsAndUnknown(t *testing.T) {
 	t.Parallel()
 	price := func(term string) *float64 {

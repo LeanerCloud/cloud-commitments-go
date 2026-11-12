@@ -1039,7 +1039,10 @@ func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommend
 // providers and the platform baseline. A missing or invalid pricing entry is logged
 // and leaves RecurringMonthlyCost nil (unknown, not zero) without discarding the
 // recommendation: the Recommender EstimatedSavings is still the authoritative
-// savings signal (issue #1022 C2).
+// savings signal (issue #1022 C2). Priced is set only when both the Recommender
+// savings and the catalog on-demand price are present. A zero EstimatedSavings
+// is treated as absent (the payload gives no figure for a zero cost), so a
+// genuine zero is not priced.
 func (c *Client) enrichRecWithPricing(ctx context.Context, rec *common.Recommendation) {
 	if rec.ResourceType == "" {
 		return
@@ -1065,6 +1068,7 @@ func (c *Client) enrichRecWithPricing(ctx context.Context, rec *common.Recommend
 	rec.CommitmentCurrency = pricing.Currency
 	rec.OnDemandCost = pricing.OnDemandPrice / termMonths
 	rec.SavingsPercentage = pricing.SavingsPercentage
+	rec.Priced = rec.EstimatedSavings != 0
 }
 
 // machineTypePathSegment precedes the machine type in a GCP resource path, e.g.
