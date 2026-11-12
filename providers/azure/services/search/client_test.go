@@ -1215,67 +1215,6 @@ func TestSearchClient_PurchaseCommitment_BadStatus(t *testing.T) {
 	mockHTTP.AssertExpectations(t)
 }
 
-func TestSearchClient_ValidateOffering_Valid(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client := NewClient(nil, "test-subscription", "eastus")
-
-	skuName := armsearch.SKUNameStandard
-	mockPager := &MockSearchServicesPager{
-		pages: []armsearch.ServicesClientListBySubscriptionResponse{
-			{
-				ServiceListResult: armsearch.ServiceListResult{
-					Value: []*armsearch.Service{
-						{
-							SKU: &armsearch.SKU{Name: &skuName},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	client.SetSearchServicesPager(mockPager)
-
-	rec := common.Recommendation{
-		ResourceType: "standard",
-	}
-
-	err := client.ValidateOffering(ctx, rec)
-	assert.NoError(t, err)
-}
-
-func TestSearchClient_ValidateOffering_Invalid(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client := NewClient(nil, "test-subscription", "eastus")
-
-	skuName := armsearch.SKUNameStandard
-	mockPager := &MockSearchServicesPager{
-		pages: []armsearch.ServicesClientListBySubscriptionResponse{
-			{
-				ServiceListResult: armsearch.ServiceListResult{
-					Value: []*armsearch.Service{
-						{
-							SKU: &armsearch.SKU{Name: &skuName},
-						},
-					},
-				},
-			},
-		},
-	}
-
-	client.SetSearchServicesPager(mockPager)
-
-	rec := common.Recommendation{
-		ResourceType: "InvalidSKU",
-	}
-
-	err := client.ValidateOffering(ctx, rec)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid Azure Search SKU")
-}
-
 // TestSearchClient_PurchaseCommitment_TwoStepFlow verifies the two-step
 // calculatePrice->purchase flow for the search client (issue #677 regression test).
 func TestSearchClient_PurchaseCommitment_TwoStepFlow(t *testing.T) {
@@ -1473,42 +1412,6 @@ func TestSearchClient_PurchaseCommitment_RequiresSource(t *testing.T) {
 	assert.False(t, result.Success)
 	assert.Contains(t, err.Error(), "purchase source is required")
 	mockHTTP.AssertNotCalled(t, "Do", mock.Anything)
-}
-
-func TestSearchClient_ValidateOffering_CaseInsensitive(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-
-	skuName := armsearch.SKUNameStandard
-	mockPager := func() *MockSearchServicesPager {
-		return &MockSearchServicesPager{
-			pages: []armsearch.ServicesClientListBySubscriptionResponse{
-				{
-					ServiceListResult: armsearch.ServiceListResult{
-						Value: []*armsearch.Service{
-							{SKU: &armsearch.SKU{Name: &skuName}},
-						},
-					},
-				},
-			},
-		}
-	}
-
-	t.Run("case_insensitive", func(t *testing.T) {
-		client := NewClient(nil, "test-subscription", "eastus")
-		client.SetSearchServicesPager(mockPager())
-		rec := common.Recommendation{ResourceType: "STANDARD"}
-		err := client.ValidateOffering(ctx, rec)
-		assert.NoError(t, err)
-	})
-
-	t.Run("whitespace_trimmed", func(t *testing.T) {
-		client := NewClient(nil, "test-subscription", "eastus")
-		client.SetSearchServicesPager(mockPager())
-		rec := common.Recommendation{ResourceType: "  standard  "}
-		err := client.ValidateOffering(ctx, rec)
-		assert.NoError(t, err)
-	})
 }
 
 // TestSearchClient_PurchaseCommitment_DisplayNameConformsToAzureAllowlist guards

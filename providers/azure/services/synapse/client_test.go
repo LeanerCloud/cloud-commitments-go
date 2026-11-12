@@ -417,41 +417,6 @@ func TestNewClient_DefaultInventoryFactories(t *testing.T) {
 	assert.Equal(t, *injected, c.factories())
 }
 
-// ---- ValidateOffering -----------------------------------------------------
-
-func TestValidateOffering_valid(t *testing.T) {
-	t.Parallel()
-	c := newTestClient()
-	rec := common.Recommendation{ResourceType: "DW1000c"}
-	err := c.ValidateOffering(context.Background(), rec)
-	assert.NoError(t, err)
-}
-
-func TestValidateOffering_invalid(t *testing.T) {
-	t.Parallel()
-	c := newTestClient()
-	rec := common.Recommendation{ResourceType: "not-a-synapse-sku"}
-	err := c.ValidateOffering(context.Background(), rec)
-	assert.Error(t, err)
-}
-
-func TestValidateOffering_caseInsensitive(t *testing.T) {
-	t.Parallel()
-	c := newTestClient()
-	// Lowercase variant of DW1000c should validate.
-	rec := common.Recommendation{ResourceType: "dw1000c"}
-	err := c.ValidateOffering(context.Background(), rec)
-	assert.NoError(t, err)
-}
-
-func TestValidateOffering_trimsWhitespace(t *testing.T) {
-	t.Parallel()
-	c := newTestClient()
-	rec := common.Recommendation{ResourceType: "  DW1000c  "}
-	err := c.ValidateOffering(context.Background(), rec)
-	assert.NoError(t, err)
-}
-
 // ---- GetOfferingDetails ---------------------------------------------------
 
 const sampleSynapsePricingJSON = `{
