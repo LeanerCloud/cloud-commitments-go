@@ -32,12 +32,12 @@ func getServiceStringForCostExplorer(service common.ServiceType) string {
 // typed enum, returning an error for any value not in the known set.
 // Known values: "all-upfront", "partial-upfront", "no-upfront".
 func convertPaymentOptionE(option string) (types.PaymentOption, error) {
-	switch option {
-	case "all-upfront":
+	switch common.PaymentOption(option) {
+	case common.PaymentAllUpfront:
 		return types.PaymentOptionAllUpfront, nil
-	case "partial-upfront":
+	case common.PaymentPartialUpfront:
 		return types.PaymentOptionPartialUpfront, nil
-	case "no-upfront":
+	case common.PaymentNoUpfront:
 		return types.PaymentOptionNoUpfront, nil
 	default:
 		return "", fmt.Errorf("unsupported payment option %q: must be one of all-upfront, partial-upfront, no-upfront", option)
@@ -48,10 +48,10 @@ func convertPaymentOptionE(option string) (types.PaymentOption, error) {
 // returning an error for any value not in the known set.
 // Known values: "1yr", "1", "3yr", "3".
 func convertTermInYearsE(term string) (types.TermInYears, error) {
-	switch term {
-	case "1yr", "1":
+	switch common.Term(term) {
+	case common.Term1Year, "1":
 		return types.TermInYearsOneYear, nil
-	case "3yr", "3":
+	case common.Term3Year, "3":
 		return types.TermInYearsThreeYears, nil
 	default:
 		return "", fmt.Errorf("unsupported term %q: must be one of 1yr, 1, 3yr, 3", term)

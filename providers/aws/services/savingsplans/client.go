@@ -649,10 +649,10 @@ func convertPlanType(planType string) (types.SavingsPlanType, error) {
 // Plans API. Returns an error on any unrecognized or empty input so callers
 // fail loud rather than silently buying the wrong commitment length.
 func convertTermToSeconds(term string) (int64, error) {
-	switch term {
-	case "3yr", "3":
+	switch common.Term(term) {
+	case common.Term3Year, "3":
 		return 94608000, nil // 3 years in seconds (365 * 3 * 86400)
-	case "1yr", "1":
+	case common.Term1Year, "1":
 		return 31536000, nil // 1 year in seconds (365 * 86400)
 	default:
 		return 0, fmt.Errorf("unsupported Savings Plans term %q: must be one of 1yr, 1, 3yr, 3", term)
@@ -664,12 +664,12 @@ func convertTermToSeconds(term string) (int64, error) {
 // rather than silently buying the wrong (and potentially most expensive)
 // payment option.
 func convertPaymentOption(paymentOption string) (types.SavingsPlanPaymentOption, error) {
-	switch paymentOption {
-	case "All Upfront", "all-upfront":
+	switch common.PaymentOption(paymentOption) {
+	case "All Upfront", common.PaymentAllUpfront:
 		return types.SavingsPlanPaymentOptionAllUpfront, nil
-	case "Partial Upfront", "partial-upfront":
+	case "Partial Upfront", common.PaymentPartialUpfront:
 		return types.SavingsPlanPaymentOptionPartialUpfront, nil
-	case "No Upfront", "no-upfront":
+	case "No Upfront", common.PaymentNoUpfront:
 		return types.SavingsPlanPaymentOptionNoUpfront, nil
 	default:
 		return "", fmt.Errorf("unsupported Savings Plans payment option %q: must be one of All Upfront, all-upfront, Partial Upfront, partial-upfront, No Upfront, no-upfront", paymentOption)

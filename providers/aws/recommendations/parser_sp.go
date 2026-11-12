@@ -143,14 +143,18 @@ func spPlanTypeDisplayString(pt types.SupportedSavingsPlansType) string {
 // spRecurringMonthlyCost returns the monthly recurring payment of a Savings
 // Plan: (hourly x 8760 x years - upfront) / (12 x years).
 func spRecurringMonthlyCost(hourly, upfront float64, term, paymentOption string) (float64, error) {
-	if paymentOption == "all-upfront" {
+	payment, err := common.ParsePaymentOption(paymentOption)
+	if err != nil {
+		return 0, fmt.Errorf("savings plan recurring cost: %w", err)
+	}
+	if payment == common.PaymentAllUpfront {
 		return 0, nil
 	}
 	var years float64
-	switch term {
-	case "1yr", "1":
+	switch common.Term(term) {
+	case common.Term1Year, "1":
 		years = 1
-	case "3yr", "3":
+	case common.Term3Year, "3":
 		years = 3
 	default:
 		return 0, fmt.Errorf("savings plan recurring cost: unsupported term %q", term)

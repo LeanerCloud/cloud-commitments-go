@@ -298,12 +298,12 @@ func parseBreakEvenMonths(rec *common.Recommendation, details *types.Reservation
 func commitmentCurrency(currency, payment string, hasUpfront bool, upfront float64, monthly *float64) string {
 	monthlyKnown := monthly != nil && math.Abs(*monthly) <= math.MaxFloat64
 	var complete bool
-	switch payment {
-	case "all-upfront":
+	switch common.PaymentOption(payment) {
+	case common.PaymentAllUpfront:
 		complete = hasUpfront && (monthly == nil || *monthly == 0)
-	case "partial-upfront":
+	case common.PaymentPartialUpfront:
 		complete = hasUpfront && monthlyKnown
-	case "no-upfront":
+	case common.PaymentNoUpfront:
 		complete = upfront == 0 && monthlyKnown
 	}
 	if complete {

@@ -123,10 +123,10 @@ func riRateInput(p RICommitmentRateParams) (*costexplorer.GetReservationPurchase
 // riRequestTerm maps a term to the CE request value and the months the upfront
 // is amortized over from one switch, so the two cannot diverge.
 func riRequestTerm(term string) (types.TermInYears, float64, error) {
-	switch term {
-	case "1yr", "1":
+	switch common.Term(term) {
+	case common.Term1Year, "1":
 		return types.TermInYearsOneYear, 12, nil
-	case "3yr", "3":
+	case common.Term3Year, "3":
 		return types.TermInYearsThreeYears, 36, nil
 	}
 	return "", 0, fmt.Errorf("unsupported term %q: must be one of 1yr, 1, 3yr, 3", term)
