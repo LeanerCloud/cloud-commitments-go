@@ -132,6 +132,20 @@ func onDemandDescription(label string) *regexp.Regexp {
 	return regexp.MustCompile(`^` + regexp.QuoteMeta(label) + `(?: Predefined)?(?: Instance)? (Core|Ram) running in `)
 }
 
+// customOnDemandDescription matches the on-demand SKUs of custom machine types,
+// e.g. "N2 Custom Instance Core running in Americas". Extended RAM ("N2 Custom
+// Extended Instance Ram") does not match.
+func customOnDemandDescription(label string) *regexp.Regexp {
+	return regexp.MustCompile(`^` + regexp.QuoteMeta(label) + ` Custom Instance (Core|Ram) running in `)
+}
+
+// isCustomMachineType reports whether the machine type is a custom shape
+// ("n2-custom-4-8192", or the legacy "custom-4-8192").
+func isCustomMachineType(machineType string) bool {
+	mt := strings.ToLower(strings.TrimSpace(machineType))
+	return strings.Contains(mt, "-custom-") || strings.HasPrefix(mt, "custom-")
+}
+
 // commitmentDescription matches e.g. "Commitment v1: N2 Cpu in Americas for 1 Year".
 func commitmentDescription(label string) *regexp.Regexp {
 	family := regexp.QuoteMeta(label) + " "
@@ -291,6 +305,13 @@ func findFamilyRates(skus []*cloudbilling.Sku, machineType, region string, termY
 		return nil, err
 	}
 	matcher := newRateMatcher(labels, region, termYears)
+	// Custom shapes bill their own on-demand SKUs; commitments are shared with predefined.
+	if isCustomMachineType(machineType) {
+		if strings.HasSuffix(strings.ToLower(strings.TrimSpace(machineType)), "-ext") {
+			return nil, fmt.Errorf("extended memory custom machine type %s is not priced: its extended RAM SKU is not matched", machineType)
+		}
+		matcher.onDemand = customOnDemandDescription(labels.onDemand)
+	}
 
 	var collector rateCollector
 	for _, sku := range skus {

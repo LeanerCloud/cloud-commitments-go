@@ -56,7 +56,10 @@ func n2AmericasSKUs() []*cloudbilling.Sku {
 		catalogSKU("n2-c3-ram", "Commitment v1: N2 Ram in Americas for 3 Year", "RAM", "Commit3Yr", "GiBy.h", 1907000, americas),
 		// Same family name prefix, different product: must not be read as N2.
 		catalogSKU("n2d-od-core", "N2D AMD Instance Core running in Americas", "CPU", "OnDemand", "h", 27502000, americas),
-		catalogSKU("n2-custom-core", "N2 Custom Instance Core running in Americas", "CPU", "OnDemand", "h", 33000000, americas),
+		// Custom machine types bill these on-demand rows, not the predefined ones.
+		catalogSKU("3E94-1AB5-33F5", "N2 Custom Instance Core running in Americas", "CPU", "OnDemand", "h", 33191550, americas),
+		catalogSKU("5304-5146-9088", "N2 Custom Instance Ram running in Americas", "RAM", "OnDemand", "GiBy.h", 4448850, americas),
+		catalogSKU("n2-custom-ext-ram", "N2 Custom Extended Instance Ram running in Americas", "RAM", "OnDemand", "GiBy.h", 9550000, americas),
 		catalogSKU("n2-sole-core", "Sole Tenancy Premium for N2 Sole Tenancy Instance Core running in Americas", "CPU", "OnDemand", "h", 1000000, americas),
 		// Other region.
 		catalogSKU("n2-od-core-eu", "N2 Instance Core running in Frankfurt", "CPU", "OnDemand", "h", 99000000, []string{"europe-west3"}),
@@ -87,6 +90,54 @@ func TestGetComputePricing_N2StandardFromLiveShapedCatalog(t *testing.T) {
 	assert.InDelta(t, (8*0.014225+32*0.001907)*8760*3, three.CommitmentPrice, 1e-6)
 	assert.InDelta(t, 0.388472*8760*3, three.OnDemandPrice, 1e-6)
 	assert.Greater(t, three.SavingsPercentage, one.SavingsPercentage)
+}
+
+// Custom machine types are on-demand priced from the family's "Custom Instance"
+// SKUs (N2 custom core 0.03319155 vs predefined 0.031611 per vCPU-hour); the
+// committed rates stay the predefined CUD rates.
+func TestGetComputePricing_N2CustomUsesCustomOnDemandRates(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	client, _ := NewClient("p", "us-central1")
+	client.SetBillingService(&MockBillingService{skus: &cloudbilling.ListSkusResponse{Skus: n2AmericasSKUs()}})
+	res := computeResources{vcpus: 4, memoryGiB: 8}
+
+	got, err := client.getComputePricing(ctx, "n2-custom-4-8192", "us-central1", 1, res)
+	require.NoError(t, err)
+	assert.Equal(t, "USD", got.Currency)
+	assert.InDelta(t, 4*0.019915+8*0.002669, got.HourlyRate, 1e-9)
+	assert.InDelta(t, (4*0.03319155+8*0.00444885)*8760, got.OnDemandPrice, 1e-6)
+	assert.InDelta(t, (4*0.019915+8*0.002669)*8760, got.CommitmentPrice, 1e-6)
+}
+
+// Without the custom SKUs the family must fail loud, never price at the
+// predefined rates.
+func TestFindFamilyRates_CustomNeverFallsBackToPredefined(t *testing.T) {
+	t.Parallel()
+	var noCustom []*cloudbilling.Sku
+	for _, sku := range n2AmericasSKUs() {
+		if !strings.Contains(sku.Description, "Custom") {
+			noCustom = append(noCustom, sku)
+		}
+	}
+	_, err := findFamilyRates(noCustom, "n2-custom-4-8192", "us-central1", 1)
+	require.ErrorContains(t, err, "no on-demand core and RAM pricing")
+}
+
+// Extended-memory custom types bill extra RAM at the Extended SKU, which is not
+// matched, so pricing them at the standard RAM rate would understate cost.
+func TestFindFamilyRates_ExtendedMemoryCustomFailsLoud(t *testing.T) {
+	t.Parallel()
+	_, err := findFamilyRates(n2AmericasSKUs(), "n2-custom-4-32768-ext", "us-central1", 1)
+	require.ErrorContains(t, err, "extended memory")
+}
+
+// N1 has no N1-prefixed custom SKU in the catalog, and the unprefixed custom rows
+// are not confirmed to be N1, so N1 custom machine types fail loud too.
+func TestFindFamilyRates_N1CustomFailsLoud(t *testing.T) {
+	t.Parallel()
+	_, err := findFamilyRates(n1Americas1YrSKUs(), "n1-custom-4-15360", "us-central1", 1)
+	require.ErrorContains(t, err, "no on-demand core and RAM pricing")
 }
 
 func TestFindFamilyRates_ErrorsAreLoud(t *testing.T) {
