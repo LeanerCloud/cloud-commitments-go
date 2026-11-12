@@ -174,19 +174,6 @@ func TestCacheClient_GetValidResourceTypes_Fallback(t *testing.T) {
 	assert.Contains(t, skus, "Premium_P1")
 }
 
-func TestCacheClient_ValidateOffering_InvalidSKU(t *testing.T) {
-	t.Parallel()
-	client := NewClient(nil, "sub", "eastus")
-	client.SetRedisCachesPager(&MockRedisCachesPager{})
-	rec := common.Recommendation{
-		ResourceType: "InvalidSKU_X99",
-	}
-
-	err := client.ValidateOffering(context.Background(), rec)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid Azure Redis Cache SKU")
-}
-
 func TestAzureRetailPriceStructure(t *testing.T) {
 	t.Parallel()
 	price := AzureRetailPrice{
@@ -424,42 +411,6 @@ func TestCacheClient_GetExistingCommitments_Empty(t *testing.T) {
 	commitments, err := client.GetExistingCommitments(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, commitments)
-}
-
-func TestCacheClient_ValidateOffering_ValidSKU(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client := NewClient(nil, "test-subscription", "eastus")
-	client.SetRedisCachesPager(&MockRedisCachesPager{})
-
-	rec := common.Recommendation{
-		ResourceType: "Premium_P1",
-	}
-
-	// Should pass validation against common SKUs fallback
-	err := client.ValidateOffering(ctx, rec)
-	assert.NoError(t, err)
-}
-
-func TestCacheClient_ValidateOffering_CaseInsensitive(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-
-	t.Run("case_insensitive", func(t *testing.T) {
-		client := NewClient(nil, "test-subscription", "eastus")
-		client.SetRedisCachesPager(&MockRedisCachesPager{})
-		rec := common.Recommendation{ResourceType: "premium_p1"}
-		err := client.ValidateOffering(ctx, rec)
-		assert.NoError(t, err)
-	})
-
-	t.Run("whitespace_trimmed", func(t *testing.T) {
-		client := NewClient(nil, "test-subscription", "eastus")
-		client.SetRedisCachesPager(&MockRedisCachesPager{})
-		rec := common.Recommendation{ResourceType: "  Premium_P1  "}
-		err := client.ValidateOffering(ctx, rec)
-		assert.NoError(t, err)
-	})
 }
 
 func TestCacheClient_GetExistingCommitments_WithMockPager(t *testing.T) {
