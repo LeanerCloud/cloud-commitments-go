@@ -592,105 +592,6 @@ func TestValidateOffering_WrongDetails(t *testing.T) {
 	assert.Contains(t, err.Error(), "invalid service details")
 }
 
-// --- GetOfferingDetails ---
-
-func TestGetOfferingDetails_1yr_NoUpfront(t *testing.T) {
-	t.Parallel()
-	c := NewClient(nil, "sub", "eastus")
-	rec := common.Recommendation{
-		Term:          "1yr",
-		PaymentOption: "No Upfront",
-		Details:       &common.SavingsPlanDetails{PlanType: "Compute", HourlyCommitment: 1.0, Currency: "USD"},
-	}
-
-	details, err := c.GetOfferingDetails(context.Background(), rec)
-	require.NoError(t, err)
-	require.NotNil(t, details)
-
-	assert.Equal(t, "1yr", details.Term)
-	assert.Equal(t, "No Upfront", details.PaymentOption)
-	assert.InDelta(t, 1.0, details.EffectiveHourlyRate, 0.001)
-	assert.InDelta(t, 8760.0, details.TotalCost, 0.001)
-	assert.Equal(t, 0.0, details.UpfrontCost)
-	assert.InDelta(t, 1.0, details.RecurringCost, 0.001)
-	assert.Equal(t, "USD", details.Currency)
-}
-
-func TestGetOfferingDetails_3yr_AllUpfront(t *testing.T) {
-	t.Parallel()
-	c := NewClient(nil, "sub", "eastus")
-	rec := common.Recommendation{
-		Term:          "3yr",
-		PaymentOption: "All Upfront",
-		Details:       &common.SavingsPlanDetails{PlanType: "Compute", HourlyCommitment: 1.0, Currency: "USD"},
-	}
-
-	details, err := c.GetOfferingDetails(context.Background(), rec)
-	require.NoError(t, err)
-	require.NotNil(t, details)
-
-	assert.Equal(t, "3yr", details.Term)
-	assert.InDelta(t, 26280.0, details.UpfrontCost, 0.001)
-	assert.Equal(t, 0.0, details.RecurringCost)
-}
-
-func TestGetOfferingDetails_5yr_AllUpfront(t *testing.T) {
-	t.Parallel()
-	c := NewClient(nil, "sub", "eastus")
-	rec := common.Recommendation{
-		Term:          "5yr",
-		PaymentOption: "All Upfront",
-		Details:       &common.SavingsPlanDetails{PlanType: "Compute", HourlyCommitment: 1.0, Currency: "USD"},
-	}
-
-	details, err := c.GetOfferingDetails(context.Background(), rec)
-	require.NoError(t, err)
-	require.NotNil(t, details)
-
-	assert.Equal(t, "5yr", details.Term)
-	assert.InDelta(t, 43800.0, details.UpfrontCost, 0.001)
-	assert.Equal(t, 0.0, details.RecurringCost)
-	assert.InDelta(t, 43800.0, details.TotalCost, 0.001)
-}
-
-func TestGetOfferingDetails_BadTerm(t *testing.T) {
-	t.Parallel()
-	c := NewClient(nil, "sub", "eastus")
-	rec := common.Recommendation{
-		Term:          "99yr",
-		PaymentOption: "No Upfront",
-		Details:       &common.SavingsPlanDetails{PlanType: "Compute", HourlyCommitment: 1.0, Currency: "USD"},
-	}
-
-	_, err := c.GetOfferingDetails(context.Background(), rec)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unsupported savings plan term")
-}
-
-func TestGetOfferingDetails_BadPaymentOption(t *testing.T) {
-	t.Parallel()
-	c := NewClient(nil, "sub", "eastus")
-	rec := common.Recommendation{
-		Term:          "1yr",
-		PaymentOption: "Quarterly",
-		Details:       &common.SavingsPlanDetails{PlanType: "Compute", HourlyCommitment: 1.0, Currency: "USD"},
-	}
-
-	_, err := c.GetOfferingDetails(context.Background(), rec)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unsupported payment option")
-}
-
-func TestGetOfferingDetails_WrongDetails(t *testing.T) {
-	t.Parallel()
-	c := NewClient(nil, "sub", "eastus")
-	rec := common.Recommendation{Term: "1yr", Details: nil}
-
-	_, err := c.GetOfferingDetails(context.Background(), rec)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid service details")
-}
-
 // --- HTTP client regression tests (issue #1021) ---
 
 // mockHTTPClient is a testify/mock-based HTTPClient stub for savingsplans tests.
@@ -900,14 +801,10 @@ func TestCommitmentCurrency_SameAcrossPurchaseValidateOffering(t *testing.T) {
 	_, err := c.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
 	require.NoError(t, err)
 	require.NoError(t, c.ValidateOffering(context.Background(), rec))
-	details, err := c.GetOfferingDetails(context.Background(), rec)
-	require.NoError(t, err)
-
 	commitment := alias.capturedBody.Properties.Commitment
 	assert.Equal(t, "JPY", *commitment.CurrencyCode)
 	assert.InDelta(t, 12.0, *commitment.Amount, 0.001)
 	assert.Equal(t, "JPY", *rp.captured.Benefits[0].Properties.Commitment.CurrencyCode)
-	assert.Equal(t, "JPY", details.Currency)
 }
 
 func TestCommitmentCurrency_FailsClosed(t *testing.T) {
@@ -926,8 +823,6 @@ func TestCommitmentCurrency_FailsClosed(t *testing.T) {
 			assert.Zero(t, alias.calls)
 			require.Error(t, c.ValidateOffering(context.Background(), rec))
 			assert.Zero(t, rp.calls)
-			_, err = c.GetOfferingDetails(context.Background(), rec)
-			require.Error(t, err)
 		})
 	}
 }
