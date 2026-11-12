@@ -336,7 +336,7 @@ func (a *groupedDayAccumulator) addPeriods(periods []types.CoverageByTime) error
 		}
 		day := aws.ToString(period.TimePeriod.Start)
 		for _, group := range period.Groups {
-			instType, _ := extractGroupAttributes(group.Attributes)
+			instType, _, _ := extractGroupAttributes(group.Attributes)
 			if len(a.byLower[instType]) == 0 {
 				continue // region-wide response: ignore types nobody requested
 			}

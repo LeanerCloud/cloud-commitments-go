@@ -136,7 +136,7 @@ func TestFetchCoveragePaged_CapsEndlessTokens(t *testing.T) {
 	mock := &endlessCE{}
 	client := NewClientWithAPI(mock, "us-east-1")
 	err := client.fetchCoveragePaged(context.Background(), &costexplorer.GetReservationCoverageInput{},
-		func(string, string, PoolCoverage) { t.Fatal("partial results must not be recorded") }, 1)
+		func(string, string, string, PoolCoverage) { t.Fatal("partial results must not be recorded") }, 1)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "pagination cap reached")
 	assert.Equal(t, int32(maxCoveragePages), mock.covCalls.Load())

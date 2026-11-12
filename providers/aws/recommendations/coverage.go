@@ -27,7 +27,7 @@ import (
 // into the GroupBy alongside INSTANCE_TYPE.
 var coverageServiceFilters = []string{
 	ec2CoverageService,          // EC2
-	"Amazon ElastiCache",        // ElastiCache
+	cacheCoverageService,        // ElastiCache
 	"Amazon OpenSearch Service", // OpenSearch
 	"Amazon Redshift",           // Redshift
 	"Amazon MemoryDB",           // MemoryDB
@@ -35,6 +35,9 @@ var coverageServiceFilters = []string{
 
 // ec2CoverageService is CE's SERVICE dimension value for EC2.
 const ec2CoverageService = "Amazon Elastic Compute Cloud - Compute"
+
+// cacheCoverageService is CE's SERVICE dimension value for ElastiCache.
+const cacheCoverageService = "Amazon ElastiCache"
 
 // rdsCoverageEngines enumerates CE's DATABASE_ENGINE dimension values for
 // RDS recommendations. CUDly's parser normalises engine names to lowercase
@@ -86,6 +89,22 @@ type PoolCoverageMap map[string]PoolCoverage
 // to normalise case at every site.
 func poolKey(region, instanceType string) string {
 	return strings.ToLower(region) + ":" + strings.ToLower(instanceType)
+}
+
+// elastiCachePoolKey returns the lookup key for an ElastiCache pool. The
+// engine is part of the key: a Redis or Valkey reservation cannot cover
+// Memcached demand of the same node type, so their pools must stay apart on
+// the commitment, coverage and recommendation sides alike (issue #475).
+func elastiCachePoolKey(region, nodeType, engine string) string {
+	return poolKey(region, nodeType) + ":" + strings.ToLower(strings.TrimSpace(engine))
+}
+
+// isElastiCacheService reports whether a commitment or recommendation is an
+// ElastiCache one. Commitments carry common.ServiceCache; recommendations may
+// carry either name. MemoryDB recs also carry CacheDetails, so callers must
+// check the service rather than the details type.
+func isElastiCacheService(service common.ServiceType) bool {
+	return service == common.ServiceCache || service == common.ServiceElastiCache
 }
 
 // rdsPoolKey returns the engine + deployment-aware lookup key for an RDS
@@ -245,15 +264,15 @@ func (c *Client) fetchCoverageForRDSEngineRegion(ctx context.Context, startStr, 
 		Filter:  rdsEngineRegionFilter(engine, region),
 		Metrics: []string{"Hour"},
 	}
-	return c.fetchCoveragePaged(ctx, input, func(instType, deployment string, cov PoolCoverage) {
+	return c.fetchCoveragePaged(ctx, input, func(instType, deployment, _ string, cov PoolCoverage) {
 		out[rdsPoolKey(region, instType, engine, deployment)] = cov
 	}, windowHours)
 }
 
 // fetchCoverageForServiceRegion fetches coverage for one (non-RDS
-// service, region) tuple. Writes entries keyed by "region:instance_type"
-// — non-RDS services don't have an engine or deployment split worth
-// tracking the way RDS does, so we group by INSTANCE_TYPE alone.
+// service, region) tuple. Writes entries keyed by "region:instance_type",
+// except ElastiCache, which is grouped by CACHE_ENGINE as well and keyed by
+// elastiCachePoolKey so Redis, Valkey and Memcached pools stay apart.
 //
 // "Hour" tells CE to include the Hour coverage block in the response;
 // CoverageHoursPercentage + TotalRunningHours inside that block are what
@@ -261,20 +280,29 @@ func (c *Client) fetchCoverageForRDSEngineRegion(ctx context.Context, startStr, 
 // rejects it with ValidationException) — Metrics names the block, the
 // percentage / hours fields are computed and included automatically.
 func (c *Client) fetchCoverageForServiceRegion(ctx context.Context, startStr, endStr string, windowHours float64, service, region string, out PoolCoverageMap) error {
+	groupBy := []types.GroupDefinition{
+		{Type: types.GroupDefinitionTypeDimension, Key: aws.String(string(types.DimensionInstanceType))},
+	}
+	isCache := service == cacheCoverageService
+	if isCache {
+		groupBy = append(groupBy, types.GroupDefinition{Type: types.GroupDefinitionTypeDimension, Key: aws.String(string(types.DimensionCacheEngine))})
+	}
 	input := &costexplorer.GetReservationCoverageInput{
 		TimePeriod: &types.DateInterval{Start: aws.String(startStr), End: aws.String(endStr)},
-		GroupBy: []types.GroupDefinition{
-			{Type: types.GroupDefinitionTypeDimension, Key: aws.String(string(types.DimensionInstanceType))},
-		},
-		Filter:  serviceRegionFilter(service, region),
-		Metrics: []string{"Hour"},
+		GroupBy:    groupBy,
+		Filter:     serviceRegionFilter(service, region),
+		Metrics:    []string{"Hour"},
 	}
-	return c.fetchCoveragePaged(ctx, input, func(instType, _ string, cov PoolCoverage) {
+	return c.fetchCoveragePaged(ctx, input, func(instType, _, engine string, cov PoolCoverage) {
+		if isCache {
+			out[elastiCachePoolKey(region, instType, engine)] = cov
+			return
+		}
 		out[poolKey(region, instType)] = cov
 	}, windowHours)
 }
 
-type riCoveragePool struct{ instanceType, deployment string }
+type riCoveragePool struct{ instanceType, deployment, cacheEngine string }
 type riCoverageTotals struct {
 	average, weightedPct, lastPct float64
 	// invalid poisons the whole pool: groups are summed across periods and
@@ -285,12 +313,12 @@ type riCoverageTotals struct {
 type riCoverageAccumulator map[riCoveragePool]riCoverageTotals
 
 func (a riCoverageAccumulator) addGroup(group types.ReservationCoverageGroup, windowHours float64) {
-	instType, deployment := extractGroupAttributes(group.Attributes)
+	instType, deployment, cacheEngine := extractGroupAttributes(group.Attributes)
 	if instType == "" {
 		return
 	}
 	cov, ok, err := poolCoverageFromGroup(group, windowHours)
-	key := riCoveragePool{instType, normaliseDeployment(deployment)}
+	key := riCoveragePool{instType, normaliseDeployment(deployment), cacheEngine}
 	sum := a[key]
 	if err != nil {
 		log.Printf("warning: dropping RI coverage pool %s/%s: %v", key.instanceType, key.deployment, err)
@@ -312,7 +340,7 @@ func (a riCoverageAccumulator) addGroup(group types.ReservationCoverageGroup, wi
 func (c *Client) fetchCoveragePaged(
 	ctx context.Context,
 	input *costexplorer.GetReservationCoverageInput,
-	record func(instType, deployment string, cov PoolCoverage),
+	record func(instType, deployment, cacheEngine string, cov PoolCoverage),
 	windowHours float64,
 ) error {
 	acc := make(riCoverageAccumulator)
@@ -338,7 +366,7 @@ func (c *Client) fetchCoveragePaged(
 
 // record emits one PoolCoverage per valid pool, skipping pools poisoned by an
 // unparsable value (see riCoverageTotals.invalid).
-func (a riCoverageAccumulator) record(record func(instType, deployment string, cov PoolCoverage)) {
+func (a riCoverageAccumulator) record(record func(instType, deployment, cacheEngine string, cov PoolCoverage)) {
 	for key, sum := range a {
 		if sum.invalid {
 			continue
@@ -347,7 +375,7 @@ func (a riCoverageAccumulator) record(record func(instType, deployment string, c
 		if sum.average > 0 {
 			pct = sum.weightedPct / sum.average
 		}
-		record(key.instanceType, key.deployment, PoolCoverage{Pct: pct, AvgInstancesPerHour: sum.average})
+		record(key.instanceType, key.deployment, key.cacheEngine, PoolCoverage{Pct: pct, AvgInstancesPerHour: sum.average})
 	}
 }
 
@@ -417,23 +445,25 @@ func poolCoverageFromGroup(group types.ReservationCoverageGroup, windowHours flo
 	return PoolCoverage{Pct: pct, AvgInstancesPerHour: avg}, true, nil
 }
 
-// extractGroupAttributes reads INSTANCE_TYPE and DEPLOYMENT_OPTION values
-// from CE's Attributes map. CE sends keys in camelCase ("instanceType",
-// "deploymentOption") even though the GroupBy input expects
-// SCREAMING_SNAKE_CASE ("INSTANCE_TYPE", "DEPLOYMENT_OPTION"); normalise
-// both sides by stripping underscores and lower-casing before comparing.
-// Returns empty strings for absent dimensions — the deployment slot is
-// optional (non-RDS callers don't group by it and won't pass it through).
-func extractGroupAttributes(attrs map[string]string) (instanceType, deployment string) {
+// extractGroupAttributes reads INSTANCE_TYPE, DEPLOYMENT_OPTION and
+// CACHE_ENGINE values from CE's Attributes map. CE sends keys in camelCase
+// ("instanceType", "deploymentOption", "cacheEngine") even though the GroupBy
+// input expects SCREAMING_SNAKE_CASE; normalise both sides by stripping
+// underscores and lower-casing before comparing. Returns empty strings for
+// absent dimensions: each optional slot is only set by the callers that group
+// by it.
+func extractGroupAttributes(attrs map[string]string) (instanceType, deployment, cacheEngine string) {
 	for k, v := range attrs {
 		switch strings.ToLower(strings.ReplaceAll(k, "_", "")) {
 		case "instancetype":
 			instanceType = strings.ToLower(v)
 		case "deploymentoption":
 			deployment = v
+		case "cacheengine":
+			cacheEngine = strings.ToLower(strings.TrimSpace(v))
 		}
 	}
-	return instanceType, deployment
+	return instanceType, deployment, cacheEngine
 }
 
 // ApplyCoverageMapToRecommendations sets ExistingCoveragePct on each rec
@@ -520,7 +550,19 @@ func lookupPoolKey(rec common.Recommendation) string {
 	if engine, deployment := rdsEngineDeploymentFromRec(rec); engine != "" {
 		return rdsPoolKey(rec.Region, rec.ResourceType, engine, deployment)
 	}
+	if isElastiCacheService(rec.Service) {
+		return elastiCachePoolKey(rec.Region, rec.ResourceType, cacheEngineFromRec(rec))
+	}
 	return poolKey(rec.Region, rec.ResourceType)
+}
+
+// cacheEngineFromRec returns the ElastiCache engine from a recommendation's
+// CacheDetails, or "" when the rec carries none.
+func cacheEngineFromRec(rec common.Recommendation) string {
+	if details, ok := rec.Details.(*common.CacheDetails); ok && details != nil {
+		return details.Engine
+	}
+	return ""
 }
 
 // rdsEngineDeploymentFromRec extracts the RDS engine and deployment

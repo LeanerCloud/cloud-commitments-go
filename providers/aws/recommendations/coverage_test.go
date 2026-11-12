@@ -454,7 +454,7 @@ func TestFetchCoveragePaged_CtxCancelReturnsError(t *testing.T) {
 	err := client.fetchCoveragePaged(
 		ctx,
 		&costexplorer.GetReservationCoverageInput{},
-		func(_, _ string, _ PoolCoverage) {},
+		func(_, _, _ string, _ PoolCoverage) {},
 		720,
 	)
 	require.ErrorIs(t, err, context.Canceled, "canceled context must surface an error from fetchCoveragePaged")
@@ -542,7 +542,7 @@ func TestGetEC2RICoverageMap_QueriesOnlyEC2(t *testing.T) {
 	t.Parallel()
 	mock := &serviceRoutedCoverageCE{byService: map[string]*costexplorer.GetReservationCoverageOutput{
 		ec2CoverageService:          coverageOutputFor("m5.large", "80.0"),
-		"Amazon ElastiCache":        coverageOutputFor("cache.m5.large", "0.0"),
+		"Amazon ElastiCache":        cacheCoverageOutput(cacheCoverageGroup("cache.m5.large", "redis", "0.0")),
 		"Amazon Redshift":           coverageOutputFor("dc2.large", "0.0"),
 		"Amazon OpenSearch Service": coverageOutputFor("m5.large.search", "0.0"),
 		"Amazon MemoryDB":           coverageOutputFor("db.r6g.large", "0.0"),
@@ -560,7 +560,7 @@ func TestGetEC2RICoverageMap_QueriesOnlyEC2(t *testing.T) {
 	// for its multi-service callers (target-coverage sizing).
 	all, err := client.GetRICoverageMap(context.Background(), 30, []string{"us-east-1"})
 	require.NoError(t, err)
-	assert.Contains(t, all, poolKey("us-east-1", "cache.m5.large"))
+	assert.Contains(t, all, elastiCachePoolKey("us-east-1", "cache.m5.large", "redis"))
 	assert.Contains(t, all, poolKey("us-east-1", "dc2.large"))
 }
 

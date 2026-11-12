@@ -215,11 +215,14 @@ func commitmentIsActive(c common.Commitment) bool {
 // Non-RDS services share the region:type key with no service dimension. That
 // is safe only because the ResourceType shapes are disjoint (EC2 m5.large,
 // ElastiCache cache.m5.large, OpenSearch m5.large.search, Redshift ra3.*,
-// MemoryDB db.*); TestPoolKeys_* in expiry_poolkey_test.go guards it. Engine
-// is not part of the non-RDS key, see go#475.
+// MemoryDB db.*); TestPoolKeys_* in expiry_poolkey_test.go guards it. ElastiCache
+// adds the engine (issue #475) so Redis and Memcached pools never net.
 func commitmentPoolKey(c common.Commitment) string {
 	if c.Service == common.ServiceRDS || c.Service == common.ServiceRelationalDB {
 		return rdsPoolKey(c.Region, c.ResourceType, c.Engine, c.Deployment)
+	}
+	if isElastiCacheService(c.Service) {
+		return elastiCachePoolKey(c.Region, c.ResourceType, c.Engine)
 	}
 	return poolKey(c.Region, c.ResourceType)
 }
