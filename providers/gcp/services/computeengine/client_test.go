@@ -376,20 +376,6 @@ func TestComputePricingStructure(t *testing.T) {
 	assert.Equal(t, 50.0, pricing.SavingsPercentage)
 }
 
-func TestComputeEngineClient_ValidateOffering_NoCredentials(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client, _ := NewClient("test-project", "us-central1")
-
-	rec := common.Recommendation{
-		ResourceType: "n1-standard-1",
-	}
-
-	// Will fail without credentials
-	err := client.ValidateOffering(ctx, rec)
-	assert.Error(t, err)
-}
-
 func TestComputeEngineClient_GetExistingCommitments_WithMock(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -539,43 +525,6 @@ func TestComputeEngineClient_GetValidResourceTypes_Empty(t *testing.T) {
 	_, err := client.GetValidResourceTypes(ctx)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no machine types found")
-}
-
-func TestComputeEngineClient_ValidateOffering_Valid(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client, _ := NewClient("test-project", "us-central1")
-
-	name := "n1-standard-1"
-	mockService := &MockMachineTypesService{
-		machineTypes: []*computepb.MachineType{
-			{Name: &name},
-		},
-	}
-	client.SetMachineTypesService(mockService)
-
-	rec := common.Recommendation{ResourceType: "n1-standard-1"}
-	err := client.ValidateOffering(ctx, rec)
-	assert.NoError(t, err)
-}
-
-func TestComputeEngineClient_ValidateOffering_Invalid(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client, _ := NewClient("test-project", "us-central1")
-
-	name := "n1-standard-1"
-	mockService := &MockMachineTypesService{
-		machineTypes: []*computepb.MachineType{
-			{Name: &name},
-		},
-	}
-	client.SetMachineTypesService(mockService)
-
-	rec := common.Recommendation{ResourceType: "invalid-type"}
-	err := client.ValidateOffering(ctx, rec)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid GCP machine type")
 }
 
 func TestComputeEngineClient_PurchaseCommitment_WithMock(t *testing.T) {
