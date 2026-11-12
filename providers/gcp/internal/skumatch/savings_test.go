@@ -2,7 +2,6 @@ package skumatch
 
 import (
 	"fmt"
-	"math"
 	"testing"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -29,21 +28,11 @@ func TestSavingsPercent(t *testing.T) {
 		})
 	}
 
-	t.Run("zero on-demand with commitment is -Inf", func(t *testing.T) {
+	t.Run("non-positive on-demand total yields 0, never NaN or Inf", func(t *testing.T) {
 		t.Parallel()
-		assert.True(t, math.IsInf(SavingsPercent(0, 8760, 100), -1))
-	})
-	t.Run("zero hours with commitment is -Inf", func(t *testing.T) {
-		t.Parallel()
-		assert.True(t, math.IsInf(SavingsPercent(1, 0, 100), -1))
-	})
-	t.Run("zero on-demand and zero commitment is NaN", func(t *testing.T) {
-		t.Parallel()
-		assert.True(t, math.IsNaN(SavingsPercent(0, 8760, 0)))
-	})
-	t.Run("negative on-demand flips the sign", func(t *testing.T) {
-		t.Parallel()
-		assert.InDelta(t, 200, SavingsPercent(-1, 100, 100), 1e-9)
+		for _, got := range []float64{SavingsPercent(0, 8760, 100), SavingsPercent(1, 0, 100), SavingsPercent(0, 8760, 0), SavingsPercent(-1, 100, 100)} {
+			assert.Equal(t, 0.0, got)
+		}
 	})
 }
 

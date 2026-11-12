@@ -351,7 +351,7 @@ func (c *Client) getComputePricing(ctx context.Context, machineType, region stri
 		CommitmentPrice:   commitHourly * hours,
 		OnDemandPrice:     onDemandHourly * hours,
 		Currency:          rates.currency,
-		SavingsPercentage: (onDemandHourly - commitHourly) / onDemandHourly * 100,
+		SavingsPercentage: common.SavingsPct(onDemandHourly, commitHourly),
 	}, nil
 }
 

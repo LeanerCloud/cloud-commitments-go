@@ -86,7 +86,7 @@ func TestShouldIncludeService(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			result := shouldIncludeService(tt.params, tt.service)
+			result := common.ShouldIncludeService(tt.params, tt.service)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -178,7 +178,7 @@ func TestRecommendationsClientAdapter_GetRecommendations_PropagatesContextCancel
 		"GetRecommendations must propagate the parent ctx error")
 }
 
-// TestShouldIncludeService_Cache_Storage verifies that shouldIncludeService
+// TestShouldIncludeService_Cache_Storage verifies that common.ShouldIncludeService
 // matches ServiceCache and ServiceStorage like any other service. Neither is
 // part of the region fan-out (issues #78 and #294); this pins the helper only.
 func TestShouldIncludeService_Cache_Storage(t *testing.T) {
@@ -229,7 +229,7 @@ func TestShouldIncludeService_Cache_Storage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, tt.expected, shouldIncludeService(tt.params, tt.service))
+			assert.Equal(t, tt.expected, common.ShouldIncludeService(tt.params, tt.service))
 		})
 	}
 }

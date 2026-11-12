@@ -142,12 +142,12 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 	// Record which services the params filter lets through so the merge can
 	// distinguish "skipped by filter" from "attempted and succeeded with zero
 	// recommendations" when applying the all-attempted-failed guard.
-	includeCompute := shouldIncludeService(*params, common.ServiceCompute)
-	includeDB := shouldIncludeService(*params, common.ServiceRelationalDB)
-	includeRedis := shouldIncludeService(*params, common.ServiceMemoryDB)
-	includeCosmos := shouldIncludeService(*params, common.ServiceNoSQL)
-	includeSP := shouldIncludeService(*params, common.ServiceSavingsPlansAll)
-	includeSynapse := shouldIncludeService(*params, common.ServiceDataWarehouse)
+	includeCompute := common.ShouldIncludeService(*params, common.ServiceCompute)
+	includeDB := common.ShouldIncludeService(*params, common.ServiceRelationalDB)
+	includeRedis := common.ShouldIncludeService(*params, common.ServiceMemoryDB)
+	includeCosmos := common.ShouldIncludeService(*params, common.ServiceNoSQL)
+	includeSP := common.ShouldIncludeService(*params, common.ServiceSavingsPlansAll)
+	includeSynapse := common.ShouldIncludeService(*params, common.ServiceDataWarehouse)
 
 	// Compute (VM) recommendations — subscription-wide.
 	if includeCompute {
@@ -543,7 +543,7 @@ func (r *RecommendationsClientAdapter) appendAdvisorPageRecs(
 			continue
 		}
 		rec := r.convertAdvisorRecommendation(ctx, advisorRec)
-		if rec != nil && shouldIncludeService(params, rec.Service) {
+		if rec != nil && common.ShouldIncludeService(params, rec.Service) {
 			if rec.CommitmentType == common.CommitmentReservedInstance {
 				recommendations = append(recommendations, *rec) // priced after the drops
 				continue
@@ -807,17 +807,6 @@ func extractRegionFromResourceID(resourceID string) string {
 		return rest
 	}
 	return ""
-}
-
-// shouldIncludeService checks if a service should be included based on params.
-func shouldIncludeService(params common.RecommendationParams, service common.ServiceType) bool {
-	// If no service specified in params, include all
-	if params.Service == "" {
-		return true
-	}
-
-	// Check if this is the requested service
-	return params.Service == service
 }
 
 var vmFamilyRe = regexp.MustCompile(`(?i)^standard_([a-z]+)\d`)

@@ -4,9 +4,7 @@ package gcp
 import (
 	"context"
 	"fmt"
-	"os"
 	"sort"
-	"strconv"
 	"sync"
 
 	"golang.org/x/sync/errgroup"
@@ -36,12 +34,7 @@ const defaultGCPRegionConcurrency = 10
 // separate Go module from internal/execution and cannot import its
 // ConcurrencyFromEnv counterpart directly.
 func gcpRegionConcurrency() int {
-	if v := os.Getenv("CUDLY_GCP_REGION_PARALLELISM"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return n
-		}
-	}
-	return defaultGCPRegionConcurrency
+	return common.PositiveIntFromEnv("CUDLY_GCP_REGION_PARALLELISM", defaultGCPRegionConcurrency)
 }
 
 // regionResult bundles the recommendations returned for a single GCP region.
@@ -292,7 +285,7 @@ func (r *RecommendationsClientAdapter) collectUnsupportedRecs(ctx context.Contex
 // call counts and the error so mergeRegionResults can fail loud when EVERY
 // attempted call across all regions errored (COR-03).
 func (r *RecommendationsClientAdapter) collectRegion(ctx context.Context, params common.RecommendationParams, region string) regionResult {
-	if !shouldIncludeService(params, common.ServiceCompute) {
+	if !common.ShouldIncludeService(params, common.ServiceCompute) {
 		return regionResult{}
 	}
 	recs, err := r.collectComputeRecs(ctx, params, region)
@@ -337,15 +330,4 @@ func (r *RecommendationsClientAdapter) getRegions(ctx context.Context) ([]string
 	}
 
 	return regionNames, nil
-}
-
-// shouldIncludeService checks if a service should be included based on params.
-func shouldIncludeService(params common.RecommendationParams, service common.ServiceType) bool {
-	// If no service specified in params, include all
-	if params.Service == "" {
-		return true
-	}
-
-	// Check if this is the requested service
-	return params.Service == service
 }

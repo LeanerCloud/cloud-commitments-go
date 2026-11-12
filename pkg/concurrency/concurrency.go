@@ -21,10 +21,10 @@ package concurrency
 
 import (
 	"context"
-	"os"
-	"strconv"
 
 	"golang.org/x/sync/semaphore"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // DefaultMaxParallelism is the default cap on aggregate concurrent leaf
@@ -36,12 +36,7 @@ const DefaultMaxParallelism = 20
 // positive-integer value, falling back to DefaultMaxParallelism on unset /
 // invalid / non-positive values.
 func MaxParallelismFromEnv() int {
-	if v := os.Getenv("CUDLY_MAX_PARALLELISM"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return n
-		}
-	}
-	return DefaultMaxParallelism
+	return common.PositiveIntFromEnv("CUDLY_MAX_PARALLELISM", DefaultMaxParallelism)
 }
 
 type ctxKey struct{}

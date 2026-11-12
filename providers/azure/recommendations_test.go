@@ -77,7 +77,7 @@ func TestShouldIncludeService(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := shouldIncludeService(tt.params, tt.service)
+			result := common.ShouldIncludeService(tt.params, tt.service)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -301,7 +301,7 @@ func TestGetRecommendations_UsesInjectedAdvisor(t *testing.T) {
 	require.Equal(t, []common.Recommendation{want}, recs)
 }
 
-// TestGetRecommendations_SavingsPlansServiceIncluded pins that shouldIncludeService
+// TestGetRecommendations_SavingsPlansServiceIncluded pins that common.ShouldIncludeService
 // allows ServiceSavingsPlansAll through both when params.Service is empty (all-services
 // sweep) and when explicitly set to ServiceSavingsPlansAll, and does not include it
 // when a different service is requested. This ensures the SP goroutine added to the
@@ -331,7 +331,7 @@ func TestGetRecommendations_SavingsPlansServiceIncluded(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := shouldIncludeService(tt.params, common.ServiceSavingsPlansAll)
+			got := common.ShouldIncludeService(tt.params, common.ServiceSavingsPlansAll)
 			assert.Equal(t, tt.expected, got)
 		})
 	}
