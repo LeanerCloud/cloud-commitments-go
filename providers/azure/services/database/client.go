@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -461,13 +462,63 @@ func (c *Client) ReservationUnitPrice(ctx context.Context, sku, region string, t
 	return azrecs.ReservationPrice{Total: p.ReservationPrice, Currency: p.Currency}, nil
 }
 
-// getSQLPricing gets real pricing from Azure Retail Prices API.
+// sqlRetailSKUByTierGen maps a reservation capability's tier and hardware
+// generation to the Retail Prices armSkuName of its per-vCore reservation row.
+// Only rows verified in the live catalog are listed; anything else fails loud.
+var sqlRetailSKUByTierGen = map[string]string{
+	"GP_Gen5":               "SQLDB_GP_Compute_Gen5",
+	"GeneralPurpose_Gen5":   "SQLDB_GP_Compute_Gen5",
+	"BC_Gen5":               "SQLDB_BC_Compute_Gen5",
+	"BusinessCritical_Gen5": "SQLDB_BC_Compute_Gen5",
+	"HS_Gen5":               "SQLDB_HyperScale_Compute_Gen5",
+	"Hyperscale_Gen5":       "SQLDB_HyperScale_Compute_Gen5",
+}
+
+// sqlRetailZRSKUByTierGen maps the zone-redundant variant of a capability
+// (suffix "_ZR") to its retail armSkuName. Only the GP row is in the live
+// catalog; BC and HyperScale zone-redundant rows do not exist, so they fail loud.
+var sqlRetailZRSKUByTierGen = map[string]string{
+	"GP_Gen5":             "SQLDB_GP_Compute_Gen5_ZR",
+	"GeneralPurpose_Gen5": "SQLDB_GP_Compute_Gen5_ZR",
+}
+
+// retailSKUForCapability splits a capability name such as "GP_Gen5_2" (or
+// "GP_Gen5_2_ZR" for zone-redundant) into its retail armSkuName (per-vCore
+// row) and vCore count.
+func retailSKUForCapability(capability string) (armSKU string, vCores int, err error) {
+	name, zoneRedundant := strings.CutSuffix(capability, "_ZR")
+	parts := strings.Split(name, "_")
+	if len(parts) != 3 {
+		return "", 0, fmt.Errorf("SQL capability %q is not <tier>_<generation>_<vCores>", capability)
+	}
+	table := sqlRetailSKUByTierGen
+	if zoneRedundant {
+		table = sqlRetailZRSKUByTierGen
+	}
+	armSKU, ok := table[parts[0]+"_"+parts[1]]
+	if !ok {
+		return "", 0, fmt.Errorf("no retail SKU mapping for SQL capability %q", capability)
+	}
+	vCores, err = strconv.Atoi(parts[2])
+	if err != nil || vCores <= 0 || strconv.Itoa(vCores) != parts[2] {
+		return "", 0, fmt.Errorf("SQL capability %q has invalid vCore count %q", capability, parts[2])
+	}
+	return armSKU, vCores, nil
+}
+
+// getSQLPricing gets real pricing from Azure Retail Prices API. The retail
+// catalog prices SQL per vCore, so the term total is the per-vCore row times
+// the vCore count of the capability.
 func (c *Client) getSQLPricing(ctx context.Context, sku, region string, termYears int) (*SQLPricing, error) {
+	armSKU, vCores, err := retailSKUForCapability(sku)
+	if err != nil {
+		return nil, err
+	}
 	qRegion, err := pricing.ODataString(region)
 	if err != nil {
 		return nil, err
 	}
-	qSKU, err := pricing.ODataString(sku)
+	qSKU, err := pricing.ODataString(armSKU)
 	if err != nil {
 		return nil, err
 	}
@@ -480,19 +531,20 @@ func (c *Client) getSQLPricing(ctx context.Context, sku, region string, termYear
 	}
 
 	if len(priceData.Items) == 0 {
-		return nil, fmt.Errorf("no pricing data found for SKU %s in region %s", sku, region)
+		return nil, fmt.Errorf("no pricing data found for SKU %s (retail %s) in region %s", sku, armSKU, region)
 	}
 
 	reservation, err := pricing.SelectReservation(priceData.Items, termYears, func(item pricing.RetailPriceItem) bool {
-		return item.ServiceName == "SQL Database" && item.ArmRegionName == region && item.ArmSKUName == sku
+		return item.ServiceName == "SQL Database" && item.ArmRegionName == region && item.ArmSKUName == armSKU
 	})
 	if err != nil {
-		return nil, fmt.Errorf("SQL Database SKU %s in region %s: %w", sku, region, err)
+		return nil, fmt.Errorf("SQL Database SKU %s (retail %s) in region %s: %w", sku, armSKU, region, err)
 	}
 
+	total := reservation.RetailPrice * float64(vCores)
 	return &SQLPricing{
-		HourlyRate:       reservation.RetailPrice / (common.HoursPerYear * float64(termYears)),
-		ReservationPrice: reservation.RetailPrice,
+		HourlyRate:       total / (common.HoursPerYear * float64(termYears)),
+		ReservationPrice: total,
 		Currency:         reservation.CurrencyCode,
 	}, nil
 }
