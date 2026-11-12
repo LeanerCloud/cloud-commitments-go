@@ -6,6 +6,7 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/api/cloudbilling/v1"
 )
 
@@ -109,16 +110,13 @@ func TestOfferingDetails(t *testing.T) {
 		{"monthly", 3, 0, 1200.0 / 36},
 		{"no-upfront", 1, 0, 100},
 		{"no-upfront", 3, 0, 1200.0 / 36},
-		{"bogus", 1, 1200, 0},
-		{"bogus", 3, 1200, 0},
-		{"", 1, 1200, 0},
-		{"", 3, 1200, 0},
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%q/%dyr", tt.option, tt.years), func(t *testing.T) {
 			t.Parallel()
 			rec := common.Recommendation{ResourceType: "rt", Term: "term-x", PaymentOption: tt.option}
-			got := OfferingDetails(rec, "id-1", tt.years, 1200, 0.5, "EUR")
+			got, err := OfferingDetails(rec, "id-1", tt.years, 1200, 0.5, "EUR")
+			require.NoError(t, err)
 			assert.Equal(t, &common.OfferingDetails{
 				OfferingID:          "id-1",
 				ResourceType:        "rt",
@@ -130,6 +128,19 @@ func TestOfferingDetails(t *testing.T) {
 				EffectiveHourlyRate: 0.5,
 				Currency:            "EUR",
 			}, got)
+		})
+	}
+}
+
+func TestOfferingDetails_UnknownPaymentOptionErrors(t *testing.T) {
+	t.Parallel()
+	for _, option := range []string{"bogus", "", "Partial Upfront"} {
+		t.Run(fmt.Sprintf("%q", option), func(t *testing.T) {
+			t.Parallel()
+			rec := common.Recommendation{ResourceType: "rt", Term: "1yr", PaymentOption: option}
+			got, err := OfferingDetails(rec, "id-1", 1, 1200, 0.5, "EUR")
+			require.Error(t, err)
+			assert.Nil(t, got)
 		})
 	}
 }

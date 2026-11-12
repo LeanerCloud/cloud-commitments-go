@@ -162,7 +162,7 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	}
 
 	offeringID := fmt.Sprintf("gcp-memorystore-%s-%s-%s", rec.ResourceType, c.region, rec.Term)
-	return skumatch.OfferingDetails(rec, offeringID, termYears, pricing.CommitmentPrice, pricing.HourlyRate, pricing.Currency), nil
+	return skumatch.OfferingDetails(rec, offeringID, termYears, pricing.CommitmentPrice, pricing.HourlyRate, pricing.Currency)
 }
 
 // GetValidResourceTypes returns valid Memorystore tiers.

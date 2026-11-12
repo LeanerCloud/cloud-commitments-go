@@ -1094,7 +1094,7 @@ func TestComputeEngineClient_GetOfferingDetails_Terms(t *testing.T) {
 	ctx := context.Background()
 	client, _ := NewClient("test-project", "us-central1")
 	client.SetBillingService(mockBillingWithCommitment())
-	rec := common.Recommendation{ResourceType: "n1-standard-4", Count: 4, Details: common.ComputeDetails{MemoryGB: 15}}
+	rec := common.Recommendation{ResourceType: "n1-standard-4", Count: 4, PaymentOption: "monthly", Details: common.ComputeDetails{MemoryGB: 15}}
 
 	rec.Term = "1yr"
 	one, err := client.GetOfferingDetails(ctx, rec)

@@ -590,7 +590,7 @@ func TestCloudStorageClient_GetOfferingDetails_BillingError(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to list SKUs")
 }
 
-func TestCloudStorageClient_GetOfferingDetails_DefaultPaymentOption(t *testing.T) {
+func TestCloudStorageClient_GetOfferingDetails_UnknownPaymentOptionErrors(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
@@ -606,12 +606,12 @@ func TestCloudStorageClient_GetOfferingDetails_DefaultPaymentOption(t *testing.T
 	rec := common.Recommendation{
 		ResourceType:  "STANDARD",
 		Term:          "1yr",
-		PaymentOption: "unknown", // Default case
+		PaymentOption: "unknown",
 	}
 
 	details, err := client.GetOfferingDetails(ctx, rec)
-	require.NoError(t, err)
-	assert.Greater(t, details.UpfrontCost, float64(0))
+	require.Error(t, err)
+	assert.Nil(t, details)
 }
 
 func TestCloudStorageClient_GetStoragePricing_WithCommitmentPrice(t *testing.T) {
