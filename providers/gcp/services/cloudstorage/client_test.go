@@ -111,26 +111,6 @@ func TestCloudStorageClient_GetRegion(t *testing.T) {
 	assert.Equal(t, "europe-west1", client.GetRegion())
 }
 
-func TestCloudStorageClient_GetValidResourceTypes(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client := &Client{
-		projectID: "test-project",
-		region:    "us-central1",
-	}
-
-	types, err := client.GetValidResourceTypes(ctx)
-	require.NoError(t, err)
-	require.NotEmpty(t, types)
-
-	// Verify expected storage classes
-	assert.Contains(t, types, "STANDARD")
-	assert.Contains(t, types, "NEARLINE")
-	assert.Contains(t, types, "COLDLINE")
-	assert.Contains(t, types, "ARCHIVE")
-	assert.Len(t, types, 4)
-}
-
 func TestStoragePricing_Fields(t *testing.T) {
 	t.Parallel()
 	pricing := &StoragePricing{

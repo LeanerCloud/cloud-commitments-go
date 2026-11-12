@@ -160,19 +160,6 @@ func TestMemorystoreClient_GetRegion(t *testing.T) {
 	}
 }
 
-func TestMemorystoreClient_GetValidResourceTypes(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	tiers, err := client.GetValidResourceTypes(ctx)
-	require.NoError(t, err)
-	require.NotEmpty(t, tiers)
-
-	assert.Contains(t, tiers, "BASIC")
-	assert.Contains(t, tiers, "STANDARD_HA")
-}
-
 func TestSkuMatchesTier(t *testing.T) {
 	t.Parallel()
 	tests := []struct {

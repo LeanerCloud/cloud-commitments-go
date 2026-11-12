@@ -32,10 +32,6 @@ const maxRecsPages = 10
 // maxReservationsPages caps reservation-detail pagination.
 const maxReservationsPages = 50
 
-// maxCachesPages caps the subscription-wide Redis cache list walked to
-// discover SKUs (matches cache/client.go).
-const maxCachesPages = 20
-
 // HTTPClient interface for HTTP operations (enables mocking).
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
@@ -333,82 +329,6 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 		EffectiveHourlyRate: redisPricing.HourlyRate,
 		Currency:            redisPricing.Currency,
 	}, nil
-}
-
-// GetValidResourceTypes returns Redis Cache SKUs discovered from the subscription, or a
-// curated fallback list when the subscription API is unreachable.
-func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
-	pager, err := c.redisCacheListPager()
-	if err != nil {
-		return c.commonSKUs(), nil
-	}
-
-	skuSet, err := collectSKUsFromPager(ctx, pager)
-	if err != nil {
-		// Discard any partial results and fall back to the curated SKU list
-		// rather than risk false validation failures for valid SKUs.
-		return c.commonSKUs(), nil
-	}
-	if len(skuSet) > 0 {
-		skus := make([]string, 0, len(skuSet))
-		for sku := range skuSet {
-			skus = append(skus, sku)
-		}
-		return skus, nil
-	}
-	return c.commonSKUs(), nil
-}
-
-// redisCacheListPager returns the pager to use for listing Redis caches,
-// preferring the injected mock over a real SDK pager.
-func (c *Client) redisCacheListPager() (RedisCachesPager, error) {
-	if c.redisCachesPager != nil {
-		return c.redisCachesPager, nil
-	}
-	client, err := armredis.NewClient(c.subscriptionID, c.cred, nil)
-	if err != nil {
-		return nil, err
-	}
-	return client.NewListBySubscriptionPager(nil), nil
-}
-
-// collectSKUsFromPager iterates the pager and returns the set of full SKU
-// names (e.g. "Premium_P1") built from each cache's Name/Family/Capacity.
-// On a pager error the caller is expected to discard any partial set and
-// fall back, so the returned set must be considered invalid when err != nil.
-func collectSKUsFromPager(ctx context.Context, pager RedisCachesPager) (map[string]bool, error) {
-	skuSet := make(map[string]bool)
-	for pageIdx := 0; pager.More(); pageIdx++ {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("managedredis: list caches: context canceled during pagination: %w", err)
-		}
-		if pageIdx >= maxCachesPages {
-			return nil, fmt.Errorf("managedredis: list caches: pagination cap (%d pages) reached", maxCachesPages)
-		}
-		page, err := slot.NextPage(ctx, pager)
-		if err != nil {
-			return nil, err
-		}
-		for _, cache := range page.Value {
-			if name := extractSKUName(cache); name != "" {
-				skuSet[name] = true
-			}
-		}
-	}
-	return skuSet, nil
-}
-
-// extractSKUName derives a full SKU string from a ResourceInfo entry.
-// Returns "" when the entry lacks the required fields.
-func extractSKUName(cache *armredis.ResourceInfo) string {
-	if cache == nil || cache.Properties == nil {
-		return ""
-	}
-	sku := cache.Properties.SKU
-	if sku == nil || sku.Name == nil || sku.Family == nil || sku.Capacity == nil {
-		return ""
-	}
-	return fmt.Sprintf("%s_%s%d", string(*sku.Name), string(*sku.Family), *sku.Capacity)
 }
 
 // commonSKUs returns a curated list of Azure Cache for Redis SKUs that support reservations.

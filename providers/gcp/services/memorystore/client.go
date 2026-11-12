@@ -150,17 +150,6 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	return skumatch.OfferingDetails(rec, offeringID, termYears, pricing.CommitmentPrice, pricing.HourlyRate, pricing.Currency)
 }
 
-// GetValidResourceTypes returns valid Memorystore tiers.
-func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
-	// Memorystore Redis has predefined tiers
-	validTiers := []string{
-		"BASIC",
-		"STANDARD_HA",
-	}
-
-	return validTiers, nil
-}
-
 // RedisPricing contains pricing information for Memorystore Redis.
 type RedisPricing struct {
 	Currency          string

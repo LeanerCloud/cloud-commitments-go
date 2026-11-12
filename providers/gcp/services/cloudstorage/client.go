@@ -146,19 +146,6 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	return skumatch.OfferingDetails(rec, offeringID, termYears, pricing.CommitmentPrice, pricing.HourlyRate, pricing.Currency)
 }
 
-// GetValidResourceTypes returns valid Cloud Storage classes.
-func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
-	// Cloud Storage has predefined storage classes
-	validClasses := []string{
-		"STANDARD",
-		"NEARLINE",
-		"COLDLINE",
-		"ARCHIVE",
-	}
-
-	return validClasses, nil
-}
-
 // StoragePricing contains pricing information for Cloud Storage.
 type StoragePricing struct {
 	Currency          string

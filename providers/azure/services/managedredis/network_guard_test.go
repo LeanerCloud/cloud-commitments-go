@@ -1,16 +1,12 @@
 package managedredis
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"sync/atomic"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // externalRequests counts requests that reached the loopback proxy that
@@ -36,17 +32,4 @@ func TestMain(m *testing.M) {
 		code = 1
 	}
 	os.Exit(code)
-}
-
-// TestClient_SKUValidation_MakesNoExternalRequests pins that SKU
-// validation with a stubbed Redis caches pager never reaches the network.
-func TestClient_SKUValidation_MakesNoExternalRequests(t *testing.T) {
-	before := externalRequests.Load()
-	c := NewClient(nil, "test-subscription", "eastus")
-	c.SetRedisCachesPager(&mockRedisPager{})
-
-	skus, err := c.GetValidResourceTypes(context.Background())
-	require.NoError(t, err)
-	assert.Contains(t, skus, "Premium_P1")
-	assert.Zero(t, externalRequests.Load()-before, "SKU validation must not reach the network")
 }
