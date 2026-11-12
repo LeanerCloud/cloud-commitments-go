@@ -85,6 +85,25 @@ func TestRecommendationPlanSkips(t *testing.T) {
 	}
 }
 
+// Issue #304: a payload with no root Commitment op carries no plan, so the plan
+// path cannot derive a term. The rec must be skipped, not bought with params.Term
+// or a guessed "1yr".
+func TestRecommendationPlanSkipsWithoutRootCommitment(t *testing.T) {
+	t.Parallel()
+	for _, term := range []string{"", "1yr", "3yr"} {
+		t.Run("term="+term, func(t *testing.T) {
+			t.Parallel()
+			rec := commitmentOnlyCUDRecommendation()
+			rec.StateInfo = &recommenderpb.RecommendationStateInfo{State: recommenderpb.RecommendationStateInfo_ACTIVE}
+			client, service := planClient(t, rec)
+			recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{Term: term, ExperimentalGCPPlanTerm: true})
+			require.NoError(t, err)
+			assert.Empty(t, recs)
+			assert.Empty(t, service.insertReqs)
+		})
+	}
+}
+
 // A conflicting recommendation is skipped without dropping its good neighbor.
 func TestRecommendationPlanConflictKeepsGoodRecommendation(t *testing.T) {
 	t.Parallel()

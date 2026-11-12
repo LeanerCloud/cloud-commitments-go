@@ -217,8 +217,8 @@ func canonicalTerm(term string) string {
 // resolveRecTerm picks the canonical term ("1yr"/"3yr") for a recommendation.
 // A root Commitment plan is authoritative: an explicit params.Term must agree
 // with it. A root Commitment without a plan needs an explicit params.Term. A
-// payload with no root Commitment keeps the params.Term / "1yr" fallback
-// (issue #291 follow-up).
+// payload with no root Commitment has no plan to read, so the term is not
+// derived and the recommendation is skipped (issue #304).
 //
 // EXPERIMENTAL: the plan path runs only when params.ExperimentalGCPPlanTerm is
 // set. The root-plan payload shape is unverified against a live Recommender.
@@ -234,31 +234,36 @@ func resolveRecTerm(gcpRec *recommenderpb.Recommendation, params common.Recommen
 	if err != nil {
 		return "", err
 	}
+	if root == nil {
+		return "", fmt.Errorf("%w: payload has no root Commitment to read the term from", errBadPlan)
+	}
 	planTerm, found, err := rootPlanTerm(root)
 	if err != nil {
 		return "", err
 	}
 	if !found {
-		return termWithoutPlan(root != nil, params.Term)
+		return termWithoutPlan(params.Term)
 	}
-	if params.Term == "" {
+	return reconcilePlanTerm(planTerm, params.Term)
+}
+
+// reconcilePlanTerm checks an explicit params term against the root plan term.
+func reconcilePlanTerm(planTerm, paramTerm string) (string, error) {
+	if paramTerm == "" {
 		return planTerm, nil
 	}
-	if want := canonicalTerm(params.Term); want != string(common.Term1Year) && want != string(common.Term3Year) {
+	if want := canonicalTerm(paramTerm); want != string(common.Term1Year) && want != string(common.Term3Year) {
 		return want, nil
 	} else if want != planTerm {
-		return "", fmt.Errorf("%w: params term %q conflicts with recommendation plan term %s", errBadPlan, params.Term, planTerm)
+		return "", fmt.Errorf("%w: params term %q conflicts with recommendation plan term %s", errBadPlan, paramTerm, planTerm)
 	}
 	return planTerm, nil
 }
 
-// termWithoutPlan resolves the term when the payload carries no plan.
-func termWithoutPlan(hasRoot bool, paramTerm string) (string, error) {
+// termWithoutPlan resolves the term when the root Commitment carries no plan.
+func termWithoutPlan(paramTerm string) (string, error) {
 	if paramTerm != "" {
 		return canonicalTerm(paramTerm), nil
 	}
-	if hasRoot {
-		return "", fmt.Errorf("%w: root Commitment has no plan and no explicit term was given", errBadPlan)
-	}
-	return "1yr", nil
+	return "", fmt.Errorf("%w: root Commitment has no plan and no explicit term was given", errBadPlan)
 }

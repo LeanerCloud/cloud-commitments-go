@@ -890,8 +890,9 @@ func (c *Client) getOrCreateBillingService(ctx context.Context) (BillingService,
 // (issue #1022 C2). Pricing failures are logged but do not discard the recommendation:
 // EstimatedSavings from the Recommender payload is the authoritative savings signal.
 // The term comes from the root Commitment plan when present (issue #291); an
-// explicit params.Term that disagrees, or a root without a plan and without
-// params.Term, returns errBadPlan so the caller skips the recommendation.
+// explicit params.Term that disagrees, a root without a plan and without
+// params.Term, or a payload with no root at all (issue #304), returns errBadPlan
+// so the caller skips the recommendation.
 // Returns nil when the term is unrecognized so the caller skips an unroutable
 // recommendation rather than queuing a purchase with an invalid plan.
 func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommenderpb.Recommendation, params common.RecommendationParams) (*common.Recommendation, error) {
