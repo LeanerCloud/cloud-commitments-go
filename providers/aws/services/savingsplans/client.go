@@ -486,7 +486,7 @@ func (c *Client) checkedPlanType(rec common.Recommendation, spDetails *common.Sa
 
 // findOfferingID finds the appropriate Savings Plans offering ID.
 // execID is the purchase execution UUID for log correlation; pass "" when
-// calling outside of a purchase flow (ValidateOffering).
+// calling outside of a purchase flow.
 func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation, execID string) (string, error) {
 	spDetails, ok := rec.Details.(*common.SavingsPlanDetails)
 	if !ok || spDetails == nil {
@@ -710,22 +710,6 @@ func (c *Client) lookupOfferingID(ctx context.Context, input *savingsplans.Descr
 	// survive the server-side filters. The first ID after sorting is returned.
 	sort.Strings(ids)
 	return ids[0], nil
-}
-
-// ValidateOffering checks if a Savings Plans offering exists.
-func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
-	_, err := c.findOfferingID(ctx, rec, "")
-	return err
-}
-
-// GetValidResourceTypes returns valid Savings Plan types.
-func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
-	return []string{
-		"Compute",
-		"EC2Instance",
-		"SageMaker",
-		"Database",
-	}, nil
 }
 
 // mapKeys extracts the keys from a string set (map[string]struct{}) as a

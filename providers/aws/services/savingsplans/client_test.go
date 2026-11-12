@@ -459,70 +459,6 @@ func TestClient_findOfferingID_RejectsMismatchedPlanType(t *testing.T) {
 	mockSP.AssertNotCalled(t, "DescribeSavingsPlansOfferings", mock.Anything, mock.Anything)
 }
 
-func TestClient_GetValidResourceTypes(t *testing.T) {
-	t.Parallel()
-	client := &Client{region: "us-east-1"}
-
-	result, err := client.GetValidResourceTypes(context.Background())
-
-	assert.NoError(t, err)
-	assert.NotEmpty(t, result)
-	assert.Contains(t, result, "Compute")
-	assert.Contains(t, result, "EC2Instance")
-	assert.Contains(t, result, "SageMaker")
-	assert.Contains(t, result, "Database")
-}
-
-func TestClient_ValidateOffering(t *testing.T) {
-	t.Parallel()
-	mockSP := &MockSavingsPlansClient{}
-	client := &Client{
-		client: mockSP,
-		region: "us-east-1",
-	}
-
-	rec := common.Recommendation{
-		Service:       common.ServiceSavingsPlansAll,
-		ResourceType:  "Compute",
-		PaymentOption: "all-upfront",
-		Term:          "1yr",
-		Details: &common.SavingsPlanDetails{
-			PlanType:         "Compute",
-			HourlyCommitment: 10.0,
-		},
-	}
-
-	mockSP.On("DescribeSavingsPlansOfferings", mock.Anything, mock.Anything).
-		Return(&savingsplans.DescribeSavingsPlansOfferingsOutput{
-			SearchResults: []types.SavingsPlanOffering{
-				{
-					OfferingId: aws.String("offering-123"),
-				},
-			},
-		}, nil)
-
-	err := client.ValidateOffering(context.Background(), rec)
-	assert.NoError(t, err)
-	mockSP.AssertExpectations(t)
-}
-
-func TestClient_ValidateOffering_InvalidDetails(t *testing.T) {
-	t.Parallel()
-	client := &Client{region: "us-east-1"}
-
-	// Use ComputeDetails instead of SavingsPlanDetails to test type assertion failure
-	rec := common.Recommendation{
-		Service: common.ServiceSavingsPlansAll,
-		Details: common.ComputeDetails{
-			InstanceType: "t3.micro",
-		},
-	}
-
-	err := client.ValidateOffering(context.Background(), rec)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid service details")
-}
-
 func TestClient_PurchaseCommitment(t *testing.T) {
 	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
@@ -918,7 +854,7 @@ func TestClient_FindOfferingID_AllPlanTypes(t *testing.T) {
 					}, nil)
 			}
 
-			err := client.ValidateOffering(context.Background(), rec)
+			_, err := client.findOfferingID(context.Background(), rec, "")
 
 			if tt.expectError {
 				assert.Error(t, err)
@@ -980,7 +916,7 @@ func TestClient_FindOfferingID_AllPaymentOptions(t *testing.T) {
 					}, nil).Once()
 			}
 
-			err := client.ValidateOffering(context.Background(), rec)
+			_, err := client.findOfferingID(context.Background(), rec, "")
 			if tt.expectError {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), "unsupported Savings Plans payment option")
@@ -1037,7 +973,7 @@ func TestClient_FindOfferingID_TermVariations(t *testing.T) {
 					}, nil).Once()
 			}
 
-			err := client.ValidateOffering(context.Background(), rec)
+			_, err := client.findOfferingID(context.Background(), rec, "")
 			if tt.expectError {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), "unsupported Savings Plans term")
@@ -1070,7 +1006,7 @@ func TestClient_FindOfferingID_APIError(t *testing.T) {
 	mockSP.On("DescribeSavingsPlansOfferings", mock.Anything, mock.Anything).
 		Return(nil, fmt.Errorf("API error"))
 
-	err := client.ValidateOffering(context.Background(), rec)
+	_, err := client.findOfferingID(context.Background(), rec, "")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to describe Savings Plans offerings")
 	mockSP.AssertExpectations(t)
@@ -1731,31 +1667,8 @@ func TestClient_AWSCNPartitionRejectedBeforeAnyAPICall(t *testing.T) {
 			assert.ErrorIs(t, err, ErrUnsupportedPartition)
 			assert.False(t, result.Success)
 
-			assert.ErrorIs(t, client.ValidateOffering(context.Background(), rec), ErrUnsupportedPartition)
 			mockSP.AssertNotCalled(t, "DescribeSavingsPlansOfferings", mock.Anything, mock.Anything)
 			mockSP.AssertNotCalled(t, "CreateSavingsPlan", mock.Anything, mock.Anything)
-		})
-	}
-}
-
-func TestClient_NonCNPartitionsStillQuote(t *testing.T) {
-	t.Parallel()
-	for _, region := range []string{"us-east-1", "us-gov-west-1", "eu-west-1"} {
-		t.Run(region, func(t *testing.T) {
-			t.Parallel()
-			mockSP := &MockSavingsPlansClient{}
-			mockSP.On("DescribeSavingsPlansOfferings", mock.Anything, mock.Anything).
-				Return(&savingsplans.DescribeSavingsPlansOfferingsOutput{
-					SearchResults: []types.SavingsPlanOffering{{OfferingId: aws.String("offering-1")}},
-				}, nil)
-			client := &Client{client: mockSP, region: region}
-			rec := common.Recommendation{
-				Service: common.ServiceSavingsPlansAll, ResourceType: "Compute", Region: region,
-				Count: 1, PaymentOption: "all-upfront", Term: "1yr",
-				Details: &common.SavingsPlanDetails{PlanType: "Compute", HourlyCommitment: 10.0},
-			}
-			assert.NoError(t, client.ValidateOffering(context.Background(), rec))
-			mockSP.AssertExpectations(t)
 		})
 	}
 }

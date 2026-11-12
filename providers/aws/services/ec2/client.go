@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -606,7 +605,7 @@ func (c *Client) buildEC2QueryFromRec(rec common.Recommendation) (ec2OfferingQue
 // Only scope has no typed equivalent on the input struct, so it stays in Filters[].
 //
 // execID is the purchase execution UUID for log correlation; pass "" when
-// calling outside of a purchase flow (ValidateOffering, GetOfferingDetails).
+// calling outside of a purchase flow (GetOfferingDetails).
 // offeringClassStr is the GlobalConfig.OfferingClass value; "" is treated as
 // "convertible" to preserve pre-694 behavior. Unknown values fail loudly.
 func (c *Client) findOffering(ctx context.Context, rec common.Recommendation, execID, offeringClassStr string) (*types.ReservedInstancesOffering, error) {
@@ -695,14 +694,6 @@ func scanEC2OfferingPage(offerings []types.ReservedInstancesOffering, q ec2Offer
 	return nil
 }
 
-// ValidateOffering checks if an offering exists without purchasing.
-// Uses the convertible class (empty = convertible default) since the
-// validation path has no GlobalConfig context.
-func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
-	_, err := c.findOffering(ctx, rec, "", "")
-	return err
-}
-
 // GetOfferingDetails prices the convertible offering (the PurchaseCommitment
 // default when PurchaseOptions.OfferingClass is empty). Callers that purchase
 // a standard RI must use GetOfferingDetailsForClass: the classes are distinct
@@ -782,48 +773,6 @@ func (c *Client) GetOfferingDetailsForClass(ctx context.Context, rec common.Reco
 	}
 
 	return details, nil
-}
-
-// GetValidResourceTypes returns valid EC2 instance types.
-func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
-	instanceTypesMap := make(map[string]bool)
-	var nextToken *string
-
-	for page := 0; ; page++ {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		if page >= maxListPages {
-			return nil, fmt.Errorf("pagination cap reached after %d pages for EC2 instance type offerings (issue #561)", maxListPages)
-		}
-		input := &ec2.DescribeInstanceTypeOfferingsInput{
-			LocationType: types.LocationTypeRegion,
-			NextToken:    nextToken,
-			MaxResults:   aws.Int32(1000),
-		}
-
-		result, err := c.client.DescribeInstanceTypeOfferings(ctx, input)
-		if err != nil {
-			return nil, fmt.Errorf("failed to describe EC2 instance type offerings: %w", err)
-		}
-
-		for _, offering := range result.InstanceTypeOfferings {
-			instanceTypesMap[string(offering.InstanceType)] = true
-		}
-
-		if result.NextToken == nil || aws.ToString(result.NextToken) == "" {
-			break
-		}
-		nextToken = result.NextToken
-	}
-
-	instanceTypes := make([]string, 0, len(instanceTypesMap))
-	for instanceType := range instanceTypesMap {
-		instanceTypes = append(instanceTypes, instanceType)
-	}
-
-	sort.Strings(instanceTypes)
-	return instanceTypes, nil
 }
 
 // Duration constants for RI term calculations.

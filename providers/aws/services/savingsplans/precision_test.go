@@ -91,20 +91,3 @@ func TestCommitmentPrecision_InvalidInputMakesNoSDKCalls(t *testing.T) {
 		})
 	}
 }
-
-func TestCommitmentPrecision_ValidateOfferingDoesNotRequireCommitment(t *testing.T) {
-	t.Parallel()
-	c := NewClient(aws.Config{}, types.SavingsPlanTypeCompute)
-	m := &MockSavingsPlansClient{}
-	c.SetSavingsPlansAPI(m)
-	rec := spRec()
-	rec.Details = (*common.SavingsPlanDetails)(nil)
-	require.NotPanics(t, func() { require.Error(t, c.ValidateOffering(context.Background(), rec)) })
-	rec.Details = &common.SavingsPlanDetails{PlanType: "Compute", OfferingID: "offering"}
-	m.On("DescribeSavingsPlansOfferings", mock.Anything, mock.Anything).
-		Return(&savingsplans.DescribeSavingsPlansOfferingsOutput{
-			SearchResults: []types.SavingsPlanOffering{storedOffering("offering", types.SavingsPlanTypeCompute, 31536000, types.SavingsPlanPaymentOptionNoUpfront, "", "")},
-		}, nil).Once()
-	require.NoError(t, c.ValidateOffering(context.Background(), rec))
-	m.AssertExpectations(t)
-}
