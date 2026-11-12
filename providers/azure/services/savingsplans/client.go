@@ -546,99 +546,6 @@ func (c *Client) orderAlias() (SavingsPlanOrderAliasAPI, error) {
 	return &realOrderAliasClient{client: client}, nil
 }
 
-// ValidateOffering checks whether the Savings Plan configuration is valid.
-func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
-	validateBody, err := c.buildValidateBody(rec)
-	if err != nil {
-		return err
-	}
-
-	rpClient, err := c.getRPValidateClient()
-	if err != nil {
-		return err
-	}
-
-	resp, err := rpClient.ValidatePurchase(ctx, validateBody, nil)
-	if err != nil {
-		return fmt.Errorf("failed to validate savings plan: %w", err)
-	}
-
-	return checkValidateResponse(resp)
-}
-
-// buildValidateBody constructs the SavingsPlanPurchaseValidateRequest from a recommendation.
-func (c *Client) buildValidateBody(rec common.Recommendation) (armbillingbenefits.SavingsPlanPurchaseValidateRequest, error) {
-	spDetails, ok := rec.Details.(*common.SavingsPlanDetails)
-	if !ok {
-		return armbillingbenefits.SavingsPlanPurchaseValidateRequest{}, fmt.Errorf("invalid service details for Azure Savings Plans")
-	}
-
-	term, err := toAzureTerm(rec.Term)
-	if err != nil {
-		return armbillingbenefits.SavingsPlanPurchaseValidateRequest{}, err
-	}
-
-	grain := armbillingbenefits.CommitmentGrainHourly
-	billingScopeID := c.billingScopeID()
-	appliedScope := armbillingbenefits.AppliedScopeTypeShared
-	hourlyAmount := spDetails.HourlyCommitment
-	currency, err := commitmentCurrency(spDetails)
-	if err != nil {
-		return armbillingbenefits.SavingsPlanPurchaseValidateRequest{}, err
-	}
-	skuName, err := savingsPlanSKUName(spDetails.PlanType)
-	if err != nil {
-		return armbillingbenefits.SavingsPlanPurchaseValidateRequest{}, err
-	}
-	displayName := "cudly-validate"
-
-	return armbillingbenefits.SavingsPlanPurchaseValidateRequest{
-		Benefits: []*armbillingbenefits.SavingsPlanOrderAliasModel{
-			{
-				SKU: &armbillingbenefits.SKU{Name: toPtr(skuName)},
-				Properties: &armbillingbenefits.SavingsPlanOrderAliasProperties{
-					DisplayName:      &displayName,
-					BillingScopeID:   &billingScopeID,
-					Term:             &term,
-					AppliedScopeType: &appliedScope,
-					Commitment: &armbillingbenefits.Commitment{
-						Amount:       &hourlyAmount,
-						CurrencyCode: &currency,
-						Grain:        &grain,
-					},
-				},
-			},
-		},
-	}, nil
-}
-
-// getRPValidateClient returns the injected mock or creates a real RPClient.
-func (c *Client) getRPValidateClient() (RPValidateAPI, error) {
-	if c.rpValidateClient != nil {
-		return c.rpValidateClient, nil
-	}
-	client, err := armbillingbenefits.NewRPClient(c.cred, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create RP client: %w", err)
-	}
-	return client, nil
-}
-
-// checkValidateResponse returns an error if any benefit in the response is invalid.
-func checkValidateResponse(resp armbillingbenefits.RPClientValidatePurchaseResponse) error {
-	for _, b := range resp.Benefits {
-		if b == nil || b.Valid == nil || *b.Valid {
-			continue
-		}
-		reason := ""
-		if b.Reason != nil {
-			reason = *b.Reason
-		}
-		return fmt.Errorf("savings plan offering invalid: %s", reason)
-	}
-	return nil
-}
-
 // AzureRetailPrice is the response envelope for the Azure Retail Prices API.
 type AzureRetailPrice = pricing.Page[pricing.RetailPriceItem]
 
@@ -674,14 +581,6 @@ func (c *Client) fetchOnDemandRate(ctx context.Context, planType string) (float6
 	}
 
 	return 0, fmt.Errorf("no on-demand pricing found for savings plan type %s", planType)
-}
-
-// GetValidResourceTypes returns the Azure Savings Plan types.
-func (c *Client) GetValidResourceTypes(_ context.Context) ([]string, error) {
-	return []string{
-		"Compute",
-		"MachineLearning",
-	}, nil
 }
 
 // toAzureTerm converts a CUDly term string to an armbillingbenefits.Term.

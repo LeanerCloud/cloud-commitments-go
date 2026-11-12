@@ -54,10 +54,6 @@ func TestSlotWiring_HoldsSlot(t *testing.T) {
 			c.SetRecommendationsPager(&checkingRecsPager{check: p.Check})
 			_, _ = c.GetRecommendations(ctx, nil)
 		},
-		"GetValidResourceTypes pager": func(c *Client, p *slottest.Probe, ctx context.Context) {
-			c.SetResourceSKUsPager(&checkingSKUsPager{check: p.Check})
-			_, _ = c.GetValidResourceTypes(ctx)
-		},
 		"fetchSKUCatalogue pager": func(c *Client, p *slottest.Probe, ctx context.Context) {
 			c.SetResourceSKUsPager(&checkingSKUsPager{check: p.Check})
 			c.cachedSKULookup(ctx, "Standard_D2s_v3")

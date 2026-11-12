@@ -463,43 +463,6 @@ func TestComputeClient_GetExistingCommitments_ListerError(t *testing.T) {
 	assert.Contains(t, err.Error(), "compute: list applied reservations")
 }
 
-func TestComputeClient_GetValidResourceTypes_WithMock(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client := NewClient(nil, "test-subscription", "eastus")
-
-	// Create mock pager with SKUs
-	mockPager := &mocks.MockResourceSKUsPager{
-		Results: mocks.CreateSampleResourceSKUs("eastus"),
-		HasMore: true,
-	}
-	client.SetResourceSKUsPager(mockPager)
-
-	vmSizes, err := client.GetValidResourceTypes(ctx)
-	require.NoError(t, err)
-	assert.Len(t, vmSizes, 3)
-	assert.Contains(t, vmSizes, "Standard_D2s_v3")
-	assert.Contains(t, vmSizes, "Standard_D4s_v3")
-	assert.Contains(t, vmSizes, "Standard_D8s_v3")
-}
-
-func TestComputeClient_GetValidResourceTypes_NoSKUs(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client := NewClient(nil, "test-subscription", "eastus")
-
-	// Create mock pager with no SKUs
-	mockPager := &mocks.MockResourceSKUsPager{
-		Results: []*armcompute.ResourceSKU{},
-		HasMore: true,
-	}
-	client.SetResourceSKUsPager(mockPager)
-
-	_, err := client.GetValidResourceTypes(ctx)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "no VM sizes found")
-}
-
 func TestComputeClient_GetOfferingDetails_WithMock(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

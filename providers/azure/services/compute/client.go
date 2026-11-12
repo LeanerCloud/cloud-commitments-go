@@ -561,25 +561,6 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	}, nil
 }
 
-// GetValidResourceTypes returns valid VM sizes from Azure Compute API.
-func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
-	pager, err := c.createResourceSKUsPager()
-	if err != nil {
-		return nil, err
-	}
-
-	vmSizes, err := c.collectVMSizesFromSKUs(ctx, pager)
-	if err != nil {
-		return nil, err
-	}
-
-	if len(vmSizes) == 0 {
-		return nil, fmt.Errorf("no VM sizes found for region %s", c.region)
-	}
-
-	return vmSizes, nil
-}
-
 // createResourceSKUsPager creates a pager for listing resource SKUs.
 func (c *Client) createResourceSKUsPager() (ResourceSKUsPager, error) {
 	// Use injected pager if available (for testing)
@@ -593,45 +574,6 @@ func (c *Client) createResourceSKUsPager() (ResourceSKUsPager, error) {
 	}
 
 	return client.NewListPager(&armcompute.ResourceSKUsClientListOptions{Filter: nil}), nil
-}
-
-// collectVMSizesFromSKUs collects VM sizes from the resource SKUs pager.
-func (c *Client) collectVMSizesFromSKUs(ctx context.Context, pager ResourceSKUsPager) ([]string, error) {
-	vmSizes := make([]string, 0)
-
-	for pageIdx := 0; pager.More(); pageIdx++ {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("context canceled during pagination: %w", err)
-		}
-		if pageIdx >= maxSKUPages {
-			return nil, fmt.Errorf("compute: GetValidResourceTypes pagination cap (%d pages) reached", maxSKUPages)
-		}
-		page, err := slot.NextPage(ctx, pager)
-		if err != nil {
-			return nil, fmt.Errorf("failed to list VM sizes: %w", err)
-		}
-
-		for _, sku := range page.Value {
-			if vmSize := c.extractVMSizeIfValid(sku); vmSize != "" {
-				vmSizes = append(vmSizes, vmSize)
-			}
-		}
-	}
-
-	return vmSizes, nil
-}
-
-// extractVMSizeIfValid extracts the VM size name if it's a valid VM in the region.
-func (c *Client) extractVMSizeIfValid(sku *armcompute.ResourceSKU) string {
-	if sku.Name == nil || sku.ResourceType == nil || *sku.ResourceType != "virtualMachines" {
-		return ""
-	}
-
-	if !c.isAvailableInRegion(sku, c.region) {
-		return ""
-	}
-
-	return *sku.Name
 }
 
 // isAvailableInRegion checks if a SKU is available in the specified region.
@@ -811,10 +753,9 @@ func (c *Client) cachedSKULookup(ctx context.Context, skuName string) (vmSKUEntr
 // walk and reduces the response into a name->vmSKUEntry map keyed by
 // SKU.Name (matches the recommendation engine's ResourceType output).
 //
-// Filters out non-VM resource types and SKUs not available in c.region
-// (mirrors the existing extractVMSizeIfValid filter used by
-// GetValidResourceTypes — a SKU listed for a different region is not
-// safe to attribute to a recommendation in this client's region).
+// Filters out non-VM resource types and SKUs not available in c.region: a SKU
+// listed for a different region is not safe to attribute to a recommendation
+// in this client's region.
 //
 // Returns nil on pager-create, page-fetch error, or context cancellation
 // so the sync.Once-gated cache field stays nil and cachedSKULookup falls

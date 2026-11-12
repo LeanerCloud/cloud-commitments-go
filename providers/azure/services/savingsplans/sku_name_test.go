@@ -31,33 +31,25 @@ func okAlias() *mockOrderAliasClient {
 	}}}
 }
 
-func capturedSKUs(t *testing.T, rec common.Recommendation) (purchase, validate string) {
+func purchasedSKU(t *testing.T, rec common.Recommendation) string {
 	t.Helper()
 	alias := okAlias()
-	rp := &mockRPValidate{}
 	c := NewClient(nil, "sub", "eastus")
 	c.SetOrderAliasClient(alias)
-	c.SetRPValidateClient(rp)
 
 	_, err := c.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
 	require.NoError(t, err)
-	require.NoError(t, c.ValidateOffering(context.Background(), rec))
 
 	require.NotNil(t, alias.capturedBody.SKU)
 	require.NotNil(t, alias.capturedBody.SKU.Name)
-	require.Len(t, rp.captured.Benefits, 1)
-	require.NotNil(t, rp.captured.Benefits[0].SKU)
-	require.NotNil(t, rp.captured.Benefits[0].SKU.Name)
-	return *alias.capturedBody.SKU.Name, *rp.captured.Benefits[0].SKU.Name
+	return *alias.capturedBody.SKU.Name
 }
 
 func TestSKUName_ComputePlanTypeSendsARMSKU(t *testing.T) {
 	t.Parallel()
 	for _, planType := range []string{"Compute", "Compute_Savings_Plan"} {
 		t.Run(planType, func(t *testing.T) {
-			purchase, validate := capturedSKUs(t, skuRec(planType))
-			assert.Equal(t, "Compute_Savings_Plan", purchase)
-			assert.Equal(t, "Compute_Savings_Plan", validate)
+			assert.Equal(t, "Compute_Savings_Plan", purchasedSKU(t, skuRec(planType)))
 		})
 	}
 }
@@ -73,9 +65,7 @@ func TestSKUName_RecommendationRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, recs, 1)
 
-	purchase, validate := capturedSKUs(t, recs[0])
-	assert.Equal(t, armSkuComputeSavingsPlan, purchase)
-	assert.Equal(t, armSkuComputeSavingsPlan, validate)
+	assert.Equal(t, armSkuComputeSavingsPlan, purchasedSKU(t, recs[0]))
 }
 
 // A PlanType with no known ARM SKU fails before any Azure call instead of
@@ -97,11 +87,6 @@ func TestSKUName_UnknownPlanTypeFailsClosed(t *testing.T) {
 			assert.False(t, result.Success)
 			assert.Equal(t, err, result.Error)
 			assert.Zero(t, alias.calls)
-
-			err = c.ValidateOffering(context.Background(), rec)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), "no known Azure savings plan SKU")
-			assert.Zero(t, rp.calls)
 		})
 	}
 }

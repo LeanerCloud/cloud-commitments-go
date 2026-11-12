@@ -139,16 +139,6 @@ func TestGetRegion(t *testing.T) {
 
 // --- GetRecommendations ---
 
-// --- GetValidResourceTypes ---
-
-func TestGetValidResourceTypes(t *testing.T) {
-	t.Parallel()
-	c := NewClient(nil, "sub", "eastus")
-	types, err := c.GetValidResourceTypes(context.Background())
-	require.NoError(t, err)
-	assert.ElementsMatch(t, []string{"Compute", "MachineLearning"}, types)
-}
-
 // --- GetExistingCommitments ---
 
 func TestGetExistingCommitments_Empty(t *testing.T) {
@@ -532,66 +522,6 @@ func TestPurchaseCommitment_EmptyTokenUsesTimestampName(t *testing.T) {
 		"empty token should keep the timestamp-based cudly-<nanos> alias name")
 }
 
-// --- ValidateOffering ---
-
-func TestValidateOffering_Valid(t *testing.T) {
-	t.Parallel()
-	valid := true
-	resp := armbillingbenefits.RPClientValidatePurchaseResponse{
-		SavingsPlanValidateResponse: armbillingbenefits.SavingsPlanValidateResponse{
-			Benefits: []*armbillingbenefits.SavingsPlanValidResponseProperty{
-				{Valid: &valid},
-			},
-		},
-	}
-
-	c := NewClient(nil, "sub", "eastus")
-	c.SetRPValidateClient(&mockRPValidate{resp: resp})
-
-	err := c.ValidateOffering(context.Background(), makeRec("1yr"))
-	assert.NoError(t, err)
-}
-
-func TestValidateOffering_Invalid(t *testing.T) {
-	t.Parallel()
-	valid := false
-	reason := "unsupported SKU"
-	resp := armbillingbenefits.RPClientValidatePurchaseResponse{
-		SavingsPlanValidateResponse: armbillingbenefits.SavingsPlanValidateResponse{
-			Benefits: []*armbillingbenefits.SavingsPlanValidResponseProperty{
-				{Valid: &valid, Reason: &reason},
-			},
-		},
-	}
-
-	c := NewClient(nil, "sub", "eastus")
-	c.SetRPValidateClient(&mockRPValidate{resp: resp})
-
-	err := c.ValidateOffering(context.Background(), makeRec("1yr"))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "unsupported SKU")
-}
-
-func TestValidateOffering_APIError(t *testing.T) {
-	t.Parallel()
-	c := NewClient(nil, "sub", "eastus")
-	c.SetRPValidateClient(&mockRPValidate{err: errors.New("rp error")})
-
-	err := c.ValidateOffering(context.Background(), makeRec("1yr"))
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "rp error")
-}
-
-func TestValidateOffering_WrongDetails(t *testing.T) {
-	t.Parallel()
-	c := NewClient(nil, "sub", "eastus")
-	rec := common.Recommendation{Term: "1yr", Details: nil}
-
-	err := c.ValidateOffering(context.Background(), rec)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid service details")
-}
-
 // --- HTTP client regression tests (issue #1021) ---
 
 // mockHTTPClient is a testify/mock-based HTTPClient stub for savingsplans tests.
@@ -786,25 +716,21 @@ func currencyRec(currency string) common.Recommendation {
 	return rec
 }
 
-func TestCommitmentCurrency_SameAcrossPurchaseValidateOffering(t *testing.T) {
+func TestCommitmentCurrency_SameAcrossPurchase(t *testing.T) {
 	t.Parallel()
 	rec := currencyRec("JPY")
 	orderID := "order1"
 	alias := &mockOrderAliasClient{createPoller: &mockPoller{resp: armbillingbenefits.SavingsPlanOrderAliasClientCreateResponse{
 		SavingsPlanOrderAliasModel: armbillingbenefits.SavingsPlanOrderAliasModel{ID: &orderID},
 	}}}
-	rp := &mockRPValidate{}
 	c := NewClient(nil, "sub", "eastus")
 	c.SetOrderAliasClient(alias)
-	c.SetRPValidateClient(rp)
 
 	_, err := c.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
 	require.NoError(t, err)
-	require.NoError(t, c.ValidateOffering(context.Background(), rec))
 	commitment := alias.capturedBody.Properties.Commitment
 	assert.Equal(t, "JPY", *commitment.CurrencyCode)
 	assert.InDelta(t, 12.0, *commitment.Amount, 0.001)
-	assert.Equal(t, "JPY", *rp.captured.Benefits[0].Properties.Commitment.CurrencyCode)
 }
 
 func TestCommitmentCurrency_FailsClosed(t *testing.T) {
@@ -821,7 +747,6 @@ func TestCommitmentCurrency_FailsClosed(t *testing.T) {
 			_, err := c.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
 			require.Error(t, err)
 			assert.Zero(t, alias.calls)
-			require.Error(t, c.ValidateOffering(context.Background(), rec))
 			assert.Zero(t, rp.calls)
 		})
 	}
@@ -829,11 +754,12 @@ func TestCommitmentCurrency_FailsClosed(t *testing.T) {
 
 func TestCommitmentCurrency_LowercaseNormalised(t *testing.T) {
 	t.Parallel()
-	rp := &mockRPValidate{}
+	alias := okAlias()
 	c := NewClient(nil, "sub", "eastus")
-	c.SetRPValidateClient(rp)
-	require.NoError(t, c.ValidateOffering(context.Background(), currencyRec("eur")))
-	assert.Equal(t, "EUR", *rp.captured.Benefits[0].Properties.Commitment.CurrencyCode)
+	c.SetOrderAliasClient(alias)
+	_, err := c.PurchaseCommitment(context.Background(), currencyRec("eur"), common.PurchaseOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "EUR", *alias.capturedBody.Properties.Commitment.CurrencyCode)
 }
 
 func TestFetchOnDemandRate_RejectsInjectedPlanType(t *testing.T) {
