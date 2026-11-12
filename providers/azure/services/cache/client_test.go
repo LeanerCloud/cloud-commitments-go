@@ -8,7 +8,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/consumption/armconsumption"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/redis/armredis/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -36,29 +35,6 @@ func (m *MockReservationsDetailsPager) NextPage(ctx context.Context) (armconsump
 	}
 	if m.index >= len(m.pages) {
 		return armconsumption.ReservationsDetailsClientListResponse{}, errors.New("no more pages")
-	}
-	page := m.pages[m.index]
-	m.index++
-	return page, nil
-}
-
-// MockRedisCachesPager mocks the RedisCachesPager interface.
-type MockRedisCachesPager struct {
-	pages []armredis.ClientListBySubscriptionResponse
-	index int
-	err   error
-}
-
-func (m *MockRedisCachesPager) More() bool {
-	return m.index < len(m.pages)
-}
-
-func (m *MockRedisCachesPager) NextPage(ctx context.Context) (armredis.ClientListBySubscriptionResponse, error) {
-	if m.err != nil {
-		return armredis.ClientListBySubscriptionResponse{}, m.err
-	}
-	if m.index >= len(m.pages) {
-		return armredis.ClientListBySubscriptionResponse{}, errors.New("no more pages")
 	}
 	page := m.pages[m.index]
 	m.index++
@@ -570,11 +546,6 @@ func TestCacheClient_SetterMethods(t *testing.T) {
 	mockResPager := &MockReservationsDetailsPager{}
 	client.SetReservationsPager(mockResPager)
 	assert.Equal(t, mockResPager, client.reservationsPager)
-
-	// Test SetRedisCachesPager
-	mockRedisPager := &MockRedisCachesPager{}
-	client.SetRedisCachesPager(mockRedisPager)
-	assert.Equal(t, mockRedisPager, client.redisCachesPager)
 }
 
 // Test the to package is properly imported (used in tests).

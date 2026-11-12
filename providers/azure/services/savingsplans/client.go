@@ -53,15 +53,6 @@ type SavingsPlanListAllPager interface {
 	NextPage(ctx context.Context) (armbillingbenefits.SavingsPlanClientListAllResponse, error)
 }
 
-// RPValidateAPI defines the ValidatePurchase operation (enables mocking).
-type RPValidateAPI interface {
-	ValidatePurchase(
-		ctx context.Context,
-		body armbillingbenefits.SavingsPlanPurchaseValidateRequest,
-		options *armbillingbenefits.RPClientValidatePurchaseOptions,
-	) (armbillingbenefits.RPClientValidatePurchaseResponse, error)
-}
-
 // HTTPClient defines the interface for HTTP calls (enables mocking).
 type HTTPClient interface {
 	Do(req *http.Request) (*http.Response, error)
@@ -75,7 +66,6 @@ type Client struct {
 	// Injected in tests to avoid real Azure API calls.
 	orderAliasClient SavingsPlanOrderAliasAPI
 	listAllPager     SavingsPlanListAllPager
-	rpValidateClient RPValidateAPI
 
 	subscriptionID string
 	region         string
@@ -116,11 +106,6 @@ func (c *Client) SetOrderAliasClient(api SavingsPlanOrderAliasAPI) {
 // SetListAllPager injects a mock list-all pager (for testing).
 func (c *Client) SetListAllPager(pager SavingsPlanListAllPager) {
 	c.listAllPager = pager
-}
-
-// SetRPValidateClient injects a mock RPValidateAPI (for testing).
-func (c *Client) SetRPValidateClient(api RPValidateAPI) {
-	c.rpValidateClient = api
 }
 
 // GetServiceType returns the service type for this client.

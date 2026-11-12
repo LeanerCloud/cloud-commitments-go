@@ -331,18 +331,6 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	}, nil
 }
 
-// commonSKUs returns a curated list of Azure Cache for Redis SKUs that support reservations.
-func (c *Client) commonSKUs() []string {
-	return []string{
-		// Basic tier
-		"Basic_C0", "Basic_C1", "Basic_C2", "Basic_C3", "Basic_C4", "Basic_C5", "Basic_C6",
-		// Standard tier
-		"Standard_C0", "Standard_C1", "Standard_C2", "Standard_C3", "Standard_C4", "Standard_C5", "Standard_C6",
-		// Premium tier (most commonly reserved)
-		"Premium_P1", "Premium_P2", "Premium_P3", "Premium_P4", "Premium_P5",
-	}
-}
-
 // RedisPricing holds pricing details for a given Redis Cache SKU.
 type RedisPricing struct {
 	Currency         string

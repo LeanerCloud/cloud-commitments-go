@@ -12,7 +12,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/consumption/armconsumption"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/search/armsearch"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/httpclient"
@@ -42,19 +41,12 @@ type ReservationsDetailsPager interface {
 	NextPage(ctx context.Context) (armconsumption.ReservationsDetailsClientListResponse, error)
 }
 
-// ServicesPager interface for search services pager (enables mocking).
-type ServicesPager interface {
-	More() bool
-	NextPage(ctx context.Context) (armsearch.ServicesClientListBySubscriptionResponse, error)
-}
-
 // Client handles Azure Cognitive Search Reserved Capacity.
 type Client struct {
 	cred                 azcore.TokenCredential
 	httpClient           HTTPClient
 	recommendationsPager RecommendationsPager
 	reservationsPager    ReservationsDetailsPager
-	searchServicesPager  ServicesPager
 	subscriptionID       string
 	region               string
 }
@@ -94,11 +86,6 @@ func (c *Client) SetRecommendationsPager(pager RecommendationsPager) {
 // SetReservationsPager sets the reservations pager (for testing).
 func (c *Client) SetReservationsPager(pager ReservationsDetailsPager) {
 	c.reservationsPager = pager
-}
-
-// SetSearchServicesPager sets the search services pager (for testing).
-func (c *Client) SetSearchServicesPager(pager ServicesPager) {
-	c.searchServicesPager = pager
 }
 
 // GetServiceType returns the service type.

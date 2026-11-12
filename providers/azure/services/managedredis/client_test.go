@@ -918,20 +918,6 @@ func TestSetterMethods(t *testing.T) {
 	assert.Equal(t, redisPager, c.redisCachesPager)
 }
 
-// -- commonSKUs coverage --
-
-func TestCommonSKUs(t *testing.T) {
-	t.Parallel()
-	c := NewClient(nil, "sub", "eastus")
-	skus := c.commonSKUs()
-	assert.Contains(t, skus, "Basic_C0")
-	assert.Contains(t, skus, "Basic_C6")
-	assert.Contains(t, skus, "Standard_C0")
-	assert.Contains(t, skus, "Standard_C6")
-	assert.Contains(t, skus, "Premium_P1")
-	assert.Contains(t, skus, "Premium_P5")
-}
-
 // -- convertRecommendation --
 
 func TestConvertRecommendation_nil(t *testing.T) {

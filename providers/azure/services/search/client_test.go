@@ -13,7 +13,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/consumption/armconsumption"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/search/armsearch"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -60,29 +59,6 @@ func (m *MockReservationsDetailsPager) NextPage(ctx context.Context) (armconsump
 	}
 	if m.index >= len(m.pages) {
 		return armconsumption.ReservationsDetailsClientListResponse{}, errors.New("no more pages")
-	}
-	page := m.pages[m.index]
-	m.index++
-	return page, nil
-}
-
-// MockSearchServicesPager mocks the ServicesPager interface.
-type MockSearchServicesPager struct {
-	pages []armsearch.ServicesClientListBySubscriptionResponse
-	index int
-	err   error
-}
-
-func (m *MockSearchServicesPager) More() bool {
-	return m.index < len(m.pages)
-}
-
-func (m *MockSearchServicesPager) NextPage(ctx context.Context) (armsearch.ServicesClientListBySubscriptionResponse, error) {
-	if m.err != nil {
-		return armsearch.ServicesClientListBySubscriptionResponse{}, m.err
-	}
-	if m.index >= len(m.pages) {
-		return armsearch.ServicesClientListBySubscriptionResponse{}, errors.New("no more pages")
 	}
 	page := m.pages[m.index]
 	m.index++
@@ -872,9 +848,6 @@ func TestSearchClient_SetterMethods(t *testing.T) {
 	client.SetReservationsPager(mockResPager)
 	assert.Equal(t, mockResPager, client.reservationsPager)
 
-	mockSearchPager := &MockSearchServicesPager{}
-	client.SetSearchServicesPager(mockSearchPager)
-	assert.Equal(t, mockSearchPager, client.searchServicesPager)
 }
 
 // TestSearchClient_ConvertAzureSearchRecommendation_NilGuards pins the contract:

@@ -11,7 +11,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/consumption/armconsumption"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/redis/armredis/v3"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/httpclient"
@@ -34,18 +33,11 @@ type ReservationsDetailsPager interface {
 	NextPage(ctx context.Context) (armconsumption.ReservationsDetailsClientListResponse, error)
 }
 
-// RedisCachesPager interface for Redis caches pager (enables mocking).
-type RedisCachesPager interface {
-	More() bool
-	NextPage(ctx context.Context) (armredis.ClientListBySubscriptionResponse, error)
-}
-
 // Client handles Azure Cache for Redis Reserved Capacity.
 type Client struct {
 	cred              azcore.TokenCredential
 	httpClient        HTTPClient
 	reservationsPager ReservationsDetailsPager
-	redisCachesPager  RedisCachesPager
 
 	subscriptionID string
 	region         string
@@ -81,11 +73,6 @@ func NewClientWithHTTP(cred azcore.TokenCredential, subscriptionID, region strin
 // SetReservationsPager sets the reservations pager (for testing).
 func (c *Client) SetReservationsPager(pager ReservationsDetailsPager) {
 	c.reservationsPager = pager
-}
-
-// SetRedisCachesPager sets the Redis caches pager (for testing).
-func (c *Client) SetRedisCachesPager(pager RedisCachesPager) {
-	c.redisCachesPager = pager
 }
 
 // GetServiceType returns the service type.

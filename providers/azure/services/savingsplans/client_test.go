@@ -93,24 +93,6 @@ func (p *mockPoller) PollUntilDone(_ context.Context, _ *PollOptions) (armbillin
 	return p.resp, p.err
 }
 
-// mockRPValidate is a struct-based mock for RPValidateAPI.
-type mockRPValidate struct {
-	resp     armbillingbenefits.RPClientValidatePurchaseResponse
-	err      error
-	captured armbillingbenefits.SavingsPlanPurchaseValidateRequest
-	calls    int
-}
-
-func (m *mockRPValidate) ValidatePurchase(
-	_ context.Context,
-	req armbillingbenefits.SavingsPlanPurchaseValidateRequest,
-	_ *armbillingbenefits.RPClientValidatePurchaseOptions,
-) (armbillingbenefits.RPClientValidatePurchaseResponse, error) {
-	m.calls++
-	m.captured = req
-	return m.resp, m.err
-}
-
 // --- constructor tests ---
 
 func TestNewClient(t *testing.T) {
@@ -738,16 +720,13 @@ func TestCommitmentCurrency_FailsClosed(t *testing.T) {
 	for _, bad := range []string{"", " eur", "EURO", "E1R", "us", "ınr", "ſek"} {
 		t.Run(bad, func(t *testing.T) {
 			alias := &mockOrderAliasClient{}
-			rp := &mockRPValidate{}
 			c := NewClient(nil, "sub", "eastus")
 			c.SetOrderAliasClient(alias)
-			c.SetRPValidateClient(rp)
 			rec := currencyRec(bad)
 
 			_, err := c.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
 			require.Error(t, err)
 			assert.Zero(t, alias.calls)
-			assert.Zero(t, rp.calls)
 		})
 	}
 }

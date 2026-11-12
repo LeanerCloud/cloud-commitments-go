@@ -75,10 +75,8 @@ func TestSKUName_UnknownPlanTypeFailsClosed(t *testing.T) {
 	for _, planType := range []string{"", "MachineLearning", "compute", " Compute", "Compute_Savings_Plan "} {
 		t.Run(planType, func(t *testing.T) {
 			alias := okAlias()
-			rp := &mockRPValidate{}
 			c := NewClient(nil, "sub", "eastus")
 			c.SetOrderAliasClient(alias)
-			c.SetRPValidateClient(rp)
 			rec := skuRec(planType)
 
 			result, err := c.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
