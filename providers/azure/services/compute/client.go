@@ -138,8 +138,10 @@ type Client struct {
 	subscriptionID string
 	region         string
 
-	// Microsoft.Capacity provider registration check (cached per client lifetime)
-	capacityProviderOnce sync.Once
+	// Microsoft.Capacity provider registration check (cached per client lifetime
+	// once a check completes without the caller's context being canceled)
+	capacityProviderMu   sync.Mutex
+	capacityProviderDone bool
 
 	// Lazy SKU catalog cache. armcompute.ResourceSKUsClient.NewListPager
 	// returns every SKU available to the subscription with its
@@ -308,12 +310,18 @@ type providerRegistrationState struct {
 // is registered in the subscription. The check is performed once per client lifetime.
 // An error is logged but does not block the purchase attempt.
 func (c *Client) ensureCapacityProviderRegistered(ctx context.Context) {
-	c.capacityProviderOnce.Do(func() {
-		c.capacityProviderErr = c.checkAndRegisterCapacityProvider(ctx)
-		if c.capacityProviderErr != nil {
-			log.Printf("WARNING: Microsoft.Capacity provider registration check failed: %v", c.capacityProviderErr)
-		}
-	})
+	c.capacityProviderMu.Lock()
+	defer c.capacityProviderMu.Unlock()
+	if c.capacityProviderDone {
+		return
+	}
+	c.capacityProviderErr = c.checkAndRegisterCapacityProvider(ctx)
+	if c.capacityProviderErr != nil {
+		log.Printf("WARNING: Microsoft.Capacity provider registration check failed: %v", c.capacityProviderErr)
+	}
+	// A check cut short by the caller's cancellation says nothing about the
+	// subscription, so it must not spend the cache (issue #745).
+	c.capacityProviderDone = ctx.Err() == nil
 }
 
 // checkAndRegisterCapacityProvider performs the actual provider registration check.

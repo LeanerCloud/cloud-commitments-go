@@ -55,12 +55,53 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
+
+// tokenLock is a refcounted mutex for one idempotency token.
+type tokenLock struct {
+	sync.Mutex
+	refs int
+}
+
+// tokenLocks holds the in-process lock for each idempotency token with a
+// purchase in flight (issue #745). Without it, two concurrent calls with the
+// same token can both list before either order is visible and both buy.
+// Azure mints the order ID in calculatePrice, so there is no client key to claim
+// across processes; that residual window is not covered here.
+var (
+	tokenLocksMu sync.Mutex
+	tokenLocks   = map[string]*tokenLock{}
+)
+
+// lockPurchaseToken blocks until no other purchase for token is in flight and
+// returns the function that releases it.
+func lockPurchaseToken(token string) (unlock func()) {
+	tokenLocksMu.Lock()
+	l, ok := tokenLocks[token]
+	if !ok {
+		l = &tokenLock{}
+		tokenLocks[token] = l
+	}
+	l.refs++
+	tokenLocksMu.Unlock()
+
+	l.Lock()
+	return func() {
+		l.Unlock()
+		tokenLocksMu.Lock()
+		defer tokenLocksMu.Unlock()
+		l.refs--
+		if l.refs == 0 {
+			delete(tokenLocks, token)
+		}
+	}
+}
 
 // ParseTermYears maps a term string to an integer year count.
 // Returns an error for any value outside the explicit allowlist so that
@@ -734,6 +775,7 @@ func matchReservationOrderInPage(page *reservationOrdersListResponse, idempotenc
 // currency must match; empty means USD (see checkBillingCurrency).
 func DoIdempotentPurchaseTwoStep(ctx context.Context, httpClient HTTPClient, calcURL string, bodyBytes []byte, bearerToken, idempotencyToken, commitmentCurrency string) (orderID string, existing bool, err error) {
 	if idempotencyToken != "" {
+		defer lockPurchaseToken(idempotencyToken)()
 		existingID, found, err := FindReservationOrderByIdempotencyToken(ctx, httpClient, bearerToken, idempotencyToken)
 		if err != nil {
 			return "", false, fmt.Errorf("idempotency lookup failed before Azure reservation purchase (refusing to purchase to avoid a possible double-buy): %w", err)
