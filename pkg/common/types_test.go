@@ -685,3 +685,21 @@ func TestCommitment_CostKnown(t *testing.T) {
 		assert.Equal(t, 3.2, out.Cost)
 	})
 }
+
+func TestRecommendation_CrossAttributionsJSON(t *testing.T) {
+	in := Recommendation{CrossAttributions: []CrossAttribution{
+		{Service: ServiceRelationalDB, Count: 2},
+		{Service: ServiceCache, Count: 1},
+	}}
+	b, err := json.Marshal(in)
+	require.NoError(t, err)
+	assert.Contains(t, string(b), `"cross_attributions":[{"service":"relational-db","count":2},{"service":"cache","count":1}]`)
+
+	var out Recommendation
+	require.NoError(t, json.Unmarshal(b, &out))
+	assert.Equal(t, in.CrossAttributions, out.CrossAttributions)
+
+	b, err = json.Marshal(Recommendation{})
+	require.NoError(t, err)
+	assert.NotContains(t, string(b), "cross_attributions")
+}

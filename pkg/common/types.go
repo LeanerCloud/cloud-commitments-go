@@ -223,6 +223,13 @@ func (c CommitmentType) String() string {
 	return string(c)
 }
 
+// CrossAttribution is the count of one other service's resources whose
+// underlying compute a resource-based Compute Engine CUD also discounts.
+type CrossAttribution struct {
+	Service ServiceType `json:"service"`
+	Count   int         `json:"count"`
+}
+
 // Recommendation represents a commitment purchase recommendation across any cloud provider.
 type Recommendation struct {
 	// Metadata
@@ -278,6 +285,10 @@ type Recommendation struct {
 	// provider returned no data (frontend renders "—" in that case).
 	// Not written to CSV (no column heading — enrichment-only field).
 	UsageHistory []float64 `json:"usage_history,omitempty" csv:"-"`
+
+	// CrossAttributions lists the other services whose compute this commitment
+	// also covers; Count is instances for Cloud SQL and Memorystore. Empty when none.
+	CrossAttributions []CrossAttribution `json:"cross_attributions,omitempty" csv:"-"`
 
 	// Resource details
 	Count int `json:"count" csv:"Count"`
