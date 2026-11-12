@@ -46,7 +46,6 @@ type RecommenderClient interface {
 // Client handles GCP Cloud SQL commitments.
 type Client struct {
 	skus            skulist.Cache
-	ctx             context.Context
 	projectID       string
 	region          string
 	sqlAdminService SQLAdminService
@@ -57,7 +56,6 @@ type Client struct {
 // NewClient creates a new GCP Cloud SQL client.
 func NewClient(ctx context.Context, projectID, region string, opts ...option.ClientOption) (*Client, error) {
 	return &Client{
-		ctx:        ctx,
 		projectID:  projectID,
 		region:     region,
 		clientOpts: opts,

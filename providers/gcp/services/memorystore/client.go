@@ -52,7 +52,6 @@ type RecommenderClient interface {
 // Client handles GCP Memorystore (Redis) commitments.
 type Client struct {
 	skus           skulist.Cache
-	ctx            context.Context
 	projectID      string
 	region         string
 	redisService   RedisService
@@ -63,7 +62,6 @@ type Client struct {
 // NewClient creates a new GCP Memorystore client.
 func NewClient(ctx context.Context, projectID, region string, opts ...option.ClientOption) (*Client, error) {
 	return &Client{
-		ctx:        ctx,
 		projectID:  projectID,
 		region:     region,
 		clientOpts: opts,

@@ -56,7 +56,6 @@ type RecommenderIterator interface {
 // Client handles GCP Cloud Storage commitments.
 type Client struct {
 	skus           skulist.Cache
-	ctx            context.Context
 	projectID      string
 	region         string
 	storageService StorageService
@@ -67,7 +66,6 @@ type Client struct {
 // NewClient creates a new GCP Cloud Storage client.
 func NewClient(ctx context.Context, projectID, region string, opts ...option.ClientOption) (*Client, error) {
 	return &Client{
-		ctx:        ctx,
 		projectID:  projectID,
 		region:     region,
 		clientOpts: opts,

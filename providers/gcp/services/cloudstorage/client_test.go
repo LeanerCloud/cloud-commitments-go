@@ -97,7 +97,6 @@ func TestNewClient(t *testing.T) {
 	require.NotNil(t, client)
 	assert.Equal(t, "test-project", client.projectID)
 	assert.Equal(t, "us-central1", client.region)
-	assert.Equal(t, ctx, client.ctx)
 }
 
 func TestCloudStorageClient_GetServiceType(t *testing.T) {
@@ -116,7 +115,6 @@ func TestCloudStorageClient_GetValidResourceTypes(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	client := &Client{
-		ctx:       ctx,
 		projectID: "test-project",
 		region:    "us-central1",
 	}
@@ -137,7 +135,6 @@ func TestCloudStorageClient_ValidateOffering_ValidClasses(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	client := &Client{
-		ctx:       ctx,
 		projectID: "test-project",
 		region:    "us-central1",
 	}
@@ -160,7 +157,6 @@ func TestCloudStorageClient_ValidateOffering_InvalidClass(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	client := &Client{
-		ctx:       ctx,
 		projectID: "test-project",
 		region:    "us-central1",
 	}
@@ -314,14 +310,11 @@ func TestSkuMatchesStorageClass(t *testing.T) {
 
 func TestCloudStorageClient_Fields(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
 	client := &Client{
-		ctx:       ctx,
 		projectID: "my-project",
 		region:    "asia-east1",
 	}
 
-	assert.Equal(t, ctx, client.ctx)
 	assert.Equal(t, "my-project", client.projectID)
 	assert.Equal(t, "asia-east1", client.region)
 }
