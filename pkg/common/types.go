@@ -589,6 +589,10 @@ type Commitment struct {
 	Scope            string `json:"scope,omitempty"`
 	AvailabilityZone string `json:"availability_zone,omitempty"`
 
+	// CostCurrency is the ISO 4217 code Cost is denominated in, when the
+	// provider reports one; empty means not reported.
+	CostCurrency string `json:"cost_currency,omitempty"`
+
 	Count int     `json:"count"`
 	Cost  float64 `json:"cost"`
 	// CostKnown reports whether Cost holds a price the provider reported. The zero
