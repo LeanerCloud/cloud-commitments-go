@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/recfilter"
@@ -399,4 +400,104 @@ func TestExpiringCoveragePreservesZeroDemandShare(t *testing.T) {
 	assert.Equal(t, zeroShare, recs[1])
 	assert.InDelta(t, 40.0, recs[0].ExistingCoveragePct, 0.001)
 	assert.InDelta(t, 40.0, recs[2].ExistingCoveragePct, 0.001)
+}
+
+// A size-flexible EC2 family nets in normalized units, so a large expiring RI
+// replaced by two mediums is not a re-buy (issue #450).
+func TestPoolExpiryNetsSizeFlexWithinFamily(t *testing.T) {
+	t.Parallel()
+	replacement := ec2Commit(2, "active", daysFromNow(-5), daysFromNow(300))
+	replacement.ResourceType = "m5.medium"
+	recs, _, coverage := expiryPrecisionFixture()
+	ApplyCoverageMapToRecommendations(recs, coverage)
+	adjusted, _, err := AdjustExistingCoverageForExpiringCommitmentsWithCoverageOptions(recs,
+		[]common.Commitment{expiringRI(1), replacement}, coverage, defaultOpts())
+	require.NoError(t, err)
+	assert.Zero(t, adjusted)
+	assert.InDelta(t, 60, recs[0].ExistingCoveragePct, 1e-9)
+}
+
+// At lookback 0 nothing is credited, so the expiring large RI keeps its full
+// four normalized units: a medium rec loses two instances, not one.
+func TestPoolExpiryWeightsExpiringSizeByNormalizationFactor(t *testing.T) {
+	t.Parallel()
+	recs, _, coverage := expiryPrecisionFixture()
+	recs[0].ResourceType = "m5.medium"
+	recs[1].ResourceType = "m5.medium"
+	coverage[poolKey("us-east-1", "m5.medium")] = PoolCoverage{Pct: 60, AvgInstancesPerHour: 30}
+	ApplyCoverageMapToRecommendations(recs, coverage)
+	adjusted, _, err := AdjustExistingCoverageForExpiringCommitmentsWithCoverageOptions(recs,
+		[]common.Commitment{expiringRI(1)}, coverage, PoolExpiryOptions{WindowDays: 30})
+	require.NoError(t, err)
+	assert.Equal(t, 2, adjusted)
+	assert.InDelta(t, 60-2.0/30*100, recs[0].ExistingCoveragePct, 1e-9)
+}
+
+// Equal ResourceType strings in different services must not net together.
+func TestPoolExpiryKeysNonRDSByService(t *testing.T) {
+	t.Parallel()
+	rec := common.Recommendation{Service: common.ServiceEC2, Region: "us-east-1", ResourceType: "g5.xlarge",
+		AverageInstancesUsedPerHour: 30, ExistingCoveragePct: 60, ExistingCoverageKnown: true}
+	coverage := PoolCoverageMap{poolKey("us-east-1", "g5.xlarge"): {Pct: 60, AvgInstancesPerHour: 30}}
+	openSearch := common.Commitment{Service: common.ServiceOpenSearch, Region: "us-east-1", ResourceType: "g5.xlarge",
+		Count: 5, State: "active", EndDate: daysFromNow(15)}
+
+	recs := []common.Recommendation{rec}
+	adjusted, _, err := AdjustExistingCoverageForExpiringCommitmentsWithCoverageOptions(recs,
+		[]common.Commitment{openSearch}, coverage, PoolExpiryOptions{WindowDays: 30})
+	require.NoError(t, err)
+	assert.Zero(t, adjusted)
+	assert.InDelta(t, 60, recs[0].ExistingCoveragePct, 1e-9)
+
+	search := common.Recommendation{Service: common.ServiceOpenSearch, Region: "us-east-1", ResourceType: "g5.xlarge",
+		AverageInstancesUsedPerHour: 30, ExistingCoveragePct: 60, ExistingCoverageKnown: true}
+	recs = []common.Recommendation{search}
+	adjusted, _, err = AdjustExistingCoverageForExpiringCommitmentsWithCoverageOptions(recs,
+		[]common.Commitment{openSearch}, coverage, PoolExpiryOptions{WindowDays: 30})
+	require.NoError(t, err)
+	assert.Equal(t, 1, adjusted)
+}
+
+// Unknown dimensions fail loud and leave the recommendations untouched.
+func TestPoolExpiryUnknownDimensionFailsLoud(t *testing.T) {
+	t.Parallel()
+	expiringMetal := ec2Commit(1, "active", daysFromNow(-300), daysFromNow(15))
+	expiringMetal.ResourceType = "m5.metal"
+	bogusService := common.Commitment{Service: "bogus", Region: "us-east-1", ResourceType: "m5.large",
+		Count: 1, State: "active", EndDate: daysFromNow(15)}
+	savingsPlan := common.Commitment{Service: common.ServiceSavingsPlansCompute, CommitmentType: common.CommitmentSavingsPlan,
+		Region: "us-east-1", ResourceType: "COMPUTE_SP", Count: 1, State: "active", EndDate: daysFromNow(15)}
+	medium := common.Recommendation{Service: common.ServiceEC2, Region: "us-east-1", ResourceType: "m5.medium",
+		AverageInstancesUsedPerHour: 30, ExistingCoveragePct: 60}
+	coverage := PoolCoverageMap{poolKey("us-east-1", "m5.medium"): {Pct: 60, AvgInstancesPerHour: 30}}
+
+	for _, tc := range []struct {
+		name    string
+		commits []common.Commitment
+		recs    []common.Recommendation
+		wantErr string
+	}{
+		{"unknown commitment service", []common.Commitment{bogusService}, []common.Recommendation{medium}, `unknown service "bogus"`},
+		{"size without normalization factor", []common.Commitment{expiringMetal}, []common.Recommendation{medium}, `"m5.metal"`},
+		{"rec size without normalization factor", []common.Commitment{expiringRI(1)},
+			[]common.Recommendation{{Service: common.ServiceEC2, Region: "us-east-1", ResourceType: "m5.bogus", AverageInstancesUsedPerHour: 30}}, `"m5.bogus"`},
+		{"RDS rec without engine", []common.Commitment{expiringRI(1)},
+			[]common.Recommendation{{Service: common.ServiceRDS, Region: "us-east-1", ResourceType: "db.m5.large", AverageInstancesUsedPerHour: 30}}, "unknown service"},
+		{"savings plans are not pool-keyed", []common.Commitment{savingsPlan}, []common.Recommendation{medium}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			before := make([]common.Recommendation, len(tc.recs))
+			copy(before, tc.recs)
+			adjusted, _, err := AdjustExistingCoverageForExpiringCommitmentsWithCoverageOptions(tc.recs, tc.commits, coverage, PoolExpiryOptions{WindowDays: 30})
+			if tc.wantErr == "" {
+				require.NoError(t, err)
+				assert.Zero(t, adjusted)
+				return
+			}
+			require.ErrorContains(t, err, tc.wantErr)
+			assert.Zero(t, adjusted)
+			assert.Equal(t, before, tc.recs)
+		})
+	}
 }

@@ -7,6 +7,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Notices
 
+- **Expiry adjustment functions return an error (#450).**
+  `recommendations.AdjustExistingCoverageForExpiringCommitments`,
+  `...WithCoverage` and `...WithCoverageOptions` now return `error` as their
+  last value. An unknown service, or an EC2 size with no normalization factor in
+  a size-flexible family, fails the call and leaves the recommendations
+  untouched. Non-RDS expiry pools now carry the service name, and EC2 pools in
+  size-flexible families net per family in normalized units.
+
 - **EC2 re-drives now refuse when several RIs carry the idempotency token.**
   If more than one active or payment-pending RI has the token (#724), the
   purchase is refused instead of adopting the first one: no purchase is sent and
@@ -140,8 +148,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   inside `CoverageLookbackDays` are not in it yet; with R the count of active,
   non-expiring RIs in the same pool that started inside the lookback, the
   deduction is `max(0, expiring - R)`. It can only buy less, never more. A
-  growth purchase in the pool counts as a replacement, and a replacement of
-  a different size in the same family is not credited.
+  growth purchase in the pool counts as a replacement. Size-flexible EC2
+  families net in normalized units (#450), so a replacement of another size in
+  the same family is credited.
   `CoverageLookbackDays <= 0` credits none. Additive; the existing functions
   are unchanged (#346).
 
