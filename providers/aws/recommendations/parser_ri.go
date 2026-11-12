@@ -236,6 +236,7 @@ func (c *Client) parseCostInformation(details *types.ReservationPurchaseRecommen
 // effective-savings math and purchase decisions with no signal.
 func (c *Client) parseAWSCostDetails(rec *common.Recommendation, details *types.ReservationPurchaseRecommendationDetail) error {
 	// All money fields route through parseOptionalFloat for the non-finite guard.
+	rec.Priced = details.EstimatedMonthlyOnDemandCost != nil && details.EstimatedMonthlySavingsAmount != nil
 	if details.UpfrontCost != nil {
 		upfront, err := parseOptionalFloat("UpfrontCost", details.UpfrontCost)
 		if err != nil {

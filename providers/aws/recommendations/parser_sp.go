@@ -276,6 +276,7 @@ func (c *Client) parseSavingsPlanDetail(
 		CommitmentCost:         upfrontCost,
 		CommitmentCurrency:     commitmentCurrency(currency, params.PaymentOption, detail.UpfrontCost != nil, upfrontCost, recurringMonthlyCost),
 		OnDemandCost:           onDemandCost,
+		Priced:                 detail.CurrentAverageHourlyOnDemandSpend != nil && detail.EstimatedMonthlySavingsAmount != nil,
 		RecurringMonthlyCost:   recurringMonthlyCost,
 		RecommendedUtilization: recommendedUtilization,
 		Timestamp:              time.Now(),
