@@ -16,7 +16,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
-func TestCommitmentPrecision_PurchaseAndPreview(t *testing.T) {
+func TestCommitmentPrecision_Purchase(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		amount float64
@@ -42,14 +42,7 @@ func TestCommitmentPrecision_PurchaseAndPreview(t *testing.T) {
 			m.On("DescribeSavingsPlansOfferings", mock.Anything, mock.Anything).
 				Return(&savingsplans.DescribeSavingsPlansOfferingsOutput{
 					SearchResults: []types.SavingsPlanOffering{storedOffering("offering", types.SavingsPlanTypeCompute, 31536000, types.SavingsPlanPaymentOptionNoUpfront, "", "")},
-				}, nil).Times(3)
-			m.On("DescribeSavingsPlansOfferingRates", mock.Anything, mock.Anything).
-				Return(&savingsplans.DescribeSavingsPlansOfferingRatesOutput{}, nil).Once()
-			preview, err := c.GetOfferingDetails(context.Background(), rec)
-			require.NoError(t, err)
-			assert.Equal(t, want, preview.EffectiveHourlyRate)
-			assert.Equal(t, want*8760, preview.TotalCost)
-			assert.Equal(t, (want*8760)/8760, preview.RecurringCost)
+				}, nil).Times(2)
 			m.On("CreateSavingsPlan", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
 				input := args.Get(1).(*savingsplans.CreateSavingsPlanInput)
 				assert.Equal(t, tc.wire, aws.ToString(input.Commitment))
@@ -93,8 +86,6 @@ func TestCommitmentPrecision_InvalidInputMakesNoSDKCalls(t *testing.T) {
 				result, err := c.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
 				require.Error(t, err)
 				assert.False(t, result.Success)
-				_, err = c.GetOfferingDetails(context.Background(), rec)
-				require.Error(t, err)
 			})
 			assert.Empty(t, m.Calls)
 		})

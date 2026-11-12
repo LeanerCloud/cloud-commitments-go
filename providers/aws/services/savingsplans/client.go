@@ -486,7 +486,7 @@ func (c *Client) checkedPlanType(rec common.Recommendation, spDetails *common.Sa
 
 // findOfferingID finds the appropriate Savings Plans offering ID.
 // execID is the purchase execution UUID for log correlation; pass "" when
-// calling outside of a purchase flow (ValidateOffering, GetOfferingDetails).
+// calling outside of a purchase flow (ValidateOffering).
 func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation, execID string) (string, error) {
 	spDetails, ok := rec.Details.(*common.SavingsPlanDetails)
 	if !ok || spDetails == nil {
@@ -716,94 +716,6 @@ func (c *Client) lookupOfferingID(ctx context.Context, input *savingsplans.Descr
 func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
 	_, err := c.findOfferingID(ctx, rec, "")
 	return err
-}
-
-// GetOfferingDetails retrieves offering details.
-func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
-	if _, err := spcommitment.Normalize(&rec); err != nil {
-		return nil, err
-	}
-	offeringID, err := c.findOfferingID(ctx, rec, "")
-	if err != nil {
-		return nil, err
-	}
-
-	spDetails, ok := rec.Details.(*common.SavingsPlanDetails)
-	if !ok {
-		return nil, fmt.Errorf("invalid service details for Savings Plans")
-	}
-
-	if vErr := c.validateOffering(ctx, offeringID); vErr != nil {
-		return nil, vErr
-	}
-
-	hoursInTerm, err := calculateHoursInTerm(rec.Term)
-	if err != nil {
-		return nil, err
-	}
-	termString, err := normalizeTermString(rec.Term)
-	if err != nil {
-		return nil, err
-	}
-	totalCost := spDetails.HourlyCommitment * hoursInTerm
-	upfrontCost, recurringCost := calculatePaymentBreakdown(rec.PaymentOption, totalCost, hoursInTerm)
-
-	return &common.OfferingDetails{
-		OfferingID:          offeringID,
-		ResourceType:        spDetails.PlanType,
-		Term:                termString,
-		PaymentOption:       rec.PaymentOption,
-		UpfrontCost:         upfrontCost,
-		RecurringCost:       recurringCost,
-		TotalCost:           totalCost,
-		EffectiveHourlyRate: spDetails.HourlyCommitment,
-		Currency:            "USD",
-	}, nil
-}
-
-// validateOffering validates that the offering exists.
-func (c *Client) validateOffering(ctx context.Context, offeringID string) error {
-	input := &savingsplans.DescribeSavingsPlansOfferingRatesInput{
-		SavingsPlanOfferingIds: []string{offeringID},
-	}
-
-	_, err := c.client.DescribeSavingsPlansOfferingRates(ctx, input)
-	if err != nil {
-		return fmt.Errorf("failed to get offering rates: %w", err)
-	}
-
-	return nil
-}
-
-// calculateHoursInTerm calculates the number of hours in a commitment term.
-// Uses 365 days/year to match AWS billing conventions for RIs and Savings Plans.
-// Returns an error on an unrecognized term rather than defaulting to one year.
-func calculateHoursInTerm(term string) (float64, error) {
-	months, err := purchasecfg.ParseTermMonths(term, "Savings Plans")
-	if err != nil {
-		return 0, err
-	}
-	return float64(months/12) * common.HoursPerYear, nil
-}
-
-// calculatePaymentBreakdown calculates upfront and recurring costs based on payment option.
-func calculatePaymentBreakdown(paymentOption string, totalCost, hoursInTerm float64) (upfrontCost, recurringCost float64) {
-	switch paymentOption {
-	case "All Upfront", "all-upfront":
-		return totalCost, 0
-	case "Partial Upfront", "partial-upfront":
-		return totalCost * 0.5, (totalCost * 0.5) / hoursInTerm
-	case "No Upfront", "no-upfront":
-		return 0, totalCost / hoursInTerm
-	default:
-		return totalCost, 0
-	}
-}
-
-// normalizeTermString normalizes a term string to "1yr" or "3yr". Returns an
-// error on an unrecognized term rather than defaulting to one year.
-func normalizeTermString(term string) (string, error) {
-	return purchasecfg.DurationYearString(term, "Savings Plans")
 }
 
 // GetValidResourceTypes returns valid Savings Plan types.
