@@ -285,7 +285,18 @@ func TestAzureLadder_ReshapeBuffer_ConcurrentCallRechecksHaltUnderLock(t *testin
 	time.Sleep(50 * time.Millisecond)
 	ex.execRelease <- struct{}{}
 
-	require.Error(t, <-errs)
-	require.ErrorIs(t, <-errs, errExchangeHalted)
+	// The two calls report in completion order, which is not fixed: the waiting
+	// call can send its halt error before the executing call sends its own.
+	var halted, failed int
+	for range 2 {
+		switch err := <-errs; {
+		case errors.Is(err, errExchangeHalted):
+			halted++
+		case err != nil:
+			failed++
+		}
+	}
+	assert.Equal(t, 1, halted, "the waiting call must see the halt")
+	assert.Equal(t, 1, failed, "the executing call must return its execute error")
 	assert.Equal(t, 1, ex.execCalls)
 }
