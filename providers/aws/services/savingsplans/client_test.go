@@ -1672,3 +1672,26 @@ func TestClient_AWSCNPartitionRejectedBeforeAnyAPICall(t *testing.T) {
 		})
 	}
 }
+
+func TestClient_NonCNPartitionsStillQuote(t *testing.T) {
+	t.Parallel()
+	for _, region := range []string{"us-east-1", "us-gov-west-1", "eu-west-1"} {
+		t.Run(region, func(t *testing.T) {
+			t.Parallel()
+			mockSP := &MockSavingsPlansClient{}
+			mockSP.On("DescribeSavingsPlansOfferings", mock.Anything, mock.Anything).
+				Return(&savingsplans.DescribeSavingsPlansOfferingsOutput{
+					SearchResults: []types.SavingsPlanOffering{{OfferingId: aws.String("offering-1")}},
+				}, nil)
+			client := &Client{client: mockSP, region: region}
+			rec := common.Recommendation{
+				Service: common.ServiceSavingsPlansAll, ResourceType: "Compute", Region: region,
+				Count: 1, PaymentOption: "all-upfront", Term: "1yr",
+				Details: &common.SavingsPlanDetails{PlanType: "Compute", HourlyCommitment: 10.0},
+			}
+			_, err := client.findOfferingID(context.Background(), rec, "")
+			assert.NoError(t, err)
+			mockSP.AssertExpectations(t)
+		})
+	}
+}
