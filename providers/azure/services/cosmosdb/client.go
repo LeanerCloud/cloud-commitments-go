@@ -560,6 +560,7 @@ func (c *Client) convertAzureCosmosRecommendation(ctx context.Context, azureRec 
 		OnDemandCost:         f.OnDemandCost,
 		CommitmentCost:       f.CommitmentCost,
 		EstimatedSavings:     f.EstimatedSavings,
+		Priced:               f.Priced,
 		RecurringMonthlyCost: f.RecurringMonthlyCost,
 		CommitmentType:       common.CommitmentReservedInstance,
 		Term:                 f.Term,

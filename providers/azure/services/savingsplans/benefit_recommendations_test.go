@@ -77,6 +77,7 @@ func TestGetRecommendations_MapsRow(t *testing.T) {
 	assert.InDelta(t, 1.5*hoursPerMonth, *r.RecurringMonthlyCost, 1e-9)
 	assert.InDelta(t, 292*hoursPerMonth/1460, r.EstimatedSavings, 1e-9)
 	assert.InDelta(t, 2920*hoursPerMonth/1460, r.OnDemandCost, 1e-9)
+	assert.True(t, r.Priced)
 	d := r.Details.(*common.SavingsPlanDetails)
 	assert.Equal(t, 1.5, d.HourlyCommitment)
 	assert.Equal(t, "USD", d.Currency)

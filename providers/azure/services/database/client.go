@@ -651,6 +651,7 @@ func (c *Client) convertAzureSQLRecommendation(ctx context.Context, azureRec arm
 		OnDemandCost:         f.OnDemandCost,
 		CommitmentCost:       f.CommitmentCost,
 		EstimatedSavings:     f.EstimatedSavings,
+		Priced:               f.Priced,
 		RecurringMonthlyCost: f.RecurringMonthlyCost,
 		CommitmentType:       common.CommitmentReservedInstance,
 		Term:                 f.Term,

@@ -402,6 +402,7 @@ func TestExtractConsumption_ModernAmountPresence(t *testing.T) {
 			require.NotNil(t, f)
 			assert.InDelta(t, tc.wantOnDmd, f.OnDemandCost, 1e-9)
 			assert.InDelta(t, tc.wantSavings, f.EstimatedSavings, 1e-9)
+			assert.True(t, f.Priced, "both figures derive from the provider's on-demand and total amounts")
 		})
 	}
 }

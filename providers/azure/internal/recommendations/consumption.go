@@ -86,6 +86,9 @@ func ExtractConsumption(rec armconsumption.ReservationRecommendationClassificati
 	rawOnDemand, rawTotal := f.OnDemandCost, f.CommitmentCost
 	f.OnDemandCost = rawOnDemand * scale
 	f.EstimatedSavings = (rawOnDemand - rawTotal) * scale
+	// Both figures derive from the on-demand and total amounts, which
+	// consumptionMeta rejected the recommendation without.
+	f.Priced = true
 	f.CommitmentCost = 0
 	f.RecurringMonthlyCost = nil
 	f.LookBackDays = meta.lookBackDays

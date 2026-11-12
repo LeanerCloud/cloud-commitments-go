@@ -662,3 +662,43 @@ func TestExpandPaymentVariants_ZeroOnDemandKeepsProviderSavings(t *testing.T) {
 		assert.InDelta(t, 0.0, v.SavingsPercentage, 1e-9, v.PaymentOption)
 	}
 }
+
+func TestExtract_PricedRequiresOnDemandAndSavings(t *testing.T) {
+	t.Parallel()
+	usd := "USD"
+	amt := func(v float64) *armconsumption.Amount { return &armconsumption.Amount{Currency: &usd, Value: &v} }
+	f64 := func(v float64) *float64 { return &v }
+	legacy := func(onDemand, net *float64) armconsumption.ReservationRecommendationClassification {
+		return mocks.BuildLegacyReservationRecommendation(func(_ *armconsumption.LegacyReservationRecommendation, p *armconsumption.LegacyReservationRecommendationProperties) {
+			p.CostWithNoReservedInstances, p.NetSavings = onDemand, net
+		})
+	}
+	modern := func(onDemand, net *armconsumption.Amount) armconsumption.ReservationRecommendationClassification {
+		return mocks.BuildModernReservationRecommendation(func(_ *armconsumption.ModernReservationRecommendation, p *armconsumption.ModernReservationRecommendationProperties) {
+			p.CostWithNoReservedInstances, p.NetSavings = onDemand, net
+		})
+	}
+	cases := []struct {
+		name string
+		rec  armconsumption.ReservationRecommendationClassification
+		want bool
+	}{
+		{"legacy both present", legacy(f64(100), f64(30)), true},
+		{"legacy zero values still present", legacy(f64(0), f64(0)), true},
+		{"legacy on-demand absent", legacy(nil, f64(30)), false},
+		{"legacy savings absent", legacy(f64(100), nil), false},
+		{"legacy both absent", legacy(nil, nil), false},
+		{"modern both present", modern(amt(100), amt(30)), true},
+		{"modern on-demand absent", modern(nil, amt(30)), false},
+		{"modern on-demand without value", modern(&armconsumption.Amount{Currency: &usd}, amt(30)), false},
+		{"modern savings absent", modern(amt(100), nil), false},
+		{"modern both absent", modern(nil, nil), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := Extract(tc.rec)
+			require.NotNil(t, f)
+			assert.Equal(t, tc.want, f.Priced)
+		})
+	}
+}

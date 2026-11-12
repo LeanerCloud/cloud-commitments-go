@@ -438,6 +438,7 @@ func (c *Client) convertSynapseRecommendation(ctx context.Context, azureRec armc
 		OnDemandCost:         f.OnDemandCost,
 		CommitmentCost:       f.CommitmentCost,
 		EstimatedSavings:     f.EstimatedSavings,
+		Priced:               f.Priced,
 		RecurringMonthlyCost: f.RecurringMonthlyCost,
 		CommitmentType:       common.CommitmentReservedInstance,
 		Term:                 f.Term,

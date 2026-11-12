@@ -512,6 +512,7 @@ func (c *Client) convertAzureSearchRecommendation(ctx context.Context, azureRec 
 		OnDemandCost:         extracted.OnDemandCost,
 		CommitmentCost:       extracted.CommitmentCost,
 		EstimatedSavings:     extracted.EstimatedSavings,
+		Priced:               extracted.Priced,
 		Term:                 extracted.Term,
 		RecurringMonthlyCost: extracted.RecurringMonthlyCost,
 		PaymentOption:        "upfront",

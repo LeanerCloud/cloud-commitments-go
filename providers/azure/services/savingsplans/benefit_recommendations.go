@@ -265,6 +265,7 @@ func convertBenefitRecommendation(r *benefitRecommendation, subscriptionID strin
 		CommitmentCost:       0,
 		CommitmentCurrency:   "USD", // validateBenefitRow required a USD currencyCode
 		EstimatedSavings:     *d.SavingsAmount * monthly,
+		Priced:               true, // validateBenefitRow required both source amounts
 		RecurringMonthlyCost: &recurring,
 		SourceRecommendation: r.ID,
 		Timestamp:            time.Now(),

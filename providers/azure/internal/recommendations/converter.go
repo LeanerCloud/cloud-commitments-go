@@ -59,6 +59,10 @@ type ExtractedFields struct {
 	CommitmentCost   float64
 	EstimatedSavings float64
 
+	// Priced is true only when OnDemandCost and EstimatedSavings both came from
+	// the provider's own amounts (go#326).
+	Priced bool
+
 	// LookBackDays is the lookback window the cost fields were computed over;
 	// set only by ExtractConsumption (0 from plain Extract).
 	LookBackDays int
@@ -151,6 +155,7 @@ func extractLegacy(rec *armconsumption.LegacyReservationRecommendation) *Extract
 	if props.CostWithNoReservedInstances != nil {
 		out.OnDemandCost = *props.CostWithNoReservedInstances
 	}
+	out.Priced = props.CostWithNoReservedInstances != nil && props.NetSavings != nil
 	if props.TotalCostWithReservedInstances != nil {
 		out.CommitmentCost = *props.TotalCostWithReservedInstances
 	}
@@ -209,6 +214,7 @@ func extractModern(rec *armconsumption.ModernReservationRecommendation) *Extract
 	onDemand := amountValuePtr(props.CostWithNoReservedInstances)
 	total := amountValuePtr(props.TotalCostWithReservedInstances)
 	netSavings := amountValuePtr(props.NetSavings)
+	out.Priced = onDemand != nil && netSavings != nil
 	if onDemand != nil {
 		out.OnDemandCost = *onDemand
 	}
