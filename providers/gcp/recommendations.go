@@ -114,6 +114,10 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 		return r.collectUnsupportedRecs(ctx, params)
 	}
 
+	if err := computeengine.CheckPaymentOption(params.PaymentOption); err != nil {
+		return nil, err
+	}
+
 	ctx, skips := recskip.WithLog(ctx)
 
 	// Get list of regions to check

@@ -686,10 +686,10 @@ func (c *Client) GetValidResourceTypes(_ context.Context) ([]string, error) {
 
 // toAzureTerm converts a CUDly term string to an armbillingbenefits.Term.
 func toAzureTerm(term string) (armbillingbenefits.Term, error) {
-	switch term {
-	case "1yr", "1", "P1Y", "":
+	switch common.Term(term) {
+	case common.Term1Year, "1", "P1Y", "":
 		return armbillingbenefits.TermP1Y, nil
-	case "3yr", "3", "P3Y":
+	case common.Term3Year, "3", "P3Y":
 		return armbillingbenefits.TermP3Y, nil
 	case "5yr", "5", "P5Y":
 		return armbillingbenefits.TermP5Y, nil

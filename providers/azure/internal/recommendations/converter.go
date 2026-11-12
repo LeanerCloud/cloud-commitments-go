@@ -348,20 +348,19 @@ func resourceTypeFromSKUProperties(skus []*armconsumption.SKUProperty) string {
 }
 
 // normaliseTerm maps Azure's ISO-8601 duration term strings ("P1Y", "P3Y")
-// to the codebase's "1yr" / "3yr" convention. A nil or empty term
-// defaults to "1yr" (matches the previous stub's invariant — downstream
-// code like the purchase flow assumes a non-empty term). Unknown values
-// pass through verbatim and are logged so a future SDK enum addition
-// surfaces rather than breaking the pipeline silently.
+// to the codebase's "1yr" / "3yr" convention. A nil or empty term stays
+// empty rather than defaulting to one year, so ExtractConsumption rejects the
+// recommendation instead of pricing a guessed term. Unknown values pass
+// through verbatim and are logged; ExtractConsumption rejects them too.
 func normaliseTerm(term *string) string {
 	if term == nil || *term == "" {
-		return "1yr"
+		return ""
 	}
 	switch *term {
 	case "P1Y":
-		return "1yr"
+		return string(common.Term1Year)
 	case "P3Y":
-		return "3yr"
+		return string(common.Term3Year)
 	default:
 		logging.Warnf("azure recommendations: unrecognized Term value %q; passing through verbatim", *term)
 		return *term

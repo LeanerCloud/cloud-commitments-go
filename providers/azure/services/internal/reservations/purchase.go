@@ -70,10 +70,10 @@ import (
 // literal comparison (rec.Term == "3yr" || rec.Term == "3") should call this
 // instead to get consistent error reporting on unrecognized terms.
 func ParseTermYears(term string) (int, error) {
-	switch strings.ToLower(strings.TrimSpace(term)) {
-	case "", "1", "1yr", "1y":
+	switch common.Term(strings.ToLower(strings.TrimSpace(term))) {
+	case "", "1", common.Term1Year, "1y":
 		return 1, nil
-	case "3", "3yr", "3y":
+	case "3", common.Term3Year, "3y":
 		return 3, nil
 	default:
 		return 0, fmt.Errorf("unsupported reservation term: %s", term)
@@ -111,17 +111,17 @@ func ParseTermYears(term string) (int, error) {
 // Blaming partial-upfront for a value that is simply missing sends whoever
 // reads that error looking in the wrong place.
 func BillingPlanForPaymentOption(paymentOption string) (armreservations.ReservationBillingPlan, error) {
-	switch strings.ToLower(strings.TrimSpace(paymentOption)) {
-	case "all-upfront", "upfront":
+	switch common.PaymentOption(strings.ToLower(strings.TrimSpace(paymentOption))) {
+	case common.PaymentAllUpfront, "upfront":
 		return armreservations.ReservationBillingPlanUpfront, nil
-	case "no-upfront", "monthly":
+	case common.PaymentNoUpfront, "monthly":
 		return armreservations.ReservationBillingPlanMonthly, nil
 	case "":
 		return "", fmt.Errorf(
 			"azure reservations support only upfront or monthly billing, and no payment option was supplied; " +
 				"set it explicitly (upfront or monthly) rather than relying on a default, because Azure's own " +
 				"default is upfront and would charge the whole commitment immediately")
-	case "partial-upfront":
+	case common.PaymentPartialUpfront:
 		// Named explicitly rather than folded into default: partial-upfront is
 		// a real payment option elsewhere in CUDly (AWS offers it), so the
 		// caller needs to know Azure specifically has no equivalent. Handled

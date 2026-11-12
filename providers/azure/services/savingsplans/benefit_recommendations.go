@@ -232,9 +232,9 @@ func (c *Client) fetchBenefitPage(ctx context.Context, bearer, pageURL string, p
 func termFromAPI(t string) (string, error) {
 	switch t {
 	case "P1Y":
-		return "1yr", nil
+		return string(common.Term1Year), nil
 	case "P3Y":
-		return "3yr", nil
+		return string(common.Term3Year), nil
 	default:
 		return "", fmt.Errorf("unknown term %q", t)
 	}

@@ -175,10 +175,10 @@ func checkLookBackDays(d *int32) (int, error) {
 // TermYears maps a normalised term ("1yr", "3yr") to years and fails on
 // anything else.
 func TermYears(term string) (int, error) {
-	switch term {
-	case "1yr":
+	switch common.Term(term) {
+	case common.Term1Year:
 		return 1, nil
-	case "3yr":
+	case common.Term3Year:
 		return 3, nil
 	default:
 		return 0, fmt.Errorf("unrecognized term %q", term)

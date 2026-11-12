@@ -315,11 +315,11 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	var upfrontCost, recurringCost float64
 	totalCost := searchPricing.ReservationPrice
 
-	switch rec.PaymentOption {
-	case "all-upfront", "upfront":
+	switch common.PaymentOption(rec.PaymentOption) {
+	case common.PaymentAllUpfront, "upfront":
 		upfrontCost = totalCost
 		recurringCost = 0
-	case "monthly", "no-upfront":
+	case "monthly", common.PaymentNoUpfront:
 		upfrontCost = 0
 		recurringCost = totalCost / (float64(termYears) * 12)
 	default:

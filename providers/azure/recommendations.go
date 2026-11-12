@@ -700,10 +700,10 @@ func populateFromExtendedProperties(rec *common.Recommendation, ext map[string]*
 // "1yr"/"3yr") to the common form and errors on a missing or unknown value.
 func advisorTerm(ext map[string]*string) (string, error) {
 	switch t := extString(ext, advisorKeyTerm, ""); t {
-	case "P1Y", "1yr":
-		return "1yr", nil
-	case "P3Y", "3yr":
-		return "3yr", nil
+	case "P1Y", string(common.Term1Year):
+		return string(common.Term1Year), nil
+	case "P3Y", string(common.Term3Year):
+		return string(common.Term3Year), nil
 	case "":
 		return "", fmt.Errorf("%s is absent", advisorKeyTerm)
 	default:

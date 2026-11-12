@@ -193,9 +193,9 @@ func rootPlanTerm(root *recommenderpb.Operation) (term string, found bool, err e
 	}
 	switch name.StringValue {
 	case computepb.Commitment_TWELVE_MONTH.String():
-		return "1yr", true, nil
+		return string(common.Term1Year), true, nil
 	case computepb.Commitment_THIRTY_SIX_MONTH.String():
-		return "3yr", true, nil
+		return string(common.Term3Year), true, nil
 	default:
 		return "", false, fmt.Errorf("%w: unsupported root Commitment plan %q", errBadPlan, name.StringValue)
 	}
@@ -209,9 +209,9 @@ func canonicalTerm(term string) string {
 		return term
 	}
 	if plan == computepb.Commitment_THIRTY_SIX_MONTH.String() {
-		return "3yr"
+		return string(common.Term3Year)
 	}
-	return "1yr"
+	return string(common.Term1Year)
 }
 
 // resolveRecTerm picks the canonical term ("1yr"/"3yr") for a recommendation.
@@ -244,7 +244,7 @@ func resolveRecTerm(gcpRec *recommenderpb.Recommendation, params common.Recommen
 	if params.Term == "" {
 		return planTerm, nil
 	}
-	if want := canonicalTerm(params.Term); want != "1yr" && want != "3yr" {
+	if want := canonicalTerm(params.Term); want != string(common.Term1Year) && want != string(common.Term3Year) {
 		return want, nil
 	} else if want != planTerm {
 		return "", fmt.Errorf("%w: params term %q conflicts with recommendation plan term %s", errBadPlan, params.Term, planTerm)

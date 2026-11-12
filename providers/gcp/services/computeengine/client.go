@@ -983,8 +983,8 @@ func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommend
 	// misconfiguration is visible. Supersedes the monthly stamp introduced
 	// in PR #829 (which stamped "monthly" in the purchase body but not in
 	// the converter default -- see PR #1047 for the supersession note).
-	if params.PaymentOption != "" && !strings.EqualFold(params.PaymentOption, "monthly") {
-		log.Printf("computeengine: unsupported GCP payment option %q; forcing monthly", params.PaymentOption)
+	if err := CheckPaymentOption(params.PaymentOption); err != nil {
+		return nil, err
 	}
 	paymentOption := "monthly"
 
@@ -1029,6 +1029,19 @@ func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommend
 	c.enrichRecWithPricing(ctx, rec)
 
 	return rec, nil
+}
+
+// CheckPaymentOption accepts the spellings callers send for a known option
+// and rejects anything else, so a typo is not mistaken for a monthly request.
+func CheckPaymentOption(payment string) error {
+	switch common.PaymentOption(strings.ToLower(strings.TrimSpace(payment))) {
+	case "", "monthly", common.PaymentNoUpfront:
+		return nil
+	case common.PaymentAllUpfront, common.PaymentPartialUpfront, "upfront":
+		log.Printf("computeengine: unsupported GCP payment option %q; forcing monthly", payment)
+		return nil
+	}
+	return fmt.Errorf("computeengine: unrecognized payment option %q", payment)
 }
 
 // enrichRecWithPricing fills OnDemandCost, SavingsPercentage and

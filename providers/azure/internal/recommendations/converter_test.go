@@ -67,7 +67,8 @@ func TestExtract_TermNormalisation(t *testing.T) {
 	}{
 		{"P1Y", "P1Y", "1yr"},
 		{"P3Y", "P3Y", "3yr"},
-		{"Empty defaults to 1yr", "", "1yr"},
+		{"Empty stays empty", "", ""},
+		{"Wrong case is passed through verbatim", "p1y", "p1y"},
 		{"Unknown is passed through verbatim", "ZZZ", "ZZZ"},
 	}
 	for _, tc := range cases {

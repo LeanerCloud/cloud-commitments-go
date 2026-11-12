@@ -48,10 +48,10 @@ func ScaleToTerm(what, region string, onDemandHourly, commitmentHourly float64, 
 func OfferingDetails(rec common.Recommendation, offeringID string, termYears int, commitmentTotal, hourlyRate float64, currency string) (*common.OfferingDetails, error) {
 	var upfrontCost, recurringCost float64
 
-	switch rec.PaymentOption {
-	case "all-upfront", "upfront":
+	switch common.PaymentOption(rec.PaymentOption) {
+	case common.PaymentAllUpfront, "upfront":
 		upfrontCost = commitmentTotal
-	case "monthly", "no-upfront":
+	case "monthly", common.PaymentNoUpfront:
 		recurringCost = commitmentTotal / (float64(termYears) * 12)
 	default:
 		return nil, fmt.Errorf("unsupported GCP payment option %q", rec.PaymentOption)
