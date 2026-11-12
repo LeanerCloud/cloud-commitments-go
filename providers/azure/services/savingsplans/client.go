@@ -311,10 +311,18 @@ func convertSavingsPlan(sp *armbillingbenefits.SavingsPlanModel, subscriptionID 
 		if props.Commitment != nil && props.Commitment.Amount != nil {
 			commitment.Cost = *props.Commitment.Amount
 			commitment.CostKnown = true
+			commitment.CostCurrency = deref(props.Commitment.CurrencyCode)
 		}
 	}
 
 	return requireStartDate(&commitment)
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // requireStartDate returns c, or fails closed on a non-terminal plan with no start date.

@@ -943,3 +943,20 @@ func TestConvertSavingsPlan_NilPropertiesIsRejected(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(t, got, "no commitment is returned, so no cost can be claimed known")
 }
+
+func TestConvertSavingsPlan_CarriesCurrency(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	amount, eur := 2.5, "EUR"
+	sp := &armbillingbenefits.SavingsPlanModel{
+		ID:  toPtr("/subscriptions/sub/savingsPlans/sp1"),
+		SKU: &armbillingbenefits.SKU{Name: toPtr("Compute_Savings_Plan")},
+		Properties: &armbillingbenefits.SavingsPlanModelProperties{
+			EffectiveDateTime: &now,
+			Commitment:        &armbillingbenefits.Commitment{Amount: &amount, CurrencyCode: &eur},
+		},
+	}
+	got, err := convertSavingsPlan(sp, "sub")
+	require.NoError(t, err)
+	assert.Equal(t, "EUR", got.CostCurrency)
+}
