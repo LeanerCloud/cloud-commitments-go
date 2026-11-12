@@ -4,7 +4,6 @@ package cloudstorage
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
@@ -131,20 +130,6 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	}, fmt.Errorf("%w: Cloud Storage", common.ErrCommitmentPurchaseNotSupported)
 }
 
-// ValidateOffering validates that a storage class exists.
-func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
-	validClasses, err := c.GetValidResourceTypes(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get valid storage classes: %w", err)
-	}
-
-	if slices.Contains(validClasses, rec.ResourceType) {
-		return nil
-	}
-
-	return fmt.Errorf("invalid Cloud Storage class: %s", rec.ResourceType)
-}
-
 // GetOfferingDetails retrieves Cloud Storage offering details from GCP Billing API.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	termYears, err := skumatch.TermYears(rec.Term)
@@ -158,7 +143,7 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	}
 
 	offeringID := fmt.Sprintf("gcp-storage-%s-%s-%s", rec.ResourceType, c.region, rec.Term)
-	return skumatch.OfferingDetails(rec, offeringID, termYears, pricing.CommitmentPrice, pricing.HourlyRate, pricing.Currency), nil
+	return skumatch.OfferingDetails(rec, offeringID, termYears, pricing.CommitmentPrice, pricing.HourlyRate, pricing.Currency)
 }
 
 // GetValidResourceTypes returns valid Cloud Storage classes.

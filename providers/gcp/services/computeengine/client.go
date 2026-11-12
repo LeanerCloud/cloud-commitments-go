@@ -10,7 +10,6 @@ import (
 	"math"
 	"net/http"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -884,20 +883,6 @@ func (c *Client) buildInsertRequest(rec common.Recommendation, opts common.Purch
 	return insertReq, commitmentName, nil
 }
 
-// ValidateOffering validates that a machine type exists.
-func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
-	validTypes, err := c.GetValidResourceTypes(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get valid machine types: %w", err)
-	}
-
-	if slices.Contains(validTypes, rec.ResourceType) {
-		return nil
-	}
-
-	return fmt.Errorf("invalid GCP machine type: %s", rec.ResourceType)
-}
-
 // GetOfferingDetails retrieves CUD offering details from GCP Billing API.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	termYears, err := skumatch.TermYears(rec.Term)
@@ -915,7 +900,7 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	}
 
 	offeringID := fmt.Sprintf("gcp-compute-%s-%s-%s", rec.ResourceType, c.region, rec.Term)
-	return skumatch.OfferingDetails(rec, offeringID, termYears, pricing.CommitmentPrice, pricing.HourlyRate, pricing.Currency), nil
+	return skumatch.OfferingDetails(rec, offeringID, termYears, pricing.CommitmentPrice, pricing.HourlyRate, pricing.Currency)
 }
 
 // GetValidResourceTypes returns valid machine types from GCP Compute API.

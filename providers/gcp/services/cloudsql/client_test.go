@@ -284,34 +284,6 @@ func TestSQLPricingStructure(t *testing.T) {
 	assert.Equal(t, 50.0, pricing.SavingsPercentage)
 }
 
-// TestCloudSQLClient_ValidateOffering_TierListError verifies that an error
-// from the SQLAdmin tier-list call propagates through ValidateOffering.
-//
-// The previous variant of this test relied on absent application-default
-// credentials to trigger the error path. That approach is environment-
-// sensitive: machines with ADC configured (CI runners, developer laptops with
-// gcloud auth) return nil from sqladmin.NewService, causing a false pass.
-// Using an injected mock that always errors is deterministic regardless of
-// the host environment. See issue #251.
-func TestCloudSQLClient_ValidateOffering_TierListError(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	mockService := &MockSQLAdminService{
-		err: errors.New("injected tier-list failure"),
-	}
-	client.SetSQLAdminService(mockService)
-
-	rec := common.Recommendation{
-		ResourceType: "db-n1-standard-1",
-	}
-
-	err := client.ValidateOffering(ctx, rec)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to list SQL tiers")
-}
-
 // TestCloudSQLClient_GetExistingCommitments_ReturnsEmpty asserts that
 // GetExistingCommitments always returns an empty slice regardless of the
 // sqladmin instance list. Cloud SQL spend-based CUDs are not detectable via
@@ -384,51 +356,6 @@ func TestCloudSQLClient_GetValidResourceTypes_NoTiers(t *testing.T) {
 	_, err := client.GetValidResourceTypes(ctx)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no Cloud SQL tiers found")
-}
-
-func TestCloudSQLClient_ValidateOffering_Valid(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	mockService := &MockSQLAdminService{
-		tiers: &sqladmin.TiersListResponse{
-			Items: []*sqladmin.Tier{
-				{Tier: "db-n1-standard-1", Region: []string{"us-central1"}},
-			},
-		},
-	}
-	client.SetSQLAdminService(mockService)
-
-	rec := common.Recommendation{
-		ResourceType: "db-n1-standard-1",
-	}
-
-	err := client.ValidateOffering(ctx, rec)
-	assert.NoError(t, err)
-}
-
-func TestCloudSQLClient_ValidateOffering_Invalid(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	mockService := &MockSQLAdminService{
-		tiers: &sqladmin.TiersListResponse{
-			Items: []*sqladmin.Tier{
-				{Tier: "db-n1-standard-1", Region: []string{"us-central1"}},
-			},
-		},
-	}
-	client.SetSQLAdminService(mockService)
-
-	rec := common.Recommendation{
-		ResourceType: "invalid-tier",
-	}
-
-	err := client.ValidateOffering(ctx, rec)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid Cloud SQL tier")
 }
 
 // TestCloudSQLClient_PurchaseCommitment_NotSupported is the regression test for

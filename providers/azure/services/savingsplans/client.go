@@ -634,66 +634,6 @@ func checkValidateResponse(resp armbillingbenefits.RPClientValidatePurchaseRespo
 // AzureRetailPrice is the response envelope for the Azure Retail Prices API.
 type AzureRetailPrice = pricing.Page[pricing.RetailPriceItem]
 
-// GetOfferingDetails retrieves pricing details for an Azure Savings Plan offering.
-func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
-	spDetails, ok := rec.Details.(*common.SavingsPlanDetails)
-	if !ok {
-		return nil, fmt.Errorf("invalid service details for Azure Savings Plans")
-	}
-
-	currency, err := commitmentCurrency(spDetails)
-	if err != nil {
-		return nil, err
-	}
-
-	// Calculate term hours.
-	azTerm, err := toAzureTerm(rec.Term)
-	if err != nil {
-		return nil, err
-	}
-
-	var hoursInTerm float64
-	var termStr string
-	switch azTerm {
-	case armbillingbenefits.TermP1Y:
-		hoursInTerm, termStr = common.HoursPerYear, "1yr"
-	case armbillingbenefits.TermP3Y:
-		hoursInTerm, termStr = 3*common.HoursPerYear, "3yr"
-	case armbillingbenefits.TermP5Y:
-		hoursInTerm, termStr = 5*common.HoursPerYear, "5yr"
-	default:
-		return nil, fmt.Errorf("unsupported savings plan term: %s", rec.Term)
-	}
-
-	totalCost := spDetails.HourlyCommitment * hoursInTerm
-
-	var upfrontCost, recurringCost float64
-	switch rec.PaymentOption {
-	case "All Upfront", "all-upfront":
-		upfrontCost = totalCost
-		recurringCost = 0
-	case "Partial Upfront", "partial-upfront":
-		upfrontCost = totalCost * 0.5
-		recurringCost = (totalCost * 0.5) / hoursInTerm
-	case "No Upfront", "no-upfront":
-		upfrontCost = 0
-		recurringCost = totalCost / hoursInTerm
-	default:
-		return nil, fmt.Errorf("unsupported payment option: %s", rec.PaymentOption)
-	}
-
-	return &common.OfferingDetails{
-		ResourceType:        spDetails.PlanType,
-		Term:                termStr,
-		PaymentOption:       rec.PaymentOption,
-		UpfrontCost:         upfrontCost,
-		RecurringCost:       recurringCost,
-		TotalCost:           totalCost,
-		EffectiveHourlyRate: spDetails.HourlyCommitment,
-		Currency:            currency,
-	}, nil
-}
-
 // fetchOnDemandRate queries the Azure Retail Prices API for the on-demand hourly
 // rate for the given plan type. The $filter is built with url.Values so that
 // spaces and quotes are properly percent-encoded (issue #1021 H3). Pagination is

@@ -288,21 +288,6 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	return result, nil
 }
 
-// ValidateOffering validates that a Synapse SKU is in the known set.
-func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
-	validSKUs, err := c.GetValidResourceTypes(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get valid SKUs: %w", err)
-	}
-	resourceType := strings.TrimSpace(rec.ResourceType)
-	for _, sku := range validSKUs {
-		if strings.EqualFold(sku, resourceType) {
-			return nil
-		}
-	}
-	return fmt.Errorf("invalid Azure Synapse SKU: %s", rec.ResourceType)
-}
-
 // GetOfferingDetails retrieves Synapse reservation offering details from the
 // Azure Retail Prices API.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {

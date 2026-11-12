@@ -4,7 +4,6 @@ package memorystore
 import (
 	"context"
 	"fmt"
-	"slices"
 	"time"
 
 	"cloud.google.com/go/recommender/apiv1/recommenderpb"
@@ -135,20 +134,6 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	}, fmt.Errorf("%w: Memorystore", common.ErrCommitmentPurchaseNotSupported)
 }
 
-// ValidateOffering validates that a Redis tier exists.
-func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
-	validTiers, err := c.GetValidResourceTypes(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get valid tiers: %w", err)
-	}
-
-	if slices.Contains(validTiers, rec.ResourceType) {
-		return nil
-	}
-
-	return fmt.Errorf("invalid Memorystore tier: %s", rec.ResourceType)
-}
-
 // GetOfferingDetails retrieves Memorystore offering details from GCP Billing API.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	termYears, err := skumatch.TermYears(rec.Term)
@@ -162,7 +147,7 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	}
 
 	offeringID := fmt.Sprintf("gcp-memorystore-%s-%s-%s", rec.ResourceType, c.region, rec.Term)
-	return skumatch.OfferingDetails(rec, offeringID, termYears, pricing.CommitmentPrice, pricing.HourlyRate, pricing.Currency), nil
+	return skumatch.OfferingDetails(rec, offeringID, termYears, pricing.CommitmentPrice, pricing.HourlyRate, pricing.Currency)
 }
 
 // GetValidResourceTypes returns valid Memorystore tiers.

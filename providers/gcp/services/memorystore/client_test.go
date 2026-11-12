@@ -287,33 +287,6 @@ func TestRedisPricingStructure(t *testing.T) {
 	assert.Equal(t, 40.0, pricing.SavingsPercentage)
 }
 
-func TestMemorystoreClient_ValidateOffering_ValidTier(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	rec := common.Recommendation{
-		ResourceType: "BASIC",
-	}
-
-	err := client.ValidateOffering(ctx, rec)
-	assert.NoError(t, err)
-}
-
-func TestMemorystoreClient_ValidateOffering_InvalidTier(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	rec := common.Recommendation{
-		ResourceType: "INVALID_TIER",
-	}
-
-	err := client.ValidateOffering(ctx, rec)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid Memorystore tier")
-}
-
 // TestMemorystoreClient_GetExistingCommitments_Stub verifies the documented
 // stub behavior: the GCP Memorystore Redis API does not expose commitment
 // status — ReservedIpRange is the VPC-peering CIDR, not a commitment

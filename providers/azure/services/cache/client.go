@@ -206,23 +206,6 @@ func (c *Client) PurchaseCommitment(_ context.Context, rec common.Recommendation
 	return common.PurchaseResult{Recommendation: rec, Timestamp: time.Now(), Error: err}, err
 }
 
-// ValidateOffering validates that a Redis Cache SKU exists.
-func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
-	validSKUs, err := c.GetValidResourceTypes(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get valid SKUs: %w", err)
-	}
-
-	resourceType := strings.TrimSpace(rec.ResourceType)
-	for _, sku := range validSKUs {
-		if strings.EqualFold(sku, resourceType) {
-			return nil
-		}
-	}
-
-	return fmt.Errorf("invalid Azure Redis Cache SKU: %s", rec.ResourceType)
-}
-
 // GetOfferingDetails retrieves Redis Cache reservation offering details from Azure Retail Prices API.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	termYears, err := reservations.ParseTermYears(rec.Term)

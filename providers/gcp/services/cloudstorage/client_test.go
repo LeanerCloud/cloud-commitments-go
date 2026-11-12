@@ -131,45 +131,6 @@ func TestCloudStorageClient_GetValidResourceTypes(t *testing.T) {
 	assert.Len(t, types, 4)
 }
 
-func TestCloudStorageClient_ValidateOffering_ValidClasses(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client := &Client{
-		projectID: "test-project",
-		region:    "us-central1",
-	}
-
-	validClasses := []string{"STANDARD", "NEARLINE", "COLDLINE", "ARCHIVE"}
-
-	for _, class := range validClasses {
-		t.Run(class, func(t *testing.T) {
-			t.Parallel()
-			rec := common.Recommendation{
-				ResourceType: class,
-			}
-			err := client.ValidateOffering(ctx, rec)
-			assert.NoError(t, err)
-		})
-	}
-}
-
-func TestCloudStorageClient_ValidateOffering_InvalidClass(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	client := &Client{
-		projectID: "test-project",
-		region:    "us-central1",
-	}
-
-	rec := common.Recommendation{
-		ResourceType: "INVALID_CLASS",
-	}
-
-	err := client.ValidateOffering(ctx, rec)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid Cloud Storage class")
-}
-
 func TestStoragePricing_Fields(t *testing.T) {
 	t.Parallel()
 	pricing := &StoragePricing{
@@ -590,7 +551,7 @@ func TestCloudStorageClient_GetOfferingDetails_BillingError(t *testing.T) {
 	assert.Contains(t, err.Error(), "failed to list SKUs")
 }
 
-func TestCloudStorageClient_GetOfferingDetails_DefaultPaymentOption(t *testing.T) {
+func TestCloudStorageClient_GetOfferingDetails_UnknownPaymentOptionErrors(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
@@ -606,12 +567,12 @@ func TestCloudStorageClient_GetOfferingDetails_DefaultPaymentOption(t *testing.T
 	rec := common.Recommendation{
 		ResourceType:  "STANDARD",
 		Term:          "1yr",
-		PaymentOption: "unknown", // Default case
+		PaymentOption: "unknown",
 	}
 
 	details, err := client.GetOfferingDetails(ctx, rec)
-	require.NoError(t, err)
-	assert.Greater(t, details.UpfrontCost, float64(0))
+	require.Error(t, err)
+	assert.Nil(t, details)
 }
 
 func TestCloudStorageClient_GetStoragePricing_WithCommitmentPrice(t *testing.T) {

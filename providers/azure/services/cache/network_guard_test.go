@@ -11,8 +11,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // externalRequests counts requests that reached the loopback proxy that
@@ -50,6 +48,5 @@ func TestCacheClient_SKUValidation_MakesNoExternalRequests(t *testing.T) {
 	skus, err := client.GetValidResourceTypes(context.Background())
 	require.NoError(t, err)
 	assert.Contains(t, skus, "Premium_P1")
-	require.NoError(t, client.ValidateOffering(context.Background(), common.Recommendation{ResourceType: "Premium_P1"}))
 	assert.Zero(t, externalRequests.Load()-before, "SKU validation must not reach the network")
 }

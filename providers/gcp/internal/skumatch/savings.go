@@ -43,9 +43,9 @@ func ScaleToTerm(what, region string, onDemandHourly, commitmentHourly float64, 
 }
 
 // OfferingDetails builds the offering for a commitment total, paying it up
-// front or spreading it monthly by payment option. An unknown option pays the
-// total up front.
-func OfferingDetails(rec common.Recommendation, offeringID string, termYears int, commitmentTotal, hourlyRate float64, currency string) *common.OfferingDetails {
+// front or spreading it monthly by payment option. An unknown option is an
+// error rather than a guess at what the buyer pays.
+func OfferingDetails(rec common.Recommendation, offeringID string, termYears int, commitmentTotal, hourlyRate float64, currency string) (*common.OfferingDetails, error) {
 	var upfrontCost, recurringCost float64
 
 	switch rec.PaymentOption {
@@ -54,7 +54,7 @@ func OfferingDetails(rec common.Recommendation, offeringID string, termYears int
 	case "monthly", "no-upfront":
 		recurringCost = commitmentTotal / (float64(termYears) * 12)
 	default:
-		upfrontCost = commitmentTotal
+		return nil, fmt.Errorf("unsupported GCP payment option %q", rec.PaymentOption)
 	}
 
 	return &common.OfferingDetails{
@@ -67,5 +67,5 @@ func OfferingDetails(rec common.Recommendation, offeringID string, termYears int
 		TotalCost:           commitmentTotal,
 		EffectiveHourlyRate: hourlyRate,
 		Currency:            currency,
-	}
+	}, nil
 }

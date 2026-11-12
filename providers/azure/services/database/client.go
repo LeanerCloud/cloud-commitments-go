@@ -389,23 +389,6 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	return result, nil
 }
 
-// ValidateOffering validates that a SQL Database SKU exists.
-func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
-	validSKUs, err := c.GetValidResourceTypes(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get valid SKUs: %w", err)
-	}
-
-	resourceType := strings.TrimSpace(rec.ResourceType)
-	for _, sku := range validSKUs {
-		if strings.EqualFold(sku, resourceType) {
-			return nil
-		}
-	}
-
-	return fmt.Errorf("invalid Azure SQL Database SKU: %s", rec.ResourceType)
-}
-
 // GetOfferingDetails retrieves SQL Database reservation offering details from Azure Retail Prices API.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
 	termYears, err := reservations.ParseTermYears(rec.Term)
