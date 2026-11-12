@@ -97,11 +97,11 @@ func (a *AWSLadder) ReshapeBuffer(ctx context.Context, scope ladder.Scope, cfg l
 // exchange package's runtime configuration. See ReshapeBuffer's godoc for the
 // full mapping rationale.
 func buildRIExchangeConfig(cfg ladder.BufferReshapeConfig) (exchange.RIExchangeConfig, error) {
-	perExchangeCap, err := requireCap("MaxPaymentPerExchangeUSD", cfg.MaxPaymentPerExchangeUSD)
+	perExchangeCap, err := ladder.RequireCap("MaxPaymentPerExchangeUSD", cfg.MaxPaymentPerExchangeUSD)
 	if err != nil {
 		return exchange.RIExchangeConfig{}, err
 	}
-	dailyCap, err := requireCap("MaxPaymentDailyUSD", cfg.MaxPaymentDailyUSD)
+	dailyCap, err := ladder.RequireCap("MaxPaymentDailyUSD", cfg.MaxPaymentDailyUSD)
 	if err != nil {
 		return exchange.RIExchangeConfig{}, err
 	}
@@ -124,24 +124,6 @@ func buildRIExchangeConfig(cfg ladder.BufferReshapeConfig) (exchange.RIExchangeC
 		MaxPaymentDailyUSD:       dailyCap,
 		LookbackDays:             cfg.LookbackDays,
 	}, nil
-}
-
-// requireCap validates a required money cap and returns it as the float64 the
-// exchange config requires. nil is rejected: the caller must set an explicit
-// cap, so an omitted field can never mean unlimited spend. Values must be
-// finite and > 0 (a zero cap would block every exchange).
-func requireCap(name string, capUSD *float64) (float64, error) {
-	if capUSD == nil {
-		return 0, fmt.Errorf("%s is required: set an explicit cap (a nil cap is not treated as unlimited)", name)
-	}
-	v := *capUSD
-	if math.IsNaN(v) || math.IsInf(v, 0) {
-		return 0, fmt.Errorf("%s must be finite, got %g", name, v)
-	}
-	if v <= 0 {
-		return 0, fmt.Errorf("%s must be > 0 (a zero cap would block every exchange), got %g", name, v)
-	}
-	return v, nil
 }
 
 // summarizeExchangeResult maps the runner outcome to a ReshapeSummary.
