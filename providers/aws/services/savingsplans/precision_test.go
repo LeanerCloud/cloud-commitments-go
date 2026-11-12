@@ -39,6 +39,10 @@ func TestCommitmentPrecision_PurchaseAndPreview(t *testing.T) {
 			original.OfferingID = "offering"
 			want, err := strconv.ParseFloat(tc.wire, 64)
 			require.NoError(t, err)
+			m.On("DescribeSavingsPlansOfferings", mock.Anything, mock.Anything).
+				Return(&savingsplans.DescribeSavingsPlansOfferingsOutput{
+					SearchResults: []types.SavingsPlanOffering{storedOffering("offering", types.SavingsPlanTypeCompute, 31536000, types.SavingsPlanPaymentOptionNoUpfront, "", "")},
+				}, nil).Times(3)
 			m.On("DescribeSavingsPlansOfferingRates", mock.Anything, mock.Anything).
 				Return(&savingsplans.DescribeSavingsPlansOfferingRatesOutput{}, nil).Once()
 			preview, err := c.GetOfferingDetails(context.Background(), rec)
@@ -106,6 +110,10 @@ func TestCommitmentPrecision_ValidateOfferingDoesNotRequireCommitment(t *testing
 	rec.Details = (*common.SavingsPlanDetails)(nil)
 	require.NotPanics(t, func() { require.Error(t, c.ValidateOffering(context.Background(), rec)) })
 	rec.Details = &common.SavingsPlanDetails{PlanType: "Compute", OfferingID: "offering"}
+	m.On("DescribeSavingsPlansOfferings", mock.Anything, mock.Anything).
+		Return(&savingsplans.DescribeSavingsPlansOfferingsOutput{
+			SearchResults: []types.SavingsPlanOffering{storedOffering("offering", types.SavingsPlanTypeCompute, 31536000, types.SavingsPlanPaymentOptionNoUpfront, "", "")},
+		}, nil).Once()
 	require.NoError(t, c.ValidateOffering(context.Background(), rec))
-	assert.Empty(t, m.Calls)
+	m.AssertExpectations(t)
 }

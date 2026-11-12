@@ -1711,26 +1711,13 @@ func TestEC2InstanceSP_MultiRegionResponseFailsLoud(t *testing.T) {
 		"error message must identify region ambiguity")
 }
 
-// TestEC2InstanceSP_CEProvidedOfferingIDUsedDirectly asserts that when Cost
-// Explorer supplies an OfferingId in SavingsPlansDetails, findOfferingID uses
-// it directly without calling DescribeSavingsPlansOfferings. Pre-fix: the field
-// did not exist on common.SavingsPlanDetails; the lookup always went through
-// DescribeSavingsPlansOfferings. Post-fix: the direct path is taken, the API
-// is not called.
-func TestEC2InstanceSP_CEProvidedOfferingIDUsedDirectly(t *testing.T) {
-	t.Parallel()
-	mockSP := &MockSavingsPlansClient{}
-	t.Cleanup(func() { mockSP.AssertExpectations(t) })
-	client := &Client{
-		client:   mockSP,
-		region:   "us-east-1",
-		planType: types.SavingsPlanTypeEc2Instance,
-	}
-
-	rec := common.Recommendation{
+// storedOfferingRec returns an EC2Instance recommendation that carries a
+// stored (CE-supplied) offering ID.
+func storedOfferingRec(term, payment string) common.Recommendation {
+	return common.Recommendation{
 		ResourceType:  "EC2Instance",
-		PaymentOption: "no-upfront",
-		Term:          "1yr",
+		PaymentOption: payment,
+		Term:          term,
 		Details: &common.SavingsPlanDetails{
 			PlanType:         "EC2Instance",
 			HourlyCommitment: 0.5,
@@ -1739,16 +1726,77 @@ func TestEC2InstanceSP_CEProvidedOfferingIDUsedDirectly(t *testing.T) {
 			OfferingID:       "ce-provided-offering-id-abc123",
 		},
 	}
+}
 
-	id, err := client.findOfferingID(context.Background(), rec, "test-exec")
+func storedOffering(id string, plan types.SavingsPlanType, secs int64, pay types.SavingsPlanPaymentOption, family, region string) types.SavingsPlanOffering {
+	o := spOfferingWithProps(id, family, region)
+	o.PlanType, o.DurationSeconds, o.PaymentOption = plan, secs, pay
+	return o
+}
+
+// A stored offering ID is accepted only when DescribeSavingsPlansOfferings,
+// filtered to that ID and the requested term and payment option, returns it.
+func TestEC2InstanceSP_StoredOfferingIDConfirmedAgainstRequest(t *testing.T) {
+	t.Parallel()
+	mockSP := &MockSavingsPlansClient{}
+	t.Cleanup(func() { mockSP.AssertExpectations(t) })
+	client := &Client{client: mockSP, region: "us-east-1", planType: types.SavingsPlanTypeEc2Instance}
+
+	mockSP.On("DescribeSavingsPlansOfferings", mock.Anything, mock.MatchedBy(func(in *savingsplans.DescribeSavingsPlansOfferingsInput) bool {
+		return slices.Equal(in.OfferingIds, []string{"ce-provided-offering-id-abc123"}) &&
+			slices.Equal(in.PlanTypes, []types.SavingsPlanType{types.SavingsPlanTypeEc2Instance}) &&
+			slices.Equal(in.Currencies, []types.CurrencyCode{types.CurrencyCodeUsd}) &&
+			slices.EqualFunc(in.Filters, []types.SavingsPlanOfferingFilterElement{
+				{Name: types.SavingsPlanOfferingFilterAttributeRegion, Values: []string{"us-east-1"}},
+				{Name: types.SavingsPlanOfferingFilterAttributeInstanceFamily, Values: []string{"m5"}},
+			}, func(a, b types.SavingsPlanOfferingFilterElement) bool {
+				return a.Name == b.Name && slices.Equal(a.Values, b.Values)
+			}) &&
+			slices.Equal(in.Durations, []int64{31536000}) &&
+			slices.Equal(in.PaymentOptions, []types.SavingsPlanPaymentOption{types.SavingsPlanPaymentOptionNoUpfront})
+	})).Return(&savingsplans.DescribeSavingsPlansOfferingsOutput{
+		SearchResults: []types.SavingsPlanOffering{storedOffering("ce-provided-offering-id-abc123", types.SavingsPlanTypeEc2Instance, 31536000, types.SavingsPlanPaymentOptionNoUpfront, "m5", "us-east-1")},
+	}, nil).Once()
+
+	id, err := client.findOfferingID(context.Background(), storedOfferingRec("1yr", "no-upfront"), "test-exec")
 	require.NoError(t, err)
-	assert.Equal(t, "ce-provided-offering-id-abc123", id,
-		"CE-provided OfferingID must be used directly, skipping DescribeSavingsPlansOfferings")
+	assert.Equal(t, "ce-provided-offering-id-abc123", id)
+}
 
-	// DescribeSavingsPlansOfferings must NOT be called when CE supplies the ID.
-	// Asserted after the call: before it, the mock has recorded nothing and this
-	// passes for any implementation, whatever the matcher count.
-	mockSP.AssertNotCalled(t, "DescribeSavingsPlansOfferings", mock.Anything, mock.Anything)
+// A stored offering ID that the term or payment filtered query does not return
+// (it belongs to another term or payment option) must be refused, not bought.
+func TestFindOfferingID_StoredOfferingIDMismatchFailsClosed(t *testing.T) {
+	t.Parallel()
+	const storedID = "ce-provided-offering-id-abc123"
+	cases := []struct {
+		name          string
+		term, payment string
+		results       []types.SavingsPlanOffering
+	}{
+		{"id absent for requested term and payment", "3yr", "all-upfront", nil},
+		{"only a different id returned", "1yr", "no-upfront", []types.SavingsPlanOffering{{OfferingId: aws.String("other-offering")}}},
+		{"id matches but duration differs", "1yr", "no-upfront", []types.SavingsPlanOffering{storedOffering(storedID, types.SavingsPlanTypeEc2Instance, 94608000, types.SavingsPlanPaymentOptionNoUpfront, "m5", "us-east-1")}},
+		{"id matches but payment option differs", "1yr", "no-upfront", []types.SavingsPlanOffering{storedOffering(storedID, types.SavingsPlanTypeEc2Instance, 31536000, types.SavingsPlanPaymentOptionAllUpfront, "m5", "us-east-1")}},
+		{"id matches but plan type differs", "1yr", "no-upfront", []types.SavingsPlanOffering{storedOffering(storedID, types.SavingsPlanTypeCompute, 31536000, types.SavingsPlanPaymentOptionNoUpfront, "m5", "us-east-1")}},
+		{"id matches but family differs", "1yr", "no-upfront", []types.SavingsPlanOffering{storedOffering(storedID, types.SavingsPlanTypeEc2Instance, 31536000, types.SavingsPlanPaymentOptionNoUpfront, "c5", "us-east-1")}},
+		{"id matches but region differs", "1yr", "no-upfront", []types.SavingsPlanOffering{storedOffering(storedID, types.SavingsPlanTypeEc2Instance, 31536000, types.SavingsPlanPaymentOptionNoUpfront, "m5", "eu-west-1")}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mockSP := &MockSavingsPlansClient{}
+			t.Cleanup(func() { mockSP.AssertExpectations(t) })
+			client := &Client{client: mockSP, region: "us-east-1", planType: types.SavingsPlanTypeEc2Instance}
+			mockSP.On("DescribeSavingsPlansOfferings", mock.Anything, mock.Anything).
+				Return(&savingsplans.DescribeSavingsPlansOfferingsOutput{SearchResults: tc.results}, nil).Once()
+
+			id, err := client.findOfferingID(context.Background(), storedOfferingRec(tc.term, tc.payment), "test-exec")
+
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "does not match")
+			assert.Empty(t, id)
+		})
+	}
 }
 
 // A just-purchased plan sits in payment-pending (issue #142). The
@@ -1899,19 +1947,23 @@ func TestFindOfferingID_CEOfferingIDStillValidatesInputs(t *testing.T) {
 	}
 }
 
-// TestFindOfferingID_CEOfferingIDFastPath pins that valid inputs with a CE
-// offering ID still skip DescribeSavingsPlansOfferings.
-func TestFindOfferingID_CEOfferingIDFastPath(t *testing.T) {
+// TestFindOfferingID_CEOfferingIDConfirmedForComputePlan pins that a valid CE
+// offering ID on a Compute plan is confirmed by one filtered lookup and returned.
+func TestFindOfferingID_CEOfferingIDConfirmedForComputePlan(t *testing.T) {
 	t.Parallel()
 	mockSP := &MockSavingsPlansClient{}
+	t.Cleanup(func() { mockSP.AssertExpectations(t) })
 	client := &Client{client: mockSP, region: "us-east-1", planType: types.SavingsPlanTypeCompute}
 	rec := spRec()
 	rec.Details.(*common.SavingsPlanDetails).OfferingID = "ce-offering-1"
+	mockSP.On("DescribeSavingsPlansOfferings", mock.Anything, mock.Anything).
+		Return(&savingsplans.DescribeSavingsPlansOfferingsOutput{
+			SearchResults: []types.SavingsPlanOffering{storedOffering("ce-offering-1", types.SavingsPlanTypeCompute, 31536000, types.SavingsPlanPaymentOptionNoUpfront, "", "")},
+		}, nil).Once()
 
 	id, err := client.findOfferingID(context.Background(), rec, "")
 	require.NoError(t, err)
 	assert.Equal(t, "ce-offering-1", id)
-	mockSP.AssertNotCalled(t, "DescribeSavingsPlansOfferings", mock.Anything, mock.Anything)
 }
 
 func TestClient_AWSCNPartitionRejectedBeforeAnyAPICall(t *testing.T) {

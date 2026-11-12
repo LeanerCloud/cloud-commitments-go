@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"time"
@@ -409,6 +410,9 @@ type spOffering struct {
 	id             string
 	instanceFamily string
 	region         string
+	planType       types.SavingsPlanType
+	paymentOption  types.SavingsPlanPaymentOption
+	durationSecs   int64
 }
 
 // decodeOfferingProps converts a DescribeSavingsPlansOfferings result entry
@@ -419,7 +423,7 @@ func decodeOfferingProps(o types.SavingsPlanOffering) (spOffering, bool) {
 	if o.OfferingId == nil {
 		return spOffering{}, false
 	}
-	off := spOffering{id: *o.OfferingId}
+	off := spOffering{id: *o.OfferingId, planType: o.PlanType, durationSecs: o.DurationSeconds, paymentOption: o.PaymentOption}
 	for _, p := range o.Properties {
 		switch p.Name {
 		case types.SavingsPlanOfferingPropertyKeyInstanceFamily:
@@ -509,19 +513,17 @@ func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation, 
 		return "", err
 	}
 
-	// If CE supplied an exact offering ID, use it directly — this is the
-	// safest path because it bypasses DescribeSavingsPlansOfferings filtering
-	// entirely and always resolves to exactly the workload CE recommended.
+	input := c.buildSPOfferingsInput(planType, termSeconds, paymentOption, spDetails.InstanceFamily, spDetails.Region, tag)
+
+	// A stored offering ID can be stale or belong to a different term or
+	// payment option, so confirm it still matches the requested parameters.
 	if spDetails.OfferingID != "" {
-		log.Printf("purchase[%s]: SavingsPlans findOfferingID: using CE-provided OfferingID %s (skipping DescribeSavingsPlansOfferings)", tag, spDetails.OfferingID)
-		return spDetails.OfferingID, nil
+		return c.confirmStoredOfferingID(ctx, input, spDetails.OfferingID, tag)
 	}
 
 	t0 := time.Now()
 	log.Printf("purchase[%s]: SavingsPlans findOfferingID starting (planType=%s term=%s payment=%s)",
 		tag, planType, rec.Term, rec.PaymentOption)
-
-	input := c.buildSPOfferingsInput(planType, termSeconds, paymentOption, spDetails.InstanceFamily, spDetails.Region, tag)
 
 	var offeringID string
 	if planType == types.SavingsPlanTypeEc2Instance {
@@ -535,6 +537,42 @@ func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation, 
 		log.Printf("purchase[%s]: SavingsPlans findOfferingID found offering in %s", tag, time.Since(t0))
 	}
 	return offeringID, err
+}
+
+// confirmStoredOfferingID fails closed unless the offerings query filtered to
+// storedID returns that offering and its plan type, duration, payment option
+// and (when the response carries them) instance family and region equal the
+// requested values in input. Family and region are optional in the response, so
+// AWS's own filter stays the source when they are absent.
+func (c *Client) confirmStoredOfferingID(ctx context.Context, input *savingsplans.DescribeSavingsPlansOfferingsInput, storedID, tag string) (string, error) {
+	input.OfferingIds = []string{storedID}
+	offerings, err := c.collectSPOfferings(ctx, input)
+	if err != nil {
+		return "", err
+	}
+	for _, o := range offerings {
+		if o.id == storedID && offeringMatchesInput(o, input) {
+			log.Printf("purchase[%s]: SavingsPlans findOfferingID: confirmed stored OfferingID %s", tag, storedID)
+			return storedID, nil
+		}
+	}
+	return "", fmt.Errorf("stored Savings Plans offering %s does not match the requested plan type, term or payment option", storedID)
+}
+
+func offeringMatchesInput(o spOffering, input *savingsplans.DescribeSavingsPlansOfferingsInput) bool {
+	if o.planType != input.PlanTypes[0] || o.durationSecs != input.Durations[0] || o.paymentOption != input.PaymentOptions[0] {
+		return false
+	}
+	for _, f := range input.Filters {
+		got := o.region
+		if f.Name == types.SavingsPlanOfferingFilterAttributeInstanceFamily {
+			got = o.instanceFamily
+		}
+		if got != "" && !slices.Contains(f.Values, got) {
+			return false
+		}
+	}
+	return true
 }
 
 // lookupEC2OfferingIDStrict resolves the offering ID for an EC2Instance Savings
