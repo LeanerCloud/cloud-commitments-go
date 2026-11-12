@@ -46,11 +46,6 @@ type ServiceClient interface {
 	// Commitments (RI/SP/CUD/etc)
 	GetExistingCommitments(ctx context.Context) ([]common.Commitment, error)
 	PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error)
-	ValidateOffering(ctx context.Context, rec common.Recommendation) error
-	GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error)
-
-	// Resource validation
-	GetValidResourceTypes(ctx context.Context) ([]string, error)
 }
 
 // OfferingPricer is the optional pricing path used by mcp's spend cap and

@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
-	"github.com/LeanerCloud/cloud-commitments-go/pkg/provider"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/services/opensearch"
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/opensearch/types"
@@ -42,7 +41,7 @@ type fixturePurchase struct {
 }
 
 type offeringFixture struct {
-	client       provider.ServiceClient
+	client       *opensearch.Client
 	mu           sync.Mutex
 	requests     int
 	listTokens   []string
