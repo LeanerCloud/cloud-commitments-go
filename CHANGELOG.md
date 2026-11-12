@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to CUDly are documented in this file.
+This file covers the `cloud-commitments-go` module (`pkg/`, `providers/`, `ci_cd_sanity_tests/`). Entries copied from the CUDly product changelog are named in a note in the Unreleased section and kept for history.
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [Unreleased]
@@ -49,6 +49,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   route Azure Redis purchases to the managedredis client. The refusal wraps
   `common.ErrRefusedBeforePurchase` (nothing was sent), not an upfront-approval
   failure, so approving and retrying does not help.
+
+> Copied from the CUDly product changelog, kept for history, and not about this module: the federation IaC notices below, the frontend `console.log` fix, the README badge entry, and the 0.3.0 to 0.9.0 releases at the end of the file.
+
 - **Federation IaC bundles downloaded before 2026-04-22 need to be
   re-downloaded** to get zero-touch registration. Older bundles silently
   skip auto-registration unless manually edited (Terraform `registration.tf`
