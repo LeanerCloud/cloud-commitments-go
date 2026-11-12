@@ -35,7 +35,7 @@ const (
 
 // ResolveTag returns execID when non-empty, or the sentinel string "no-exec"
 // for log correlation when a call occurs outside of a purchase flow (e.g.
-// ValidateOffering, GetOfferingDetails).
+// GetOfferingDetails).
 func ResolveTag(execID string) string {
 	if execID == "" {
 		return "no-exec"

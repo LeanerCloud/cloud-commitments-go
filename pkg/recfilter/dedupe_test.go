@@ -31,13 +31,7 @@ func (f *fakeServiceClient) GetExistingCommitments(ctx context.Context) ([]commo
 func (f *fakeServiceClient) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
 	return common.PurchaseResult{}, nil
 }
-func (f *fakeServiceClient) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
-	return nil
-}
 func (f *fakeServiceClient) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
-	return nil, nil
-}
-func (f *fakeServiceClient) GetValidResourceTypes(ctx context.Context) ([]string, error) {
 	return nil, nil
 }
 

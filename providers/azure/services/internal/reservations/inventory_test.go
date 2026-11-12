@@ -410,13 +410,9 @@ func (f *fakeServiceClient) GetExistingCommitments(context.Context) ([]common.Co
 func (f *fakeServiceClient) PurchaseCommitment(context.Context, common.Recommendation, common.PurchaseOptions) (common.PurchaseResult, error) {
 	return common.PurchaseResult{}, nil
 }
-func (f *fakeServiceClient) ValidateOffering(context.Context, common.Recommendation) error {
-	return nil
-}
 func (f *fakeServiceClient) GetOfferingDetails(context.Context, common.Recommendation) (*common.OfferingDetails, error) {
 	return nil, nil
 }
-func (f *fakeServiceClient) GetValidResourceTypes(context.Context) ([]string, error) { return nil, nil }
 
 // TestReservationJSONDecodesIntoDuplicateChecker decodes a realistic raw
 // reservation payload with the public SDK model, converts it through
