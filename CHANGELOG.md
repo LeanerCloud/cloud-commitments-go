@@ -64,6 +64,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   new-style `es:*ReservedInstance*` OpenSearch actions (replacing the legacy
   `es:*ReservedElasticsearch*` names).
 
+- **Removed (`aws`/`azure`/`gcp` service clients):** the unused `ValidateOffering` and `GetValidResourceTypes` methods, and the exported test seams `RPValidateAPI`/`SetRPValidateClient` (azure savingsplans), `SQLAdminService`/`SetSQLAdminService` (gcp cloudsql), `MachineTypesService`/`MachineTypesIterator`/`SetMachineTypesService` (gcp computeengine), `RedisCachesPager`/`SetRedisCachesPager` (azure cache and managedredis), `ServicesPager`/`SetSearchServicesPager` (azure search). None of these were part of `pkg/provider` interfaces; callers that type-asserted the concrete clients must drop those calls. `GetOfferingDetails` is unchanged. (#11)
+
 ### Added
 
 - **`aws`/`recommendations`:** `recommendations.GetRICommitmentRate` derives the commitment dollars per covered on-demand dollar of a new Convertible EC2 Reserved Instance from Cost Explorer's reservation purchase recommendations: used share of the effective monthly RI cost (recurring plus upfront amortized over the term) over the covered on-demand cost, filtered by account and region, with `ErrNoRICommitmentRate` when no usable detail exists. (#732)

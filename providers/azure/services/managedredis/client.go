@@ -14,7 +14,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/consumption/armconsumption"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/redis/armredis/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
@@ -43,12 +42,6 @@ type RecommendationsPager interface {
 	NextPage(ctx context.Context) (armconsumption.ReservationRecommendationsClientListResponse, error)
 }
 
-// RedisCachesPager interface for Redis caches pager (enables mocking).
-type RedisCachesPager interface {
-	More() bool
-	NextPage(ctx context.Context) (armredis.ClientListBySubscriptionResponse, error)
-}
-
 // Client handles Azure Cache for Redis Reserved Capacity as Azure's MemoryDB equivalent.
 // It surfaces under ServiceMemoryDB so it is treated symmetrically with AWS MemoryDB at the
 // provider-dispatch level.
@@ -57,7 +50,6 @@ type Client struct {
 	httpClient           HTTPClient
 	recommendationsPager RecommendationsPager
 	inventoryFactories   *reservations.InventoryFactories
-	redisCachesPager     RedisCachesPager
 	subscriptionID       string
 	region               string
 }
@@ -119,11 +111,6 @@ func (c *Client) factories() reservations.InventoryFactories {
 		return *c.inventoryFactories
 	}
 	return reservations.DefaultInventoryFactories(c.cred)
-}
-
-// SetRedisCachesPager sets the Redis caches pager (for testing).
-func (c *Client) SetRedisCachesPager(pager RedisCachesPager) {
-	c.redisCachesPager = pager
 }
 
 // GetServiceType returns ServiceMemoryDB -- the cloud-agnostic label for in-memory DB services.

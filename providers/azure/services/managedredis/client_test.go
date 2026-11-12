@@ -13,7 +13,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/consumption/armconsumption"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/redis/armredis/v3"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -91,25 +90,6 @@ func factoriesFor(newPager func() reservations.OrderReservationsPager) *reservat
 // factoriesRows injects one order holding rows (and err on the page fetch).
 func factoriesRows(err error, rows ...*armreservations.ReservationResponse) *reservations.InventoryFactories {
 	return factoriesFor(func() reservations.OrderReservationsPager { return &fakeOrderPager{rows: rows, err: err} })
-}
-
-type mockRedisPager struct {
-	pages []armredis.ClientListBySubscriptionResponse
-	index int
-	err   error
-}
-
-func (m *mockRedisPager) More() bool { return m.index < len(m.pages) }
-func (m *mockRedisPager) NextPage(_ context.Context) (armredis.ClientListBySubscriptionResponse, error) {
-	if m.err != nil {
-		return armredis.ClientListBySubscriptionResponse{}, m.err
-	}
-	if m.index >= len(m.pages) {
-		return armredis.ClientListBySubscriptionResponse{}, errors.New("no more pages")
-	}
-	p := m.pages[m.index]
-	m.index++
-	return p, nil
 }
 
 // The mock HTTP client and response helper live in the shared
@@ -912,10 +892,6 @@ func TestSetterMethods(t *testing.T) {
 	factories := &reservations.InventoryFactories{}
 	c.SetInventoryFactories(factories)
 	assert.Equal(t, factories, c.inventoryFactories)
-
-	redisPager := &mockRedisPager{}
-	c.SetRedisCachesPager(redisPager)
-	assert.Equal(t, redisPager, c.redisCachesPager)
 }
 
 // -- convertRecommendation --
