@@ -98,11 +98,18 @@ func validateReshapeConfig(cfg ladder.BufferReshapeConfig) (reshapeCaps, error) 
 
 var errExchangeHalted = errors.New("exchanges are halted: an earlier execution failed with an unknown outcome; reconcile in Azure and restart the process")
 
+// errExchangeNewTerm refuses execution: every exchange target is a new
+// reservation whose term starts when it is bought (go#28 decision C2).
+var errExchangeNewTerm = errors.New("exchange refused: the target reservation starts a new Azure term; only dry runs are allowed (go#28 C2)")
+
 // ReshapeBuffer shrinks each of the subscription's exchangeable VM reservations
 // whose utilization is below the threshold to the quantity its utilization
 // uses, one exchange per reservation. Every check runs before any client call:
-// with the switch off nothing is touched. An exchange executes only when its
-// priced payment is known and fits both the per-exchange cap and what is left
+// with the switch off nothing is touched. Any run that is not a dry run is
+// refused before any client call, because each exchange target starts a new
+// Azure term (C2); a dry run prices exchanges without executing them. Once C2
+// is lifted, an exchange executes only when its priced payment is known and
+// fits both the per-exchange cap and what is left
 // of the daily cap; a refund (negative payment) always fits. A failed execution
 // stops the run, since its outcome may be unknown, and halts further exchanges
 // for the life of this instance. The daily cap is per AzureLadder instance and
@@ -179,7 +186,14 @@ func (a *AzureLadder) checkReshapeAllowed(scope ladder.Scope, cfg ladder.BufferR
 	if a.dailySpend.isHalted() {
 		return reshapeCaps{}, errExchangeHalted
 	}
-	return validateReshapeConfig(cfg)
+	caps, err := validateReshapeConfig(cfg)
+	if err != nil {
+		return reshapeCaps{}, err
+	}
+	if !cfg.DryRun {
+		return reshapeCaps{}, errExchangeNewTerm
+	}
+	return caps, nil
 }
 
 // shrinkTarget returns the smaller reservation to exchange src for, or the

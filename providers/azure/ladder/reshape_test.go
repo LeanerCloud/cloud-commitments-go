@@ -2,7 +2,6 @@ package ladder
 
 import (
 	"context"
-	"errors"
 	"math"
 	"testing"
 	"time"
@@ -77,6 +76,12 @@ func goodCfg() ladder.BufferReshapeConfig {
 	return ladder.BufferReshapeConfig{MaxPaymentPerExchangeUSD: capPtr(100), MaxPaymentDailyUSD: capPtr(150), UtilizationThresholdPct: 80, LookbackDays: 30}
 }
 
+func dryCfg() ladder.BufferReshapeConfig {
+	cfg := goodCfg()
+	cfg.DryRun = true
+	return cfg
+}
+
 func newReshapeLadder(t *testing.T, enabled bool, ex *fakeExchange, utilPct float64) (*AzureLadder, *fakes) {
 	t.Helper()
 	f := &fakes{ris: &fakeLister{}, sps: &fakeLister{}, spUtil: &fakeSPUtil{}, riUtil: &fakeRIUtil{out: []common.RIUtilization{{ReservedInstanceID: resID, UtilizationPercent: utilPct}}}}
@@ -125,7 +130,7 @@ func TestAzureLadder_ReshapeBuffer_RefusesNilOrBadCaps(t *testing.T) {
 			t.Parallel()
 			ex := &fakeExchange{list: []compute.ExchangeableReservation{lowRes()}, preview: payable(1)}
 			a, f := newReshapeLadder(t, true, ex, 20)
-			cfg := goodCfg()
+			cfg := dryCfg()
 			mutate(&cfg)
 			_, err := a.ReshapeBuffer(context.Background(), testScope(), cfg)
 			require.Error(t, err)
@@ -139,7 +144,7 @@ func TestAzureLadder_ReshapeBuffer_RejectsForeignScope(t *testing.T) {
 	ex := &fakeExchange{list: []compute.ExchangeableReservation{lowRes()}, preview: payable(1)}
 	a, f := newReshapeLadder(t, true, ex, 20)
 	for _, s := range []ladder.Scope{{Provider: common.ProviderAWS, AccountID: testSub}, {Provider: common.ProviderAzure, AccountID: "other"}} {
-		_, err := a.ReshapeBuffer(context.Background(), s, goodCfg())
+		_, err := a.ReshapeBuffer(context.Background(), s, dryCfg())
 		require.Error(t, err)
 	}
 	assert.Zero(t, ex.calls()+f.totalCalls())
@@ -149,7 +154,7 @@ func TestAzureLadder_ReshapeBuffer_OverPerExchangeCapRefusedWithoutExecute(t *te
 	t.Parallel()
 	ex := &fakeExchange{list: []compute.ExchangeableReservation{lowRes()}, preview: payable(100.01)}
 	a, _ := newReshapeLadder(t, true, ex, 20)
-	sum, err := a.ReshapeBuffer(context.Background(), testScope(), goodCfg())
+	sum, err := a.ReshapeBuffer(context.Background(), testScope(), dryCfg())
 	require.NoError(t, err)
 	assert.Equal(t, 1, ex.calcCalls)
 	assert.Zero(t, ex.execCalls)
@@ -157,52 +162,30 @@ func TestAzureLadder_ReshapeBuffer_OverPerExchangeCapRefusedWithoutExecute(t *te
 	assert.Contains(t, sum.Details[0], "per-exchange cap")
 }
 
-func TestAzureLadder_ReshapeBuffer_OverDailyCapRefusedWithoutExecute(t *testing.T) {
+// Regression for go#28 C2: before the refusal, a non-dry run priced and then
+// executed the exchange (execCalls 1, no error).
+func TestAzureLadder_ReshapeBuffer_NewTermExchangeNeverReachesExecute(t *testing.T) {
 	t.Parallel()
-	second := lowRes()
-	second.ReservationID = "/providers/Microsoft.Capacity/reservationOrders/order-2/reservations/res-2"
-	ex := &fakeExchange{list: []compute.ExchangeableReservation{lowRes(), second}, preview: payable(90)}
-	a, f := newReshapeLadder(t, true, ex, 20)
-	f.riUtil.out = append(f.riUtil.out, common.RIUtilization{ReservedInstanceID: second.ReservationID, UtilizationPercent: 20})
-
-	sum, err := a.ReshapeBuffer(context.Background(), testScope(), goodCfg())
-	require.NoError(t, err)
-	assert.Equal(t, 1, ex.execCalls, "second exchange would push the day to $180 over the $150 cap")
-	assert.Equal(t, 1, sum.Reshaped)
-	assert.Equal(t, 1, sum.Skipped)
-	assert.Contains(t, sum.Details[1], "daily cap")
-
-	_, err = a.ReshapeBuffer(context.Background(), testScope(), goodCfg())
-	require.NoError(t, err)
-	assert.Equal(t, 1, ex.execCalls, "a later run the same day still sees the $90 already spent")
+	ex := &fakeExchange{list: []compute.ExchangeableReservation{lowRes()}, preview: payable(10)}
+	a, f := newReshapeLadder(t, true, ex, 25)
+	_, err := a.ReshapeBuffer(context.Background(), testScope(), goodCfg())
+	require.ErrorIs(t, err, errExchangeNewTerm)
+	assert.Zero(t, ex.calls()+f.totalCalls())
 }
 
-func TestAzureLadder_ReshapeBuffer_ExecutesWithinCaps(t *testing.T) {
-	t.Parallel()
-	ex := &fakeExchange{list: []compute.ExchangeableReservation{lowRes()}, preview: payable(100)}
-	a, _ := newReshapeLadder(t, true, ex, 25)
-	sum, err := a.ReshapeBuffer(context.Background(), testScope(), goodCfg())
-	require.NoError(t, err)
-	assert.Equal(t, 1, sum.Reshaped)
-	assert.Equal(t, 1, ex.execCalls)
-	assert.Equal(t, sessionA, ex.gotSession)
-	require.Len(t, ex.gotSources, 1)
-	assert.Equal(t, resID, ex.gotSources[0].ReservationID)
-	require.Len(t, ex.gotTargets, 1)
-	assert.Equal(t, compute.ExchangeTarget{SKU: "Standard_D2s_v5", Location: "eastus", Term: "P1Y", BillingScopeID: billing, Quantity: 3}, ex.gotTargets[0])
-}
-
-func TestAzureLadder_ReshapeBuffer_DryRunNeverExecutes(t *testing.T) {
+func TestAzureLadder_ReshapeBuffer_DryRunPricesTargetWithoutExecuting(t *testing.T) {
 	t.Parallel()
 	ex := &fakeExchange{list: []compute.ExchangeableReservation{lowRes()}, preview: payable(10)}
 	a, _ := newReshapeLadder(t, true, ex, 25)
-	cfg := goodCfg()
-	cfg.DryRun = true
-	sum, err := a.ReshapeBuffer(context.Background(), testScope(), cfg)
+	sum, err := a.ReshapeBuffer(context.Background(), testScope(), dryCfg())
 	require.NoError(t, err)
 	assert.Equal(t, 1, ex.calcCalls)
 	assert.Zero(t, ex.execCalls)
 	assert.Zero(t, sum.Reshaped)
+	require.Len(t, ex.gotSources, 1)
+	assert.Equal(t, resID, ex.gotSources[0].ReservationID)
+	require.Len(t, ex.gotTargets, 1)
+	assert.Equal(t, compute.ExchangeTarget{SKU: "Standard_D2s_v5", Location: "eastus", Term: "P1Y", BillingScopeID: billing, Quantity: 3}, ex.gotTargets[0])
 }
 
 func TestAzureLadder_ReshapeBuffer_SkipsUnsafeCandidates(t *testing.T) {
@@ -224,79 +207,9 @@ func TestAzureLadder_ReshapeBuffer_SkipsUnsafeCandidates(t *testing.T) {
 	} {
 		ex := &fakeExchange{list: []compute.ExchangeableReservation{c.src}, preview: c.preview}
 		a, _ := newReshapeLadder(t, true, ex, c.pct)
-		sum, err := a.ReshapeBuffer(context.Background(), testScope(), goodCfg())
+		sum, err := a.ReshapeBuffer(context.Background(), testScope(), dryCfg())
 		require.NoError(t, err, name)
 		assert.Zero(t, ex.execCalls, name)
 		assert.Equal(t, 1, sum.Skipped, name)
 	}
-}
-
-func TestAzureLadder_ReshapeBuffer_ExecuteFailureStopsAndErrors(t *testing.T) {
-	t.Parallel()
-	ex := &fakeExchange{list: []compute.ExchangeableReservation{lowRes()}, preview: payable(10), execErr: errors.New("boom")}
-	a, _ := newReshapeLadder(t, true, ex, 25)
-	_, err := a.ReshapeBuffer(context.Background(), testScope(), goodCfg())
-	require.ErrorContains(t, err, "boom")
-	assert.Equal(t, 1, ex.execCalls)
-}
-
-func TestAzureLadder_ReshapeBuffer_ExecuteErrorCountsPaymentAndHaltsTheDay(t *testing.T) {
-	t.Parallel()
-	ex := &fakeExchange{list: []compute.ExchangeableReservation{lowRes()}, preview: payable(40), execErr: errors.New("boom")}
-	a, _ := newReshapeLadder(t, true, ex, 25)
-	_, err := a.ReshapeBuffer(context.Background(), testScope(), goodCfg())
-	require.Error(t, err)
-	assert.InDelta(t, 40, a.dailySpend.spent(time.Now()), 1e-9)
-
-	_, err = a.ReshapeBuffer(context.Background(), testScope(), goodCfg())
-	require.ErrorIs(t, err, errExchangeHalted)
-	assert.Equal(t, 1, ex.execCalls)
-	assert.Equal(t, 1, ex.calcCalls)
-}
-
-func TestAzureLadder_ReshapeBuffer_HaltSurvivesUTCMidnight(t *testing.T) {
-	t.Parallel()
-	ex := &fakeExchange{list: []compute.ExchangeableReservation{lowRes()}, preview: payable(40), execErr: errors.New("boom")}
-	a, _ := newReshapeLadder(t, true, ex, 25)
-	day := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
-	a.now = func() time.Time { return day }
-	_, err := a.ReshapeBuffer(context.Background(), testScope(), goodCfg())
-	require.Error(t, err)
-
-	day = day.Add(48 * time.Hour)
-	_, err = a.ReshapeBuffer(context.Background(), testScope(), goodCfg())
-	require.ErrorIs(t, err, errExchangeHalted)
-	assert.Equal(t, 1, ex.execCalls)
-}
-
-func TestAzureLadder_ReshapeBuffer_ConcurrentCallRechecksHaltUnderLock(t *testing.T) {
-	t.Parallel()
-	ex := &fakeExchange{list: []compute.ExchangeableReservation{lowRes()}, preview: payable(10), execErr: errors.New("boom"),
-		execStarted: make(chan struct{}), execRelease: make(chan struct{})}
-	a, _ := newReshapeLadder(t, true, ex, 25)
-	errs := make(chan error, 2)
-	run := func() {
-		_, err := a.ReshapeBuffer(context.Background(), testScope(), goodCfg())
-		errs <- err
-	}
-	go run()
-	<-ex.execStarted
-	go run()
-	time.Sleep(50 * time.Millisecond)
-	ex.execRelease <- struct{}{}
-
-	// The two calls report in completion order, which is not fixed: the waiting
-	// call can send its halt error before the executing call sends its own.
-	var halted, failed int
-	for range 2 {
-		switch err := <-errs; {
-		case errors.Is(err, errExchangeHalted):
-			halted++
-		case err != nil:
-			failed++
-		}
-	}
-	assert.Equal(t, 1, halted, "the waiting call must see the halt")
-	assert.Equal(t, 1, failed, "the executing call must return its execute error")
-	assert.Equal(t, 1, ex.execCalls)
 }
