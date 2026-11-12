@@ -262,56 +262,6 @@ func TestClient_GetExistingCommitments(t *testing.T) {
 	}
 }
 
-func TestClient_GetValidResourceTypes(t *testing.T) {
-	t.Parallel()
-	client := &Client{region: "us-east-1"}
-
-	result, err := client.GetValidResourceTypes(context.Background())
-
-	assert.NoError(t, err)
-	assert.NotEmpty(t, result)
-	// Check for some expected instance types
-	assert.Contains(t, result, "t2.small.search")
-	assert.Contains(t, result, "m5.large.search")
-	assert.Contains(t, result, "r5.large.search")
-	assert.Contains(t, result, "c5.xlarge.search")
-}
-
-func TestClient_ValidateOffering(t *testing.T) {
-	t.Parallel()
-	mockOS := &MockOpenSearchClient{}
-	client := &Client{
-		client: mockOS,
-		region: "us-east-1",
-	}
-
-	rec := common.Recommendation{
-		Service:       common.ServiceSearch,
-		ResourceType:  "m5.large.search",
-		PaymentOption: "partial-upfront",
-		Term:          "1yr",
-		Details: common.SearchDetails{
-			InstanceType: "m5.large.search",
-		},
-	}
-
-	mockOS.On("DescribeReservedInstanceOfferings", mock.Anything, mock.Anything).
-		Return(&opensearch.DescribeReservedInstanceOfferingsOutput{
-			ReservedInstanceOfferings: []types.ReservedInstanceOffering{
-				{
-					ReservedInstanceOfferingId: aws.String("offering-123"),
-					InstanceType:               types.OpenSearchPartitionInstanceTypeM5LargeSearch,
-					Duration:                   31536000,
-					PaymentOption:              types.ReservedInstancePaymentOptionPartialUpfront,
-				},
-			},
-		}, nil)
-
-	err := client.ValidateOffering(context.Background(), rec)
-	assert.NoError(t, err)
-	mockOS.AssertExpectations(t)
-}
-
 func TestClient_PurchaseCommitment(t *testing.T) {
 	t.Parallel()
 	mockOS := &MockOpenSearchClient{}

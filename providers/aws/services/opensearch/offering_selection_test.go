@@ -243,7 +243,7 @@ func TestOpenSearchOfferingSelectionInvalidPaymentNoHTTP(t *testing.T) {
 	for _, payment := range []struct{ name, value string }{
 		{"empty", ""}, {"unknown", "unknown"}, {"spaced", "All Upfront"}, {"raw-enum", "ALL_UPFRONT"},
 	} {
-		for _, method := range []string{"purchase", "validate", "details"} {
+		for _, method := range []string{"purchase", "details"} {
 			t.Run(payment.name+"/"+method, func(t *testing.T) {
 				selected := selectedOffering("invalid-payment-control", string(types.ReservedInstancePaymentOptionAllUpfront))
 				fixture := newOfferingFixture(t, [][]fixtureOffering{{selected}}, selected)
@@ -252,8 +252,6 @@ func TestOpenSearchOfferingSelectionInvalidPaymentNoHTTP(t *testing.T) {
 				switch method {
 				case "purchase":
 					_, err = fixture.client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{})
-				case "validate":
-					err = fixture.client.ValidateOffering(context.Background(), rec)
 				case "details":
 					_, err = fixture.client.GetOfferingDetails(context.Background(), rec)
 				}
@@ -266,13 +264,12 @@ func TestOpenSearchOfferingSelectionInvalidPaymentNoHTTP(t *testing.T) {
 	}
 }
 
-func TestOpenSearchOfferingSelectionValidateAndDetails(t *testing.T) {
+func TestOpenSearchOfferingSelectionDetails(t *testing.T) {
 	t.Parallel()
 	selected := selectedOffering("selected-for-details", string(types.ReservedInstancePaymentOptionPartialUpfront))
 	wrong := selectedOffering("wrong-payment", string(types.ReservedInstancePaymentOptionNoUpfront))
 	fixture := newOfferingFixture(t, [][]fixtureOffering{{wrong}, {selected}}, selected)
 	rec := selectionRecommendation("partial-upfront")
-	require.NoError(t, fixture.client.ValidateOffering(context.Background(), rec))
 	details, err := fixture.client.GetOfferingDetails(context.Background(), rec)
 	require.NoError(t, err)
 	require.NotNil(t, details)
@@ -282,8 +279,8 @@ func TestOpenSearchOfferingSelectionValidateAndDetails(t *testing.T) {
 	assert.Equal(t, selected.FixedPrice, details.UpfrontCost)
 	assert.Equal(t, selected.UsagePrice, details.RecurringCost)
 	requests, tokens, detailIDs, purchases := fixture.snapshot()
-	assert.Equal(t, 5, requests)
-	assert.Equal(t, []string{"", "page-2", "", "page-2"}, tokens)
+	assert.Equal(t, 3, requests)
+	assert.Equal(t, []string{"", "page-2"}, tokens)
 	assert.Equal(t, []string{selected.ID}, detailIDs)
 	assert.Empty(t, purchases)
 }

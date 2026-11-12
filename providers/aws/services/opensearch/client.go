@@ -436,7 +436,7 @@ const maxListPages = 50
 // The OpenSearch API does not support server-side filters on the offerings list,
 // so all matching is done client-side (issue #688).
 // execID is the purchase execution UUID for log correlation; pass "" when
-// calling outside of a purchase flow (ValidateOffering, GetOfferingDetails).
+// calling outside of a purchase flow (GetOfferingDetails).
 func (c *Client) findOfferingID(ctx context.Context, rec common.Recommendation, execID string) (string, error) {
 	requiredMonths, err := requiredMonthsForTerm(rec.Term)
 	if err != nil {
@@ -542,12 +542,6 @@ func (c *Client) matchesDuration(offeringDuration int32, requiredMonths int) boo
 	return int(offeringMonths) >= requiredMonths-1 && int(offeringMonths) <= requiredMonths+1
 }
 
-// ValidateOffering checks if an offering exists without purchasing.
-func (c *Client) ValidateOffering(ctx context.Context, rec common.Recommendation) error {
-	_, err := c.findOfferingID(ctx, rec, "")
-	return err
-}
-
 // GetOfferingDetails retrieves offering details.
 // All prices are per ONE reservation (callers multiply by rec.Count): UpfrontCost is
 // FixedPrice, RecurringCost the hourly rate, TotalCost upfront plus hourly over the
@@ -603,60 +597,4 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	}
 
 	return details, nil
-}
-
-// GetValidResourceTypes returns valid OpenSearch instance types (static list).
-func (c *Client) GetValidResourceTypes(ctx context.Context) ([]string, error) {
-	return []string{
-		"t2.small.search",
-		"t2.medium.search",
-		"t3.small.search",
-		"t3.medium.search",
-		"m5.large.search",
-		"m5.xlarge.search",
-		"m5.2xlarge.search",
-		"m5.4xlarge.search",
-		"m5.12xlarge.search",
-		"m6g.large.search",
-		"m6g.xlarge.search",
-		"m6g.2xlarge.search",
-		"m6g.4xlarge.search",
-		"m6g.8xlarge.search",
-		"m6g.12xlarge.search",
-		"c5.large.search",
-		"c5.xlarge.search",
-		"c5.2xlarge.search",
-		"c5.4xlarge.search",
-		"c5.9xlarge.search",
-		"c5.18xlarge.search",
-		"c6g.large.search",
-		"c6g.xlarge.search",
-		"c6g.2xlarge.search",
-		"c6g.4xlarge.search",
-		"c6g.8xlarge.search",
-		"c6g.12xlarge.search",
-		"r5.large.search",
-		"r5.xlarge.search",
-		"r5.2xlarge.search",
-		"r5.4xlarge.search",
-		"r5.12xlarge.search",
-		"r6g.large.search",
-		"r6g.xlarge.search",
-		"r6g.2xlarge.search",
-		"r6g.4xlarge.search",
-		"r6g.8xlarge.search",
-		"r6g.12xlarge.search",
-		"r6gd.large.search",
-		"r6gd.xlarge.search",
-		"r6gd.2xlarge.search",
-		"r6gd.4xlarge.search",
-		"r6gd.8xlarge.search",
-		"r6gd.12xlarge.search",
-		"i3.large.search",
-		"i3.xlarge.search",
-		"i3.2xlarge.search",
-		"i3.4xlarge.search",
-		"i3.8xlarge.search",
-		"i3.16xlarge.search",
-	}, nil
 }
