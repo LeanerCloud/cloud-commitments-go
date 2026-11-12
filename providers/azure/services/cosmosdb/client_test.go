@@ -122,6 +122,7 @@ func createMockHTTPResponse(statusCode int, body string) *http.Response {
 	}
 }
 
+// Synthetic totals retained for existing quote tests; reservation identity follows the captured catalog.
 func createSampleCosmosPricingResponse() string {
 	return `{
 		"Items": [
@@ -129,12 +130,13 @@ func createSampleCosmosPricingResponse() string {
 				"currencyCode": "USD",
 				"retailPrice": 1000.0,
 				"unitPrice": 1000.0,
-				"armRegionName": "eastus",
+				"armRegionName": "Global",
 				"productName": "Azure Cosmos DB",
 				"serviceName": "Azure Cosmos DB",
-				"armSkuName": "100RU",
-				"skuName": "100RU",
+				"armSkuName": "Cosmos_DB_100_RUs",
+				"skuName": "100 RU/s",
 				"meterName": "100 RU/s",
+				"unitOfMeasure": "1/Hour",
 				"reservationTerm": "1 Year",
 				"type": "Reservation"
 			},
@@ -142,12 +144,13 @@ func createSampleCosmosPricingResponse() string {
 				"currencyCode": "USD",
 				"retailPrice": 2400.0,
 				"unitPrice": 2400.0,
-				"armRegionName": "eastus",
+				"armRegionName": "Global",
 				"productName": "Azure Cosmos DB",
 				"serviceName": "Azure Cosmos DB",
-				"armSkuName": "100RU",
-				"skuName": "100RU",
+				"armSkuName": "Cosmos_DB_100_RUs",
+				"skuName": "100 RU/s",
 				"meterName": "100 RU/s",
+				"unitOfMeasure": "1/Hour",
 				"reservationTerm": "3 Years",
 				"type": "Reservation"
 			},
@@ -166,15 +169,7 @@ func createSampleCosmosPricingResponse() string {
 	}`
 }
 
-// createMixedSKUCosmosPricingResponse returns a fixture where a 400RU price
-// is returned alongside the requested 100RU price, simulating an Azure
-// Retail Prices API response that was not (or could not be) narrowed to a
-// single SKU server-side. The 100RU (requested) items are listed FIRST and
-// the 400RU (other) items LAST: pre-fix, extractCosmosPricing ignored SKU
-// entirely and simply overwrote its running total on every matching item,
-// so the last item in the response order wins regardless of SKU. This
-// ordering makes that bug surface deterministically as a 5000.0 quote for a
-// 100RU request (#126).
+// The synthetic 400RU neighbor is not a captured catalog offering; it preserves the wrong-SKU regression (#126).
 func createMixedSKUCosmosPricingResponse() string {
 	return `{
 		"Items": [
@@ -182,12 +177,13 @@ func createMixedSKUCosmosPricingResponse() string {
 				"currencyCode": "USD",
 				"retailPrice": 1000.0,
 				"unitPrice": 1000.0,
-				"armRegionName": "eastus",
+				"armRegionName": "Global",
 				"productName": "Azure Cosmos DB",
 				"serviceName": "Azure Cosmos DB",
-				"armSkuName": "100RU",
-				"skuName": "100RU",
+				"armSkuName": "Cosmos_DB_100_RUs",
+				"skuName": "100 RU/s",
 				"meterName": "100 RU/s",
+				"unitOfMeasure": "1/Hour",
 				"reservationTerm": "1 Year",
 				"type": "Reservation"
 			},
@@ -206,12 +202,13 @@ func createMixedSKUCosmosPricingResponse() string {
 				"currencyCode": "USD",
 				"retailPrice": 5000.0,
 				"unitPrice": 5000.0,
-				"armRegionName": "eastus",
+				"armRegionName": "Global",
 				"productName": "Azure Cosmos DB",
 				"serviceName": "Azure Cosmos DB",
-				"armSkuName": "400RU",
-				"skuName": "400RU",
+				"armSkuName": "Cosmos_DB_400_RUs",
+				"skuName": "400 RU/s",
 				"meterName": "400 RU/s",
+				"unitOfMeasure": "1/Hour",
 				"reservationTerm": "1 Year",
 				"type": "Reservation"
 			},
@@ -230,10 +227,7 @@ func createMixedSKUCosmosPricingResponse() string {
 	}`
 }
 
-// createOnlyOtherSKUCosmosPricingResponse returns a fixture that contains
-// pricing only for a SKU other than the one requested. extractCosmosPricing
-// must fail closed (return an error) rather than falling back to the first
-// item in the response.
+// Only the synthetic neighboring SKU is returned, so the requested quote must fail closed.
 func createOnlyOtherSKUCosmosPricingResponse() string {
 	return `{
 		"Items": [
@@ -241,12 +235,13 @@ func createOnlyOtherSKUCosmosPricingResponse() string {
 				"currencyCode": "USD",
 				"retailPrice": 5000.0,
 				"unitPrice": 5000.0,
-				"armRegionName": "eastus",
+				"armRegionName": "Global",
 				"productName": "Azure Cosmos DB",
 				"serviceName": "Azure Cosmos DB",
-				"armSkuName": "400RU",
-				"skuName": "400RU",
+				"armSkuName": "Cosmos_DB_400_RUs",
+				"skuName": "400 RU/s",
 				"meterName": "400 RU/s",
+				"unitOfMeasure": "1/Hour",
 				"reservationTerm": "1 Year",
 				"type": "Reservation"
 			},
@@ -550,7 +545,7 @@ func TestCosmosDBClient_GetOfferingDetails_NoMatchingSKU_FailsClosed(t *testing.
 
 	_, err := client.GetOfferingDetails(ctx, rec)
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no on-demand pricing found")
+	assert.Contains(t, err.Error(), "no reservation pricing found")
 }
 
 // TestCosmosDBClient_GetOfferingDetails_RequestsSKUFilter verifies the
@@ -567,7 +562,7 @@ func TestCosmosDBClient_GetOfferingDetails_RequestsSKUFilter(t *testing.T) {
 	})
 	mockHTTP.On("Do", mock.MatchedBy(func(req *http.Request) bool {
 		filter := req.URL.Query().Get("$filter")
-		return strings.Contains(filter, "armSkuName eq '100RU'")
+		return strings.Contains(filter, "armSkuName eq 'Cosmos_DB_100_RUs'")
 	})).Return(response, nil)
 
 	rec := common.Recommendation{

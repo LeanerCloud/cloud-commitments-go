@@ -529,17 +529,17 @@ type CosmosPricing struct {
 	SavingsPercentage float64
 }
 
-// getCosmosPricing gets real pricing from Azure Retail Prices API, scoped to
-// the given SKU (throughput tier, e.g. "100RU") like its sibling services
-// (getVMPricing, getRedisPricing, getSQLPricing, getSearchPricing — all of
-// which add an `armSkuName eq '%s'` clause). Without the SKU filter the query
-// can return prices for other Cosmos DB SKUs and silently price the wrong
-// one; extractCosmosPricing additionally re-checks each item's ArmSKUName
-// so a filter that fails to narrow server-side still can't leak another
-// SKU's price into the quote.
 func (c *Client) getCosmosPricing(ctx context.Context, sku, region string, termYears int) (*CosmosPricing, error) {
-	filter := fmt.Sprintf("serviceName eq 'Azure Cosmos DB' and armRegionName eq '%s' and armSkuName eq '%s'",
-		region, sku)
+	switch sku {
+	case "100RU", "100RUperSecond":
+		sku = "Cosmos_DB_100_RUs"
+	default:
+		if !strings.HasPrefix(sku, "Cosmos_DB_") {
+			return nil, fmt.Errorf("unsupported Cosmos DB pricing SKU %q", sku)
+		}
+	}
+	filter := fmt.Sprintf("serviceName eq 'Azure Cosmos DB' and productName eq 'Azure Cosmos DB' and armRegionName eq 'Global' and armSkuName eq '%s' and priceType eq 'Reservation'",
+		strings.ReplaceAll(sku, "'", "''"))
 
 	priceData, err := c.fetchAzurePricing(ctx, filter)
 	if err != nil {
@@ -550,29 +550,18 @@ func (c *Client) getCosmosPricing(ctx context.Context, sku, region string, termY
 		return nil, fmt.Errorf("no pricing data found for Cosmos DB SKU %s in region %s", sku, region)
 	}
 
-	onDemandPrice, reservationPrice, currency := extractCosmosPricing(priceData.Items, sku, termYears)
-	if onDemandPrice == 0 {
-		return nil, fmt.Errorf("no on-demand pricing found for Cosmos DB SKU %s", sku)
+	selected, err := pricing.SelectReservation(priceData.Items, termYears, func(item pricing.RetailPriceItem) bool {
+		return item.ServiceName == "Azure Cosmos DB" && item.ProductName == "Azure Cosmos DB" &&
+			item.ArmRegionName == "Global" && item.ArmSKUName == sku
+	})
+	if err != nil {
+		return nil, err
 	}
-
-	hoursInTerm := 8760.0 * float64(termYears)
-	// Return an error rather than fabricating a reservation price from a
-	// hardcoded discount multiplier (issue #1020 H4). Presenting an
-	// estimated figure as a real TotalCost/SavingsPercentage is misleading
-	// and can justify uneconomical purchases. managedredis already uses
-	// this pattern as the model.
-	if reservationPrice == 0 {
-		return nil, fmt.Errorf("no reservation pricing found for Cosmos DB SKU %s (%d year) in region %s", sku, termYears, region)
-	}
-
-	savingsPercentage := calculateCosmosSavingsPercentage(onDemandPrice, hoursInTerm, reservationPrice)
 
 	return &CosmosPricing{
-		HourlyRate:        reservationPrice / hoursInTerm,
-		ReservationPrice:  reservationPrice,
-		OnDemandPrice:     onDemandPrice * hoursInTerm,
-		Currency:          currency,
-		SavingsPercentage: savingsPercentage,
+		HourlyRate:       selected.RetailPrice / (8760.0 * float64(termYears)),
+		ReservationPrice: selected.RetailPrice,
+		Currency:         selected.CurrencyCode,
 	}, nil
 }
 
@@ -591,53 +580,6 @@ func (c *Client) fetchAzurePricing(ctx context.Context, filter string) (*AzureRe
 		return nil, err
 	}
 	return &AzureRetailPrice{Items: items}, nil
-}
-
-// azureTermString returns the Retail Prices API ReservationTerm string for the
-// given number of years. The API uses the singular form "1 Year" for one year
-// and the plural form "N Years" for two or more years.
-func azureTermString(termYears int) string {
-	if termYears == 1 {
-		return "1 Year"
-	}
-	return fmt.Sprintf("%d Years", termYears)
-}
-
-// extractCosmosPricing extracts on-demand and reservation pricing from price
-// items, considering only items whose ArmSKUName matches sku. This is
-// defense in depth on top of the API-side armSkuName filter in
-// getCosmosPricing: if the Retail Prices API ever returns items for other
-// SKUs (a loose or failed server-side filter), extraction still won't pick
-// the wrong SKU's price. An item with an empty ArmSKUName is treated as
-// unscoped and skipped rather than trusted, since the filtered query should
-// only return items for the requested SKU.
-func extractCosmosPricing(items []CosmosRetailPriceItem, sku string, termYears int) (onDemand, reservation float64, currency string) {
-	currency = "USD"
-	termStr := azureTermString(termYears)
-
-	for i := range items {
-		item := &items[i]
-		if item.ArmSKUName != sku {
-			continue
-		}
-		if item.CurrencyCode != "" {
-			currency = item.CurrencyCode
-		}
-
-		if item.ReservationTerm != "" && item.ReservationTerm == termStr {
-			reservation = item.RetailPrice
-		} else if item.Type == "Consumption" {
-			onDemand = item.UnitPrice
-		}
-	}
-
-	return onDemand, reservation, currency
-}
-
-// calculateCosmosSavingsPercentage calculates the savings percentage.
-func calculateCosmosSavingsPercentage(onDemandPrice, hoursInTerm, reservationPrice float64) float64 {
-	onDemandTotal := onDemandPrice * hoursInTerm
-	return ((onDemandTotal - reservationPrice) / onDemandTotal) * 100
 }
 
 // convertAzureCosmosRecommendation converts Azure Cosmos DB reservation recommendation to common format.
