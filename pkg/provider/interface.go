@@ -53,6 +53,13 @@ type ServiceClient interface {
 	GetValidResourceTypes(ctx context.Context) ([]string, error)
 }
 
+// OfferingPricer is the optional pricing path used by mcp's spend cap and
+// dry-run quotes. A ServiceClient that can price a recommendation from the
+// provider's offering catalog implements it; callers type-assert for it.
+type OfferingPricer interface {
+	GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error)
+}
+
 // RecommendationsClient provides centralized recommendations across all services.
 type RecommendationsClient interface {
 	// Get recommendations with filtering
