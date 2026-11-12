@@ -3,6 +3,7 @@ package savingsplans
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -23,6 +24,11 @@ import (
 
 // SavingsPlanOrderAliasAPI defines operations on SavingsPlanOrderAlias (enables mocking).
 type SavingsPlanOrderAliasAPI interface {
+	Get(
+		ctx context.Context,
+		savingsPlanOrderAliasName string,
+		options *armbillingbenefits.SavingsPlanOrderAliasClientGetOptions,
+	) (armbillingbenefits.SavingsPlanOrderAliasClientGetResponse, error)
 	BeginCreate(
 		ctx context.Context,
 		savingsPlanOrderAliasName string,
@@ -407,6 +413,18 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		return result, result.Error
 	}
 
+	orderID, err := existingOrderID(ctx, aliasClient, aliasName, opts.IdempotencyToken)
+	if err != nil {
+		result.Error = err
+		return result, result.Error
+	}
+	if orderID != "" {
+		result.CommitmentID = orderID
+		result.Success = true
+		result.ExistingCommitment = true
+		return result, nil
+	}
+
 	poller, err := aliasClient.BeginCreate(ctx, aliasName, body, nil)
 	if err != nil {
 		result.Error = fmt.Errorf("failed to begin savings plan purchase: %w", err)
@@ -428,6 +446,38 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 	}
 
 	return result, nil
+}
+
+// existingOrderID looks up the order alias a re-drive would PUT again; without
+// an idempotency token there is no stable alias and it does nothing. It returns the alias resource id (what the create path reports) of a Succeeded alias, "" when the alias does not exist
+// (404), and an error for any other state or failure so nothing is bought
+// while the outcome of an earlier attempt is unknown.
+func existingOrderID(ctx context.Context, aliasClient SavingsPlanOrderAliasAPI, aliasName, token string) (string, error) {
+	if token == "" {
+		return "", nil
+	}
+	got, err := aliasClient.Get(ctx, aliasName, nil)
+	if err != nil {
+		if isNotFound(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("could not check savings plan order alias %s before purchase; check the Azure portal before retrying: %w", aliasName, err)
+	}
+	props := got.Properties
+	if props == nil || props.ProvisioningState == nil || *props.ProvisioningState != armbillingbenefits.ProvisioningStateSucceeded {
+		return "", fmt.Errorf("savings plan order alias %s already exists in a non-terminal or unknown state; check the Azure portal before retrying", aliasName)
+	}
+	if !isSet(got.ID) || !isSet(props.SavingsPlanOrderID) {
+		return "", fmt.Errorf("savings plan order alias %s succeeded but has no id or order id; check the Azure portal before retrying", aliasName)
+	}
+	return *got.ID, nil
+}
+
+func isSet(s *string) bool { return s != nil && *s != "" }
+
+func isNotFound(err error) bool {
+	var respErr *azcore.ResponseError
+	return errors.As(err, &respErr) && respErr.StatusCode == http.StatusNotFound
 }
 
 // purchaseOrderBody builds the order-alias request for a savings plan
@@ -709,6 +759,14 @@ func toPtr[T any](v T) *T {
 // satisfy SavingsPlanOrderAliasAPI.
 type realOrderAliasClient struct {
 	client *armbillingbenefits.SavingsPlanOrderAliasClient
+}
+
+func (r *realOrderAliasClient) Get(
+	ctx context.Context,
+	savingsPlanOrderAliasName string,
+	options *armbillingbenefits.SavingsPlanOrderAliasClientGetOptions,
+) (armbillingbenefits.SavingsPlanOrderAliasClientGetResponse, error) {
+	return r.client.Get(ctx, savingsPlanOrderAliasName, options)
 }
 
 func (r *realOrderAliasClient) BeginCreate(

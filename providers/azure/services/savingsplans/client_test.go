@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/billingbenefits/armbillingbenefits"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -45,11 +46,26 @@ func (p *mockListAllPager) NextPage(_ context.Context) (armbillingbenefits.Savin
 type mockOrderAliasClient struct {
 	createPoller SavingsPlanOrderAliasPoller
 	createErr    error
+	getResp      armbillingbenefits.SavingsPlanOrderAliasClientGetResponse
+	getErr       error
+	getCalls     int
 	// capturedName records the alias name passed to BeginCreate so tests can
 	// assert the deterministic idempotency-derived name.
 	capturedName string
 	capturedBody armbillingbenefits.SavingsPlanOrderAliasModel
 	calls        int
+}
+
+func (m *mockOrderAliasClient) Get(
+	_ context.Context,
+	_ string,
+	_ *armbillingbenefits.SavingsPlanOrderAliasClientGetOptions,
+) (armbillingbenefits.SavingsPlanOrderAliasClientGetResponse, error) {
+	m.getCalls++
+	if m.getErr == nil && m.getResp.Properties == nil {
+		return m.getResp, &azcore.ResponseError{StatusCode: http.StatusNotFound}
+	}
+	return m.getResp, m.getErr
 }
 
 func (m *mockOrderAliasClient) BeginCreate(
@@ -391,6 +407,82 @@ func TestPurchaseCommitment_DeterministicAliasNameFromToken(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, mock1.capturedName, mock2.capturedName,
 		"re-drive with the same idempotency token must reuse the alias name (PUT is idempotent)")
+}
+
+func aliasGetResp(state armbillingbenefits.ProvisioningState, aliasID, orderID string) armbillingbenefits.SavingsPlanOrderAliasClientGetResponse {
+	var orderIDPtr *string
+	if orderID != "" {
+		orderIDPtr = &orderID
+	}
+	return armbillingbenefits.SavingsPlanOrderAliasClientGetResponse{
+		SavingsPlanOrderAliasModel: armbillingbenefits.SavingsPlanOrderAliasModel{
+			ID: &aliasID,
+			Properties: &armbillingbenefits.SavingsPlanOrderAliasProperties{
+				ProvisioningState:  &state,
+				SavingsPlanOrderID: orderIDPtr,
+			},
+		},
+	}
+}
+
+// TestPurchaseCommitment_TokenAliasLookup covers the alias GET that precedes
+// the PUT when an idempotency token is set (issue #624).
+func TestPurchaseCommitment_TokenAliasLookup(t *testing.T) {
+	t.Parallel()
+	token := common.DeriveIdempotencyToken("exec-1", 0)
+	aliasID := "/providers/Microsoft.BillingBenefits/savingsPlanOrderAliases/alias1"
+	orderID := "/providers/Microsoft.BillingBenefits/savingsPlanOrders/order1"
+	createResp := armbillingbenefits.SavingsPlanOrderAliasClientCreateResponse{
+		SavingsPlanOrderAliasModel: armbillingbenefits.SavingsPlanOrderAliasModel{ID: &aliasID},
+	}
+	notFound := &azcore.ResponseError{StatusCode: http.StatusNotFound}
+
+	tests := []struct {
+		name        string
+		mock        *mockOrderAliasClient
+		wantErr     bool
+		wantCreates int
+	}{
+		{"succeeded alias is reused", &mockOrderAliasClient{getResp: aliasGetResp(armbillingbenefits.ProvisioningStateSucceeded, aliasID, orderID)}, false, 0},
+		{"missing alias is created", &mockOrderAliasClient{getErr: notFound, createPoller: &mockPoller{resp: createResp}}, false, 1},
+		{"non-terminal alias fails closed", &mockOrderAliasClient{getResp: aliasGetResp(armbillingbenefits.ProvisioningStateCreating, aliasID, orderID)}, true, 0},
+		{"succeeded alias without order id fails closed", &mockOrderAliasClient{getResp: aliasGetResp(armbillingbenefits.ProvisioningStateSucceeded, aliasID, "")}, true, 0},
+		{"succeeded alias with empty id fails closed", &mockOrderAliasClient{getResp: aliasGetResp(armbillingbenefits.ProvisioningStateSucceeded, "", orderID)}, true, 0},
+		{"other lookup error fails closed", &mockOrderAliasClient{getErr: &azcore.ResponseError{StatusCode: http.StatusInternalServerError}}, true, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			c := NewClient(nil, "sub", "eastus")
+			c.SetOrderAliasClient(tt.mock)
+			result, err := c.PurchaseCommitment(context.Background(), makeRec("1yr"), common.PurchaseOptions{IdempotencyToken: token})
+			assert.Equal(t, 1, tt.mock.getCalls)
+			assert.Equal(t, tt.wantCreates, tt.mock.calls)
+			if tt.wantErr {
+				require.Error(t, err)
+				assert.False(t, result.Success)
+				return
+			}
+			require.NoError(t, err)
+			assert.True(t, result.Success)
+			assert.Equal(t, aliasID, result.CommitmentID)
+			assert.Equal(t, tt.wantCreates == 0, result.ExistingCommitment)
+		})
+	}
+}
+
+// TestPurchaseCommitment_NoTokenSkipsAliasLookup pins the token-less path.
+func TestPurchaseCommitment_NoTokenSkipsAliasLookup(t *testing.T) {
+	t.Parallel()
+	id := "/providers/Microsoft.BillingBenefits/savingsPlanOrders/o"
+	m := &mockOrderAliasClient{createPoller: &mockPoller{resp: armbillingbenefits.SavingsPlanOrderAliasClientCreateResponse{
+		SavingsPlanOrderAliasModel: armbillingbenefits.SavingsPlanOrderAliasModel{ID: &id},
+	}}}
+	c := NewClient(nil, "sub", "eastus")
+	c.SetOrderAliasClient(m)
+	_, err := c.PurchaseCommitment(context.Background(), makeRec("1yr"), common.PurchaseOptions{})
+	require.NoError(t, err)
+	assert.Zero(t, m.getCalls)
 }
 
 // TestPurchaseCommitment_MalformedTokenFailsBeforePUT verifies a non-empty token
