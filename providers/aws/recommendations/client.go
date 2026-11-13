@@ -9,7 +9,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer"
 	"github.com/aws/aws-sdk-go-v2/service/costexplorer/types"
 	awsec2 "github.com/aws/aws-sdk-go-v2/service/ec2"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
@@ -375,9 +374,9 @@ func (c *Client) GetRecommendationsForService(ctx context.Context, service commo
 
 // GetAllRecommendations fetches recommendations for all supported services.
 //
-// All six RI service calls (plus Savings Plans) run concurrently under errgroup. Each goroutine
-// captures its own error in a closure-scoped variable and returns nil to the
-// group so a single per-service failure does not cancel its siblings (matching
+// All six RI service calls (plus Savings Plans) run concurrently via CollectConcurrently. Each goroutine
+// keeps its own error in its outcome
+// so a single per-service failure does not cancel its siblings (matching
 // the previous loop's `continue`-on-error tolerance). Results are merged in
 // the canonical order EC2 → RDS → ElastiCache → OpenSearch → Redshift → MemoryDB → Savings Plans after
 // all goroutines finish so order-sensitive consumers stay stable.
@@ -385,16 +384,7 @@ func (c *Client) GetRecommendationsForService(ctx context.Context, service commo
 // Partial results retain diagnostics through mergeServiceResults; callers decide
 // whether their workflow can use an incomplete collection.
 func (c *Client) GetAllRecommendations(ctx context.Context) ([]common.Recommendation, error) {
-	var (
-		ec2Recs, rdsRecs, cacheRecs, osRecs, redshiftRecs, memoryDBRecs []common.Recommendation
-		ec2Err, rdsErr, cacheErr, osErr, redshiftErr, memoryDBErr       error
-		spRecs                                                          []common.Recommendation
-		spErr                                                           error
-	)
-
-	g, gctx := errgroup.WithContext(ctx)
-
-	// Per-service goroutines launch the inner (term, payment) sweep for each
+	// Per-service tasks launch the inner (term, payment) sweep for each
 	// AWS service. They do NOT acquire the shared semaphore at this level —
 	// each service sweep makes 6 inner Cost Explorer calls (2 terms × 3
 	// payment options) plus retries with rate-limiter backoff, so holding a
@@ -402,62 +392,39 @@ func (c *Client) GetAllRecommendations(ctx context.Context) ([]common.Recommenda
 	// no request is actually in flight. The Acquire/Release boundary lives
 	// inside GetRecommendations (around the individual CE SDK call), which
 	// frees slots during backoffs and gives the cap its full effective
-	// throughput. The SP goroutine expands further to 24 calls (2 terms × 3
+	// throughput. The SP task expands further to 24 calls (2 terms × 3
 	// payment options × 4 plan types) internally via planTypesForParams.
 	// See pkg/concurrency.
-	g.Go(func() error {
-		ec2Recs, ec2Err = c.GetRecommendationsForService(gctx, common.ServiceEC2)
-		return nil
-	})
-	g.Go(func() error {
-		rdsRecs, rdsErr = c.GetRecommendationsForService(gctx, common.ServiceRDS)
-		return nil
-	})
-	g.Go(func() error {
-		cacheRecs, cacheErr = c.GetRecommendationsForService(gctx, common.ServiceElastiCache)
-		return nil
-	})
-	g.Go(func() error {
-		osRecs, osErr = c.GetRecommendationsForService(gctx, common.ServiceOpenSearch)
-		return nil
-	})
-	g.Go(func() error {
-		redshiftRecs, redshiftErr = c.GetRecommendationsForService(gctx, common.ServiceRedshift)
-		return nil
-	})
-	g.Go(func() error {
-		memoryDBRecs, memoryDBErr = c.GetRecommendationsForService(gctx, common.ServiceMemoryDB)
-		return nil
-	})
-	g.Go(func() error {
-		spRecs, spErr = c.GetRecommendationsForService(gctx, common.ServiceSavingsPlansAll)
-		return nil
-	})
-
-	// Wait for all goroutines. g.Wait() always returns nil because every
-	// goroutine returns nil — errors are captured per-service above. After
-	// Wait, propagate ctx cancellation so callers can distinguish "all six
-	// services completed (with possibly per-service errors)" from "the
-	// parent ctx was canceled mid-fan-out".
-	if waitErr := g.Wait(); waitErr != nil {
-		// This branch is unreachable: every goroutine above returns nil.
-		// The panic makes the invariant explicit and visible to the race
-		// detector rather than silently discarding an unexpected error.
-		panic("errgroup returned non-nil despite all goroutines returning nil: " + waitErr.Error())
+	services := []struct {
+		name    string
+		service common.ServiceType
+	}{
+		{"EC2", common.ServiceEC2},
+		{"RDS", common.ServiceRDS},
+		{"ElastiCache", common.ServiceElastiCache},
+		{"OpenSearch", common.ServiceOpenSearch},
+		{"Redshift", common.ServiceRedshift},
+		{"MemoryDB", common.ServiceMemoryDB},
+		{"SavingsPlans", common.ServiceSavingsPlansAll},
 	}
-	if err := ctx.Err(); err != nil {
+	tasks := make([]func(context.Context) ([]common.Recommendation, error), len(services))
+	for i, svc := range services {
+		tasks[i] = func(ctx context.Context) ([]common.Recommendation, error) {
+			return c.GetRecommendationsForService(ctx, svc.service)
+		}
+	}
+	// CollectConcurrently returns ctx.Err() after the fan-out so callers can
+	// distinguish "all services completed (with possibly per-service
+	// errors)" from "the parent ctx was canceled mid-fan-out".
+	outcomes, err := concurrency.CollectConcurrently(ctx, concurrency.Unlimited, tasks)
+	if err != nil {
 		return nil, err
 	}
-
-	return mergeServiceResults(
-		serviceResult{name: "EC2", recs: ec2Recs, err: ec2Err},
-		serviceResult{name: "RDS", recs: rdsRecs, err: rdsErr},
-		serviceResult{name: "ElastiCache", recs: cacheRecs, err: cacheErr},
-		serviceResult{name: "OpenSearch", recs: osRecs, err: osErr},
-		serviceResult{name: "Redshift", recs: redshiftRecs, err: redshiftErr},
-		serviceResult{name: "MemoryDB", recs: memoryDBRecs, err: memoryDBErr},
-		serviceResult{name: "SavingsPlans", recs: spRecs, err: spErr},
-	)
+	results := make([]serviceResult, len(services))
+	for i, svc := range services {
+		results[i] = serviceResult{name: svc.name, recs: outcomes[i].Value, err: outcomes[i].Err}
+	}
+	return mergeServiceResults(results...)
 }
 
 // serviceResult bundles a per-service collection outcome for the deterministic
