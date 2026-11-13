@@ -18,6 +18,11 @@ const (
 	SpellMonths
 	// SpellEmptyIsOneYear maps the empty string to Term1Year.
 	SpellEmptyIsOneYear
+	// SpellBareMonths accepts "12" and "36".
+	SpellBareMonths
+	// SpellISO accepts the ISO-8601 durations "P1Y" and "P3Y". Matching is
+	// case-sensitive unless SpellFold is also set.
+	SpellISO
 	// SpellFold trims surrounding whitespace and lower-cases before matching.
 	SpellFold
 )
@@ -37,6 +42,10 @@ var termSpellings = map[string]struct {
 	"3y":   {Term3Year, SpellShortYears},
 	"12mo": {Term1Year, SpellMonths},
 	"36mo": {Term3Year, SpellMonths},
+	"12":   {Term1Year, SpellBareMonths},
+	"36":   {Term3Year, SpellBareMonths},
+	"P1Y":  {Term1Year, SpellISO},
+	"P3Y":  {Term3Year, SpellISO},
 }
 
 // ParseTermSpelling maps s to a Term when s is one of the spellings selected
@@ -47,6 +56,10 @@ func ParseTermSpelling[S ~string](s S, accept TermSpelling) (Term, bool) {
 		key = strings.ToLower(strings.TrimSpace(key))
 	}
 	e, ok := termSpellings[key]
+	if !ok && accept&SpellFold != 0 {
+		// Fold lower-cases the key, so ISO durations match on their upper-case form.
+		e, ok = termSpellings[strings.ToUpper(key)]
+	}
 	if !ok || accept&e.flag == 0 {
 		return "", false
 	}

@@ -173,17 +173,16 @@ func normalizeReservationSegment(s string) string {
 	return SanitizeReservationID(s, "")
 }
 
+// reservationTermSpellings is the accepted set of normalizeReservationTerm.
+const reservationTermSpellings = SpellCanonical | SpellBareYears | SpellShortYears | SpellISO | SpellFold
+
 // normalizeReservationTerm maps "1"/"1yr"/"1y"/"P1Y" -> "1yr" and similar
 // for 3-year. Anything else falls back to a sanitized passthrough.
 func normalizeReservationTerm(s string) string {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case string(Term1Year), "1", "1y", "p1y":
-		return string(Term1Year)
-	case string(Term3Year), "3", "3y", "p3y":
-		return string(Term3Year)
-	default:
-		return normalizeReservationSegment(s)
+	if t, ok := ParseTermSpelling(s, reservationTermSpellings); ok {
+		return string(t)
 	}
+	return normalizeReservationSegment(s)
 }
 
 // normalizeReservationPayment maps known payment-option strings to short
