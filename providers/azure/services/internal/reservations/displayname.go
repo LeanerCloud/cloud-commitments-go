@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 // azureDisplayNameMaxLen is Azure's hard cap on Reservation DisplayName length.
@@ -172,10 +174,10 @@ func normalizeSegment(s string) string {
 // Anything else falls back to a sanitized passthrough.
 func normalizeTerm(s string) string {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "1", "1yr", "1y", "p1y":
-		return "1yr"
-	case "3", "3yr", "3y", "p3y":
-		return "3yr"
+	case "1", string(common.Term1Year), "1y", "p1y":
+		return string(common.Term1Year)
+	case "3", string(common.Term3Year), "3y", "p3y":
+		return string(common.Term3Year)
 	default:
 		return normalizeSegment(s)
 	}
@@ -185,11 +187,11 @@ func normalizeTerm(s string) string {
 // Unknown values are sanitized and truncated to keep the segment ≤6 chars.
 func normalizePayment(s string) string {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "all-upfront", "allupfront", "upfront":
+	case string(common.PaymentAllUpfront), "allupfront", "upfront":
 		return "allup"
-	case "no-upfront", "noupfront":
+	case string(common.PaymentNoUpfront), "noupfront":
 		return "noup"
-	case "partial-upfront", "partialupfront", "partial":
+	case string(common.PaymentPartialUpfront), "partialupfront", "partial":
 		return "partup"
 	case "monthly":
 		return "monthly"
