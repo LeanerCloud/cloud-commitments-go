@@ -409,9 +409,9 @@ func matchesPaymentOption(offering redshifttypes.ReservedNodeOffering, paymentOp
 // paymentShapes maps each supported payment option to its upfront/recurring price shape.
 // Its key set is the supported-option list (see supportedPaymentOption).
 var paymentShapes = map[string]func(hasUpfront, hasRecurring bool) bool{
-	"all-upfront":     func(u, r bool) bool { return u && !r },
-	"no-upfront":      func(u, r bool) bool { return !u && r },
-	"partial-upfront": func(u, r bool) bool { return u && r },
+	string(common.PaymentAllUpfront):     func(u, r bool) bool { return u && !r },
+	string(common.PaymentNoUpfront):      func(u, r bool) bool { return !u && r },
+	string(common.PaymentPartialUpfront): func(u, r bool) bool { return u && r },
 }
 
 // supportedPaymentOption reports whether matchesPaymentOption can ever match the option.
@@ -516,11 +516,11 @@ func derivePaymentOption(offering redshifttypes.ReservedNodeOffering) string {
 	hasRecurring := offeringRecurringRate(offering) > 0
 	switch {
 	case hasUpfront && !hasRecurring:
-		return "all-upfront"
+		return string(common.PaymentAllUpfront)
 	case !hasUpfront && hasRecurring:
-		return "no-upfront"
+		return string(common.PaymentNoUpfront)
 	case hasUpfront && hasRecurring:
-		return "partial-upfront"
+		return string(common.PaymentPartialUpfront)
 	default:
 		return "unknown"
 	}
