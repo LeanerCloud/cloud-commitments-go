@@ -482,10 +482,27 @@ var sqlRetailZRSKUByTierGen = map[string]string{
 	"GeneralPurpose_Gen5": "SQLDB_GP_Compute_Gen5_ZR",
 }
 
-// retailSKUForCapability splits a capability name such as "GP_Gen5_2" (or
+func isRetailSQLSKU(name string) bool {
+	for _, tables := range []map[string]string{sqlRetailSKUByTierGen, sqlRetailZRSKUByTierGen} {
+		for _, v := range tables {
+			if v == name {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// retailSKUForCapability resolves a retail armSkuName (returned as is, one
+// vCore) or splits a capability name such as "GP_Gen5_2" (or
 // "GP_Gen5_2_ZR" for zone-redundant) into its retail armSkuName (per-vCore
 // row) and vCore count.
 func retailSKUForCapability(capability string) (armSKU string, vCores int, err error) {
+	// A recommendation may already carry the retail name (quantity then counts
+	// vCores), so it prices per vCore with no further multiplication.
+	if isRetailSQLSKU(capability) {
+		return capability, 1, nil
+	}
 	name, zoneRedundant := strings.CutSuffix(capability, "_ZR")
 	parts := strings.Split(name, "_")
 	if len(parts) != 3 {

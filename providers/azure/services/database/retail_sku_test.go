@@ -76,6 +76,9 @@ func TestRetailSKUForCapability(t *testing.T) {
 		{"HS_Gen5_8", "SQLDB_HyperScale_Compute_Gen5", 8},
 		{"Hyperscale_Gen5_2", "SQLDB_HyperScale_Compute_Gen5", 2},
 		{"GP_Gen5_2_ZR", "SQLDB_GP_Compute_Gen5_ZR", 2},
+		{"SQLDB_GP_Compute_Gen5", "SQLDB_GP_Compute_Gen5", 1},
+		{"SQLDB_GP_Compute_Gen5_ZR", "SQLDB_GP_Compute_Gen5_ZR", 1},
+		{"SQLDB_HyperScale_Compute_Gen5", "SQLDB_HyperScale_Compute_Gen5", 1},
 		{"GeneralPurpose_Gen5_4_ZR", "SQLDB_GP_Compute_Gen5_ZR", 4},
 	} {
 		armSKU, vCores, err := retailSKUForCapability(tc.capability)

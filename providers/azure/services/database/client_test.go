@@ -62,7 +62,7 @@ func (m *MockCapabilitiesClient) ListByLocation(ctx context.Context, locationNam
 	return m.response, nil
 }
 
-// Rows trimmed from the live Retail Prices API (eastus, armSkuName SQLDB_GP_Compute_Gen5).
+// Rows modeled on the live Retail Prices API (eastus, armSkuName SQLDB_GP_Compute_Gen5).
 func createSampleSQLPricingResponse() string {
 	return `{
 		"Items": [
