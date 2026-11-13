@@ -1,6 +1,10 @@
 package purchasecfg
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+)
 
 // Canonical RI/CUD term domain shared by every AWS service client: "1yr"/"1"
 // and "3yr"/"3". The parsers fail loud on any other input (ARCH-04): an
@@ -17,9 +21,9 @@ const (
 // in months. The service name is used only in the error message.
 func ParseTermMonths(term, service string) (int, error) {
 	switch term {
-	case "3yr", "3":
+	case string(common.Term3Year), "3":
 		return 36, nil
-	case "1yr", "1":
+	case string(common.Term1Year), "1":
 		return 12, nil
 	default:
 		return 0, fmt.Errorf("unsupported %s reservation term %q: must be one of 1yr, 1, 3yr, 3", service, term)
