@@ -226,7 +226,7 @@ func canonicalTerm(term string) string {
 func resolveRecTerm(gcpRec *recommenderpb.Recommendation, params common.RecommendationParams) (string, error) {
 	if !params.ExperimentalGCPPlanTerm {
 		if params.Term == "" {
-			return "1yr", nil
+			return string(common.Term1Year), nil
 		}
 		return params.Term, nil
 	}
