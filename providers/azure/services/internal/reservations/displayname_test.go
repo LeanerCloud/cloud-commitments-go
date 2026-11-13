@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
 
 func TestSanitizeDisplayName(t *testing.T) {
@@ -526,4 +528,23 @@ func TestBuildDisplayName_TimestampUTC(t *testing.T) {
 		Now:          local,
 	}.WithRandSource(fixedRand))
 	assert.Contains(t, got, "20260522T190000")
+}
+
+// oldNormalizeTerm is the pre-migration switch, kept so the differential test
+// proves the shared parser keeps the accepted inputs and results.
+func oldNormalizeTerm(s string) string {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "1", string(common.Term1Year), "1y", "p1y":
+		return string(common.Term1Year)
+	case "3", string(common.Term3Year), "3y", "p3y":
+		return string(common.Term3Year)
+	default:
+		return normalizeSegment(s)
+	}
+}
+
+func TestNormalizeTermMatchesOld(t *testing.T) {
+	for _, in := range []string{"", "1", "3", "1yr", "3yr", "1y", "3y", "P1Y", "p1y", "P3Y", "p3y", " 3YR ", "1YR", "12", "36", "12mo", "5yr", "2", "a-b c", "\t1\n"} {
+		assert.Equal(t, oldNormalizeTerm(in), normalizeTerm(in), "input %q", in)
+	}
 }

@@ -69,6 +69,9 @@ func TestExtract_TermNormalisation(t *testing.T) {
 		{"P3Y", "P3Y", "3yr"},
 		{"Empty stays empty", "", ""},
 		{"Wrong case is passed through verbatim", "p1y", "p1y"},
+		{"Canonical spelling is not an Azure term", "1yr", "1yr"},
+		{"Bare year is passed through verbatim", "1", "1"},
+		{"Short year is passed through verbatim", "1y", "1y"},
 		{"Unknown is passed through verbatim", "ZZZ", "ZZZ"},
 	}
 	for _, tc := range cases {

@@ -170,17 +170,16 @@ func normalizeSegment(s string) string {
 	return SanitizeDisplayName(s)
 }
 
+// displayTermSpellings is the accepted set of normalizeTerm.
+const displayTermSpellings = common.SpellCanonical | common.SpellBareYears | common.SpellShortYears | common.SpellISO | common.SpellFold
+
 // normalizeTerm maps "1"/"1yr"/"P1Y" -> "1yr" and "3"/"3yr"/"P3Y" -> "3yr".
 // Anything else falls back to a sanitized passthrough.
 func normalizeTerm(s string) string {
-	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "1", string(common.Term1Year), "1y", "p1y":
-		return string(common.Term1Year)
-	case "3", string(common.Term3Year), "3y", "p3y":
-		return string(common.Term3Year)
-	default:
-		return normalizeSegment(s)
+	if t, ok := common.ParseTermSpelling(s, displayTermSpellings); ok {
+		return string(t)
 	}
+	return normalizeSegment(s)
 }
 
 // normalizePayment maps known payment-option strings to short forms.

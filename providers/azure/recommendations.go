@@ -674,7 +674,7 @@ func populateFromExtendedProperties(rec *common.Recommendation, ext map[string]*
 	if err != nil {
 		return err
 	}
-	if cur := extString(ext, advisorKeyCurrency, ""); !strings.EqualFold(cur, "USD") {
+	if cur := extString(ext, advisorKeyCurrency); !strings.EqualFold(cur, "USD") {
 		return fmt.Errorf("%s %q is not USD", advisorKeyCurrency, cur)
 	}
 	rec.EstimatedSavings = annualSavings / 12
@@ -685,7 +685,7 @@ func populateFromExtendedProperties(rec *common.Recommendation, ext map[string]*
 	if rec.CommitmentType == common.CommitmentSavingsPlan {
 		return nil
 	}
-	if rec.ResourceType = extString(ext, advisorKeySKU, ""); rec.ResourceType == "" {
+	if rec.ResourceType = extString(ext, advisorKeySKU); rec.ResourceType == "" {
 		return fmt.Errorf("%s is absent", advisorKeySKU)
 	}
 	qty, err := extInt(ext, advisorKeyQty)
@@ -699,23 +699,22 @@ func populateFromExtendedProperties(rec *common.Recommendation, ext map[string]*
 // advisorTerm maps the Advisor term ("P1Y"/"P3Y", or the already-normalised
 // "1yr"/"3yr") to the common form and errors on a missing or unknown value.
 func advisorTerm(ext map[string]*string) (common.Term, error) {
-	switch t := extString(ext, advisorKeyTerm, ""); t {
-	case "P1Y", string(common.Term1Year):
-		return common.Term1Year, nil
-	case "P3Y", string(common.Term3Year):
-		return common.Term3Year, nil
-	case "":
+	t := extString(ext, advisorKeyTerm)
+	if t == "" {
 		return "", fmt.Errorf("%s is absent", advisorKeyTerm)
-	default:
+	}
+	term, ok := common.ParseTermSpelling(t, common.SpellISO|common.SpellCanonical)
+	if !ok {
 		return "", fmt.Errorf("unknown %s %q", advisorKeyTerm, t)
 	}
+	return term, nil
 }
 
-func extString(m map[string]*string, key, fallback string) string {
+func extString(m map[string]*string, key string) string {
 	if v, ok := m[key]; ok && v != nil && *v != "" {
 		return *v
 	}
-	return fallback
+	return ""
 }
 
 func extFloat(m map[string]*string, key string) (float64, error) {

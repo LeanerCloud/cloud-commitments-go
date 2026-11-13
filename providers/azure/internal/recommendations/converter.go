@@ -356,15 +356,11 @@ func normaliseTerm(term *string) string {
 	if term == nil || *term == "" {
 		return ""
 	}
-	switch *term {
-	case "P1Y":
-		return string(common.Term1Year)
-	case "P3Y":
-		return string(common.Term3Year)
-	default:
-		logging.Warnf("azure recommendations: unrecognized Term value %q; passing through verbatim", *term)
-		return *term
+	if t, ok := common.ParseTermSpelling(*term, common.SpellISO); ok {
+		return string(t)
 	}
+	logging.Warnf("azure recommendations: unrecognized Term value %q; passing through verbatim", *term)
+	return *term
 }
 
 // amountValuePtr unwraps Modern's *Amount to a *float64, preserving the
