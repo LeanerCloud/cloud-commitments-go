@@ -421,6 +421,15 @@ type UsageBaseline struct {
 	// buffer fraction to LowWaterUSDPerHour. It is nil when the provider cannot
 	// estimate it (short or volatile series, or no buffer fraction configured).
 	StableUSDPerHour *float64
+	// StableUSDPerHourByFamily splits StableUSDPerHour across EC2 instance
+	// families (instance family name to absolute USD/hr). Allocate divides the
+	// EC2 Instance Savings Plan base gap across these families by headroom (share
+	// less that family's in-flight tranches), one family-bound allocation each.
+	// Shares must be finite and >= 0 and sum to StableUSDPerHour (within float
+	// rounding), which must then be non-nil; otherwise Allocate fails loud. Nil means the
+	// base is not family split (the allocation carries no family), which a
+	// provider whose base layer is family bound must not rely on.
+	StableUSDPerHourByFamily map[string]float64
 	// Basis says what the series measures: total demand (the default, empty)
 	// or residual uncovered usage already net of existing commitments. See
 	// BaselineBasis; Allocate never subtracts existing commitment from a

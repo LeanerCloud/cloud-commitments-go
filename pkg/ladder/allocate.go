@@ -282,11 +282,18 @@ func validateAllocateInput(in *AllocationInput) error {
 	if err := in.Baseline.Basis.Validate(); err != nil {
 		return fmt.Errorf("baseline: %w", err)
 	}
+	fs, err := parseFamilySplit(in.Baseline)
+	if err != nil {
+		return fmt.Errorf("baseline: %w", err)
+	}
 	if len(in.Layers) == 0 {
 		return fmt.Errorf("layers must not be empty")
 	}
 	if err := validateLayers(in.Layers); err != nil {
 		return fmt.Errorf("layers: %w", err)
+	}
+	if err := fs.validateTopology(in.Layers); err != nil {
+		return fmt.Errorf("baseline: %w", err)
 	}
 	if err := validateLayerStates(in.Layers, in.LayerStates); err != nil {
 		return fmt.Errorf("layer_states: %w", err)
@@ -782,9 +789,14 @@ func splitGap(in *AllocationInput, gap *big.Rat, nets, inFlight map[LayerType]*b
 	if err != nil {
 		return nil, err
 	}
+	family, baseGap, baseNote, err := applyFamilySplit(in, hasBase, baseLayer, nets, baseGap, baseNote)
+	if err != nil {
+		return nil, err
+	}
 	flexGap := new(big.Rat).Sub(coreGap, baseGap)
 
 	ctx := allocationContext{
+		family:      family,
 		lowWater:    lowWater,
 		target:      target,
 		existing:    existingTotal,
@@ -800,6 +812,8 @@ func splitGap(in *AllocationInput, gap *big.Rat, nets, inFlight map[LayerType]*b
 // allocationContext bundles shared values passed to assembleAllocations so the
 // signature stays within a readable parameter count.
 type allocationContext struct {
+	// family is the per-family split of the stable base; nil when absent.
+	family      *familySplit
 	lowWater    *big.Rat
 	target      *big.Rat
 	existing    *big.Rat
@@ -863,7 +877,7 @@ func assembleAllocations(ctx *allocationContext, baseGap, flexGap, bufferGap *bi
 		}
 	} else {
 		if hasBase && baseGap.Sign() > 0 {
-			allocs = append(allocs, mkAllocation(ctx, baseLayer, baseGap, "base", ctx.baseNote))
+			allocs = append(allocs, baseAllocations(ctx, baseLayer, baseGap)...)
 		}
 		if bufferGap.Sign() > 0 {
 			allocs = append(allocs, mkAllocation(ctx, bufferLayer, bufferGap, "buffer", ""))
