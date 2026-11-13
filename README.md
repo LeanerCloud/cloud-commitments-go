@@ -1,77 +1,55 @@
-# cloud-commitments-go shared Go libraries
+# cloud-commitments-go
 
-This repository contains the shared provider interfaces, domain packages, and
-cloud-provider integrations used by the CLI, MCP server, and self-hosted
-platform. It is not an application CLI and does not produce a CUDly binary.
+[![CI](https://github.com/LeanerCloud/cloud-commitments-go/actions/workflows/ci.yml/badge.svg)](https://github.com/LeanerCloud/cloud-commitments-go/actions/workflows/ci.yml)
 
-The intended public repository is `LeanerCloud/cloud-commitments-go`; it is not
-published yet. The committed `go.work` is sufficient for development in this
-checkout. Consumer repositories may still require unpublished shared-module
-versions until the publication sequence completes.
+Shared Go libraries for finding and buying cloud commitments (Reserved Instances, Savings Plans and committed use discounts) on AWS, Azure and GCP. The packages hold the provider integrations, the recommendation types and the scoring and filtering logic that the [CUDly CLI](https://github.com/LeanerCloud/cloud-commitments-cli), the [MCP server](https://github.com/LeanerCloud/cloud-commitments-mcp) and the [self-hosted platform](https://github.com/LeanerCloud/cloud-commitments-platform) all build on.
 
-## Modules
+This repository is a set of libraries, so there's no binary to install. Purchase confirmation, dry-run policy and other safety controls live in the callers, and any caller that executes a purchase can spend money.
 
-The repository has five Go modules:
+## What's in it
 
-- [`pkg`](pkg) contains shared domain and utility packages, including [`pkg/common`](pkg/common) and [`pkg/provider`](pkg/provider).
-- [`providers/aws`](providers/aws), [`providers/azure`](providers/azure), and [`providers/gcp`](providers/gcp) contain provider integrations.
-- [`ci_cd_sanity_tests`](ci_cd_sanity_tests) contains diagnostic CI and integration checks. It is not an end-user CLI.
+The repository has five Go modules and no root module, so run Go commands from inside a module directory.
 
-There is no root Go module. Use the module directories above when you inspect, build, or test this component.
+| Module | Contents |
+|---|---|
+| [`pkg`](pkg) | Provider interfaces and shared domain packages: [`common`](pkg/common) types and JSON codecs, [`provider`](pkg/provider) credential detection and discovery, [`scorer`](pkg/scorer) and [`recfilter`](pkg/recfilter) for ranking and filtering recommendations, [`reccontract`](pkg/reccontract) for the recommendation request contract, [`exchange`](pkg/exchange) for AWS Convertible RI exchanges, [`ladder`](pkg/ladder) for commitment-laddering plans, [`retry`](pkg/retry), [`httpclient`](pkg/httpclient), [`concurrency`](pkg/concurrency), [`logging`](pkg/logging) and [`reporter`](pkg/reporter) |
+| [`providers/aws`](providers/aws) | AWS integration with service clients for EC2, RDS, ElastiCache, MemoryDB, OpenSearch, Redshift and Savings Plans |
+| [`providers/azure`](providers/azure) | Azure integration, including Advisor-based recommendations across subscriptions |
+| [`providers/gcp`](providers/gcp) | GCP integration |
+| [`ci_cd_sanity_tests`](ci_cd_sanity_tests) | Diagnostic checks that call real cloud APIs, used by the sanity workflows and not meant for end users |
+
+Provider support varies by service and account. RDS and ElastiCache on AWS are the tested paths, and the other AWS services, Azure and GCP are experimental.
+
+## Use it in a Go project
+
+There are no tags or releases yet, so consumers pin a commit. For example:
+
+```bash
+go get github.com/LeanerCloud/cloud-commitments-go/pkg@main
+go get github.com/LeanerCloud/cloud-commitments-go/providers/aws@main
+```
+
+Each module requires the Go version declared in its `go.mod` (currently 1.26.11). The CLI shows the pattern in its own `go.mod`, which pins all four library modules to the same pseudo-version.
 
 ## Build and test
-
-Use the Go version declared in each module's `go.mod` (currently Go 1.26.11).
 
 ```bash
 make build
 make test-unit
 ```
 
-`make build` and `make test-unit` iterate over the five module directories. These targets do not create a shared library binary. Unit tests do not require cloud credentials. The diagnostic binaries in `ci_cd_sanity_tests/cmd/` are explicitly cloud-backed checks and must not be run unless the target account and credentials are intended.
-
-For standalone module verification in this checkout, use the module-local
-command with `GOWORK=off`, for example:
+Both targets loop over every module. Unit tests run with `-race -short` and need no cloud credentials. To check one module the way an external consumer sees it, without the workspace:
 
 ```bash
 (cd pkg && GOWORK=off go test -race -short ./...)
 ```
 
-The provider modules' committed relative replacements resolve the local `pkg`
-module during this check. After publication, repeat the verification against
-released module versions with `GOWORK=off` and no local replacement; that is
-the external-consumer release check.
+Don't run the binaries under `ci_cd_sanity_tests/cmd/` unless you mean to hit the account your credentials point at. The full pre-merge set is `make ci`, which runs format, vet, complexity, unit tests and a security scan.
 
-## Provider boundaries
+## Contributing
 
-Provider support varies by service and account. Amazon RDS and ElastiCache are the tested AWS service paths. Other AWS service paths, Azure, and GCP support remains experimental.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) first, and report security problems as described in [SECURITY.md](SECURITY.md). Design notes are under [docs/design](docs/design), and [CHANGELOG.md](CHANGELOG.md) tracks changes.
 
-These packages expose provider operations to callers. Purchase confirmation, dry-run policy, and user-facing safety controls belong to the CLI, MCP server, or platform caller. Any caller that executes a purchase can spend money.
+## License
 
-Caller-specific behavior is documented in the CLI, MCP server, and self-hosted
-platform components. Those destination repositories are intended but not yet
-published; do not treat this library as providing their purchase controls.
-
-## AWS default values
-
-These defaults apply when a caller leaves the value unset. They are kept as they are and listed here so callers can override them.
-
-| Default | Value | Where | Effect |
-| --- | --- | --- | --- |
-| Coverage and utilization lookback | 30 days | `providers/aws/recommendations/coverage.go:242-243` (`coverageWindow`), `providers/aws/recommendations/utilization.go:41-42`, `providers/aws/ladder/ladder.go:19` (`DefaultLookbackDays`) | A non-positive `lookbackDays` passed to `GetRICoverageMap` or `GetRIUtilization` is replaced with 30. The ladder uses 30 when `Config.LookbackDays` is zero. Pass an explicit window to size from a different history. |
-| MemoryDB reserved-node engine | `redis` | `providers/aws/services/memorydb/client.go:329` (`ReservedNodeEngine`), used at `providers/aws/recommendations/parser_services.go:260` | Every MemoryDB recommendation is labelled `redis`, including Valkey clusters. The MemoryDB purchase path does not filter on engine, so the label affects display, pool keys and duplicate detection only. |
-
-## About
-
-Built by [LeanerCloud](https://leanercloud.com), a group of AWS cost
-optimization and FinOps specialists, also authors of [AutoSpotting](https://autospotting.io).
-
-Development is sponsored by [Archera](https://www.archera.ai/cudly), which
-funds it from insurance purchases made through that page. Archera can insure
-the Savings Plans, Reserved Instances and CUD purchases you make with this tool.
-
-If this tool saves you time and money, please give us a ⭐ so others can also find it.
-
-## License and attribution
-
-CUDly is maintained by [LeanerCloud](https://github.com/LeanerCloud) and licensed under the [Open Software License 3.0](LICENSE). See the repository license and attribution files for third-party notices.
+CUDly is maintained by [LeanerCloud](https://github.com/LeanerCloud) and licensed under the [Open Software License 3.0](LICENSE). Third-party notices are in [NOTICE](NOTICE).
