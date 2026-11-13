@@ -13,9 +13,9 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/advisor/armadvisor"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/logging"
 	azrecs "github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/recommendations"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/slot"
@@ -110,33 +110,32 @@ func NewRecommendationsClientAdapter(cred azcore.TokenCredential, subscriptionID
 // We now call each service client exactly once. Region is intentionally left
 // blank on the client; converters must populate Region from the response data.
 //
-// All seven service calls run concurrently under errgroup. Each goroutine captures
-// its own error and returns nil to the group so that a single service failure
+// All seven service calls run concurrently via CollectConcurrently. Each task keeps
+// its own error in its outcome so that a single service failure
 // does not cancel sibling calls. Results are appended in a deterministic order
 // (compute → database → redis → cosmosdb → synapse → savingsplans → advisor) after all goroutines finish.
 func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, params *common.RecommendationParams) ([]common.Recommendation, error) {
 	if params == nil {
 		return nil, fmt.Errorf("params cannot be nil")
 	}
-	var (
-		computeRecs, dbRecs, redisRecs, cosmosRecs, advisorRecs, spRecs, synapseRecs []common.Recommendation
-		computeErr, dbErr, redisErr, cosmosErr, advisorErr, spErr, synapseErr        error
-	)
-
 	ctx, skips := azrecs.WithSkipLog(ctx)
-	g, gctx := errgroup.WithContext(ctx)
 
-	// Each per-service goroutine runs a whole sweep (many pages plus lazily
+	// Each per-service task runs a whole sweep (many pages plus lazily
 	// loaded catalogs), so it does not hold the shared CUDLY_MAX_PARALLELISM
 	// slot itself: every outbound call inside the service clients takes the
 	// slot for that one call via internal/slot. Holding it across a sweep
 	// would starve the AWS/GCP leaf calls, and with a cap of 1 a sweep that
 	// also acquired per call would deadlock on itself.
-	goService := func(fn func()) {
-		g.Go(func() error {
-			fn()
-			return nil // error isolation: never propagate to errgroup
-		})
+	var tasks []func(context.Context) ([]common.Recommendation, error)
+	// addTask queues fn and returns its outcome index, or -1 when the params
+	// filter skips the service: a skipped service must not become a task, so
+	// the all-attempted-failed guard below does not count it.
+	addTask := func(include bool, fn func(context.Context) ([]common.Recommendation, error)) int {
+		if !include {
+			return -1
+		}
+		tasks = append(tasks, fn)
+		return len(tasks) - 1
 	}
 
 	// Record which services the params filter lets through so the merge can
@@ -149,58 +148,33 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 	includeSP := common.ShouldIncludeService(*params, common.ServiceSavingsPlansAll)
 	includeSynapse := common.ShouldIncludeService(*params, common.ServiceDataWarehouse)
 
-	// Compute (VM) recommendations — subscription-wide.
-	if includeCompute {
-		goService(func() {
-			computeClient := newComputeClientFn(r.cred, r.subscriptionID, "")
-			computeRecs, computeErr = computeClient.GetRecommendations(gctx, params)
-		})
-	}
-
-	// Database (SQL) recommendations — subscription-wide.
-	if includeDB {
-		goService(func() {
-			dbClient := newDatabaseClientFn(r.cred, r.subscriptionID, "")
-			dbRecs, dbErr = dbClient.GetRecommendations(gctx, params)
-		})
-	}
-
-	// Redis recommendations (labeled memorydb) — subscription-wide.
-	if includeRedis {
-		goService(func() {
-			redisClient := newManagedRedisClientFn(r.cred, r.subscriptionID, "")
-			redisRecs, redisErr = redisClient.GetRecommendations(gctx, params)
-		})
-	}
-
-	// CosmosDB (NoSQL) recommendations — subscription-wide.
-	if includeCosmos {
-		goService(func() {
-			cosmosClient := newCosmosDBClientFn(r.cred, r.subscriptionID, "")
-			cosmosRecs, cosmosErr = cosmosClient.GetRecommendations(gctx, params)
-		})
-	}
-
+	// Compute (VM), Database (SQL), Redis (labeled memorydb) and CosmosDB
+	// (NoSQL) recommendations are subscription-wide.
+	computeIdx := addTask(includeCompute, func(ctx context.Context) ([]common.Recommendation, error) {
+		return newComputeClientFn(r.cred, r.subscriptionID, "").GetRecommendations(ctx, params)
+	})
+	dbIdx := addTask(includeDB, func(ctx context.Context) ([]common.Recommendation, error) {
+		return newDatabaseClientFn(r.cred, r.subscriptionID, "").GetRecommendations(ctx, params)
+	})
+	redisIdx := addTask(includeRedis, func(ctx context.Context) ([]common.Recommendation, error) {
+		return newManagedRedisClientFn(r.cred, r.subscriptionID, "").GetRecommendations(ctx, params)
+	})
+	cosmosIdx := addTask(includeCosmos, func(ctx context.Context) ([]common.Recommendation, error) {
+		return newCosmosDBClientFn(r.cred, r.subscriptionID, "").GetRecommendations(ctx, params)
+	})
 	// Synapse (SqlDataWarehouse) recommendations — subscription-wide. Search is
 	// deliberately not collected here: see #47. Redis is collected above.
-	if includeSynapse {
-		goService(func() {
-			synapseRecs, synapseErr = newSynapseClientFn(r.cred, r.subscriptionID, "").GetRecommendations(gctx, params)
-		})
-	}
-
+	synapseIdx := addTask(includeSynapse, func(ctx context.Context) ([]common.Recommendation, error) {
+		return newSynapseClientFn(r.cred, r.subscriptionID, "").GetRecommendations(ctx, params)
+	})
 	// Savings Plans — Azure has no stable public API for SP purchase
 	// recommendations (Benefits Recommendations API is still in preview).
 	// The call returns an empty slice so the service appears in the fan-out
 	// and will start returning data once the API stabilizes without requiring
 	// a scheduler change.
-	if includeSP {
-		goService(func() {
-			spClient := newSavingsPlansClientFn(r.cred, r.subscriptionID, "")
-			spRecs, spErr = spClient.GetRecommendations(gctx, params)
-		})
-	}
-
+	spIdx := addTask(includeSP, func(ctx context.Context) ([]common.Recommendation, error) {
+		return newSavingsPlansClientFn(r.cred, r.subscriptionID, "").GetRecommendations(ctx, params)
+	})
 	// Azure Advisor adds cross-cutting cost recommendations independent of the
 	// per-service Reservation API. Failures here are non-fatal — the per-service
 	// results above are still useful on their own.
@@ -208,24 +182,34 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 	// getAdvisorRecsFn defaults to r.getAdvisorRecommendations and may be
 	// replaced per-adapter in tests to avoid real ARM network calls.
 	advisorFn := r.advisorFn()
-	goService(func() {
-		advisorRecs, advisorErr = collectAdvisorOrSkip(gctx, advisorFn, *params)
+	advisorIdx := addTask(true, func(ctx context.Context) ([]common.Recommendation, error) {
+		return collectAdvisorOrSkip(ctx, advisorFn, *params)
 	})
 
-	// Wait for all goroutines. g.Wait() always returns nil because every
-	// goroutine returns nil — errors are captured in per-service variables
-	// above. After Wait, propagate ctx cancellation so callers can distinguish
-	// "all five services completed (with possibly per-service errors)" from
-	// "the parent ctx was canceled mid-fan-out". Without this check the
-	// CHECK could swallow a deadline exceeded that the caller expected to
-	// see.
-	_ = g.Wait() //nolint:errcheck // always nil by construction, see comment above
-	if err := ctx.Err(); err != nil {
-		return nil, err
+	// CollectConcurrently isolates each service's error and returns the parent
+	// ctx error, so callers can distinguish "all services completed (with
+	// possibly per-service errors)" from "the parent ctx was canceled
+	// mid-fan-out". Without that check a deadline exceeded the caller expected
+	// to see could be swallowed.
+	outcomes, fanErr := concurrency.CollectConcurrently(ctx, concurrency.Unlimited, tasks)
+	if fanErr != nil {
+		return nil, fanErr
 	}
+	outcome := func(i int) ([]common.Recommendation, error) {
+		if i < 0 {
+			return nil, nil
+		}
+		return outcomes[i].Value, outcomes[i].Err
+	}
+	computeRecs, computeErr := outcome(computeIdx)
+	dbRecs, dbErr := outcome(dbIdx)
+	redisRecs, redisErr := outcome(redisIdx)
+	cosmosRecs, cosmosErr := outcome(cosmosIdx)
+	synapseRecs, synapseErr := outcome(synapseIdx)
+	spRecs, spErr := outcome(spIdx)
+	advisorRecs, advisorErr := outcome(advisorIdx)
 
 	consumptionRIs := slices.Concat(okRecs(computeRecs, computeErr), okRecs(dbRecs, dbErr), okRecs(redisRecs, redisErr))
-	// Priced with the parent ctx: gctx is canceled once Wait returns.
 	advisorRecs = r.priceAdvisor(ctx, dropCoveredAdvisorReservations(dropCoveredAdvisorSavingsPlans(advisorRecs, spRecs), consumptionRIs), advisorErr)
 	if err := ctx.Err(); err != nil {
 		return nil, err
