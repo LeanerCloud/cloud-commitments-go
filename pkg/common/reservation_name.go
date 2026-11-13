@@ -177,10 +177,10 @@ func normalizeReservationSegment(s string) string {
 // for 3-year. Anything else falls back to a sanitized passthrough.
 func normalizeReservationTerm(s string) string {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "1", "1yr", "1y", "p1y":
-		return "1yr"
-	case "3", "3yr", "3y", "p3y":
-		return "3yr"
+	case string(Term1Year), "1", "1y", "p1y":
+		return string(Term1Year)
+	case string(Term3Year), "3", "3y", "p3y":
+		return string(Term3Year)
 	default:
 		return normalizeReservationSegment(s)
 	}
@@ -191,11 +191,11 @@ func normalizeReservationTerm(s string) string {
 // short (≤6 chars).
 func normalizeReservationPayment(s string) string {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "all-upfront", "allupfront", "upfront":
+	case string(PaymentAllUpfront), "allupfront", "upfront":
 		return "allup"
-	case "no-upfront", "noupfront":
+	case string(PaymentNoUpfront), "noupfront":
 		return "noup"
-	case "partial-upfront", "partialupfront", "partial":
+	case string(PaymentPartialUpfront), "partialupfront", "partial":
 		return "partup"
 	case "":
 		return ""

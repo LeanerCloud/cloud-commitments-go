@@ -328,3 +328,19 @@ func TestBuildReservationName_PerServicePrefixes(t *testing.T) {
 		})
 	}
 }
+
+// Pins each typed Term and PaymentOption constant to its wire value and to
+// the short form the reservation name builder emits for it.
+func TestReservationNormalization_TypedConstants(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "1yr", string(Term1Year))
+	assert.Equal(t, "3yr", string(Term3Year))
+	assert.Equal(t, "all-upfront", string(PaymentAllUpfront))
+	assert.Equal(t, "partial-upfront", string(PaymentPartialUpfront))
+	assert.Equal(t, "no-upfront", string(PaymentNoUpfront))
+	assert.Equal(t, "1yr", normalizeReservationTerm(string(Term1Year)))
+	assert.Equal(t, "3yr", normalizeReservationTerm(string(Term3Year)))
+	assert.Equal(t, "allup", normalizeReservationPayment(string(PaymentAllUpfront)))
+	assert.Equal(t, "partup", normalizeReservationPayment(string(PaymentPartialUpfront)))
+	assert.Equal(t, "noup", normalizeReservationPayment(string(PaymentNoUpfront)))
+}
