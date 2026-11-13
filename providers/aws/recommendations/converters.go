@@ -44,18 +44,21 @@ func convertPaymentOptionE(option string) (types.PaymentOption, error) {
 	}
 }
 
+// ceTermSpellings is the set of term spellings the Cost Explorer requests accept.
+const ceTermSpellings = common.SpellCanonical | common.SpellBareYears
+
 // convertTermInYearsE converts a term string to the AWS Cost Explorer typed enum,
 // returning an error for any value not in the known set.
 // Known values: "1yr", "1", "3yr", "3".
 func convertTermInYearsE(term string) (types.TermInYears, error) {
-	switch common.Term(term) {
-	case common.Term1Year, "1":
-		return types.TermInYearsOneYear, nil
-	case common.Term3Year, "3":
-		return types.TermInYearsThreeYears, nil
-	default:
+	t, ok := common.ParseTermSpelling(term, ceTermSpellings)
+	if !ok {
 		return "", fmt.Errorf("unsupported term %q: must be one of 1yr, 1, 3yr, 3", term)
 	}
+	if t == common.Term3Year {
+		return types.TermInYearsThreeYears, nil
+	}
+	return types.TermInYearsOneYear, nil
 }
 
 // convertLookbackPeriodE converts a lookback period string to the AWS Cost Explorer
