@@ -62,8 +62,9 @@ func BuildPlan(in *PlanInput) (*LadderPlan, error) {
 	actions = append(actions, in.Result.Reshapes...)
 	actions = append(actions, in.Result.Holds...)
 	for _, a := range in.Result.Allocations {
-		if !hasPurchase(purchases, a.Layer) {
-			actions = append(actions, delayedHold(a, firstFire[a.Layer]))
+		k := keyOf(a.Layer, a.Family)
+		if !hasPurchase(purchases, k) {
+			actions = append(actions, delayedHold(a, firstFire[k]))
 		}
 	}
 
@@ -100,41 +101,59 @@ func validatePlanInput(in *PlanInput) error {
 	return nil
 }
 
-func allocationsByLayer(allocs []Allocation) (map[LayerType]Allocation, error) {
-	byLayer := make(map[LayerType]Allocation, len(allocs))
-	for _, a := range allocs {
-		if _, dup := byLayer[a.Layer]; dup {
-			return nil, fmt.Errorf("duplicate allocation for layer %s", a.Layer)
-		}
-		byLayer[a.Layer] = a
+// allocKey identifies one purchase slot: a layer, plus the instance family for
+// a family-bound layer (empty family otherwise).
+type allocKey struct {
+	Layer  LayerType
+	Family string
+}
+
+func keyOf(layer LayerType, family string) allocKey { return allocKey{Layer: layer, Family: family} }
+
+func (k allocKey) String() string {
+	if k.Family == "" {
+		return "layer " + string(k.Layer)
 	}
-	return byLayer, nil
+	return fmt.Sprintf("layer %s family %s", k.Layer, k.Family)
+}
+
+func allocationsByLayer(allocs []Allocation) (map[allocKey]Allocation, error) {
+	byKey := make(map[allocKey]Allocation, len(allocs))
+	for _, a := range allocs {
+		k := keyOf(a.Layer, a.Family)
+		if _, dup := byKey[k]; dup {
+			return nil, fmt.Errorf("duplicate allocation for %s", k)
+		}
+		byKey[k] = a
+	}
+	return byKey, nil
 }
 
 // classifyTranches turns each immediate tranche into a purchase and records
-// each layer's earliest later fire time. Orphan, overdue and bad-amount
-// tranches, and a second immediate tranche on a layer, are errors.
-func classifyTranches(now time.Time, tranches []Tranche, allocs map[LayerType]Allocation) ([]PlannedAction, map[LayerType]time.Time, error) {
+// each slot's earliest later fire time. Orphan, overdue and bad-amount
+// tranches, and a second immediate tranche on a slot, are errors.
+func classifyTranches(now time.Time, tranches []Tranche, allocs map[allocKey]Allocation) ([]PlannedAction, map[allocKey]time.Time, error) {
 	var purchases []PlannedAction
-	firstFire := make(map[LayerType]time.Time)
+	firstFire := make(map[allocKey]time.Time)
 	for i := range tranches {
 		tr := &tranches[i]
-		alloc, ok := allocs[tr.Layer]
+		k := keyOf(tr.Layer, tr.Family)
+		alloc, ok := allocs[k]
 		if !ok {
-			return nil, nil, fmt.Errorf("tranche %q: no allocation for layer %s", tr.ID, tr.Layer)
+			return nil, nil, fmt.Errorf("tranche %q: no allocation for %s", tr.ID, k)
 		}
 		switch {
 		case tr.FireAfter.Before(now):
 			return nil, nil, fmt.Errorf("tranche %q is overdue: fire_after %s is before now %s",
 				tr.ID, tr.FireAfter.UTC().Format(time.RFC3339), now.UTC().Format(time.RFC3339))
 		case tr.FireAfter.After(now):
-			if first, seen := firstFire[tr.Layer]; !seen || tr.FireAfter.Before(first) {
-				firstFire[tr.Layer] = tr.FireAfter
+			if first, seen := firstFire[k]; !seen || tr.FireAfter.Before(first) {
+				firstFire[k] = tr.FireAfter
 			}
 			continue
 		}
-		if hasPurchase(purchases, tr.Layer) {
-			return nil, nil, fmt.Errorf("layer %s has two immediate tranches", tr.Layer)
+		if hasPurchase(purchases, k) {
+			return nil, nil, fmt.Errorf("%s has two immediate tranches", k)
 		}
 		amount, ok := new(big.Rat).SetString(tr.AmountUSDPerHour)
 		if !ok || amount.Sign() <= 0 {
@@ -143,6 +162,7 @@ func classifyTranches(now time.Time, tranches []Tranche, allocs map[LayerType]Al
 		purchases = append(purchases, PlannedAction{
 			Action:           ActionPurchase,
 			Layer:            tr.Layer,
+			Family:           tr.Family,
 			AmountUSDPerHour: amount,
 			Term:             tr.Term,
 			PaymentOption:    tr.PaymentOption,
@@ -153,8 +173,8 @@ func classifyTranches(now time.Time, tranches []Tranche, allocs map[LayerType]Al
 	return purchases, firstFire, nil
 }
 
-func hasPurchase(purchases []PlannedAction, layer LayerType) bool {
-	return slices.ContainsFunc(purchases, func(p PlannedAction) bool { return p.Layer == layer })
+func hasPurchase(purchases []PlannedAction, k allocKey) bool {
+	return slices.ContainsFunc(purchases, func(p PlannedAction) bool { return keyOf(p.Layer, p.Family) == k })
 }
 
 func delayedHold(a Allocation, first time.Time) PlannedAction {
@@ -165,6 +185,7 @@ func delayedHold(a Allocation, first time.Time) PlannedAction {
 	return PlannedAction{
 		Action:      ActionHold,
 		Layer:       a.Layer,
+		Family:      a.Family,
 		Rationale:   fmt.Sprintf("%s; no immediate purchase: %s", a.Rationale, when),
 		DataSources: slices.Clone(a.DataSources),
 	}

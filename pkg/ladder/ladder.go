@@ -155,12 +155,12 @@ func validateTrancheIDs(tranches []Tranche) error {
 	for i := range tranches {
 		tr := &tranches[i]
 		if tr.ID == "" {
-			return fmt.Errorf("tranche[%d] (layer %s, step %d): NewID returned an empty ID", i, tr.Layer, tr.StepIndex)
+			return fmt.Errorf("tranche[%d] (%s, step %d): NewID returned an empty ID", i, keyOf(tr.Layer, tr.Family), tr.StepIndex)
 		}
 		if _, dup := seen[tr.ID]; dup {
 			return fmt.Errorf(
-				"tranche[%d] (layer %s, step %d): NewID returned duplicate ID %q; upsert-by-ID would silently drop a scheduled purchase",
-				i, tr.Layer, tr.StepIndex, tr.ID)
+				"tranche[%d] (%s, step %d): NewID returned duplicate ID %q; upsert-by-ID would silently drop a scheduled purchase",
+				i, keyOf(tr.Layer, tr.Family), tr.StepIndex, tr.ID)
 		}
 		seen[tr.ID] = struct{}{}
 	}
@@ -263,12 +263,13 @@ func buildTranche(in *TrancheInput, alloc Allocation, step RampStep, stepIdx int
 		FireAfter:        in.Now.AddDate(0, 0, step.AfterDays),
 		AmountUSDPerHour: amount.RatString(),
 		Layer:            alloc.Layer,
+		Family:           alloc.Family,
 		Term:             in.Term,
 		PaymentOption:    in.PaymentOption,
 		CommitmentRate:   alloc.Rate.RatString(),
 	}
 	if err := tr.Validate(); err != nil {
-		return Tranche{}, fmt.Errorf("tranche (layer %s, step %d): %w", alloc.Layer, stepIdx, err)
+		return Tranche{}, fmt.Errorf("tranche (%s, step %d): %w", keyOf(alloc.Layer, alloc.Family), stepIdx, err)
 	}
 	return tr, nil
 }

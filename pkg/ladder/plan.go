@@ -16,6 +16,9 @@ import (
 type PlannedAction struct {
 	Action ActionType
 	Layer  LayerType
+	// Family is the instance family a purchase is bound to; set only for
+	// LayerEC2InstanceSP, empty otherwise.
+	Family string
 	// AmountUSDPerHour is the hourly commitment delta in commitment USD/hr
 	// (not on-demand-equivalent). It must be non-nil and
 	// positive for ActionPurchase, and must be nil for ActionHold and
@@ -49,6 +52,9 @@ func (a *PlannedAction) Validate() error {
 	}
 	if err := a.Layer.Validate(); err != nil {
 		return fmt.Errorf("layer: %w", err)
+	}
+	if err := validateFamilyForLayer(a.Family, a.Layer); err != nil {
+		return err
 	}
 	if a.Rationale == "" {
 		return fmt.Errorf("rationale is required (money-path auditability)")
@@ -123,8 +129,8 @@ func (p *LadderPlan) Validate() error {
 	if p.GeneratedAt.IsZero() {
 		return fmt.Errorf("generated_at must be set")
 	}
-	for i, a := range p.Actions {
-		if err := a.Validate(); err != nil {
+	for i := range p.Actions {
+		if err := p.Actions[i].Validate(); err != nil {
 			return fmt.Errorf("action[%d]: %w", i, err)
 		}
 	}
@@ -190,16 +196,17 @@ func (p *LadderPlan) Explain() string {
 	}
 
 	fmt.Fprintf(&b, "Actions (%d):\n", len(p.Actions))
-	for i, a := range p.Actions {
+	for i := range p.Actions {
+		a := &p.Actions[i]
 		switch a.Action {
 		case ActionPurchase:
 			fmt.Fprintf(&b, "  %d. %s %s %s term=%s payment=%s -- %s\n",
-				i+1, a.Action, a.Layer, formatUSDPerHour(a.AmountUSDPerHour),
+				i+1, a.Action, a.layerLabel(), formatUSDPerHour(a.AmountUSDPerHour),
 				sanitizeLine(string(a.Term)), sanitizeLine(string(a.PaymentOption)),
 				sanitizeLine(a.Rationale))
 		default:
 			fmt.Fprintf(&b, "  %d. %s %s -- %s\n",
-				i+1, a.Action, a.Layer, sanitizeLine(a.Rationale))
+				i+1, a.Action, a.layerLabel(), sanitizeLine(a.Rationale))
 		}
 	}
 	if sources := collectDataSources(p.Actions); len(sources) > 0 {
@@ -208,14 +215,23 @@ func (p *LadderPlan) Explain() string {
 	return b.String()
 }
 
+// layerLabel is the layer, suffixed with the instance family for a
+// family-bound action, so two family rows on one layer render differently.
+func (a *PlannedAction) layerLabel() string {
+	if a.Family == "" {
+		return string(a.Layer)
+	}
+	return string(a.Layer) + "/" + sanitizeLine(a.Family)
+}
+
 // collectDataSources aggregates the DataSources of all actions, sanitized
 // and deduplicated, preserving first-seen stored order so the output stays
 // deterministic for a given plan.
 func collectDataSources(actions []PlannedAction) []string {
 	var sources []string
 	seen := make(map[string]bool)
-	for _, a := range actions {
-		for _, s := range a.DataSources {
+	for i := range actions {
+		for _, s := range actions[i].DataSources {
 			s = sanitizeLine(s)
 			if seen[s] {
 				continue

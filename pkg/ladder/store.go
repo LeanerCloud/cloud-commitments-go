@@ -190,6 +190,10 @@ type Tranche struct {
 	// Required so a fired tranche is executable without consulting the parent
 	// run's plan.
 	Layer LayerType
+	// Family is the instance family the purchase is bound to; set only for
+	// LayerEC2InstanceSP, empty otherwise. The executor must copy it to the
+	// provider purchase request (an EC2 Instance Savings Plan is family bound).
+	Family string
 	// Term is the commitment term for the purchase (Term1Year or Term3Year).
 	// Must pass Term.Validate: an unset or unknown term would silently
 	// default at the provider boundary (money-shaping field, same rule as
@@ -252,6 +256,9 @@ func (t *Tranche) validateExecutionFields() error {
 	if err := t.Layer.Validate(); err != nil {
 		return fmt.Errorf("layer: %w", err)
 	}
+	if err := validateFamilyForLayer(t.Family, t.Layer); err != nil {
+		return err
+	}
 	if err := t.validateAmountUSDPerHour(); err != nil {
 		return err
 	}
@@ -262,6 +269,15 @@ func (t *Tranche) validateExecutionFields() error {
 		return fmt.Errorf("payment_option: %w", err)
 	}
 	return t.validateCommitmentRate()
+}
+
+// validateFamilyForLayer rejects a family on any layer that is not family
+// bound: only an EC2 Instance Savings Plan is bought per instance family.
+func validateFamilyForLayer(family string, layer LayerType) error {
+	if family != "" && layer != LayerEC2InstanceSP {
+		return fmt.Errorf("family %q is only valid on layer %s, got layer %s", family, LayerEC2InstanceSP, layer)
+	}
+	return nil
 }
 
 // validateCommitmentRate accepts an empty rate (legacy rows) and otherwise
