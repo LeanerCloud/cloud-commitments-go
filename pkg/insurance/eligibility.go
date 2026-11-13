@@ -43,7 +43,13 @@ type supportRow struct {
 // OfferComparisonEntry schema and said so in the row's Evidence. A type with no
 // row is unknown: do not extend this from marketing lists or by analogy, and
 // add a row only with a quoted cell from a page a reviewer can open.
-// Page: Supported Reservable Services, "Last verified: 17 September 2026".
+// Page: Supported Reservable Services, "Last verified: 17 September 2026"
+// (re-read 13 November 2026, page date unchanged). The page also lists Guaranteed
+// terms for RDS, ElastiCache, MemoryDB, OpenSearch, Redshift, EC2 Instance and
+// other Savings Plans, Azure and GCP rows, but no official source (the API
+// schema at api.archera.ai/openapi.json, docs or a recorded response) gives
+// their commitment_type strings; the only provider/product-form examples in the schema are "aws/AmazonEC2",
+// "aws/savingsplan/Compute" and "azure/Virtual Machines". Those stay unknown.
 var supportTable = []supportRow{
 	{common.ProviderAWS, "aws/AmazonEC2", ProductSupportSupported, supportedServicesURL,
 		`AWS Reserved Instances table, service "EC2": Guaranteed terms "30 day, 1 year". ` +

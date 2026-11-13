@@ -38,6 +38,12 @@ func TestAssessProductSupport_UnknownByDefault(t *testing.T) {
 		{"", "aws/AmazonEC2"},
 		{common.ProviderAWS, "aws/amazonec2"}, // exact match only
 		{common.ProviderAWS, "aws/AmazonEC2X"},
+		{common.ProviderAWS, "xaws/AmazonEC2"},
+		{common.ProviderAWS, "AWS/AmazonEC2"},
+		{common.ProviderAWS, " aws/AmazonEC2"},
+		{common.ProviderAWS, "aws/savingsplan/compute"},
+		{common.ProviderAWS, "aws/savingsplan/Compute "},
+		{common.ProviderAWS, "aws/savingsplan"},
 		{common.ProviderAWS, "aws/savingsplan/ComputeAnything"},
 		{common.ProviderAzure, "azure/Virtual Machines"}, // ambiguous page rows: deliberately unknown
 	} {
