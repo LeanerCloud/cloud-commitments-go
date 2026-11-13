@@ -5,6 +5,7 @@ import (
 	"math"
 	"math/big"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -84,7 +85,11 @@ type AllocationInput struct {
 // tranche logic (BuildTranches) converts Allocations into time-indexed
 // purchase tranches.
 type Allocation struct {
-	Layer         LayerType
+	Layer LayerType
+	// Family is the instance family a family-bound commitment is bought for
+	// (EC2 Instance Savings Plan). Empty means the allocation is not family
+	// bound, which is every layer other than LayerEC2InstanceSP.
+	Family        string
 	GapUSDPerHour *big.Rat
 	// OnDemandEquivalentUSDPerHour is the on-demand-priced usage this
 	// commitment covers; the unit of target/existing/gap in plan displays.
@@ -578,8 +583,8 @@ func holdReshapedBufferAllocations(allocs []Allocation, reshapes []PlannedAction
 		bufferOnly[ls.Type] = slices.Contains(ls.Roles, RoleBuffer) && !slices.Contains(ls.Roles, RoleBase)
 	}
 	reshaped := make(map[LayerType]bool, len(reshapes))
-	for _, r := range reshapes {
-		reshaped[r.Layer] = bufferOnly[r.Layer]
+	for i := range reshapes {
+		reshaped[reshapes[i].Layer] = bufferOnly[reshapes[i].Layer]
 	}
 	var kept []Allocation
 	var holds []PlannedAction
@@ -612,8 +617,9 @@ func dropSubMinimumAllocations(allocs []Allocation, dataSources []string) ([]All
 			holds = append(holds, PlannedAction{
 				Action: ActionHold,
 				Layer:  a.Layer,
-				Rationale: fmt.Sprintf("allocation of %s on layer %s is below minimum allocatable amount; skipped (minimum %s)",
-					fmtRatUSD(a.GapUSDPerHour), a.Layer, fmtRatUSD(minGap)),
+				Family: a.Family,
+				Rationale: fmt.Sprintf("allocation of %s on %s is below minimum allocatable amount; skipped (minimum %s)",
+					fmtRatUSD(a.GapUSDPerHour), keyOf(a.Layer, a.Family), fmtRatUSD(minGap)),
 				DataSources: dataSources,
 			})
 			continue
@@ -690,7 +696,8 @@ func truncateReshapes(reshapes []PlannedAction, maxActions int, layerStates map[
 		return 0
 	})
 	holds = make([]PlannedAction, 0, len(sorted)-maxActions)
-	for _, r := range sorted[maxActions:] {
+	for i := range sorted[maxActions:] {
+		r := &sorted[maxActions+i]
 		holds = append(holds, PlannedAction{
 			Action:      ActionHold,
 			Layer:       r.Layer,
@@ -713,23 +720,24 @@ func truncatePurchases(allocs []Allocation, purchaseCap, maxActions int, dataSou
 		if cmp != 0 {
 			return cmp
 		}
-		// Stable tie-break by layer name.
+		// Stable tie-break by layer name, then family.
 		if a.Layer < b.Layer {
 			return -1
 		}
 		if a.Layer > b.Layer {
 			return 1
 		}
-		return 0
+		return strings.Compare(a.Family, b.Family)
 	})
 	holds := make([]PlannedAction, 0, len(sorted)-purchaseCap)
 	for _, a := range sorted[purchaseCap:] {
 		holds = append(holds, PlannedAction{
 			Action: ActionHold,
 			Layer:  a.Layer,
+			Family: a.Family,
 			Rationale: fmt.Sprintf(
 				"deferred to a later run: max_actions_per_run=%d reached (dropped %s on %s)",
-				maxActions, fmtRatUSD(a.GapUSDPerHour), a.Layer,
+				maxActions, fmtRatUSD(a.GapUSDPerHour), keyOf(a.Layer, a.Family),
 			),
 			DataSources: dataSources,
 		})
@@ -934,6 +942,7 @@ func applyCapGuardrail(allocs []Allocation, maxPerRun *float64) ([]Allocation, e
 		scaledGap := new(big.Rat).Mul(a.GapUSDPerHour, scale)
 		scaled[i] = Allocation{
 			Layer:                        a.Layer,
+			Family:                       a.Family,
 			GapUSDPerHour:                scaledGap,
 			OnDemandEquivalentUSDPerHour: new(big.Rat).Mul(a.OnDemandEquivalentUSDPerHour, scale),
 			Rate:                         a.Rate,

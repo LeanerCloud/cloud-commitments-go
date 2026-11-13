@@ -39,8 +39,8 @@ func (p *LadderPlan) checkHourlyCap(maxPerRun *float64) error {
 		return err
 	}
 	total := new(big.Rat)
-	for _, a := range p.Actions {
-		if a.Action == ActionPurchase {
+	for i := range p.Actions {
+		if a := &p.Actions[i]; a.Action == ActionPurchase {
 			total.Add(total, a.AmountUSDPerHour)
 		}
 	}
@@ -53,8 +53,8 @@ func (p *LadderPlan) checkHourlyCap(maxPerRun *float64) error {
 
 func (p *LadderPlan) checkActionCap(maxActions int) error {
 	money := 0
-	for _, a := range p.Actions {
-		if a.Action == ActionPurchase || a.Action == ActionReshape {
+	for i := range p.Actions {
+		if a := &p.Actions[i]; a.Action == ActionPurchase || a.Action == ActionReshape {
 			money++
 		}
 	}

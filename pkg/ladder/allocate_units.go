@@ -104,6 +104,7 @@ func convertAllocations(allocs []Allocation, rates map[LayerType]*big.Rat, dataS
 			holds = append(holds, PlannedAction{
 				Action: ActionHold,
 				Layer:  a.Layer,
+				Family: a.Family,
 				Rationale: fmt.Sprintf("no commitment rate for layer %s: skipped %s on-demand-equivalent (never assumed 1:1)",
 					a.Layer, fmtRatUSD(a.OnDemandEquivalentUSDPerHour)),
 				DataSources: dataSources,
