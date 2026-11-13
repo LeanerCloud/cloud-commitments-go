@@ -2,7 +2,6 @@ package skumatch
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
@@ -13,11 +12,9 @@ import (
 // "3yr", "3", "36mo" for three. Anything else is an error: guessing a term
 // would price the wrong commitment.
 func TermYears(term string) (int, error) {
-	switch common.Term(strings.ToLower(strings.TrimSpace(term))) {
-	case "", common.Term1Year, "1", "12mo":
-		return 1, nil
-	case common.Term3Year, "3", "36mo":
-		return 3, nil
+	t, ok := common.ParseTermSpelling(term, common.SpellCanonical|common.SpellBareYears|common.SpellMonths|common.SpellEmptyIsOneYear|common.SpellFold)
+	if !ok {
+		return 0, fmt.Errorf("unsupported commitment term %q, want 1yr or 3yr", term)
 	}
-	return 0, fmt.Errorf("unsupported commitment term %q, want 1yr or 3yr", term)
+	return t.Years(), nil
 }
