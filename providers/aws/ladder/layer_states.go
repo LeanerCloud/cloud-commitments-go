@@ -327,6 +327,13 @@ func utilsForConvertibleRIs(utils []recommendations.RIUtilization, ris []ec2svc.
 			filtered = append(filtered, u)
 		}
 	}
+	// CE keys utilization by SUBSCRIPTION_ID while ris carry the EC2
+	// ReservedInstancesId; if the vocabularies differ every entry is dropped
+	// and utilization silently reads as unmeasured.
+	if len(filtered) == 0 && len(utils) > 0 && len(ids) > 0 {
+		log.Printf("WARNING: AWSLadder: none of %d CE utilization entries matched the %d convertible RI IDs; CE data lag, or CE SUBSCRIPTION_ID keys differ from EC2 ReservedInstancesId",
+			len(utils), len(ids))
+	}
 	return filtered
 }
 
