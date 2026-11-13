@@ -52,6 +52,15 @@ Caller-specific behavior is documented in the CLI, MCP server, and self-hosted
 platform components. Those destination repositories are intended but not yet
 published; do not treat this library as providing their purchase controls.
 
+## AWS default values
+
+These defaults apply when a caller leaves the value unset. They are kept as they are and listed here so callers can override them.
+
+| Default | Value | Where | Effect |
+| --- | --- | --- | --- |
+| Coverage and utilization lookback | 30 days | `providers/aws/recommendations/coverage.go:242-243` (`coverageWindow`), `providers/aws/recommendations/utilization.go:41-42`, `providers/aws/ladder/ladder.go:19` (`DefaultLookbackDays`) | A non-positive `lookbackDays` passed to `GetRICoverageMap` or `GetRIUtilization` is replaced with 30. The ladder uses 30 when `Config.LookbackDays` is zero. Pass an explicit window to size from a different history. |
+| MemoryDB reserved-node engine | `redis` | `providers/aws/services/memorydb/client.go:329` (`ReservedNodeEngine`), used at `providers/aws/recommendations/parser_services.go:260` | Every MemoryDB recommendation is labelled `redis`, including Valkey clusters. The MemoryDB purchase path does not filter on engine, so the label affects display, pool keys and duplicate detection only. |
+
 ## About
 
 Built by [LeanerCloud](https://leanercloud.com), a group of AWS cost
