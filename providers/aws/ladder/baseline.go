@@ -114,18 +114,19 @@ func (a *AWSLadder) GetUsageBaseline(ctx context.Context, scope ladder.Scope, lo
 		return ladder.UsageBaseline{}, fmt.Errorf("GetUsageBaseline: %w", vErr)
 	}
 
-	lowWater, stable, err := a.baselineStats(ctx, series, percentile, lookbackDays, today)
+	lowWater, stable, split, err := a.baselineStats(ctx, series, percentile, lookbackDays, today)
 	if err != nil {
 		return ladder.UsageBaseline{}, err
 	}
 
 	return ladder.UsageBaseline{
-		LowWaterUSDPerHour: ptr(lowWater),
-		StableUSDPerHour:   stable,
-		Basis:              ladder.BaselineBasisResidual,
-		Series:             series,
-		LookbackDays:       lookbackDays,
-		Percentile:         percentile,
+		LowWaterUSDPerHour:       ptr(lowWater),
+		StableUSDPerHour:         stable,
+		StableUSDPerHourByFamily: split,
+		Basis:                    ladder.BaselineBasisResidual,
+		Series:                   series,
+		LookbackDays:             lookbackDays,
+		Percentile:               percentile,
 	}, nil
 }
 
@@ -298,57 +299,60 @@ func nearestRankPercentile(data []float64, p float64) (float64, error) {
 }
 
 // baselineStats derives the low-water mark and, when a buffer fraction was
-// configured, the stable estimate. Errors are returned fully prefixed. It is
-// split out so GetUsageBaseline stays within the cyclomatic-complexity limit.
-func (a *AWSLadder) baselineStats(ctx context.Context, series []float64, percentile float64, lookbackDays int, today time.Time) (lowWater float64, stable *float64, err error) {
+// configured, the stable estimate and its per-family split (nil unless the family
+// path produced one). Errors are returned fully prefixed. It is split out so
+// GetUsageBaseline stays within the cyclomatic-complexity limit.
+func (a *AWSLadder) baselineStats(ctx context.Context, series []float64, percentile float64, lookbackDays int, today time.Time) (lowWater float64, stable *float64, split map[string]float64, err error) {
 	lowWater, err = nearestRankPercentile(series, percentile)
 	if err != nil {
-		return 0, nil, fmt.Errorf("GetUsageBaseline: percentile computation failed: %w", err)
+		return 0, nil, nil, fmt.Errorf("GetUsageBaseline: percentile computation failed: %w", err)
 	}
 	if a.bufferFraction == nil {
-		return lowWater, nil, nil
+		return lowWater, nil, nil, nil
 	}
 	stable, err = estimateStableUSDPerHour(series, lowWater, *a.bufferFraction)
 	if err != nil {
-		return 0, nil, fmt.Errorf("GetUsageBaseline: stable usage estimate: %w", err)
+		return 0, nil, nil, fmt.Errorf("GetUsageBaseline: stable usage estimate: %w", err)
 	}
 	if a.family != nil {
-		stable, err = a.familyStable(ctx, lookbackDays, today, stable)
+		stable, split, err = a.familyStable(ctx, lookbackDays, today, stable)
 		if err != nil {
-			return 0, nil, err
+			return 0, nil, nil, err
 		}
 	}
-	return lowWater, stable, nil
+	return lowWater, stable, split, nil
 }
 
-// familyStable replaces the flat stable estimate with the per-family one. A nil
-// flat estimate stays nil without a family fetch. A family fetch error logs a
-// warning and keeps the flat estimate, so base-layer availability is unchanged.
-// Family series get the same freshness checks as the flat series.
-func (a *AWSLadder) familyStable(ctx context.Context, lookbackDays int, today time.Time, flat *float64) (*float64, error) {
+// familyStable replaces the flat stable estimate with the per-family one and
+// returns the per-family split of it. A nil flat estimate stays nil without a
+// family fetch. A family fetch error, or no family data, leaves no stable base
+// (nil): a family-bound commitment is never sized without a family. Family
+// series get the same freshness checks as the flat series.
+func (a *AWSLadder) familyStable(ctx context.Context, lookbackDays int, today time.Time, flat *float64) (stable *float64, split map[string]float64, err error) {
 	if flat == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	fams, err := a.family.GetOnDemandFamilySeries(ctx, a.cfg.Region, lookbackDays)
 	if err != nil {
-		// Keep base-layer availability: a family fetch failure falls back to the
-		// flat estimate, loudly, instead of failing the whole baseline.
-		log.Printf("WARNING: AWSLadder GetUsageBaseline: family stable degraded to flat estimate (source=GetOnDemandFamilySeries, region=%s): %v", a.cfg.Region, err)
-		return flat, nil
+		// An EC2 Instance SP is bound to one family, so without a family
+		// split there is no stable base: the base layer is withheld (the gap
+		// routes to flex), loudly, instead of failing the whole baseline.
+		log.Printf("WARNING: AWSLadder GetUsageBaseline: no stable base without family data (source=GetOnDemandFamilySeries, region=%s): %v", a.cfg.Region, err)
+		return nil, nil, nil
 	}
 	values := make(map[string][]float64, len(fams))
 	for family, points := range fams {
 		if len(points) == 0 {
-			return nil, fmt.Errorf("GetUsageBaseline: family %s: series is empty", family)
+			return nil, nil, fmt.Errorf("GetUsageBaseline: family %s: series is empty", family)
 		}
 		if fErr := validateSeriesFreshness(points, today); fErr != nil {
-			return nil, fmt.Errorf("GetUsageBaseline: family %s: %w", family, fErr)
+			return nil, nil, fmt.Errorf("GetUsageBaseline: family %s: %w", family, fErr)
 		}
 		values[family] = extractValues(points)
 	}
-	stable, err := familyStableUSDPerHour(values, flat, *a.bufferFraction)
+	stable, split, err = familyStableSplit(values, flat, *a.bufferFraction)
 	if err != nil {
-		return nil, fmt.Errorf("GetUsageBaseline: family stable estimate: %w", err)
+		return nil, nil, fmt.Errorf("GetUsageBaseline: family stable estimate: %w", err)
 	}
-	return stable, nil
+	return stable, split, nil
 }

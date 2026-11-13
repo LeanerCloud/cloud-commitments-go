@@ -1,9 +1,12 @@
 package ladder
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log"
 	"math/rand/v2"
+	"os"
 	"testing"
 	"time"
 
@@ -40,7 +43,7 @@ func TestFamilyStable_NeverExceedsSumOfFamilyMinimums(t *testing.T) {
 			families[string(rune('a'+i))] = series
 			sumMin += minOf(series) * (1 - f)
 		}
-		got, err := familyStableUSDPerHour(families, flat, f)
+		got, _, err := familyStableSplit(families, flat, f)
 		require.NoError(t, err)
 		require.NotNil(t, got)
 		assert.LessOrEqual(t, *got, sumMin+1e-9, "iteration %d: estimate exceeds sum of family minima", iter)
@@ -51,7 +54,7 @@ func TestFamilyStable_NeverExceedsSumOfFamilyMinimums(t *testing.T) {
 // TestFamilyStable_CappedByFlat: when the flat estimate is smaller, it wins.
 func TestFamilyStable_CappedByFlat(t *testing.T) {
 	families := map[string][]float64{"m5": steadySeries(10, 14), "c5": steadySeries(4, 14)}
-	got, err := familyStableUSDPerHour(families, ptr(2.0), 0.1)
+	got, _, err := familyStableSplit(families, ptr(2.0), 0.1)
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	assert.InDelta(t, 2.0, *got, 1e-9)
@@ -72,7 +75,7 @@ func steadySeries(v float64, n int) []float64 {
 func TestFamilyStable_VolatileFamilyContributesNothing(t *testing.T) {
 	volatile := append([]float64{1, 1, 1, 1, 1}, steadySeries(100, 9)...)
 	families := map[string][]float64{"m5": steadySeries(10, 14), "c5": volatile}
-	got, err := familyStableUSDPerHour(families, ptr(1e9), 0.1)
+	got, _, err := familyStableSplit(families, ptr(1e9), 0.1)
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	assert.InDelta(t, 9.0, *got, 1e-9, "10 * 0.9 from the steady family only")
@@ -82,7 +85,7 @@ func TestFamilyStable_VolatileFamilyContributesNothing(t *testing.T) {
 // minimum-length gate and adds nothing.
 func TestFamilyStable_ShortFamilyContributesNothing(t *testing.T) {
 	families := map[string][]float64{"m5": steadySeries(10, 14), "c5": steadySeries(4, 13)}
-	got, err := familyStableUSDPerHour(families, ptr(1e9), 0.1)
+	got, _, err := familyStableSplit(families, ptr(1e9), 0.1)
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	assert.InDelta(t, 9.0, *got, 1e-9, "10 * 0.9 from the steady family only")
@@ -93,7 +96,7 @@ func TestFamilyStable_ShortFamilyContributesNothing(t *testing.T) {
 func TestFamilyStable_AllFamiliesFailGateReturnsNil(t *testing.T) {
 	volatile := append([]float64{1, 1, 1, 1, 1}, steadySeries(100, 9)...)
 	families := map[string][]float64{"c5": volatile, "m5": steadySeries(4, 13)}
-	got, err := familyStableUSDPerHour(families, ptr(5.0), 0.1)
+	got, _, err := familyStableSplit(families, ptr(5.0), 0.1)
 	require.NoError(t, err)
 	assert.Nil(t, got)
 }
@@ -104,26 +107,25 @@ func TestFamilyStable_AllFamiliesFailGateReturnsNil(t *testing.T) {
 func TestFamilyStable_GateBoundaryPasses(t *testing.T) {
 	boundary := append([]float64{5, 5}, steadySeries(10, 12)...)
 	families := map[string][]float64{"m5": steadySeries(10, 14), "c5": boundary}
-	got, err := familyStableUSDPerHour(families, ptr(1e9), 0.1)
+	got, _, err := familyStableSplit(families, ptr(1e9), 0.1)
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	assert.InDelta(t, 13.5, *got, 1e-9)
 }
 
-// TestFamilyStable_NoFamilyDataUsesFlat: no family rows means the caller keeps
-// the non-family estimate, returned as the same value.
-func TestFamilyStable_NoFamilyDataUsesFlat(t *testing.T) {
-	flat := ptr(7.5)
-	got, err := familyStableUSDPerHour(map[string][]float64{}, flat, 0.1)
+// TestFamilyStable_NoFamilyDataHasNoBase: no family rows means no family-bound
+// base, even when the flat estimate exists.
+func TestFamilyStable_NoFamilyDataHasNoBase(t *testing.T) {
+	got, _, err := familyStableSplit(map[string][]float64{}, ptr(7.5), 0.1)
 	require.NoError(t, err)
-	assert.Equal(t, flat, got)
+	assert.Nil(t, got)
 }
 
 // TestFamilyStable_NilFlatStaysNil: a volatile or short flat series keeps the
 // base layer off; per-family data cannot switch it on.
 func TestFamilyStable_NilFlatStaysNil(t *testing.T) {
 	families := map[string][]float64{"m5": steadySeries(10, 14), "c5": steadySeries(4, 14)}
-	got, err := familyStableUSDPerHour(families, nil, 0.1)
+	got, _, err := familyStableSplit(families, nil, 0.1)
 	require.NoError(t, err)
 	assert.Nil(t, got)
 }
@@ -139,7 +141,7 @@ func TestFamilyStable_SingleFamilyMatchesFlat(t *testing.T) {
 	lowWater := nearestRank(t, series, p)
 	flat, err := estimateStableUSDPerHour(series, lowWater, f)
 	require.NoError(t, err)
-	got, err := familyStableUSDPerHour(map[string][]float64{"m5": series}, flat, f)
+	got, _, err := familyStableSplit(map[string][]float64{"m5": series}, flat, f)
 	require.NoError(t, err)
 	assert.Equal(t, flat, got)
 }
@@ -155,14 +157,14 @@ func TestFamilyStable_RejectsBadFamilySeries(t *testing.T) {
 	}
 	for name, fams := range cases {
 		t.Run(name, func(t *testing.T) {
-			_, err := familyStableUSDPerHour(fams, flat, 0.1)
+			_, _, err := familyStableSplit(fams, flat, 0.1)
 			require.Error(t, err)
 		})
 	}
 }
 
 // TestGetUsageBaseline_FamilyPathSetsStable: the family path replaces the flat
-// stable value end to end, and a family fetch error falls back to flat.
+// stable value end to end, and a family fetch error withholds the base.
 func TestGetUsageBaseline_FamilyPathSetsStable(t *testing.T) {
 	const days = 30
 	yesterday := utcDay(time.Now()).AddDate(0, 0, -1)
@@ -197,6 +199,11 @@ func TestGetUsageBaseline_FamilyPathSetsStable(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, bl.StableUSDPerHour)
 	assert.InDelta(t, 4.5, *bl.StableUSDPerHour, 1e-9, "(1 + 4) * 0.9, below flat 8.1")
+	// m5 contributes 0.9 and c5 3.6. Their total 4.5 is below flat 8.1, so the
+	// base is not scaled and the shares are those contributions.
+	require.Len(t, bl.StableUSDPerHourByFamily, 2)
+	assert.InDelta(t, 0.9, bl.StableUSDPerHourByFamily["m5"], 1e-9)
+	assert.InDelta(t, 3.6, bl.StableUSDPerHourByFamily["c5"], 1e-9)
 
 	a.family = nil
 	flatOnly, err := a.GetUsageBaseline(context.Background(), testScope(), days, 5)
@@ -204,10 +211,15 @@ func TestGetUsageBaseline_FamilyPathSetsStable(t *testing.T) {
 	require.NotNil(t, flatOnly.StableUSDPerHour)
 
 	a.family = &fakeFamilySource{err: errors.New("ce down")}
+	var logs bytes.Buffer
+	log.SetOutput(&logs)
+	defer log.SetOutput(os.Stderr)
 	bl, err = a.GetUsageBaseline(context.Background(), testScope(), days, 5)
+	assert.Contains(t, logs.String(), "WARNING")
+	assert.Contains(t, logs.String(), "GetOnDemandFamilySeries")
 	require.NoError(t, err, "a family fetch error must not fail the baseline")
-	require.NotNil(t, bl.StableUSDPerHour)
-	assert.InDelta(t, *flatOnly.StableUSDPerHour, *bl.StableUSDPerHour, 1e-9, "fetch error falls back to the flat estimate")
+	assert.Nil(t, bl.StableUSDPerHour, "no family data means no family-bound base")
+	assert.Nil(t, bl.StableUSDPerHourByFamily)
 }
 
 func minOf(v []float64) float64 {

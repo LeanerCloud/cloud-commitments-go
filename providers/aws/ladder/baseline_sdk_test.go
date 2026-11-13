@@ -76,6 +76,13 @@ func TestScopedBaselineParentCompatible(t *testing.T) {
 						rows[i].Total["UnblendedCost"] = types.MetricValue{Amount: aws.String("2400")}
 					}
 				}
+				if len(in.GroupBy) > 0 {
+					// The family fetch groups by INSTANCE_TYPE: one m5 family
+					// carrying the same spend as the region total.
+					for i := range rows {
+						rows[i].Groups = []types.Group{{Keys: []string{"m5.large"}, Metrics: rows[i].Total}}
+					}
+				}
 				if mode == "provider-error" {
 					w.WriteHeader(http.StatusBadRequest)
 					return
@@ -128,6 +135,7 @@ func TestScopedBaselineParentCompatible(t *testing.T) {
 				require.NoError(t, err)
 				require.NotNil(t, bl.StableUSDPerHour)
 				assert.InDelta(t, 1.8, *bl.StableUSDPerHour, 1e-9)
+				assert.Equal(t, map[string]float64{"m5": *bl.StableUSDPerHour}, bl.StableUSDPerHourByFamily)
 			}
 		})
 	}

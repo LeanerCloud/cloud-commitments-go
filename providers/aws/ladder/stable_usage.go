@@ -91,44 +91,64 @@ func estimateStableUSDPerHour(series []float64, lowWater, bufferFraction float64
 	return ptr(v), nil
 }
 
-// familyStableUSDPerHour sizes the base layer per instance family. With two or
-// more families it returns min(flat, sum over families of minimum observed
-// usage * (1 - bufferFraction)), counting only families that pass the same
-// stable gate as the flat series. A family that fails the gate (volatile or too
-// short) contributes nothing, so it can only lower the estimate. With zero or
-// one family the family series is the flat series (or absent), so the flat
-// estimate stands unchanged. A nil flat estimate stays nil. Family series are
-// validated (fail loud) only on the two-or-more path; a family fetch error is
-// handled by the caller, not here.
-func familyStableUSDPerHour(families map[string][]float64, flat *float64, bufferFraction float64) (*float64, error) {
-	if len(families) < 2 {
-		return flat, nil
+// familyStableSplit sizes the base layer per instance family. With two or more
+// families the base is min(flat, sum over families of minimum observed usage *
+// (1 - bufferFraction)), counting only families that pass the same stable gate
+// as the flat series. A family that fails the gate (volatile or too short)
+// contributes nothing, so it can only lower the estimate. The shares split the
+// base in proportion to each family's contribution: share = base * contribution
+// / total, so they sum to the base and none exceeds it; a failing family's share
+// is 0. One family takes the same path (its own minimum and gate apply, since
+// the flat series can include spend the family fetch skips). With no family data,
+// or a nil flat estimate, there is no stable base and no split: a family-bound
+// commitment is never sized without a family. Family series are validated
+// (fail loud); a family fetch error is handled by the caller, not here.
+func familyStableSplit(families map[string][]float64, flat *float64, bufferFraction float64) (base *float64, shares map[string]float64, err error) {
+	if flat == nil || len(families) == 0 {
+		return nil, nil, nil
 	}
-	names := make([]string, 0, len(families))
+	names, contrib, total, err := familyContributions(families, bufferFraction)
+	if err != nil {
+		return nil, nil, err
+	}
+	if total <= 0 {
+		return nil, nil, nil
+	}
+	b := min(total, *flat)
+	shares = make(map[string]float64, len(names))
+	for _, name := range names {
+		shares[name] = min(b*contrib[name]/total, b)
+	}
+	return ptr(b), shares, nil
+}
+
+// familyContributions validates each family series and returns the family names
+// in order, each family's contribution (minimum * (1 - bufferFraction), or 0
+// when it fails the stable gate) and their total.
+func familyContributions(families map[string][]float64, bufferFraction float64) (names []string, contrib map[string]float64, total float64, err error) {
+	names = make([]string, 0, len(families))
 	for name := range families {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	total := 0.0
+	contrib = make(map[string]float64, len(names))
 	for _, name := range names {
 		series := families[name]
 		if len(series) == 0 {
-			return nil, fmt.Errorf("family %s: series is empty", name)
+			return nil, nil, 0, fmt.Errorf("family %s: series is empty", name)
 		}
 		if err := validateSeries(series); err != nil {
-			return nil, fmt.Errorf("family %s: %w", name, err)
+			return nil, nil, 0, fmt.Errorf("family %s: %w", name, err)
 		}
 		p10, median, err := stableQuantiles(series)
 		if err != nil {
-			return nil, fmt.Errorf("family %s: %w", name, err)
+			return nil, nil, 0, fmt.Errorf("family %s: %w", name, err)
 		}
 		if !stableGatePasses(len(series), p10, median) {
 			continue
 		}
-		total += slices.Min(series) * (1 - bufferFraction)
+		contrib[name] = slices.Min(series) * (1 - bufferFraction)
+		total += contrib[name]
 	}
-	if flat == nil || total <= 0 {
-		return nil, nil
-	}
-	return ptr(min(total, *flat)), nil
+	return names, contrib, total, nil
 }
