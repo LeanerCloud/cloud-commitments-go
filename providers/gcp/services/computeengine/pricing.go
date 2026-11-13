@@ -211,17 +211,33 @@ func (m rateMatcher) classify(sku *cloudbilling.Sku) (isCommit, isRAM, matched b
 	return false, false, false, nil
 }
 
-// rateSlot is one price being collected.
+// onDemandDuplicateSpread is the largest relative price gap between two
+// on-demand SKUs of one family and region that is still accepted as one rate.
+// The catalog lists near-duplicate on-demand rows for the same product in a few
+// regions (for example m1 and m2 "Memory-optimized" in us-east4); wider gaps
+// stay ambiguous.
+const onDemandDuplicateSpread = 0.01
+
+// rateSlot is one price being collected. lo and value are the lowest and highest
+// price seen; value (the higher) is the rate used.
 type rateSlot struct {
-	value float64
-	seen  bool
+	value, lo float64
+	seen      bool
 }
 
-func (r *rateSlot) set(price float64, sku *cloudbilling.Sku) error {
-	if r.seen && r.value != price {
+// set records a price. A different price is an ambiguity unless the spread
+// between the lowest and highest price seen is under maxSpread (relative to the
+// highest), in which case the higher price is kept as the conservative one.
+func (r *rateSlot) set(price float64, sku *cloudbilling.Sku, maxSpread float64) error {
+	if !r.seen {
+		r.value, r.lo, r.seen = price, price, true
+		return nil
+	}
+	hi, lo := max(r.value, price), min(r.lo, price)
+	if hi != lo && (hi-lo)/hi >= maxSpread {
 		return fmt.Errorf("ambiguous catalog: SKU %s (%q) prices %v but another matching SKU prices %v", sku.SkuId, sku.Description, price, r.value)
 	}
-	r.value, r.seen = price, true
+	r.value, r.lo = hi, lo
 	return nil
 }
 
@@ -271,16 +287,16 @@ func (c *rateCollector) add(sku *cloudbilling.Sku, isCommit, isRAM bool) error {
 	}
 	c.currency = currency
 
-	slot := &c.odCPU
+	slot, spread := &c.odCPU, onDemandDuplicateSpread
 	switch {
 	case isCommit && isRAM:
-		slot = &c.cRAM
+		slot, spread = &c.cRAM, 0
 	case isCommit:
-		slot = &c.cCPU
+		slot, spread = &c.cCPU, 0
 	case isRAM:
 		slot = &c.odRAM
 	}
-	return slot.set(price, sku)
+	return slot.set(price, sku, spread)
 }
 
 func (c *rateCollector) rates(machineType, region string, termYears int) (*familyRates, error) {
