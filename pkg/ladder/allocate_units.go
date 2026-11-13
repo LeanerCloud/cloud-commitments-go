@@ -23,7 +23,10 @@ import (
 // Allocate converts it back to OD with that rate (od = commitment / Rate), so
 // a tranche is netted at the rate it was sized with, not at today's.
 type InFlightTranche struct {
-	Layer                LayerType
+	Layer LayerType
+	// Family is the instance family of an EC2 Instance SP tranche (Tranche.Family);
+	// empty for other layers and for tranches stored before the family dimension.
+	Family               string
 	CommitmentUSDPerHour float64
 	// Rate is the commitment rate stored with the tranche. Required in (0, 1];
 	// a tranche without a valid rate is a data error, never treated as 1:1.

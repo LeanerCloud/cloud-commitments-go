@@ -63,6 +63,49 @@ func parseFamilySplit(b UsageBaseline) (*familySplit, error) {
 	return fs, nil
 }
 
+// netInFlight sets each family's weight to its share less the OD-equivalent
+// in-flight base tranches already scheduled for that family (floored at 0), so
+// a covered family is not topped up again while a ramp is running. Tranches
+// without a family (rows from before the family dimension) are not attributable
+// and only reduce the total gap, which computeBaseGap already nets.
+func (fs *familySplit) netInFlight(inFlight []InFlightTranche) error {
+	byFamily := make(map[string]*big.Rat)
+	for i, t := range inFlight {
+		if t.Layer != LayerEC2InstanceSP || t.Family == "" {
+			continue
+		}
+		name := fmt.Sprintf("in_flight[%d] (%s/%s)", i, t.Layer, t.Family)
+		c, err := ratFromFloat(name+".commitment_usd_per_hour", t.CommitmentUSDPerHour)
+		if err != nil {
+			return err
+		}
+		r, err := validateCommitmentRate(name, t.Rate)
+		if err != nil {
+			return err
+		}
+		od := new(big.Rat).Quo(c, r)
+		if cur, ok := byFamily[t.Family]; ok {
+			cur.Add(cur, od)
+		} else {
+			byFamily[t.Family] = od
+		}
+	}
+	fs.weights = make(map[string]*big.Rat, len(fs.names))
+	fs.weightTotal = new(big.Rat)
+	for _, name := range fs.names {
+		w := new(big.Rat).Set(fs.shares[name])
+		if f, ok := byFamily[name]; ok {
+			w.Sub(w, f)
+		}
+		if w.Sign() < 0 {
+			w = new(big.Rat)
+		}
+		fs.weights[name] = w
+		fs.weightTotal.Add(fs.weightTotal, w)
+	}
+	return nil
+}
+
 // baseAllocations returns the base-role allocations: one per family with a
 // positive share when the base layer is the family-bound EC2 Instance SP and a
 // family split is present, otherwise the single family-agnostic allocation.
@@ -113,6 +156,9 @@ func applyFamilySplit(in *AllocationInput, hasBase bool, baseLayer LayerType, ne
 	fs, err := parseFamilySplit(in.Baseline)
 	if err != nil || fs == nil {
 		return nil, baseGap, baseNote, err
+	}
+	if err := fs.netInFlight(in.InFlight); err != nil {
+		return nil, nil, "", err
 	}
 	if note := withholdFamilyBase(fs, hasBase, baseLayer, nets); note != "" && baseGap.Sign() > 0 {
 		return fs, new(big.Rat), note, nil
