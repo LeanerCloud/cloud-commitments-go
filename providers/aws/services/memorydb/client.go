@@ -469,11 +469,8 @@ func isLastMemoryDBPage(nextToken *string) bool {
 // compatibility, normalized here to the canonical domain rather than widening
 // purchasecfg.ParseTermMonths for every service on a money path.
 func (c *Client) getDurationStringForAPI(term common.Term) (string, error) {
-	switch term {
-	case "12":
-		term = common.Term1Year
-	case "36":
-		term = common.Term3Year
+	if t, ok := common.ParseTermSpelling(term, common.SpellBareMonths); ok {
+		term = t
 	}
 	duration, err := purchasecfg.DurationYearString(term, "MemoryDB")
 	if err != nil {

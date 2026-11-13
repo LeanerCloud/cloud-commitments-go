@@ -1000,6 +1000,10 @@ func TestClient_GetDurationStringForAPI(t *testing.T) {
 		{"empty term errors", "", "", true},
 		{"zero term errors", "0", "", true},
 		{"2yr term errors", "2yr", "", true},
+		{"12mo is not an accepted spelling", "12mo", "", true},
+		{"24 months errors", "24", "", true},
+		{"padded 12 errors", " 12", "", true},
+		{"1y errors", "1y", "", true},
 	}
 
 	for _, tt := range tests {
