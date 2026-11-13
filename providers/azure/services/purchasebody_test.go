@@ -3,6 +3,7 @@ package services_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/fake"
@@ -45,7 +46,6 @@ func TestPurchaseBodies(t *testing.T) {
 		{"managedredis", "RedisCache", func(h *reservationstest.Capture) purchaser {
 			return managedredis.NewClientWithHTTP(cred, "sub", "eastus", h)
 		}},
-		{"search", "SearchService", func(h *reservationstest.Capture) purchaser { return search.NewClientWithHTTP(cred, "sub", "eastus", h) }},
 		{"synapse", "SqlDataWarehouse", func(h *reservationstest.Capture) purchaser {
 			return synapse.NewClientWithHTTP(cred, "sub", "eastus", h)
 		}},
@@ -76,4 +76,29 @@ func TestPurchaseBodies(t *testing.T) {
 			require.Zero(t, fakeARM.Calls)
 		})
 	}
+}
+
+// Search stays upfront-only: the Capacity catalog does not recognise
+// SearchService, so Monthly cannot be confirmed (issue #38).
+func TestPurchaseBodies_SearchUpfrontOnly(t *testing.T) {
+	t.Parallel()
+	rec := func(payment string) common.Recommendation {
+		return common.Recommendation{Region: "eastus", ResourceType: "GP_Gen5_8", Term: "1yr", Count: 2, PaymentOption: payment}
+	}
+	opts := common.PurchaseOptions{Source: common.PurchaseSourceCLI}
+	for _, payment := range []string{"monthly", "no-upfront"} {
+		fakeARM := &reservationstest.Capture{}
+		res, err := search.NewClientWithHTTP(&fake.TokenCredential{}, "sub", "eastus", fakeARM).PurchaseCommitment(context.Background(), rec(payment), opts)
+		require.ErrorContains(t, err, "upfront-only")
+		require.False(t, res.Success)
+		require.Empty(t, fakeARM.Sequence(), "no request for %s", payment)
+	}
+	fakeARM := &reservationstest.Capture{}
+	res, err := search.NewClientWithHTTP(&fake.TokenCredential{}, "sub", "eastus", fakeARM).PurchaseCommitment(context.Background(), rec("upfront"), opts)
+	require.NoError(t, err)
+	require.True(t, res.Success)
+	got, err := fakeARM.BodyWithoutDisplayName()
+	require.NoError(t, err)
+	want := strings.Replace(fmt.Sprintf(purchaseBodyGolden, "SearchService", "P1Y"), `"billingPlan":"Monthly"`, `"billingPlan":"Upfront"`, 1)
+	require.Equal(t, want, string(got))
 }

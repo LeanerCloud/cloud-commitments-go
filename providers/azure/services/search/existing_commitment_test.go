@@ -67,7 +67,7 @@ func existingCommitmentRunCurrency(t *testing.T, h *existingCommitmentHTTP, curr
 		Term:           "1yr",
 		Count:          1,
 		CommitmentCost: 1000.0,
-		PaymentOption:  "no-upfront",
+		PaymentOption:  "all-upfront",
 
 		CommitmentCurrency: currency,
 	}

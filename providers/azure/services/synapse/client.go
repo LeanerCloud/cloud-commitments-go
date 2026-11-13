@@ -247,6 +247,8 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		result.Error = termEnumErr
 		return result, result.Error
 	}
+	// Monthly is allowed: the Capacity catalog row sql_dw100c (SqlDataWarehouse)
+	// lists p1Y/p3Y with [Upfront, Monthly] (issue #38).
 	billingPlan, err := reservations.BillingPlanForPaymentOption(rec.PaymentOption)
 	if err != nil {
 		result.Error = err

@@ -238,6 +238,8 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		result.Error = termEnumErr
 		return result, result.Error
 	}
+	// Monthly is allowed: the Capacity catalog lists p1Y/p3Y with [Upfront, Monthly]
+	// for RedisCache, which includes the azure_managed_redis_* SKUs (issue #38).
 	billingPlan, billingPlanErr := reservations.BillingPlanForPaymentOption(rec.PaymentOption)
 	if billingPlanErr != nil {
 		result.Error = billingPlanErr

@@ -12,6 +12,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/consumption/armconsumption"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/httpclient"
@@ -200,6 +201,20 @@ func (c *Client) convertSearchReservation(detail *armconsumption.ReservationDeta
 	return commitment
 }
 
+// upfrontOnlyBillingPlan rejects Monthly: the Capacity catalog does not
+// recognise SearchService and the retail API has no Search reservation rows,
+// so Monthly cannot be confirmed (issue #38).
+func upfrontOnlyBillingPlan(paymentOption string) (armreservations.ReservationBillingPlan, error) {
+	plan, err := reservations.BillingPlanForPaymentOption(paymentOption)
+	if err != nil {
+		return "", err
+	}
+	if plan == armreservations.ReservationBillingPlanMonthly {
+		return "", fmt.Errorf("azure search reservations are upfront-only until Monthly billing is confirmed in the Capacity catalog; got payment option %q", paymentOption)
+	}
+	return plan, nil
+}
+
 // PurchaseCommitment purchases Search reserved capacity using the two-step
 // calculatePrice->purchase flow required by Azure's Reservations API (issue #677).
 func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendation, opts common.PurchaseOptions) (common.PurchaseResult, error) {
@@ -237,7 +252,7 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 		result.Error = termEnumErr
 		return result, result.Error
 	}
-	billingPlan, billingPlanErr := reservations.BillingPlanForPaymentOption(rec.PaymentOption)
+	billingPlan, billingPlanErr := upfrontOnlyBillingPlan(rec.PaymentOption)
 	if billingPlanErr != nil {
 		result.Error = billingPlanErr
 		return result, result.Error

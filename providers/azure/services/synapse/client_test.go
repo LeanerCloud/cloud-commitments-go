@@ -1020,6 +1020,7 @@ func TestPurchaseCommitment_billingPlan(t *testing.T) {
 			props, ok := body["properties"].(map[string]interface{})
 			require.True(t, ok, "properties map missing from reservation body")
 			assert.Equal(t, tc.wantPlan, props["billingPlan"])
+			assert.Equal(t, "SqlDataWarehouse", props["reservedResourceType"])
 			if tc.wantPlan == "Monthly" {
 				require.NotNil(t, result.Cost)
 				assert.Zero(t, *result.Cost)

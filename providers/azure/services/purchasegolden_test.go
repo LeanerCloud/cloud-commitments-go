@@ -15,7 +15,6 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/database"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations/reservationstest"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/managedredis"
-	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/search"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/synapse"
 )
 
@@ -63,9 +62,6 @@ func goldenCases() []goldenCase {
 		{"managedredis", "RedisCache", func(c *reservationstest.CountingCred, h *reservationstest.Capture) purchaser {
 			return managedredis.NewClientWithHTTP(c, "sub", "eastus", h)
 		}, "redis-eastus-GP_Gen5_8-2x-1yr-monthly-" + goldenMarker, regexp.MustCompile(`^redis-eastus-GP_Gen5_8-2x-1yr-monthly-\d{8}T\d{6}-[0-9a-f]{8}$`), nil},
-		{"search", "SearchService", func(c *reservationstest.CountingCred, h *reservationstest.Capture) purchaser {
-			return search.NewClientWithHTTP(c, "sub", "eastus", h)
-		}, "search-eastus-GP_Gen5_8-2x-1yr-monthly-" + goldenMarker, regexp.MustCompile(`^search-eastus-GP_Gen5_8-2x-1yr-monthly-\d{8}T\d{6}-[0-9a-f]{8}$`), nil},
 		{"synapse", "SqlDataWarehouse", func(c *reservationstest.CountingCred, h *reservationstest.Capture) purchaser {
 			return synapse.NewClientWithHTTP(c, "sub", "eastus", h)
 		}, "synapse-eastus-GP_Gen5_8-2x-1yr-monthly-" + goldenMarker, regexp.MustCompile(`^synapse-eastus-GP_Gen5_8-2x-1yr-monthly-\d{8}T\d{6}-[0-9a-f]{8}$`), nil},

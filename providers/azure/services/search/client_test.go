@@ -936,15 +936,14 @@ func TestSearchClient_PurchaseCommitment_Success(t *testing.T) {
 		Term:           "1yr",
 		Count:          1,
 		CommitmentCost: 3000.0,
-		PaymentOption:  "no-upfront",
+		PaymentOption:  "all-upfront",
 	}
 
 	result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
 	require.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.Equal(t, "search-order-001", result.CommitmentID)
-	require.NotNil(t, result.Cost)
-	assert.Zero(t, *result.Cost)
+	assert.Nil(t, result.Cost)
 	mockHTTP.AssertExpectations(t)
 }
 
@@ -975,7 +974,7 @@ func TestSearchClient_PurchaseCommitment_3YearTerm(t *testing.T) {
 		Term:           "3yr",
 		Count:          1,
 		CommitmentCost: 7500.0,
-		PaymentOption:  "no-upfront",
+		PaymentOption:  "all-upfront",
 	}
 
 	result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
@@ -1012,7 +1011,7 @@ func TestSearchClient_PurchaseCommitment_Accepted(t *testing.T) {
 		Term:           "1yr",
 		Count:          1,
 		CommitmentCost: 3000.0,
-		PaymentOption:  "no-upfront",
+		PaymentOption:  "all-upfront",
 	}
 
 	result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
@@ -1032,7 +1031,7 @@ func TestSearchClient_PurchaseCommitment_TokenError(t *testing.T) {
 		ResourceType:  "standard",
 		Term:          "1yr",
 		Count:         1,
-		PaymentOption: "no-upfront",
+		PaymentOption: "all-upfront",
 	}
 
 	result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
@@ -1056,7 +1055,7 @@ func TestSearchClient_PurchaseCommitment_HTTPError(t *testing.T) {
 		ResourceType:  "standard",
 		Term:          "1yr",
 		Count:         1,
-		PaymentOption: "no-upfront",
+		PaymentOption: "all-upfront",
 	}
 
 	result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
@@ -1091,7 +1090,7 @@ func TestSearchClient_PurchaseCommitment_BadStatus(t *testing.T) {
 		ResourceType:  "standard",
 		Term:          "1yr",
 		Count:         1,
-		PaymentOption: "no-upfront",
+		PaymentOption: "all-upfront",
 	}
 
 	result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
@@ -1133,7 +1132,7 @@ func TestSearchClient_PurchaseCommitment_TwoStepFlow(t *testing.T) {
 		Term:           "1yr",
 		Count:          1,
 		CommitmentCost: 3000.0,
-		PaymentOption:  "no-upfront",
+		PaymentOption:  "all-upfront",
 	}
 
 	result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
@@ -1182,7 +1181,7 @@ func TestSearchClient_PurchaseCommitment_TagInjection(t *testing.T) {
 			r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/"+orderID+"/purchase"
 	})).Return(purchaseResp18, nil).Once()
 
-	rec := common.Recommendation{Region: "eastus", ResourceType: "standard", Term: "1yr", Count: 1, CommitmentCost: 3000.0, PaymentOption: "no-upfront"}
+	rec := common.Recommendation{Region: "eastus", ResourceType: "standard", Term: "1yr", Count: 1, CommitmentCost: 3000.0, PaymentOption: "all-upfront"}
 	result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{Source: source})
 	require.NoError(t, err)
 	assert.True(t, result.Success)
@@ -1215,7 +1214,8 @@ func TestSearchClient_PurchaseCommitment_BillingPlan(t *testing.T) {
 		wantErrSub    string
 	}{
 		{name: "all-upfront maps to Upfront", paymentOption: "all-upfront", wantPlan: "Upfront"},
-		{name: "no-upfront maps to Monthly", paymentOption: "no-upfront", wantPlan: "Monthly"},
+		{name: "no-upfront is rejected, Monthly unconfirmed in catalog", paymentOption: "no-upfront", wantErrSub: "upfront-only"},
+		{name: "monthly is rejected, Monthly unconfirmed in catalog", paymentOption: "monthly", wantErrSub: "upfront-only"},
 		{name: "partial-upfront is rejected", paymentOption: "partial-upfront", wantErrSub: "partial-upfront has no azure equivalent"},
 		{name: "empty payment option is rejected", paymentOption: "", wantErrSub: "azure reservations support only upfront or monthly billing"},
 	}
@@ -1349,7 +1349,7 @@ func TestSearchClient_PurchaseCommitment_DisplayNameConformsToAzureAllowlist(t *
 		Term:           "1yr",
 		Count:          1,
 		CommitmentCost: 800.0,
-		PaymentOption:  "no-upfront",
+		PaymentOption:  "all-upfront",
 	}
 	_, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
 	require.NoError(t, err)
@@ -1415,7 +1415,7 @@ func TestPurchaseCommitment_RegionMismatchMakesNoHTTPCalls(t *testing.T) {
 	c := NewClientWithHTTP(&MockTokenCredential{token: "t"}, "sub", "eastus", h)
 	result, err := c.PurchaseCommitment(context.Background(), common.Recommendation{
 		Region: "westeurope", ResourceType: "x", Term: "1yr", Count: 1,
-		PaymentOption: "no-upfront",
+		PaymentOption: "all-upfront",
 	}, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
