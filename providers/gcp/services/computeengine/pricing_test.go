@@ -48,12 +48,12 @@ func n1Americas1YrSKUs() []*cloudbilling.Sku {
 // catalog carries next to them.
 func n2AmericasSKUs() []*cloudbilling.Sku {
 	return []*cloudbilling.Sku{
-		catalogSKU("n2-od-core", "N2 Instance Core running in Americas", "CPU", "OnDemand", "h", 31611000, americas),
-		catalogSKU("n2-od-ram", "N2 Instance Ram running in Americas", "RAM", "OnDemand", "GiBy.h", 4237000, americas),
-		catalogSKU("n2-c1-core", "Commitment v1: N2 Cpu in Americas for 1 Year", "CPU", "Commit1Yr", "h", 19915000, americas),
-		catalogSKU("n2-c1-ram", "Commitment v1: N2 Ram in Americas for 1 Year", "RAM", "Commit1Yr", "GiBy.h", 2669000, americas),
-		catalogSKU("n2-c3-core", "Commitment v1: N2 Cpu in Americas for 3 Year", "CPU", "Commit3Yr", "h", 14225000, americas),
-		catalogSKU("n2-c3-ram", "Commitment v1: N2 Ram in Americas for 3 Year", "RAM", "Commit3Yr", "GiBy.h", 1907000, americas),
+		catalogSKU("BB77-5FDA-69D9", "N2 Instance Core running in Americas", "CPU", "OnDemand", "h", 31611000, americas),
+		catalogSKU("5B01-D157-A097", "N2 Instance Ram running in Americas", "RAM", "OnDemand", "GiBy.h", 4237000, americas),
+		catalogSKU("672D-3FDD-7138", "Commitment v1: N2 Cpu in Americas for 1 Year", "CPU", "Commit1Yr", "h", 19915000, americas),
+		catalogSKU("2F6C-EB97-C718", "Commitment v1: N2 Ram in Americas for 1 Year", "RAM", "Commit1Yr", "GiBy.h", 2669000, americas),
+		catalogSKU("FCA2-37F3-16BA", "Commitment v1: N2 Cpu in Americas for 3 Year", "CPU", "Commit3Yr", "h", 14225000, americas),
+		catalogSKU("B638-CAE8-6E60", "Commitment v1: N2 Ram in Americas for 3 Year", "RAM", "Commit3Yr", "GiBy.h", 1907000, americas),
 		// Same family name prefix, different product: must not be read as N2.
 		catalogSKU("n2d-od-core", "N2D AMD Instance Core running in Americas", "CPU", "OnDemand", "h", 27502000, americas),
 		// Custom machine types bill these on-demand rows, not the predefined ones.
