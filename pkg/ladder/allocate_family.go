@@ -74,6 +74,60 @@ func parseFamilySplit(b UsageBaseline) (*familySplit, error) {
 	return fs, nil
 }
 
+// inFlightByFamily sums the OD-equivalent in-flight EC2 Instance SP tranches
+// per family; tranches without a family are skipped. inFlightToOD has already
+// rejected a family on a layer that is not family bound.
+func inFlightByFamily(inFlight []InFlightTranche) (map[string]*big.Rat, error) {
+	byFamily := make(map[string]*big.Rat)
+	for i, t := range inFlight {
+		if t.Family == "" {
+			continue
+		}
+		name := fmt.Sprintf("in_flight[%d] (%s/%s)", i, t.Layer, t.Family)
+		c, err := ratFromFloat(name+".commitment_usd_per_hour", t.CommitmentUSDPerHour)
+		if err != nil {
+			return nil, err
+		}
+		r, err := validateCommitmentRate(name, t.Rate)
+		if err != nil {
+			return nil, err
+		}
+		od := new(big.Rat).Quo(c, r)
+		if cur, ok := byFamily[t.Family]; ok {
+			cur.Add(cur, od)
+		} else {
+			byFamily[t.Family] = od
+		}
+	}
+	return byFamily, nil
+}
+
+// netInFlight sets each family's weight to its share less the OD-equivalent
+// in-flight base tranches already scheduled for that family (floored at 0), so
+// a covered family is not topped up again while a ramp is running. Tranches
+// without a family (rows from before the family dimension) are not attributable
+// and only reduce the total gap, which computeBaseGap already nets.
+func (fs *familySplit) netInFlight(inFlight []InFlightTranche) error {
+	byFamily, err := inFlightByFamily(inFlight)
+	if err != nil {
+		return err
+	}
+	fs.weights = make(map[string]*big.Rat, len(fs.names))
+	fs.weightTotal = new(big.Rat)
+	for _, name := range fs.names {
+		w := new(big.Rat).Set(fs.shares[name])
+		if f, ok := byFamily[name]; ok {
+			w.Sub(w, f)
+		}
+		if w.Sign() < 0 {
+			w = new(big.Rat)
+		}
+		fs.weights[name] = w
+		fs.weightTotal.Add(fs.weightTotal, w)
+	}
+	return nil
+}
+
 // validateTopology rejects a family split when the EC2 Instance SP layer carries
 // a role other than base: a merged base+buffer or buffer-only layer would
 // produce family-less purchases next to the family rows. A nil split accepts
@@ -140,6 +194,9 @@ func applyFamilySplit(in *AllocationInput, hasBase bool, baseLayer LayerType, ne
 	fs, err := parseFamilySplit(in.Baseline)
 	if err != nil || fs == nil {
 		return nil, baseGap, baseNote, err
+	}
+	if err := fs.netInFlight(in.InFlight); err != nil {
+		return nil, nil, "", err
 	}
 	if note := withholdFamilyBase(fs, hasBase, baseLayer, nets); note != "" && baseGap.Sign() > 0 {
 		return fs, new(big.Rat), note, nil
