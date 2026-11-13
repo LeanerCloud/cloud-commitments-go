@@ -92,3 +92,14 @@ func TestAllocate_FamilyHeadroomFloorsAtZero(t *testing.T) {
 	}
 	ratEq(t, "c5 gets the remaining 0.5", rows[0].GapUSDPerHour, 1, 2)
 }
+
+// A family on an in-flight tranche of a layer that is not family bound is bad
+// data, like it is on Tranche.Validate, so it fails loud instead of being skipped.
+func TestAllocate_InFlightFamilyOnNonFamilyLayerFailsLoud(t *testing.T) {
+	t.Parallel()
+	in := familyInput(map[string]float64{"m5": 3, "c5": 1})
+	in.InFlight = []InFlightTranche{{Layer: LayerComputeSP, Family: "m5", CommitmentUSDPerHour: 1, Rate: 1}}
+	if _, err := Allocate(in); err == nil {
+		t.Fatal("want error for a family on a compute-sp in-flight tranche")
+	}
+}

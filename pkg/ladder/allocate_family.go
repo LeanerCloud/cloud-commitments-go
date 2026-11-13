@@ -63,25 +63,26 @@ func parseFamilySplit(b UsageBaseline) (*familySplit, error) {
 	return fs, nil
 }
 
-// netInFlight sets each family's weight to its share less the OD-equivalent
-// in-flight base tranches already scheduled for that family (floored at 0), so
-// a covered family is not topped up again while a ramp is running. Tranches
-// without a family (rows from before the family dimension) are not attributable
-// and only reduce the total gap, which computeBaseGap already nets.
-func (fs *familySplit) netInFlight(inFlight []InFlightTranche) error {
+// inFlightByFamily sums the OD-equivalent in-flight EC2 Instance SP tranches
+// per family. A family on a layer that is not family bound is bad data and
+// fails loud, like Tranche.Validate; tranches without a family are skipped.
+func inFlightByFamily(inFlight []InFlightTranche) (map[string]*big.Rat, error) {
 	byFamily := make(map[string]*big.Rat)
 	for i, t := range inFlight {
+		if err := validateFamilyForLayer(t.Family, t.Layer); err != nil {
+			return nil, fmt.Errorf("in_flight[%d]: %w", i, err)
+		}
 		if t.Layer != LayerEC2InstanceSP || t.Family == "" {
 			continue
 		}
 		name := fmt.Sprintf("in_flight[%d] (%s/%s)", i, t.Layer, t.Family)
 		c, err := ratFromFloat(name+".commitment_usd_per_hour", t.CommitmentUSDPerHour)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		r, err := validateCommitmentRate(name, t.Rate)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		od := new(big.Rat).Quo(c, r)
 		if cur, ok := byFamily[t.Family]; ok {
@@ -89,6 +90,19 @@ func (fs *familySplit) netInFlight(inFlight []InFlightTranche) error {
 		} else {
 			byFamily[t.Family] = od
 		}
+	}
+	return byFamily, nil
+}
+
+// netInFlight sets each family's weight to its share less the OD-equivalent
+// in-flight base tranches already scheduled for that family (floored at 0), so
+// a covered family is not topped up again while a ramp is running. Tranches
+// without a family (rows from before the family dimension) are not attributable
+// and only reduce the total gap, which computeBaseGap already nets.
+func (fs *familySplit) netInFlight(inFlight []InFlightTranche) error {
+	byFamily, err := inFlightByFamily(inFlight)
+	if err != nil {
+		return err
 	}
 	fs.weights = make(map[string]*big.Rat, len(fs.names))
 	fs.weightTotal = new(big.Rat)
