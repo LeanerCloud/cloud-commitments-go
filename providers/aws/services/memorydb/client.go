@@ -344,11 +344,11 @@ const maxListPages = 50
 // DescribeReservedNodesOfferings OfferingType string value.
 func convertMemoryDBPaymentOption(option string) (string, error) {
 	switch option {
-	case "all-upfront":
+	case string(common.PaymentAllUpfront):
 		return "All Upfront", nil
-	case "partial-upfront":
+	case string(common.PaymentPartialUpfront):
 		return "Partial Upfront", nil
-	case "no-upfront":
+	case string(common.PaymentNoUpfront):
 		return "No Upfront", nil
 	default:
 		return "", fmt.Errorf("unsupported MemoryDB payment option: %s", option)
@@ -471,9 +471,9 @@ func isLastMemoryDBPage(nextToken *string) bool {
 func (c *Client) getDurationStringForAPI(term string) (string, error) {
 	switch term {
 	case "12":
-		term = "1yr"
+		term = string(common.Term1Year)
 	case "36":
-		term = "3yr"
+		term = string(common.Term3Year)
 	}
 	duration, err := purchasecfg.DurationYearString(term, "MemoryDB")
 	if err != nil {
