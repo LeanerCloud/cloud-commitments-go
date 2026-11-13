@@ -317,7 +317,7 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	var upfrontCost, recurringCost float64
 	totalCost := searchPricing.ReservationPrice
 
-	switch common.PaymentOption(rec.PaymentOption) {
+	switch rec.PaymentOption {
 	case common.PaymentAllUpfront, "upfront":
 		upfrontCost = totalCost
 		recurringCost = 0

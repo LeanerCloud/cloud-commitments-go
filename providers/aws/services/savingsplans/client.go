@@ -661,7 +661,7 @@ func convertTermToSeconds(term common.Term) (int64, error) {
 // rather than silently buying the wrong (and potentially most expensive)
 // payment option.
 func convertPaymentOption(paymentOption common.PaymentOption) (types.SavingsPlanPaymentOption, error) {
-	switch common.PaymentOption(paymentOption) {
+	switch paymentOption {
 	case "All Upfront", common.PaymentAllUpfront:
 		return types.SavingsPlanPaymentOptionAllUpfront, nil
 	case "Partial Upfront", common.PaymentPartialUpfront:

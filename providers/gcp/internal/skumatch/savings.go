@@ -48,7 +48,7 @@ func ScaleToTerm(what, region string, onDemandHourly, commitmentHourly float64, 
 func OfferingDetails(rec common.Recommendation, offeringID string, termYears int, commitmentTotal, hourlyRate float64, currency string) (*common.OfferingDetails, error) {
 	var upfrontCost, recurringCost float64
 
-	switch common.PaymentOption(rec.PaymentOption) {
+	switch rec.PaymentOption {
 	case common.PaymentAllUpfront, "upfront":
 		upfrontCost = commitmentTotal
 	case "monthly", common.PaymentNoUpfront:

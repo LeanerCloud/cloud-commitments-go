@@ -570,7 +570,7 @@ func (c *Client) fetchOnDemandRate(ctx context.Context, planType string) (float6
 
 // toAzureTerm converts a CUDly term string to an armbillingbenefits.Term.
 func toAzureTerm(term common.Term) (armbillingbenefits.Term, error) {
-	switch common.Term(term) {
+	switch term {
 	case common.Term1Year, "1", "P1Y", "":
 		return armbillingbenefits.TermP1Y, nil
 	case common.Term3Year, "3", "P3Y":
