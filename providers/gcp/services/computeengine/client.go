@@ -618,7 +618,7 @@ func adoptExistingCommitment(ctx context.Context, svc CommitmentsService, req *c
 			conflict, want.GetName(), req.GetRegion(),
 			got.GetPlan(), got.GetType(), gotRes, want.GetPlan(), want.GetType(), wantRes, errExistingCommitmentMismatch)
 	}
-	log.Printf("GCP CUD %s for token %s already exists and matches the request; treating the re-drive as the earlier purchase (issue #44)",
+	log.Printf("computeengine: CUD %s for token %s already exists and matches the request; treating the re-drive as the earlier purchase (issue #44)",
 		want.GetName(), common.MaskToken(token))
 	return nil
 }
@@ -841,7 +841,7 @@ func (c *Client) buildInsertRequest(rec common.Recommendation, opts common.Purch
 	}
 	if requestID != "" {
 		insertReq.RequestId = new(requestID)
-		log.Printf("GCP CUD purchase using idempotent request ID for token %s (commitment %s); a re-drive will not double-purchase (issue #654)",
+		log.Printf("computeengine: CUD purchase using idempotent request ID for token %s (commitment %s); a re-drive will not double-purchase (issue #654)",
 			common.MaskToken(opts.IdempotencyToken), commitmentName)
 	}
 
