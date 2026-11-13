@@ -3,6 +3,7 @@ package skumatch
 import (
 	"testing"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -13,12 +14,12 @@ func TestTermYears(t *testing.T) {
 		"3yr": 3, "3": 3, "36mo": 3, "3YR": 3, " 3yr": 3, "36MO": 3, " 36mo ": 3, " 3 ": 3,
 	}
 	for term, want := range accepted {
-		got, err := TermYears(term)
+		got, err := TermYears(common.Term(term))
 		require.NoError(t, err, term)
 		assert.Equal(t, want, got, term)
 	}
 	for _, term := range []string{"2yr", "2", "5yr", "3yrs", "24mo", "P1Y", "abc", "monthly"} {
-		_, err := TermYears(term)
+		_, err := TermYears(common.Term(term))
 		require.Error(t, err, term)
 		assert.Contains(t, err.Error(), "unsupported commitment term")
 	}

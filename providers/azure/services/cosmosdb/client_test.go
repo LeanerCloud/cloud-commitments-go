@@ -1048,7 +1048,7 @@ func TestCosmosDBClient_PurchaseCommitment_BillingPlan(t *testing.T) {
 			mockCred := &MockTokenCredential{token: "test-token"}
 			client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
-			rec := common.Recommendation{Region: "eastus", ResourceType: "EnableCassandra", Term: "1yr", Count: 1, PaymentOption: tc.paymentOption}
+			rec := common.Recommendation{Region: "eastus", ResourceType: "EnableCassandra", Term: "1yr", Count: 1, PaymentOption: common.PaymentOption(tc.paymentOption)}
 
 			if tc.wantErrSub != "" {
 				result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
@@ -1160,8 +1160,8 @@ func TestCosmosDBClient_ConvertAzureCosmosRecommendation_PopulatesAllFields(t *t
 	assert.Zero(t, out.CommitmentCost, "commitment is priced from the retail row at variant expansion")
 	assert.InDelta(t, 90.0*30.4375/7, out.EstimatedSavings, 1e-9)
 	assert.Equal(t, common.CommitmentReservedInstance, out.CommitmentType)
-	assert.Equal(t, "1yr", out.Term)
-	assert.Equal(t, "upfront", out.PaymentOption)
+	assert.Equal(t, common.Term("1yr"), out.Term)
+	assert.Equal(t, common.PaymentOption("upfront"), out.PaymentOption)
 
 	// Details carries Engine="cosmos". For this fixture the SKU doesn't
 	// start with digits, so ThroughputUnits is 0 — which correctly

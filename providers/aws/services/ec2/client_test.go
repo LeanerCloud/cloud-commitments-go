@@ -527,7 +527,7 @@ func TestClient_GetDurationValue(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := client.getDurationValue(tt.term)
+			result, err := client.getDurationValue(common.Term(tt.term))
 			if tt.expectErr {
 				if assert.Error(t, err) {
 					assert.Contains(t, err.Error(), "unsupported EC2 reservation term")

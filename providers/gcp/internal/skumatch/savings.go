@@ -60,8 +60,8 @@ func OfferingDetails(rec common.Recommendation, offeringID string, termYears int
 	return &common.OfferingDetails{
 		OfferingID:          offeringID,
 		ResourceType:        rec.ResourceType,
-		Term:                rec.Term,
-		PaymentOption:       rec.PaymentOption,
+		Term:                string(rec.Term),
+		PaymentOption:       string(rec.PaymentOption),
 		UpfrontCost:         upfrontCost,
 		RecurringCost:       recurringCost,
 		TotalCost:           commitmentTotal,

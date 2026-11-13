@@ -110,7 +110,7 @@ func lockPurchaseToken(token string) (unlock func()) {
 // This is the canonical parser; service clients that previously used a local
 // literal comparison (rec.Term == "3yr" || rec.Term == "3") should call this
 // instead to get consistent error reporting on unrecognized terms.
-func ParseTermYears(term string) (int, error) {
+func ParseTermYears(term common.Term) (int, error) {
 	t, ok := common.ParseTermSpelling(term, common.SpellCanonical|common.SpellBareYears|common.SpellShortYears|common.SpellEmptyIsOneYear|common.SpellFold)
 	if !ok {
 		return 0, fmt.Errorf("unsupported reservation term: %s", term)
@@ -148,8 +148,8 @@ func ParseTermYears(term string) (int, error) {
 // internal/purchase/execution.go with rec.Payment == "" and lands here.
 // Blaming partial-upfront for a value that is simply missing sends whoever
 // reads that error looking in the wrong place.
-func BillingPlanForPaymentOption(paymentOption string) (armreservations.ReservationBillingPlan, error) {
-	switch common.PaymentOption(strings.ToLower(strings.TrimSpace(paymentOption))) {
+func BillingPlanForPaymentOption(paymentOption common.PaymentOption) (armreservations.ReservationBillingPlan, error) {
+	switch common.PaymentOption(strings.ToLower(strings.TrimSpace(string(paymentOption)))) {
 	case common.PaymentAllUpfront, "upfront":
 		return armreservations.ReservationBillingPlanUpfront, nil
 	case common.PaymentNoUpfront, "monthly":

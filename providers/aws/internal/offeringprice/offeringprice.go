@@ -10,6 +10,7 @@ import (
 	"math"
 	"strings"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/aws/internal/purchasecfg"
 )
 
@@ -40,7 +41,7 @@ type Input struct {
 	Service string
 
 	// Term is the requested term (rec.Term); it must match the offering.
-	Term string
+	Term common.Term
 
 	Charges []Charge
 

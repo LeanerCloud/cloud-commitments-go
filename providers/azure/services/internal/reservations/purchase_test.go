@@ -1168,7 +1168,7 @@ func TestParseTermYears(t *testing.T) {
 		{"bogus", 0, true},
 	}
 	for _, tc := range tests {
-		got, err := ParseTermYears(tc.term)
+		got, err := ParseTermYears(common.Term(tc.term))
 		if tc.wantErr {
 			assert.Error(t, err, "term=%q should be an error", tc.term)
 			assert.Equal(t, 0, got, "term=%q error return should be 0", tc.term)
@@ -1206,7 +1206,7 @@ func TestBillingPlanForPaymentOption(t *testing.T) {
 		{"bogus", "", true},
 	}
 	for _, tc := range tests {
-		got, err := BillingPlanForPaymentOption(tc.paymentOption)
+		got, err := BillingPlanForPaymentOption(common.PaymentOption(tc.paymentOption))
 		if tc.wantErr {
 			assert.Error(t, err, "payment_option=%q should be an error", tc.paymentOption)
 			assert.Empty(t, got, "payment_option=%q error return should be empty", tc.paymentOption)
@@ -1256,7 +1256,7 @@ func TestBillingPlanForPaymentOption_UnrecognizedIsNotBlamedOnPartialUpfront(t *
 	t.Parallel()
 
 	for _, unrecognized := range []string{"bogus", "prepaid", "montly", "PARTIAL"} {
-		_, err := BillingPlanForPaymentOption(unrecognized)
+		_, err := BillingPlanForPaymentOption(common.PaymentOption(unrecognized))
 		require.Errorf(t, err, "payment_option=%q must error", unrecognized)
 		assert.Containsf(t, err.Error(), "is not a recognized payment option",
 			"payment_option=%q should be diagnosed as unrecognized", unrecognized)

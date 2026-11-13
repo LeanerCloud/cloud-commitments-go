@@ -281,7 +281,7 @@ func dropCoveredAdvisorSavingsPlans(advisor, sp []common.Recommendation) []commo
 	covered := make(map[key]bool)
 	for i := range sp {
 		if sp[i].CommitmentType == common.CommitmentSavingsPlan {
-			covered[key{sp[i].Account, sp[i].Term}] = true
+			covered[key{sp[i].Account, string(sp[i].Term)}] = true
 		}
 	}
 	if len(covered) == 0 {
@@ -289,7 +289,7 @@ func dropCoveredAdvisorSavingsPlans(advisor, sp []common.Recommendation) []commo
 	}
 	out := make([]common.Recommendation, 0, len(advisor))
 	for i := range advisor {
-		if advisor[i].CommitmentType == common.CommitmentSavingsPlan && covered[key{advisor[i].Account, advisor[i].Term}] {
+		if advisor[i].CommitmentType == common.CommitmentSavingsPlan && covered[key{advisor[i].Account, string(advisor[i].Term)}] {
 			continue
 		}
 		out = append(out, advisor[i])
@@ -316,7 +316,7 @@ type advisorNeed struct {
 }
 
 func advisorNeedOf(r *common.Recommendation) advisorNeed {
-	n := advisorNeed{account: r.Account, region: strings.ToLower(r.Region), term: r.Term, service: r.Service}
+	n := advisorNeed{account: r.Account, region: strings.ToLower(r.Region), term: string(r.Term), service: r.Service}
 	if r.Service == common.ServiceCompute {
 		n.family = vmFamily(r.ResourceType)
 	}
@@ -698,12 +698,12 @@ func populateFromExtendedProperties(rec *common.Recommendation, ext map[string]*
 
 // advisorTerm maps the Advisor term ("P1Y"/"P3Y", or the already-normalised
 // "1yr"/"3yr") to the common form and errors on a missing or unknown value.
-func advisorTerm(ext map[string]*string) (string, error) {
+func advisorTerm(ext map[string]*string) (common.Term, error) {
 	switch t := extString(ext, advisorKeyTerm, ""); t {
 	case "P1Y", string(common.Term1Year):
-		return string(common.Term1Year), nil
+		return common.Term1Year, nil
 	case "P3Y", string(common.Term3Year):
-		return string(common.Term3Year), nil
+		return common.Term3Year, nil
 	case "":
 		return "", fmt.Errorf("%s is absent", advisorKeyTerm)
 	default:

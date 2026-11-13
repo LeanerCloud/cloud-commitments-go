@@ -271,8 +271,8 @@ func (c *Client) parseSavingsPlanDetail(
 	return &common.Recommendation{
 		Provider:               common.ProviderAWS,
 		Service:                serviceSlugForPlanType(planType),
-		PaymentOption:          params.PaymentOption,
-		Term:                   params.Term,
+		PaymentOption:          common.PaymentOption(params.PaymentOption),
+		Term:                   common.Term(params.Term),
 		CommitmentType:         common.CommitmentSavingsPlan,
 		Count:                  1,
 		EstimatedSavings:       monthlySavings,

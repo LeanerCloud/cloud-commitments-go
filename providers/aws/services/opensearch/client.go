@@ -253,8 +253,8 @@ func reservationNameFor(rec common.Recommendation, token string) string {
 		Region:       rec.Region,
 		ResourceType: rec.ResourceType,
 		Count:        rec.Count,
-		Term:         rec.Term,
-		Payment:      rec.PaymentOption,
+		Term:         string(rec.Term),
+		Payment:      string(rec.PaymentOption),
 		Now:          time.Now(),
 	}, "opensearch-reserved-")
 }
@@ -514,7 +514,7 @@ func (c *Client) scanOpenSearchOfferingPage(offerings []types.ReservedInstanceOf
 	return ""
 }
 
-func normalizeOpenSearchPaymentOption(option string) (types.ReservedInstancePaymentOption, error) {
+func normalizeOpenSearchPaymentOption(option common.PaymentOption) (types.ReservedInstancePaymentOption, error) {
 	switch option {
 	case "all-upfront":
 		return types.ReservedInstancePaymentOptionAllUpfront, nil
@@ -531,7 +531,7 @@ func normalizeOpenSearchPaymentOption(option string) (types.ReservedInstancePaym
 // duration in months, failing loud on any unrecognized or empty input.
 // The parsing logic lives in purchasecfg.ParseTermMonths; this wrapper only
 // supplies the service name for the error message.
-func requiredMonthsForTerm(term string) (int, error) {
+func requiredMonthsForTerm(term common.Term) (int, error) {
 	return purchasecfg.ParseTermMonths(term, "OpenSearch")
 }
 

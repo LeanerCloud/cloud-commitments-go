@@ -205,7 +205,7 @@ func TestScore_MaxBreakEvenMonths_PriceUnknown(t *testing.T) {
 
 	passed := map[string]bool{}
 	for _, p := range result.Passed {
-		passed[p.ResourceType+"|"+p.PaymentOption] = true
+		passed[p.ResourceType+"|"+string(p.PaymentOption)] = true
 	}
 	assert.Equal(t, map[string]bool{
 		"Standard_D2s_v3|monthly":  true,

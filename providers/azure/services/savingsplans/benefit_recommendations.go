@@ -98,7 +98,7 @@ func benefitTerms(t string) ([]string, error) {
 	if strings.TrimSpace(t) == "" {
 		return []string{"P1Y", "P3Y"}, nil
 	}
-	years, err := reservations.ParseTermYears(t)
+	years, err := reservations.ParseTermYears(common.Term(t))
 	if err != nil {
 		return nil, fmt.Errorf("unsupported term %q for Azure savings plan recommendations (the API supports 1yr and 3yr): %w", t, err)
 	}
@@ -259,7 +259,7 @@ func convertBenefitRecommendation(r *benefitRecommendation, subscriptionID strin
 		ResourceType:         computeResourceType,
 		Count:                1,
 		CommitmentType:       common.CommitmentSavingsPlan,
-		Term:                 term,
+		Term:                 common.Term(term),
 		PaymentOption:        "monthly",
 		OnDemandCost:         *p.CostWithoutBenefit * monthly,
 		CommitmentCost:       0,

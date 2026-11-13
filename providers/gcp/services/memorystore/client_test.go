@@ -503,7 +503,7 @@ func TestMemorystoreClient_GetOfferingDetails_WithMockService(t *testing.T) {
 				require.NoError(t, err)
 				require.NotNil(t, details)
 				assert.Equal(t, tt.rec.ResourceType, details.ResourceType)
-				assert.Equal(t, tt.rec.Term, details.Term)
+				assert.Equal(t, string(tt.rec.Term), details.Term)
 				assert.Equal(t, "USD", details.Currency)
 			}
 		})
@@ -630,7 +630,7 @@ func TestMemorystoreClient_GetOfferingDetails_RecurringMonthlyCost(t *testing.T)
 		for _, payment := range []string{"monthly", "no-upfront"} {
 			t.Run(term+"/"+payment, func(t *testing.T) {
 				t.Parallel()
-				rec := common.Recommendation{ResourceType: "redis-basic", Region: region, Term: term, PaymentOption: payment}
+				rec := common.Recommendation{ResourceType: "redis-basic", Region: region, Term: common.Term(term), PaymentOption: common.PaymentOption(payment)}
 				quote, err := client.GetOfferingDetails(ctx, rec)
 				require.NoError(t, err)
 				assert.Equal(t, "EUR", quote.Currency)

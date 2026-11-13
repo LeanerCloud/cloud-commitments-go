@@ -165,8 +165,8 @@ func (c *Client) purchase(ctx context.Context, rec common.Recommendation, count 
 			Region:       rec.Region,
 			ResourceType: rec.ResourceType,
 			Count:        rec.Count,
-			Term:         rec.Term,
-			Payment:      rec.PaymentOption,
+			Term:         string(rec.Term),
+			Payment:      string(rec.PaymentOption),
 			Now:          time.Now(),
 		}, "elasticache-reserved-")
 	}
@@ -456,13 +456,13 @@ const (
 // The parsing logic lives in purchasecfg; this wrapper only supplies the
 // service name for the error message.
 func (c *Client) getDurationString(term string) (string, error) {
-	return purchasecfg.DurationSecondsString(term, "ElastiCache")
+	return purchasecfg.DurationSecondsString(common.Term(term), "ElastiCache")
 }
 
 // getDurationSeconds returns the request's duration string and the same value
 // as the int32 an offering reports.
-func (c *Client) getDurationSeconds(term string) (duration string, seconds int32, err error) {
-	duration, err = c.getDurationString(term)
+func (c *Client) getDurationSeconds(term common.Term) (duration string, seconds int32, err error) {
+	duration, err = c.getDurationString(string(term))
 	if err != nil {
 		return "", 0, err
 	}
@@ -477,7 +477,7 @@ func (c *Client) getDurationSeconds(term string) (duration string, seconds int32
 // Returns an error on unknown values so unsupported payment options surface
 // at the API boundary instead of being silently coerced to "Partial Upfront"
 // and committing the buyer to the wrong payment terms.
-func (c *Client) convertPaymentOption(option string) (string, error) {
+func (c *Client) convertPaymentOption(option common.PaymentOption) (string, error) {
 	switch option {
 	case "all-upfront":
 		return "All Upfront", nil

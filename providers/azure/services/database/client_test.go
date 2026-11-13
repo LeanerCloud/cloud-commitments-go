@@ -491,7 +491,7 @@ func TestDatabaseClient_GetOfferingDetails_SelectsSyntheticVCoreRow(t *testing.T
 				years = 3
 			}
 			sku := "GeneralPurpose_Gen5_1"
-			rec := common.Recommendation{ResourceType: sku, Term: term, PaymentOption: payment, Count: 7}
+			rec := common.Recommendation{ResourceType: sku, Term: common.Term(term), PaymentOption: common.PaymentOption(payment), Count: 7}
 			details, err := NewClientWithHTTP(nil, "sub", "eastus", mockHTTP).GetOfferingDetails(context.Background(), rec)
 			mockHTTP.AssertExpectations(t)
 			if tt.wantErr != "" {
@@ -868,8 +868,8 @@ func TestDatabaseClient_ConvertAzureSQLRecommendation_PopulatesAllFields(t *test
 	assert.Zero(t, out.CommitmentCost, "commitment is priced from the retail row at variant expansion")
 	assert.InDelta(t, 60.0*30.4375/7, out.EstimatedSavings, 1e-9)
 	assert.Equal(t, common.CommitmentReservedInstance, out.CommitmentType)
-	assert.Equal(t, "1yr", out.Term)
-	assert.Equal(t, "upfront", out.PaymentOption)
+	assert.Equal(t, common.Term("1yr"), out.Term)
+	assert.Equal(t, common.PaymentOption("upfront"), out.PaymentOption)
 
 	// Details carries Engine=sqlserver + InstanceClass from the SKU
 	// string. EngineVersion stays empty when the catalog has no
@@ -1283,7 +1283,7 @@ func TestDatabaseClient_PurchaseCommitment_BillingPlan(t *testing.T) {
 			mockCred := &MockTokenCredential{token: "test-token"}
 			client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
-			rec := common.Recommendation{Region: "eastus", ResourceType: "GP_Gen5_8", Term: "1yr", Count: 1, PaymentOption: tc.paymentOption}
+			rec := common.Recommendation{Region: "eastus", ResourceType: "GP_Gen5_8", Term: "1yr", Count: 1, PaymentOption: common.PaymentOption(tc.paymentOption)}
 
 			if tc.wantErrSub != "" {
 				result, err := client.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{Source: common.PurchaseSourceCLI})

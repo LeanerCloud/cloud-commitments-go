@@ -499,7 +499,7 @@ func TestCloudSQLClient_GetOfferingDetails_RecurringMonthlyCost(t *testing.T) {
 		for _, payment := range []string{"monthly", "no-upfront"} {
 			t.Run(term+"/"+payment, func(t *testing.T) {
 				t.Parallel()
-				rec := common.Recommendation{ResourceType: "db-n1-standard-1", Region: region, Term: term, PaymentOption: payment}
+				rec := common.Recommendation{ResourceType: "db-n1-standard-1", Region: region, Term: common.Term(term), PaymentOption: common.PaymentOption(payment)}
 				quote, err := client.GetOfferingDetails(ctx, rec)
 				require.NoError(t, err)
 				assert.Equal(t, "EUR", quote.Currency)

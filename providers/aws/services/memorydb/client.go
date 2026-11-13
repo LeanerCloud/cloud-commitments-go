@@ -159,8 +159,8 @@ func (c *Client) purchase(ctx context.Context, rec common.Recommendation, count 
 			Region:       rec.Region,
 			ResourceType: rec.ResourceType,
 			Count:        rec.Count,
-			Term:         rec.Term,
-			Payment:      rec.PaymentOption,
+			Term:         string(rec.Term),
+			Payment:      string(rec.PaymentOption),
 			Now:          time.Now(),
 		}, "memorydb-reserved-")
 	}
@@ -342,13 +342,13 @@ const maxListPages = 50
 
 // convertMemoryDBPaymentOption maps a rec payment-option slug to the AWS
 // DescribeReservedNodesOfferings OfferingType string value.
-func convertMemoryDBPaymentOption(option string) (string, error) {
+func convertMemoryDBPaymentOption(option common.PaymentOption) (string, error) {
 	switch option {
-	case string(common.PaymentAllUpfront):
+	case common.PaymentAllUpfront:
 		return "All Upfront", nil
-	case string(common.PaymentPartialUpfront):
+	case common.PaymentPartialUpfront:
 		return "Partial Upfront", nil
-	case string(common.PaymentNoUpfront):
+	case common.PaymentNoUpfront:
 		return "No Upfront", nil
 	default:
 		return "", fmt.Errorf("unsupported MemoryDB payment option: %s", option)
@@ -468,12 +468,12 @@ func isLastMemoryDBPage(nextToken *string) bool {
 // were accepted by the previous implementation and are kept for
 // compatibility, normalized here to the canonical domain rather than widening
 // purchasecfg.ParseTermMonths for every service on a money path.
-func (c *Client) getDurationStringForAPI(term string) (string, error) {
+func (c *Client) getDurationStringForAPI(term common.Term) (string, error) {
 	switch term {
 	case "12":
-		term = string(common.Term1Year)
+		term = common.Term1Year
 	case "36":
-		term = string(common.Term3Year)
+		term = common.Term3Year
 	}
 	duration, err := purchasecfg.DurationYearString(term, "MemoryDB")
 	if err != nil {

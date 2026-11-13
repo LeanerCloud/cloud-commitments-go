@@ -264,8 +264,8 @@ type Recommendation struct {
 
 	// Commitment details
 	CommitmentType CommitmentType `json:"commitment_type" csv:"CommitmentType"` // RI, SP, CUD, etc.
-	Term           string         `json:"term" csv:"Term"`                      // 1yr, 3yr
-	PaymentOption  string         `json:"payment_option" csv:"PaymentOption"`   // all-upfront, partial, no-upfront, monthly
+	Term           Term           `json:"term" csv:"Term"`                      // 1yr, 3yr
+	PaymentOption  PaymentOption  `json:"payment_option" csv:"PaymentOption"`   // all-upfront, partial, no-upfront, monthly
 
 	// CommitmentCurrency covers CommitmentCost and RecurringMonthlyCost, not savings or baseline.
 	// Empty means unknown; presence requires source-proven amounts and currency for every required payment leg.

@@ -79,7 +79,7 @@ func TestUpfrontPriceUnknown(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.payment, func(t *testing.T) {
 			t.Parallel()
-			assert.Equal(t, tt.want, UpfrontPriceUnknown(Recommendation{PaymentOption: tt.payment, CommitmentCost: tt.cost}))
+			assert.Equal(t, tt.want, UpfrontPriceUnknown(Recommendation{PaymentOption: PaymentOption(tt.payment), CommitmentCost: tt.cost}))
 		})
 	}
 }
@@ -105,7 +105,7 @@ func TestBreakEven_TypedConstants(t *testing.T) {
 	assert.Equal(t, 36.0, months)
 	assert.True(t, ok)
 
-	assert.True(t, UpfrontPriceUnknown(Recommendation{PaymentOption: string(PaymentAllUpfront)}))
-	assert.True(t, UpfrontPriceUnknown(Recommendation{PaymentOption: string(PaymentPartialUpfront)}))
-	assert.False(t, UpfrontPriceUnknown(Recommendation{PaymentOption: string(PaymentNoUpfront)}))
+	assert.True(t, UpfrontPriceUnknown(Recommendation{PaymentOption: PaymentAllUpfront}))
+	assert.True(t, UpfrontPriceUnknown(Recommendation{PaymentOption: PaymentPartialUpfront}))
+	assert.False(t, UpfrontPriceUnknown(Recommendation{PaymentOption: PaymentNoUpfront}))
 }

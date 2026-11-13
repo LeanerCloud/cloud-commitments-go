@@ -75,7 +75,7 @@ func ExtractConsumption(rec armconsumption.ReservationRecommendationClassificati
 	if err != nil {
 		return nil, fmt.Errorf("recommendation for %q in %q: %w", f.ResourceType, f.Region, err)
 	}
-	if _, err := TermYears(f.Term); err != nil {
+	if _, err := TermYears(common.Term(f.Term)); err != nil {
 		return nil, fmt.Errorf("recommendation for %q in %q: %w", f.ResourceType, f.Region, err)
 	}
 	if !meta.termPresent {
@@ -174,7 +174,7 @@ func checkLookBackDays(d *int32) (int, error) {
 
 // TermYears maps a normalised term ("1yr", "3yr") to years and fails on
 // anything else.
-func TermYears(term string) (int, error) {
+func TermYears(term common.Term) (int, error) {
 	t, ok := common.ParseTermSpelling(term, common.SpellCanonical)
 	if !ok {
 		return 0, fmt.Errorf("unrecognized term %q", term)

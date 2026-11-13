@@ -53,8 +53,8 @@ var liveCommitmentsFilter = fmt.Sprintf("(status != %s) (status != %s)",
 // commitment plan value derived from the SDK enum constants. Term parsing is
 // delegated to skumatch.TermYears; unlike it, an empty term is an error here
 // because a purchase must name its plan explicitly.
-func termPlan(term string) (string, error) {
-	if strings.TrimSpace(term) == "" {
+func termPlan(term common.Term) (string, error) {
+	if strings.TrimSpace(string(term)) == "" {
 		return "", fmt.Errorf("computeengine: termPlan: unrecognized commitment term %q (empty)", term)
 	}
 	years, err := skumatch.TermYears(term)
@@ -914,7 +914,7 @@ func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommend
 	if params.ExperimentalGCPPlanTerm {
 		log.Printf("computeengine: EXPERIMENTAL plan-term path: term %q for %q; root plan payload shape is unverified", term, gcpRec.GetName())
 	}
-	if _, err := termPlan(term); err != nil {
+	if _, err := termPlan(common.Term(term)); err != nil {
 		recskip.Record(ctx, "computeengine "+c.region, fmt.Errorf("recommendation %q has unrecognized term %q: %w", gcpRec.GetName(), term, err))
 		return nil, nil
 	}
@@ -926,8 +926,8 @@ func (c *Client) convertGCPRecommendation(ctx context.Context, gcpRec *recommend
 		Region:         c.region,
 		CommitmentType: common.CommitmentCUD,
 		Timestamp:      time.Now(),
-		Term:           term,
-		PaymentOption:  paymentOption,
+		Term:           common.Term(term),
+		PaymentOption:  common.PaymentOption(paymentOption),
 	}
 
 	if err := extractResourceTypeFromRecommendation(gcpRec, rec); err != nil {

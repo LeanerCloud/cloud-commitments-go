@@ -15,7 +15,7 @@ import (
 
 func riRow(service common.ServiceType, region, term, sku string, count int, payment string) common.Recommendation {
 	return common.Recommendation{Provider: common.ProviderAzure, Service: service, CommitmentType: common.CommitmentReservedInstance,
-		Account: "sub", Region: region, Term: term, ResourceType: sku, Count: count, PaymentOption: payment}
+		Account: "sub", Region: region, Term: common.Term(term), ResourceType: sku, Count: count, PaymentOption: common.PaymentOption(payment)}
 }
 
 // pricedFake is a service client that can also price Advisor rows at a flat USD 100 per unit.

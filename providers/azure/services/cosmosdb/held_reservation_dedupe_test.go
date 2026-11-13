@@ -47,7 +47,7 @@ func upfrontRec(t *testing.T, c *Client) common.Recommendation {
 	require.NoError(t, err)
 	require.Len(t, recs, 2)
 	upfront := recs[0]
-	require.Equal(t, "upfront", upfront.PaymentOption)
+	require.Equal(t, common.PaymentOption("upfront"), upfront.PaymentOption)
 	require.Equal(t, 2, upfront.Count)
 	// The dedupe key reads engine and deployment from the details; NoSQL
 	// recommendations carry neither, so held commitments must carry neither.

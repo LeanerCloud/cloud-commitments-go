@@ -52,7 +52,7 @@ func TestPurchaseBodies(t *testing.T) {
 	}
 	purchase := func(s purchaser, term string) (common.PurchaseResult, error) {
 		return s.PurchaseCommitment(context.Background(),
-			common.Recommendation{Region: "eastus", ResourceType: "GP_Gen5_8", Term: term, Count: 2, PaymentOption: "no-upfront"},
+			common.Recommendation{Region: "eastus", ResourceType: "GP_Gen5_8", Term: common.Term(term), Count: 2, PaymentOption: "no-upfront"},
 			common.PurchaseOptions{Source: common.PurchaseSourceCLI})
 	}
 	for _, svc := range services {
@@ -83,7 +83,7 @@ func TestPurchaseBodies(t *testing.T) {
 func TestPurchaseBodies_SearchUpfrontOnly(t *testing.T) {
 	t.Parallel()
 	rec := func(payment string) common.Recommendation {
-		return common.Recommendation{Region: "eastus", ResourceType: "GP_Gen5_8", Term: "1yr", Count: 2, PaymentOption: payment}
+		return common.Recommendation{Region: "eastus", ResourceType: "GP_Gen5_8", Term: "1yr", Count: 2, PaymentOption: common.PaymentOption(payment)}
 	}
 	opts := common.PurchaseOptions{Source: common.PurchaseSourceCLI}
 	for _, payment := range []string{"monthly", "no-upfront"} {

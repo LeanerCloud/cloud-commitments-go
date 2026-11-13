@@ -54,9 +54,9 @@ func TestPriceAdvisorReservations_PricesBothLegsInUSD(t *testing.T) {
 	got, skips := priceRows(t, &fakePrices{prices: map[string]azrecs.ReservationPrice{"Standard_D2s_v3": usd(120)}}, vmBase("eastus", "Standard_D2s_v3", 4))
 	require.Len(t, got, 2)
 	assert.Empty(t, skips.Entries())
-	assert.Equal(t, "upfront", got[0].PaymentOption)
+	assert.Equal(t, common.PaymentOption("upfront"), got[0].PaymentOption)
 	assert.Equal(t, 480.0, got[0].CommitmentCost)
-	assert.Equal(t, "monthly", got[1].PaymentOption)
+	assert.Equal(t, common.PaymentOption("monthly"), got[1].PaymentOption)
 	assert.Equal(t, 40.0, *got[1].RecurringMonthlyCost)
 	for _, g := range got {
 		assert.Equal(t, "USD", g.CommitmentCurrency)

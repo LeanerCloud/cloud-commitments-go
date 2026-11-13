@@ -45,7 +45,7 @@ func TestRecommendationPlanDrivesPurchaseTerm(t *testing.T) {
 			recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{Term: tc.paramTerm, ExperimentalGCPPlanTerm: true})
 			require.NoError(t, err)
 			require.Len(t, recs, 1)
-			assert.Equal(t, tc.wantTerm, recs[0].Term)
+			assert.Equal(t, common.Term(tc.wantTerm), recs[0].Term)
 			_, err = client.PurchaseCommitment(context.Background(), recs[0], common.PurchaseOptions{})
 			require.NoError(t, err)
 			assert.Equal(t, tc.wantPlan, service.lastInsertReq.CommitmentResource.GetPlan())
@@ -115,7 +115,7 @@ func TestRecommendationPlanConflictKeepsGoodRecommendation(t *testing.T) {
 	recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{Term: "3yr", ExperimentalGCPPlanTerm: true})
 	require.NoError(t, err)
 	require.Len(t, recs, 1)
-	assert.Equal(t, "3yr", recs[0].Term)
+	assert.Equal(t, common.Term("3yr"), recs[0].Term)
 	assert.Empty(t, service.insertReqs, "listing must not insert")
 }
 
@@ -136,7 +136,7 @@ func TestRecommendationMalformedRootValueKeepsGoodRecommendation(t *testing.T) {
 	recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{ExperimentalGCPPlanTerm: true})
 	require.NoError(t, err, "a malformed root value must be skipped, not abort the batch")
 	require.Len(t, recs, 1)
-	assert.Equal(t, "3yr", recs[0].Term)
+	assert.Equal(t, common.Term("3yr"), recs[0].Term)
 	assert.Empty(t, service.insertReqs, "listing must not insert")
 }
 
@@ -161,7 +161,7 @@ func TestExplicitTermIsCanonicalized(t *testing.T) {
 			recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{Term: raw, ExperimentalGCPPlanTerm: true})
 			require.NoError(t, err)
 			require.Len(t, recs, 1)
-			assert.Equal(t, "3yr", recs[0].Term, "raw %q plan %q", raw, plan)
+			assert.Equal(t, common.Term("3yr"), recs[0].Term, "raw %q plan %q", raw, plan)
 			years, yErr := skumatch.TermYears(recs[0].Term)
 			require.NoError(t, yErr)
 			assert.Equal(t, 3, years)
@@ -188,7 +188,7 @@ func TestPlanTermOffByDefault(t *testing.T) {
 			recs, err := client.GetRecommendations(context.Background(), &common.RecommendationParams{Term: tc.paramTerm})
 			require.NoError(t, err)
 			require.Len(t, recs, 1)
-			assert.Equal(t, tc.wantTerm, recs[0].Term)
+			assert.Equal(t, common.Term(tc.wantTerm), recs[0].Term)
 			_, err = client.PurchaseCommitment(context.Background(), recs[0], common.PurchaseOptions{})
 			require.NoError(t, err)
 			assert.Equal(t, tc.wantPlan, service.lastInsertReq.CommitmentResource.GetPlan())

@@ -380,7 +380,7 @@ func TestRequiredMonthsForTerm(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := requiredMonthsForTerm(tt.term)
+			result, err := requiredMonthsForTerm(common.Term(tt.term))
 			if tt.expectErr {
 				if assert.Error(t, err) {
 					assert.Contains(t, err.Error(), "unsupported Redshift reservation term")
@@ -1063,7 +1063,7 @@ func rsPaymentRec(paymentOption string) common.Recommendation {
 		Service:       common.ServiceDataWarehouse,
 		ResourceType:  "ra3.xlplus",
 		Count:         1,
-		PaymentOption: paymentOption,
+		PaymentOption: common.PaymentOption(paymentOption),
 		Term:          "1yr",
 		Region:        "us-east-1",
 		Details:       common.DataWarehouseDetails{NodeType: "ra3.xlplus", NumberOfNodes: 1},
@@ -1188,7 +1188,7 @@ func TestMatchesPaymentOption(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := matchesPaymentOption(rsOffering("x", tt.fixedPrice, tt.recurring), tt.paymentOption)
+			got := matchesPaymentOption(rsOffering("x", tt.fixedPrice, tt.recurring), common.PaymentOption(tt.paymentOption))
 			assert.Equal(t, tt.want, got)
 		})
 	}

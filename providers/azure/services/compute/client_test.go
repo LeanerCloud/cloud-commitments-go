@@ -311,7 +311,7 @@ func TestComputeClient_GetRecommendations_EmitsBothPaymentVariants(t *testing.T)
 
 	payments := make(map[string]common.Recommendation)
 	for _, r := range recs {
-		payments[r.PaymentOption] = r
+		payments[string(r.PaymentOption)] = r
 	}
 	require.Contains(t, payments, "upfront", "upfront variant must be present")
 	require.Contains(t, payments, "monthly", "monthly variant must be present")
@@ -334,7 +334,7 @@ func TestComputeClient_GetRecommendations_EmitsBothPaymentVariants(t *testing.T)
 	// Shared fields.
 	assert.Equal(t, "test-subscription", allUp.Account)
 	assert.Equal(t, common.ServiceCompute, allUp.Service)
-	assert.Equal(t, "1yr", allUp.Term)
+	assert.Equal(t, common.Term("1yr"), allUp.Term)
 }
 
 func TestComputeClient_GetExistingCommitments_WithMock(t *testing.T) {
@@ -775,7 +775,7 @@ func TestComputeClient_PurchaseCommitment_UpfrontCost(t *testing.T) {
 				})).Return(bought, nil).Once()
 			}
 			rec := common.Recommendation{Region: "eastus", ResourceType: "Standard_D2s_v3", Term: "1yr", Count: 3,
-				PaymentOption: tt.payment, CommitmentCost: tt.estimate}
+				PaymentOption: common.PaymentOption(tt.payment), CommitmentCost: tt.estimate}
 			result, err := client.PurchaseCommitment(context.Background(), rec, opts)
 			require.NoError(t, err)
 			assert.True(t, result.Success)
@@ -1221,8 +1221,8 @@ func TestComputeClient_ConvertAzureVMRecommendation_PopulatesAllFields(t *testin
 	assert.Zero(t, out.CommitmentCost, "commitment is priced from the retail row at variant expansion")
 	assert.InDelta(t, 30.0*30.4375/7, out.EstimatedSavings, 1e-9)
 	assert.Equal(t, common.CommitmentReservedInstance, out.CommitmentType)
-	assert.Equal(t, "3yr", out.Term)
-	assert.Equal(t, "upfront", out.PaymentOption)
+	assert.Equal(t, common.Term("3yr"), out.Term)
+	assert.Equal(t, common.PaymentOption("upfront"), out.PaymentOption)
 
 	// The recurring cost is set per payment variant at expansion.
 	assert.Nil(t, out.RecurringMonthlyCost)
@@ -1296,7 +1296,7 @@ func TestBuildReservationBody_BillingPlan(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			billingPlan, err := reservations.BillingPlanForPaymentOption(tc.paymentOption)
+			billingPlan, err := reservations.BillingPlanForPaymentOption(common.PaymentOption(tc.paymentOption))
 			if tc.wantErrSub != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tc.wantErrSub)
@@ -1305,7 +1305,7 @@ func TestBuildReservationBody_BillingPlan(t *testing.T) {
 			require.NoError(t, err)
 
 			c := &Client{region: "eastus", subscriptionID: "sub-abc"}
-			rec := common.Recommendation{Region: "eastus", ResourceType: "Standard_D2s_v3", Count: 1, Term: "1yr", PaymentOption: tc.paymentOption}
+			rec := common.Recommendation{Region: "eastus", ResourceType: "Standard_D2s_v3", Count: 1, Term: "1yr", PaymentOption: common.PaymentOption(tc.paymentOption)}
 
 			body, err := c.buildReservationBody(rec, billingPlan, common.PurchaseSourceWeb, "")
 			require.NoError(t, err)

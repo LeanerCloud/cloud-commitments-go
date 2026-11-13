@@ -69,8 +69,8 @@ func TestGetRecommendations_MapsRow(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, recs, 1)
 	r := recs[0]
-	assert.Equal(t, "1yr", r.Term)
-	assert.Equal(t, "monthly", r.PaymentOption)
+	assert.Equal(t, common.Term("1yr"), r.Term)
+	assert.Equal(t, common.PaymentOption("monthly"), r.PaymentOption)
 	assert.Equal(t, 0.0, r.CommitmentCost)
 	assert.Equal(t, "USD", r.CommitmentCurrency)
 	require.NotNil(t, r.RecurringMonthlyCost)
@@ -102,8 +102,8 @@ func TestGetRecommendations_EmptyTermRequestsBoth(t *testing.T) {
 	recs, err := newTestClient(h).GetRecommendations(context.Background(), &common.RecommendationParams{})
 	require.NoError(t, err)
 	require.Len(t, recs, 2)
-	assert.Equal(t, "1yr", recs[0].Term)
-	assert.Equal(t, "3yr", recs[1].Term)
+	assert.Equal(t, common.Term("1yr"), recs[0].Term)
+	assert.Equal(t, common.Term("3yr"), recs[1].Term)
 	assert.Contains(t, h.reqs[0].URL.Query().Get("$filter"), "properties/lookBackPeriod eq 'Last7Days'")
 }
 

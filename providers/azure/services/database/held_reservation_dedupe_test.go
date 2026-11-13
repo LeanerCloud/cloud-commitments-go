@@ -65,7 +65,7 @@ func upfrontRec(t *testing.T, c *Client) common.Recommendation {
 	require.NoError(t, err)
 	require.Len(t, recs, 2)
 	upfront := recs[0]
-	require.Equal(t, "upfront", upfront.PaymentOption)
+	require.Equal(t, common.PaymentOption("upfront"), upfront.PaymentOption)
 	require.Equal(t, 2, upfront.Count)
 	require.Equal(t, "sqlserver", common.EngineFromDetails(upfront.Details))
 	return upfront

@@ -35,7 +35,7 @@ func BreakEven(rec Recommendation) (months float64, known bool) {
 	if upfront == 0 {
 		return 0, !UpfrontPriceUnknown(rec)
 	}
-	termMonths, ok := breakEvenTermMonths(rec.Term)
+	termMonths, ok := breakEvenTermMonths(string(rec.Term))
 	if !ok {
 		return 0, false
 	}
@@ -75,7 +75,7 @@ func UpfrontPriceUnknown(rec Recommendation) bool {
 	if rec.CommitmentCost != 0 {
 		return false
 	}
-	switch paymentKeyReplacer.Replace(strings.ToLower(strings.TrimSpace(rec.PaymentOption))) {
+	switch paymentKeyReplacer.Replace(strings.ToLower(strings.TrimSpace(string(rec.PaymentOption)))) {
 	case paymentKey(PaymentAllUpfront), "upfront", paymentKey(PaymentPartialUpfront), "partial":
 		return true
 	default:

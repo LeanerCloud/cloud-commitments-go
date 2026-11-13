@@ -296,7 +296,7 @@ func NewAuditRecord(runID string, rec Recommendation, result PurchaseResult, sta
 		Service:              string(rec.Service),
 		ResourceType:         rec.ResourceType,
 		CommitmentType:       rec.CommitmentType,
-		Term:                 termMonths(rec.Term),
+		Term:                 termMonths(string(rec.Term)),
 		Count:                rec.Count,
 		EstimatedCost:        rec.CommitmentCost,
 		RecurringMonthlyCost: copyFloatPtr(rec.RecurringMonthlyCost),

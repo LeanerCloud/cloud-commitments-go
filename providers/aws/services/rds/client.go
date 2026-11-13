@@ -279,8 +279,8 @@ func (c *Client) deriveReservationID(rec common.Recommendation, opts common.Purc
 		Region:       rec.Region,
 		ResourceType: rec.ResourceType,
 		Count:        rec.Count,
-		Term:         rec.Term,
-		Payment:      rec.PaymentOption,
+		Term:         string(rec.Term),
+		Payment:      string(rec.PaymentOption),
 		Now:          time.Now(),
 	}, "rds-reserved-")
 }
@@ -555,8 +555,8 @@ func isLicensedEngine(name string) bool {
 
 // offeringDuration returns the term as the API's duration string and as seconds
 // for the exact-match check.
-func (c *Client) offeringDuration(term string) (duration string, seconds int64, err error) {
-	duration, err = c.getDurationString(term)
+func (c *Client) offeringDuration(term common.Term) (duration string, seconds int64, err error) {
+	duration, err = c.getDurationString(string(term))
 	if err != nil {
 		return "", 0, err
 	}
@@ -684,11 +684,11 @@ const (
 // logic lives in purchasecfg; this wrapper only supplies the service name
 // for the error message.
 func (c *Client) getDurationString(term string) (string, error) {
-	return purchasecfg.DurationSecondsString(term, "RDS")
+	return purchasecfg.DurationSecondsString(common.Term(term), "RDS")
 }
 
 // convertPaymentOption converts payment option to AWS string.
-func (c *Client) convertPaymentOption(option string) (string, error) {
+func (c *Client) convertPaymentOption(option common.PaymentOption) (string, error) {
 	switch option {
 	case "all-upfront":
 		return "All Upfront", nil

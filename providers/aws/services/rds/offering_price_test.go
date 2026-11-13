@@ -47,7 +47,7 @@ func TestGetOfferingDetails_Pricing(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := common.Recommendation{
-				Service: common.ServiceRelationalDB, ResourceType: "db.m6g.large", PaymentOption: "no-upfront", Term: tc.term,
+				Service: common.ServiceRelationalDB, ResourceType: "db.m6g.large", PaymentOption: "no-upfront", Term: common.Term(tc.term),
 				Details: &common.DatabaseDetails{Engine: "postgres", AZConfig: "multi-az"},
 			}
 			charges := make([]types.RecurringCharge, 0, len(tc.charges))

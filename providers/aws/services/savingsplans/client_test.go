@@ -540,7 +540,7 @@ func TestClient_PurchaseCommitment_UpfrontCost(t *testing.T) {
 			if tt.payment != "" {
 				payment = tt.payment
 			}
-			rec := common.Recommendation{ResourceType: "Compute", Count: 3, PaymentOption: string(payment), Term: "1yr",
+			rec := common.Recommendation{ResourceType: "Compute", Count: 3, PaymentOption: common.PaymentOption(payment), Term: "1yr",
 				Details: &common.SavingsPlanDetails{PlanType: "Compute", HourlyCommitment: 10}}
 			m.On("DescribeSavingsPlansOfferings", mock.Anything, mock.MatchedBy(func(in *savingsplans.DescribeSavingsPlansOfferingsInput) bool {
 				return len(in.PaymentOptions) == 1 && in.PaymentOptions[0] == payment
@@ -899,7 +899,7 @@ func TestClient_FindOfferingID_AllPaymentOptions(t *testing.T) {
 
 			rec := common.Recommendation{
 				Service:       common.ServiceSavingsPlansAll,
-				PaymentOption: tt.paymentOption,
+				PaymentOption: common.PaymentOption(tt.paymentOption),
 				Term:          "1yr",
 				Details: &common.SavingsPlanDetails{
 					PlanType:         "Compute",
@@ -957,7 +957,7 @@ func TestClient_FindOfferingID_TermVariations(t *testing.T) {
 			rec := common.Recommendation{
 				Service:       common.ServiceSavingsPlansAll,
 				PaymentOption: "all-upfront",
-				Term:          tt.term,
+				Term:          common.Term(tt.term),
 				Details: &common.SavingsPlanDetails{
 					PlanType:         "Compute",
 					HourlyCommitment: 10.0,
@@ -1472,8 +1472,8 @@ func TestEC2InstanceSP_MultiRegionResponseFailsLoud(t *testing.T) {
 func storedOfferingRec(term, payment string) common.Recommendation {
 	return common.Recommendation{
 		ResourceType:  "EC2Instance",
-		PaymentOption: payment,
-		Term:          term,
+		PaymentOption: common.PaymentOption(payment),
+		Term:          common.Term(term),
 		Details: &common.SavingsPlanDetails{
 			PlanType:         "EC2Instance",
 			HourlyCommitment: 0.5,

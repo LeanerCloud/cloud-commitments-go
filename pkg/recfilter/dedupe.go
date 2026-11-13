@@ -307,7 +307,7 @@ type variantGroup struct {
 }
 
 func (v *variantGroups) of(rec common.Recommendation) *variantGroup {
-	variant := strings.ToLower(strings.TrimSpace(rec.Term)) + "|" + strings.ToLower(strings.TrimSpace(rec.PaymentOption))
+	variant := strings.ToLower(strings.TrimSpace(string(rec.Term))) + "|" + strings.ToLower(strings.TrimSpace(string(rec.PaymentOption)))
 	g, ok := v.groups[variant]
 	if !ok {
 		g = &variantGroup{held: maps.Clone(v.held), ec2: newEC2Dedupe(v.recent, v.logf)}

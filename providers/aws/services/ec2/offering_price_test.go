@@ -20,7 +20,7 @@ import (
 
 func priceRec(term string) common.Recommendation {
 	return common.Recommendation{
-		Service: common.ServiceCompute, ResourceType: "t3.micro", Term: term, Count: 3,
+		Service: common.ServiceCompute, ResourceType: "t3.micro", Term: common.Term(term), Count: 3,
 		PaymentOption: "partial-upfront", Region: "us-east-1",
 		Details: &common.ComputeDetails{Platform: "Linux/UNIX", Tenancy: "default", Scope: "Region"},
 	}

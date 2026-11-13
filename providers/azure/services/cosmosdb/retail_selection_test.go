@@ -166,7 +166,7 @@ func TestCosmosOffering_CapturedReservations(t *testing.T) {
 						r := fixture.row(years)
 						h, requests := cosmosHTTP(t, [][]map[string]any{{r}}, "")
 						term := strconv.Itoa(years) + "yr"
-						q, err := cosmosdb.NewClientWithHTTP(nil, "synthetic-subscription", "westus", h).GetOfferingDetails(context.Background(), common.Recommendation{ResourceType: sku, Term: term, PaymentOption: payment, Count: 3})
+						q, err := cosmosdb.NewClientWithHTTP(nil, "synthetic-subscription", "westus", h).GetOfferingDetails(context.Background(), common.Recommendation{ResourceType: sku, Term: common.Term(term), PaymentOption: common.PaymentOption(payment), Count: 3})
 						require.NoError(t, err)
 						assert.Equal(t, int32(1), requests.Load())
 						assertCosmosQuote(t, q, sku, "westus", term, payment, "USD", r["retailPrice"].(float64), years)
@@ -357,7 +357,7 @@ func TestCosmosOffering_MixedTerms(t *testing.T) {
 				}
 				h, requests := cosmosHTTP(t, [][]map[string]any{{cosmosConsumption(), first, second}}, "")
 				term := strconv.Itoa(years) + "yr"
-				q, err := cosmosdb.NewClientWithHTTP(nil, "synthetic-subscription", "eastus", h).GetOfferingDetails(context.Background(), common.Recommendation{ResourceType: "Cosmos_DB_100_RUs", Term: term, PaymentOption: "upfront"})
+				q, err := cosmosdb.NewClientWithHTTP(nil, "synthetic-subscription", "eastus", h).GetOfferingDetails(context.Background(), common.Recommendation{ResourceType: "Cosmos_DB_100_RUs", Term: common.Term(term), PaymentOption: "upfront"})
 				require.NoError(t, err)
 				assert.Equal(t, int32(1), requests.Load())
 				want := 56.0

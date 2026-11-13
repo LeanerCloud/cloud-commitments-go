@@ -47,7 +47,7 @@ func TestGetOfferingDetails_Pricing(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := common.Recommendation{
-				Service: common.ServiceSearch, ResourceType: "m5.large.search", PaymentOption: "partial-upfront", Term: tc.term,
+				Service: common.ServiceSearch, ResourceType: "m5.large.search", PaymentOption: "partial-upfront", Term: common.Term(tc.term),
 				Details: common.SearchDetails{InstanceType: "m5.large.search"},
 			}
 			charges := make([]types.RecurringCharge, 0, len(tc.charges))

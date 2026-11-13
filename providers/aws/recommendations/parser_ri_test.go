@@ -378,8 +378,8 @@ func TestParseRecommendationDetail_WithAccountAndCosts(t *testing.T) {
 
 	assert.Equal(t, common.ProviderAWS, rec.Provider)
 	assert.Equal(t, common.ServiceEC2, rec.Service)
-	assert.Equal(t, "partial-upfront", rec.PaymentOption)
-	assert.Equal(t, "1yr", rec.Term)
+	assert.Equal(t, common.PaymentPartialUpfront, rec.PaymentOption)
+	assert.Equal(t, common.Term1Year, rec.Term)
 	assert.Equal(t, common.CommitmentReservedInstance, rec.CommitmentType)
 	assert.Equal(t, 2, rec.Count)
 	assert.Equal(t, 150.00, rec.EstimatedSavings)

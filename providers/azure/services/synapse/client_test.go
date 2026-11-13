@@ -164,15 +164,15 @@ func TestGetRecommendations_singlePage(t *testing.T) {
 	assert.Equal(t, 2, r.Count)
 	assert.Equal(t, common.ProviderAzure, r.Provider)
 	assert.Equal(t, common.CommitmentReservedInstance, r.CommitmentType)
-	assert.Equal(t, "1yr", r.Term)
-	assert.Equal(t, "upfront", r.PaymentOption)
+	assert.Equal(t, common.Term("1yr"), r.Term)
+	assert.Equal(t, common.PaymentOption("upfront"), r.PaymentOption)
 	assert.InDelta(t, 5000.0*30.4375/7, r.OnDemandCost, 0.01)
 	assert.InDelta(t, 1500.0*30.4375/7, r.EstimatedSavings, 0.01)
 	// 2 x DW1000c at the $1,000 1-year reservation price, paid upfront.
 	assert.InDelta(t, 2000.0, r.CommitmentCost, 0.01)
 	require.NotNil(t, r.RecurringMonthlyCost)
 	assert.Zero(t, *r.RecurringMonthlyCost)
-	assert.Equal(t, "monthly", recs[1].PaymentOption)
+	assert.Equal(t, common.PaymentOption("monthly"), recs[1].PaymentOption)
 	assert.Zero(t, recs[1].CommitmentCost)
 	require.NotNil(t, recs[1].RecurringMonthlyCost)
 	assert.InDelta(t, 2000.0/12, *recs[1].RecurringMonthlyCost, 0.01)
@@ -560,7 +560,7 @@ func TestGetOfferingDetails_CapturedDW100cAndTerms(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			client, requests := synapseQuoteClient(t, "eastus", synapsePricePage(t, tc.rows, ""))
 			quote, err := client.GetOfferingDetails(context.Background(), common.Recommendation{
-				ResourceType: "DW100c", Term: tc.term, PaymentOption: tc.payment, Count: 3,
+				ResourceType: "DW100c", Term: common.Term(tc.term), PaymentOption: common.PaymentOption(tc.payment), Count: 3,
 			})
 			require.NoError(t, err)
 			assert.Equal(t, tc.wantTotal, quote.TotalCost)
@@ -894,7 +894,7 @@ func TestParseReservationTermYears(t *testing.T) {
 		{"bogus", 0, true},
 	}
 	for _, tc := range tests {
-		got, err := reservations.ParseTermYears(tc.term)
+		got, err := reservations.ParseTermYears(common.Term(tc.term))
 		if tc.wantErr {
 			assert.Error(t, err, "term=%q should be an error", tc.term)
 		} else {
@@ -977,7 +977,7 @@ func TestPurchaseCommitment_billingPlan(t *testing.T) {
 			cred := &mockTokenCredential{token: "test-token"}
 			c := NewClientWithHTTP(cred, "sub-123", "eastus", mHTTP)
 
-			rec := common.Recommendation{Region: "eastus", ResourceType: "DW1000c", Term: "1yr", Count: 1, PaymentOption: tc.paymentOption}
+			rec := common.Recommendation{Region: "eastus", ResourceType: "DW1000c", Term: "1yr", Count: 1, PaymentOption: common.PaymentOption(tc.paymentOption)}
 
 			if tc.wantErrSub != "" {
 				result, err := c.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{Source: common.PurchaseSourceCLI})

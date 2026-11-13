@@ -48,7 +48,7 @@ func TestGetOfferingDetails_Pricing(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := common.Recommendation{
-				Service: common.ServiceCache, ResourceType: "cache.r6g.xlarge", PaymentOption: "partial-upfront", Term: tc.term,
+				Service: common.ServiceCache, ResourceType: "cache.r6g.xlarge", PaymentOption: "partial-upfront", Term: common.Term(tc.term),
 				Details: &common.CacheDetails{Engine: "redis", NodeType: "cache.r6g.xlarge"},
 			}
 			region := tc.region

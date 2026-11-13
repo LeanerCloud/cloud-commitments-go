@@ -317,8 +317,8 @@ func TestSPCompletenessSDKAggregation(t *testing.T) {
 					assertSPIncomplete(t, err, 6, 6)
 					require.Len(t, recs, 6)
 					for i, rec := range recs {
-						require.Equal(t, []string{"1yr", "3yr"}[i/3], rec.Term)
-						require.Equal(t, []string{"all-upfront", "partial-upfront", "no-upfront"}[i%3], rec.PaymentOption)
+						require.Equal(t, []common.Term{common.Term1Year, common.Term3Year}[i/3], rec.Term)
+						require.Equal(t, []common.PaymentOption{common.PaymentAllUpfront, common.PaymentPartialUpfront, common.PaymentNoUpfront}[i%3], rec.PaymentOption)
 					}
 				case kind == "failed-combo" || (kind == "failed-service" && allServices):
 					assertSPIncomplete(t, err, 0, 1)

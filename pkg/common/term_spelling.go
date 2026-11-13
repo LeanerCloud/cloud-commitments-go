@@ -41,11 +41,12 @@ var termSpellings = map[string]struct {
 
 // ParseTermSpelling maps s to a Term when s is one of the spellings selected
 // by accept, and reports false otherwise.
-func ParseTermSpelling(s string, accept TermSpelling) (Term, bool) {
+func ParseTermSpelling[S ~string](s S, accept TermSpelling) (Term, bool) {
+	key := string(s)
 	if accept&SpellFold != 0 {
-		s = strings.ToLower(strings.TrimSpace(s))
+		key = strings.ToLower(strings.TrimSpace(key))
 	}
-	e, ok := termSpellings[s]
+	e, ok := termSpellings[key]
 	if !ok || accept&e.flag == 0 {
 		return "", false
 	}

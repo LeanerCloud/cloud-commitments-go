@@ -348,8 +348,8 @@ func (c *Client) tagReservedInstance(ctx context.Context, riID string, rec commo
 		Region:       rec.Region,
 		ResourceType: rec.ResourceType,
 		Count:        rec.Count,
-		Term:         rec.Term,
-		Payment:      rec.PaymentOption,
+		Term:         string(rec.Term),
+		Payment:      string(rec.PaymentOption),
 		Now:          time.Now(),
 	}, "ec2-reserved-")
 	tags := []types.Tag{
@@ -358,8 +358,8 @@ func (c *Client) tagReservedInstance(ctx context.Context, riID string, rec commo
 		{Key: aws.String("ResourceType"), Value: aws.String(rec.ResourceType)},
 		{Key: aws.String("Region"), Value: aws.String(rec.Region)},
 		{Key: aws.String("Count"), Value: aws.String(fmt.Sprintf("%d", rec.Count))},
-		{Key: aws.String("Term"), Value: aws.String(rec.Term)},
-		{Key: aws.String("PaymentOption"), Value: aws.String(rec.PaymentOption)},
+		{Key: aws.String("Term"), Value: aws.String(string(rec.Term))},
+		{Key: aws.String("PaymentOption"), Value: aws.String(string(rec.PaymentOption))},
 		{Key: aws.String("PurchaseDate"), Value: aws.String(time.Now().Format("2006-01-02"))},
 		{Key: aws.String("Tool"), Value: aws.String("CUDly")},
 	}
@@ -445,7 +445,7 @@ const maxListPages = 50
 
 // convertEC2PaymentOption maps a rec payment-option slug to the AWS
 // DescribeReservedInstancesOfferings OfferingType enum value.
-func convertEC2PaymentOption(option string) (types.OfferingTypeValues, error) {
+func convertEC2PaymentOption(option common.PaymentOption) (types.OfferingTypeValues, error) {
 	switch option {
 	case "all-upfront":
 		return types.OfferingTypeValuesAllUpfront, nil
@@ -763,7 +763,7 @@ func (c *Client) GetOfferingDetailsForClass(ctx context.Context, rec common.Reco
 	details := &common.OfferingDetails{
 		OfferingID:          aws.ToString(offering.ReservedInstancesOfferingId),
 		ResourceType:        string(offering.InstanceType),
-		Term:                rec.Term,
+		Term:                string(rec.Term),
 		PaymentOption:       string(offering.OfferingType),
 		UpfrontCost:         priced.Upfront,
 		RecurringCost:       priced.Hourly,
@@ -785,7 +785,7 @@ const (
 // failing loud on any unrecognized or empty input. The parsing logic lives
 // in purchasecfg; this wrapper only supplies the service name for the error
 // message.
-func (c *Client) getDurationValue(term string) (int64, error) {
+func (c *Client) getDurationValue(term common.Term) (int64, error) {
 	return purchasecfg.DurationSeconds(term, "EC2")
 }
 
@@ -1079,7 +1079,7 @@ func normalizeTargetOfferingsParams(p ListTargetOfferingsParams) (productDesc st
 		return "", 0, "", fmt.Errorf("duration must be a positive number of seconds, got %d", p.Duration)
 	}
 	if p.OfferingType != "" {
-		if offeringType, err = convertEC2PaymentOption(p.OfferingType); err != nil {
+		if offeringType, err = convertEC2PaymentOption(common.PaymentOption(p.OfferingType)); err != nil {
 			return "", 0, "", err
 		}
 	}

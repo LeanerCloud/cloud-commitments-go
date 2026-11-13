@@ -115,7 +115,7 @@ func quoteRows(t *testing.T, pages [][]retailRow, term, payment string, honorTyp
 	client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
 	c := compute.NewClientWithHTTP(nil, "synthetic-subscription", "eastus", retailHTTP{client, target})
 	quote, err := c.GetOfferingDetails(context.Background(), common.Recommendation{
-		ResourceType: "Standard_D2s_v3", Term: term, PaymentOption: payment,
+		ResourceType: "Standard_D2s_v3", Term: common.Term(term), PaymentOption: common.PaymentOption(payment),
 	})
 	assert.Equal(t, int32(len(pages)), requests.Load(), "all catalog pages must be consumed")
 	return quote, err

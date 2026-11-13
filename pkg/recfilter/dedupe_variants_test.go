@@ -11,7 +11,7 @@ import (
 )
 
 func variantRec(term, payment string) common.Recommendation {
-	return common.Recommendation{ResourceType: "Premium_P1", Region: "eastus", Count: 2, Term: term, PaymentOption: payment}
+	return common.Recommendation{ResourceType: "Premium_P1", Region: "eastus", Count: 2, Term: common.Term(term), PaymentOption: common.PaymentOption(payment)}
 }
 
 func adjustCounts(t *testing.T, held []common.Commitment, recs []common.Recommendation) []int {
@@ -78,7 +78,7 @@ func TestDedupe_ElastiCacheCoverWithVariants(t *testing.T) {
 	mk := func(term string) common.Recommendation {
 		return common.Recommendation{
 			Provider: common.ProviderAWS, Service: common.ServiceElastiCache, ResourceType: "cache.r6g.large",
-			Region: "us-east-1", Count: 6, Term: term, PaymentOption: "no-upfront",
+			Region: "us-east-1", Count: 6, Term: common.Term(term), PaymentOption: "no-upfront",
 			Details: &common.CacheDetails{Engine: "valkey"},
 		}
 	}
@@ -95,7 +95,7 @@ func TestDedupe_EC2VariantsEachSeeFullHeldQuantity(t *testing.T) {
 	mk := func(term, payment string) common.Recommendation {
 		return common.Recommendation{
 			Provider: common.ProviderAWS, Service: common.ServiceEC2, ResourceType: "m5.large", Region: "us-east-1",
-			Count: 2, Term: term, PaymentOption: payment,
+			Count: 2, Term: common.Term(term), PaymentOption: common.PaymentOption(payment),
 			Details: &common.ComputeDetails{Platform: "Linux/UNIX", Tenancy: "default", Scope: "region"},
 		}
 	}

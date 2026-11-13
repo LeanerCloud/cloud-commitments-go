@@ -143,7 +143,7 @@ func TestPurchaseCostAndExisting(t *testing.T) {
 		}{{"monthly", true}, {"upfront", false}} {
 			t.Run(gc.name+"/"+c.payment, func(t *testing.T) {
 				rec := validRec()
-				rec.PaymentOption = c.payment
+				rec.PaymentOption = common.PaymentOption(c.payment)
 				res, err := gc.build(&reservationstest.CountingCred{}, &reservationstest.Capture{}).PurchaseCommitment(context.Background(), rec, validOpts())
 				require.NoError(t, err)
 				require.True(t, res.Success)

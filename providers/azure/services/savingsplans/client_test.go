@@ -270,7 +270,7 @@ func TestGetExistingCommitments_PagerError(t *testing.T) {
 
 func makeRec(term string) common.Recommendation {
 	return common.Recommendation{
-		Term:          term,
+		Term:          common.Term(term),
 		PaymentOption: "No Upfront",
 		Details: &common.SavingsPlanDetails{
 			PlanType:         "Compute",
@@ -658,7 +658,7 @@ func TestToAzureTerm(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
-			got, err := toAzureTerm(tt.input)
+			got, err := toAzureTerm(common.Term(tt.input))
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {

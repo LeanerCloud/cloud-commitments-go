@@ -3,6 +3,7 @@ package purchasecfg
 import (
 	"testing"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -27,7 +28,7 @@ func TestParseTermMonths(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := ParseTermMonths(tt.term, "Test")
+			result, err := ParseTermMonths(common.Term(tt.term), "Test")
 			if tt.expectErr {
 				if assert.Error(t, err) {
 					assert.Contains(t, err.Error(), "unsupported Test reservation term")

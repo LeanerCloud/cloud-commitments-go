@@ -204,7 +204,7 @@ func rootPlanTerm(root *recommenderpb.Operation) (term string, found bool, err e
 // canonicalTerm maps any accepted term spelling to "1yr" or "3yr". An
 // unrecognized term is returned unchanged so the caller skips it, as before.
 func canonicalTerm(term string) string {
-	plan, err := termPlan(term)
+	plan, err := termPlan(common.Term(term))
 	if err != nil {
 		return term
 	}

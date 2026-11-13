@@ -667,9 +667,9 @@ func TestStoragePricingUnits_PublicConsumers(t *testing.T) {
 			}{{"1yr", 12}, {"3yr", 36}} {
 				t.Run(term.label, func(t *testing.T) {
 					t.Parallel()
-					rec := common.Recommendation{ResourceType: "STANDARD", Term: term.label}
+					rec := common.Recommendation{ResourceType: "STANDARD", Term: common.Term(term.label)}
 					for _, payment := range []string{"monthly", "all-upfront"} {
-						rec.PaymentOption = payment
+						rec.PaymentOption = common.PaymentOption(payment)
 						details, err := client.GetOfferingDetails(t.Context(), rec)
 						require.NoError(t, err)
 						assert.InDelta(t, tc.monthlyCommit*term.months, details.TotalCost, 1e-12)

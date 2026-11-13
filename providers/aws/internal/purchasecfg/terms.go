@@ -19,7 +19,7 @@ const (
 
 // ParseTermMonths converts a reservation term string to the offering duration
 // in months. The service name is used only in the error message.
-func ParseTermMonths(term, service string) (int, error) {
+func ParseTermMonths(term common.Term, service string) (int, error) {
 	t, ok := common.ParseTermSpelling(term, common.SpellCanonical|common.SpellBareYears)
 	if !ok {
 		return 0, fmt.Errorf("unsupported %s reservation term %q: must be one of 1yr, 1, 3yr, 3", service, term)
@@ -29,7 +29,7 @@ func ParseTermMonths(term, service string) (int, error) {
 
 // DurationSeconds converts a reservation term string to the duration in
 // seconds the EC2 API expects.
-func DurationSeconds(term, service string) (int64, error) {
+func DurationSeconds(term common.Term, service string) (int64, error) {
 	months, err := ParseTermMonths(term, service)
 	if err != nil {
 		return 0, err
@@ -42,7 +42,7 @@ func DurationSeconds(term, service string) (int64, error) {
 
 // DurationSecondsString converts a reservation term string to the duration
 // string, in seconds, that the ElastiCache and RDS APIs expect.
-func DurationSecondsString(term, service string) (string, error) {
+func DurationSecondsString(term common.Term, service string) (string, error) {
 	seconds, err := DurationSeconds(term, service)
 	if err != nil {
 		return "", err
@@ -52,7 +52,7 @@ func DurationSecondsString(term, service string) (string, error) {
 
 // DurationYearString converts a reservation term string to the "1yr"/"3yr"
 // form the MemoryDB API accepts.
-func DurationYearString(term, service string) (string, error) {
+func DurationYearString(term common.Term, service string) (string, error) {
 	months, err := ParseTermMonths(term, service)
 	if err != nil {
 		return "", err

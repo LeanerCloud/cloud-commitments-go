@@ -397,7 +397,7 @@ func offeringRecurringRate(offering redshifttypes.ReservedNodeOffering) float64 
 // recommendation never buys on an arbitrarily-chosen payment option. AWS RI
 // pricing has no fractional cents below this threshold, so a strict > 0 test is
 // safe against float noise.
-func matchesPaymentOption(offering redshifttypes.ReservedNodeOffering, paymentOption string) bool {
+func matchesPaymentOption(offering redshifttypes.ReservedNodeOffering, paymentOption common.PaymentOption) bool {
 	upfront := aws.ToFloat64(offering.FixedPrice)
 	recurring := offeringRecurringRate(offering)
 	hasUpfront := upfront > 0
@@ -408,14 +408,14 @@ func matchesPaymentOption(offering redshifttypes.ReservedNodeOffering, paymentOp
 
 // paymentShapes maps each supported payment option to its upfront/recurring price shape.
 // Its key set is the supported-option list (see supportedPaymentOption).
-var paymentShapes = map[string]func(hasUpfront, hasRecurring bool) bool{
-	string(common.PaymentAllUpfront):     func(u, r bool) bool { return u && !r },
-	string(common.PaymentNoUpfront):      func(u, r bool) bool { return !u && r },
-	string(common.PaymentPartialUpfront): func(u, r bool) bool { return u && r },
+var paymentShapes = map[common.PaymentOption]func(hasUpfront, hasRecurring bool) bool{
+	common.PaymentAllUpfront:     func(u, r bool) bool { return u && !r },
+	common.PaymentNoUpfront:      func(u, r bool) bool { return !u && r },
+	common.PaymentPartialUpfront: func(u, r bool) bool { return u && r },
 }
 
 // supportedPaymentOption reports whether matchesPaymentOption can ever match the option.
-func supportedPaymentOption(paymentOption string) bool {
+func supportedPaymentOption(paymentOption common.PaymentOption) bool {
 	_, ok := paymentShapes[paymentOption]
 	return ok
 }
@@ -424,7 +424,7 @@ func supportedPaymentOption(paymentOption string) bool {
 // duration in months, failing loud on any unrecognized or empty input.
 // The parsing logic lives in purchasecfg.ParseTermMonths; this wrapper only
 // supplies the service name for the error message.
-func requiredMonthsForTerm(term string) (int, error) {
+func requiredMonthsForTerm(term common.Term) (int, error) {
 	return purchasecfg.ParseTermMonths(term, "Redshift")
 }
 

@@ -967,7 +967,7 @@ func TestComputeEngineClient_GetOfferingDetails_Terms(t *testing.T) {
 	one, err := client.GetOfferingDetails(ctx, rec)
 	require.NoError(t, err)
 	for _, term := range []string{"12mo", "12MO", "1"} {
-		rec.Term = term
+		rec.Term = common.Term(term)
 		got, err := client.GetOfferingDetails(ctx, rec)
 		require.NoError(t, err, term)
 		assert.InDelta(t, one.TotalCost, got.TotalCost, 1e-6, term)
@@ -975,13 +975,13 @@ func TestComputeEngineClient_GetOfferingDetails_Terms(t *testing.T) {
 	// The fixture has no 3-year SKUs, so a recognized 3-year label fails on
 	// missing pricing, not on the term (3-year pricing is covered by the enrich test).
 	for _, term := range []string{"36mo", "36MO", " 3 ", "3yr"} {
-		rec.Term = term
+		rec.Term = common.Term(term)
 		_, err := client.GetOfferingDetails(ctx, rec)
 		require.Error(t, err, term)
 		assert.NotContains(t, err.Error(), "unsupported commitment term", term)
 	}
 	for _, term := range []string{"2yr", "24mo", "P1Y"} {
-		rec.Term = term
+		rec.Term = common.Term(term)
 		_, err := client.GetOfferingDetails(ctx, rec)
 		require.Error(t, err, term)
 		assert.Contains(t, err.Error(), "unsupported commitment term", term)
@@ -1154,7 +1154,7 @@ func TestComputeEngineClient_ConvertGCPRecommendation(t *testing.T) {
 	assert.Equal(t, "us-central1", rec.Region)
 	assert.Equal(t, "n1-standard-4", rec.ResourceType)
 	assert.Equal(t, 50.5, rec.EstimatedSavings)
-	assert.Equal(t, "monthly", rec.PaymentOption,
+	assert.Equal(t, common.PaymentOption("monthly"), rec.PaymentOption,
 		`GCP CUDs are billed monthly; PaymentOption must match ValidPaymentOptionsByProvider["gcp"]`)
 	// GCP Compute CUDs are monthly-billed and RecurringMonthlyCost is priced from
 	// the billing catalog. No billing service is injected here, so the pricing
@@ -1427,7 +1427,7 @@ func TestConvertGCPRecommendation_EmptyParamsDefaultsToMonthly(t *testing.T) {
 	rec, err := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
 	require.NoError(t, err)
 	require.NotNil(t, rec)
-	assert.Equal(t, "monthly", rec.PaymentOption,
+	assert.Equal(t, common.PaymentOption("monthly"), rec.PaymentOption,
 		"GCP CUDs have no upfront option; empty PaymentOption must default to \"monthly\" (10-M5)")
 }
 
@@ -1444,7 +1444,7 @@ func TestConvertGCPRecommendation_ParamPaymentOptionRespected(t *testing.T) {
 	rec, err := client.convertGCPRecommendation(ctx, gcpRec, params)
 	require.NoError(t, err)
 	require.NotNil(t, rec)
-	assert.Equal(t, "monthly", rec.PaymentOption)
+	assert.Equal(t, common.PaymentOption("monthly"), rec.PaymentOption)
 }
 
 // TestConvertGCPRecommendation_NonMonthlyPaymentOptionForcedToMonthly is a
@@ -1466,7 +1466,7 @@ func TestConvertGCPRecommendation_NonMonthlyPaymentOptionForcedToMonthly(t *test
 		rec, err := client.convertGCPRecommendation(ctx, gcpRec, params)
 		require.NoError(t, err)
 		require.NotNil(t, rec)
-		assert.Equal(t, "monthly", rec.PaymentOption,
+		assert.Equal(t, common.PaymentOption("monthly"), rec.PaymentOption,
 			"GCP CUDs are monthly-only; input %q must be forced to \"monthly\"", input)
 	}
 }
@@ -1666,7 +1666,7 @@ func TestTermPlan_UsesSdkEnumConstants(t *testing.T) {
 func TestTermPlan_RejectsUnknownTerm(t *testing.T) {
 	t.Parallel()
 	for _, badTerm := range []string{"", "2yr", "invalid", "24mo", "forever"} {
-		_, err := termPlan(badTerm)
+		_, err := termPlan(common.Term(badTerm))
 		require.Error(t, err, "termPlan must reject unrecognized term %q (no silent 12-month default)", badTerm)
 		assert.Contains(t, err.Error(), "unrecognized commitment term",
 			"error for term %q must identify the bad input", badTerm)
@@ -1678,13 +1678,13 @@ func TestTermPlan_RejectsUnknownTerm(t *testing.T) {
 func TestTermPlan_AcceptsAllDocumentedForms(t *testing.T) {
 	t.Parallel()
 	for _, form := range []string{"1yr", "1", "12mo"} {
-		got, err := termPlan(form)
+		got, err := termPlan(common.Term(form))
 		require.NoError(t, err, "termPlan must accept 1-year form %q", form)
 		assert.Equal(t, computepb.Commitment_TWELVE_MONTH.String(), got,
 			"1-year form %q must map to TWELVE_MONTH", form)
 	}
 	for _, form := range []string{"3yr", "3", "36mo"} {
-		got, err := termPlan(form)
+		got, err := termPlan(common.Term(form))
 		require.NoError(t, err, "termPlan must accept 3-year form %q", form)
 		assert.Equal(t, computepb.Commitment_THIRTY_SIX_MONTH.String(), got,
 			"3-year form %q must map to THIRTY_SIX_MONTH", form)
@@ -1708,20 +1708,20 @@ func TestConvertGCPRecommendation_PropagatesParamsTerm(t *testing.T) {
 	rec, err := client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{Term: "3yr"})
 	require.NoError(t, err)
 	require.NotNil(t, rec)
-	assert.Equal(t, "3yr", rec.Term,
+	assert.Equal(t, common.Term("3yr"), rec.Term,
 		"params.Term=3yr must be propagated to rec.Term (H-3 fix); pre-fix code hardcoded 1yr")
 
 	// 1yr explicit must be propagated.
 	rec, err = client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{Term: "1yr"})
 	require.NoError(t, err)
 	require.NotNil(t, rec)
-	assert.Equal(t, "1yr", rec.Term)
+	assert.Equal(t, common.Term("1yr"), rec.Term)
 
 	// Empty term must default to "1yr".
 	rec, err = client.convertGCPRecommendation(ctx, gcpRec, common.RecommendationParams{})
 	require.NoError(t, err)
 	require.NotNil(t, rec)
-	assert.Equal(t, "1yr", rec.Term,
+	assert.Equal(t, common.Term("1yr"), rec.Term,
 		"empty params.Term must default to 1yr")
 }
 

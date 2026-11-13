@@ -3,6 +3,7 @@ package savingsplans
 import (
 	"testing"
 
+	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/aws/aws-sdk-go-v2/service/savingsplans/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -25,7 +26,7 @@ func TestConvertTermToSeconds_Table(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.term, func(t *testing.T) {
-			got, err := convertTermToSeconds(tt.term)
+			got, err := convertTermToSeconds(common.Term(tt.term))
 			if tt.wantErr {
 				require.Error(t, err)
 				return
@@ -55,7 +56,7 @@ func TestConvertPaymentOption_Table(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.in, func(t *testing.T) {
-			got, err := convertPaymentOption(tt.in)
+			got, err := convertPaymentOption(common.PaymentOption(tt.in))
 			if tt.wantErr {
 				require.Error(t, err)
 				return

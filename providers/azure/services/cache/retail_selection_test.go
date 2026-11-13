@@ -180,7 +180,7 @@ func TestRedisOffering_CapturedReservations(t *testing.T) {
 							r := fixture.row(years)
 							h, requests := redisHTTP(t, [][]map[string]any{{r}}, nil)
 							term := strconv.Itoa(years) + "yr"
-							q, err := c.newClient("eastus", h).GetOfferingDetails(context.Background(), common.Recommendation{ResourceType: sku, Term: term, PaymentOption: payment})
+							q, err := c.newClient("eastus", h).GetOfferingDetails(context.Background(), common.Recommendation{ResourceType: sku, Term: common.Term(term), PaymentOption: common.PaymentOption(payment)})
 							require.NoError(t, err)
 							assert.Equal(t, int32(1), requests.Load())
 							assertRedisQuote(t, c, q, sku, term, payment, "USD", r["retailPrice"].(float64), years)

@@ -251,7 +251,7 @@ func TestSearchClient_GetOfferingDetails_NoUpfront(t *testing.T) {
 	)
 
 	for _, payment := range []string{"no-upfront", "monthly"} {
-		rec := common.Recommendation{ResourceType: "standard", Term: "1yr", PaymentOption: payment}
+		rec := common.Recommendation{ResourceType: "standard", Term: "1yr", PaymentOption: common.PaymentOption(payment)}
 		details, err := client.GetOfferingDetails(ctx, rec)
 		require.ErrorContains(t, err, "upfront-only")
 		assert.Nil(t, details)
@@ -406,7 +406,7 @@ func TestSearchClient_GetOfferingDetails_MixedTermsBothOrders(t *testing.T) {
 			mockHTTP := &mocks.MockHTTPClient{}
 			mockHTTP.On("Do", mock.Anything).Return(response, nil).Once()
 			details, err := NewClientWithHTTP(nil, "sub", "eastus", mockHTTP).GetOfferingDetails(context.Background(), common.Recommendation{
-				ResourceType: "standard", Term: tc.term, PaymentOption: tc.payment,
+				ResourceType: "standard", Term: common.Term(tc.term), PaymentOption: common.PaymentOption(tc.payment),
 			})
 			require.NoError(t, err)
 			assert.Equal(t, tc.wantTotal, details.TotalCost)
@@ -879,8 +879,8 @@ func TestSearchClient_ConvertAzureSearchRecommendation_PopulatesAllFields(t *tes
 	assert.Zero(t, rec.CommitmentCost, "commitment is priced from the retail row at variant expansion")
 	assert.InDelta(t, 40.0*30.4375/7, rec.EstimatedSavings, 1e-9)
 	assert.Equal(t, common.CommitmentReservedInstance, rec.CommitmentType)
-	assert.Equal(t, "1yr", rec.Term)
-	assert.Equal(t, "upfront", rec.PaymentOption)
+	assert.Equal(t, common.Term("1yr"), rec.Term)
+	assert.Equal(t, common.PaymentOption("upfront"), rec.PaymentOption)
 	assert.Empty(t, rec.CommitmentCurrency, "amounts are zeroed here, so no currency is proven")
 }
 
@@ -1222,7 +1222,7 @@ func TestSearchClient_PurchaseCommitment_BillingPlan(t *testing.T) {
 			mockCred := &MockTokenCredential{token: "test-token"}
 			client := NewClientWithHTTP(mockCred, "test-subscription", "eastus", mockHTTP)
 
-			rec := common.Recommendation{Region: "eastus", ResourceType: "standard", Term: "1yr", Count: 1, PaymentOption: tc.paymentOption}
+			rec := common.Recommendation{Region: "eastus", ResourceType: "standard", Term: "1yr", Count: 1, PaymentOption: common.PaymentOption(tc.paymentOption)}
 
 			if tc.wantErrSub != "" {
 				result, err := client.PurchaseCommitment(ctx, rec, common.PurchaseOptions{Source: common.PurchaseSourceCLI})

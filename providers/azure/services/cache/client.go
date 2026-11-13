@@ -222,8 +222,8 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	return &common.OfferingDetails{
 		OfferingID:          fmt.Sprintf("azure-redis-%s-%s-%s", rec.ResourceType, c.region, rec.Term),
 		ResourceType:        rec.ResourceType,
-		Term:                rec.Term,
-		PaymentOption:       rec.PaymentOption,
+		Term:                string(rec.Term),
+		PaymentOption:       string(rec.PaymentOption),
 		UpfrontCost:         upfrontCost,
 		RecurringCost:       recurringCost,
 		TotalCost:           totalCost,

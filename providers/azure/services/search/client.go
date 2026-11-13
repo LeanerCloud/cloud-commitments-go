@@ -204,7 +204,7 @@ func (c *Client) convertSearchReservation(detail *armconsumption.ReservationDeta
 // upfrontOnlyBillingPlan rejects Monthly: the Capacity catalog does not
 // recognize SearchService and the retail API has no Search reservation rows,
 // so Monthly cannot be confirmed (issue #38).
-func upfrontOnlyBillingPlan(paymentOption string) (armreservations.ReservationBillingPlan, error) {
+func upfrontOnlyBillingPlan(paymentOption common.PaymentOption) (armreservations.ReservationBillingPlan, error) {
 	plan, err := reservations.BillingPlanForPaymentOption(paymentOption)
 	if err != nil {
 		return "", err
@@ -271,8 +271,8 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 				Region:       c.region,
 				ResourceType: r.ResourceType,
 				Count:        r.Count,
-				Term:         r.Term,
-				Payment:      r.PaymentOption,
+				Term:         string(r.Term),
+				Payment:      string(r.PaymentOption),
 				Now:          time.Now(),
 			})
 		},
@@ -331,8 +331,8 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	return &common.OfferingDetails{
 		OfferingID:          fmt.Sprintf("azure-search-%s-%s-%s", rec.ResourceType, c.region, rec.Term),
 		ResourceType:        rec.ResourceType,
-		Term:                rec.Term,
-		PaymentOption:       rec.PaymentOption,
+		Term:                string(rec.Term),
+		PaymentOption:       string(rec.PaymentOption),
 		UpfrontCost:         upfrontCost,
 		RecurringCost:       recurringCost,
 		TotalCost:           totalCost,
@@ -426,7 +426,7 @@ func (c *Client) convertAzureSearchRecommendation(ctx context.Context, azureRec 
 		CommitmentCost:       extracted.CommitmentCost,
 		EstimatedSavings:     extracted.EstimatedSavings,
 		Priced:               extracted.Priced,
-		Term:                 extracted.Term,
+		Term:                 common.Term(extracted.Term),
 		RecurringMonthlyCost: extracted.RecurringMonthlyCost,
 		PaymentOption:        "upfront",
 	}

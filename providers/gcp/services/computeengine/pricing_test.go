@@ -207,7 +207,7 @@ func TestEnrichRecWithPricing_MonthlyFiguresPerTerm(t *testing.T) {
 			client, _ := NewClient("p", "us-central1")
 			client.SetBillingService(&MockBillingService{skus: &cloudbilling.ListSkusResponse{Skus: n2AmericasSKUs()}})
 			rec := newRec("n2-standard-8", 8, 32)
-			rec.Term = tc.term
+			rec.Term = common.Term(tc.term)
 
 			client.enrichRecWithPricing(ctx, &rec)
 
@@ -254,7 +254,7 @@ func TestEnrichRecWithPricing_TermSpellingsAndUnknown(t *testing.T) {
 		client, _ := NewClient("p", "us-central1")
 		client.SetBillingService(&MockBillingService{skus: &cloudbilling.ListSkusResponse{Skus: n2AmericasSKUs()}})
 		rec := newRec("n2-standard-8", 8, 32)
-		rec.Term = term
+		rec.Term = common.Term(term)
 		client.enrichRecWithPricing(context.Background(), &rec)
 		return rec.RecurringMonthlyCost
 	}

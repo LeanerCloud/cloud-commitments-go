@@ -52,7 +52,7 @@ func TestConvertAdvisor_DerivesFieldsFromPayload(t *testing.T) {
 	ri := a.convertAdvisorRecommendation(context.Background(), advisorRec(subscriptionScope, reservationExt(nil)))
 	require.NotNil(t, ri)
 	assert.Equal(t, common.CommitmentReservedInstance, ri.CommitmentType)
-	assert.Equal(t, "3yr", ri.Term, "term comes from the payload, not a 1yr default")
+	assert.Equal(t, common.Term("3yr"), ri.Term, "term comes from the payload, not a 1yr default")
 	assert.Equal(t, "Standard_D2s_v3", ri.ResourceType)
 	assert.Equal(t, 2, ri.Count)
 	assert.Equal(t, 100.0, ri.EstimatedSavings)
@@ -67,7 +67,7 @@ func TestConvertAdvisor_DerivesFieldsFromPayload(t *testing.T) {
 	require.NotNil(t, sp)
 	assert.Equal(t, common.CommitmentSavingsPlan, sp.CommitmentType)
 	assert.Equal(t, common.ServiceSavingsPlansAll, sp.Service)
-	assert.Equal(t, "1yr", sp.Term)
+	assert.Equal(t, common.Term("1yr"), sp.Term)
 }
 
 func TestConvertAdvisor_NonPurchaseRecommendationsAreIgnored(t *testing.T) {
@@ -116,7 +116,7 @@ func TestAppendAdvisorPageRecs_ReservationRowIsBaseSavingsPlanIsExpanded(t *test
 	assert.Empty(t, recs[0].PaymentOption, "reservation rows stay base rows until priced")
 	assert.Equal(t, 100.0, recs[0].EstimatedSavings)
 	assert.Nil(t, recs[0].RecurringMonthlyCost, "no price in the payload: unknown, not zero")
-	assert.Equal(t, []string{"upfront", "monthly"}, []string{recs[1].PaymentOption, recs[2].PaymentOption})
+	assert.Equal(t, []string{"upfront", "monthly"}, []string{string(recs[1].PaymentOption), string(recs[2].PaymentOption)})
 }
 
 func TestGetRecommendations_AdvisorTruncationIsSurfaced(t *testing.T) {
@@ -139,7 +139,7 @@ func TestGetRecommendations_AdvisorTruncationIsSurfaced(t *testing.T) {
 func TestGetRecommendations_AdvisorSavingsPlanDedupedAgainstBenefitRecs(t *testing.T) {
 	sp := func(account, term string, from string) common.Recommendation {
 		return common.Recommendation{Provider: common.ProviderAzure, Service: common.ServiceCompute,
-			CommitmentType: common.CommitmentSavingsPlan, Account: account, Term: term, Region: from}
+			CommitmentType: common.CommitmentSavingsPlan, Account: account, Term: common.Term(term), Region: from}
 	}
 	benefit := sp("sub", "1yr", "benefit")
 	run := func(spRecs []common.Recommendation, advisor []common.Recommendation) []common.Recommendation {

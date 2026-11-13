@@ -59,8 +59,8 @@ func (c *Client) parseRecommendationDetail(ctx context.Context, details *types.R
 	rec := &common.Recommendation{
 		Provider:       common.ProviderAWS,
 		Service:        params.Service,
-		PaymentOption:  params.PaymentOption,
-		Term:           params.Term,
+		PaymentOption:  common.PaymentOption(params.PaymentOption),
+		Term:           common.Term(params.Term),
 		CommitmentType: common.CommitmentReservedInstance,
 		Timestamp:      time.Now(),
 	}
@@ -270,7 +270,7 @@ func (c *Client) parseAWSCostDetails(rec *common.Recommendation, details *types.
 	if strings.TrimSpace(currency) == "" {
 		currency = ""
 	}
-	rec.CommitmentCurrency = commitmentCurrency(currency, rec.PaymentOption, details.UpfrontCost != nil, rec.CommitmentCost, rec.RecurringMonthlyCost)
+	rec.CommitmentCurrency = commitmentCurrency(currency, string(rec.PaymentOption), details.UpfrontCost != nil, rec.CommitmentCost, rec.RecurringMonthlyCost)
 	return nil
 }
 

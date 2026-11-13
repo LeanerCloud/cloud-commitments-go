@@ -468,7 +468,7 @@ func baseRec(service common.ServiceType, term string, onDemand, commitment float
 		Region:         "eastus",
 		ResourceType:   "Standard_D2s_v3",
 		CommitmentType: common.CommitmentReservedInstance,
-		Term:           term,
+		Term:           common.Term(term),
 		PaymentOption:  "upfront",
 		OnDemandCost:   onDemand,
 		CommitmentCost: commitment,
@@ -486,7 +486,7 @@ func expandLegacy(t *testing.T, opts ...mocks.LegacyOpt) (upfront, monthly commo
 	f := Extract(mocks.BuildLegacyReservationRecommendation(opts...))
 	require.NotNil(t, f)
 	variants := ExpandPaymentVariants(common.Recommendation{
-		Term:                 f.Term,
+		Term:                 common.Term(f.Term),
 		PaymentOption:        "upfront",
 		OnDemandCost:         f.OnDemandCost,
 		CommitmentCost:       f.CommitmentCost,
@@ -549,8 +549,8 @@ func TestExpandPaymentVariants_ReturnsTwoVariants(t *testing.T) {
 func TestExpandPaymentVariants_PaymentOptionValues(t *testing.T) {
 	t.Parallel()
 	variants := ExpandPaymentVariants(baseRec(common.ServiceCompute, "1yr", 100, 70))
-	assert.Equal(t, "upfront", variants[0].PaymentOption)
-	assert.Equal(t, "monthly", variants[1].PaymentOption)
+	assert.Equal(t, common.PaymentOption("upfront"), variants[0].PaymentOption)
+	assert.Equal(t, common.PaymentOption("monthly"), variants[1].PaymentOption)
 }
 
 func TestExpandPaymentVariants_AllUpfrontCashflow(t *testing.T) {
@@ -631,7 +631,7 @@ func TestExpandPaymentVariants_SharedFieldsCarriedThrough(t *testing.T) {
 		assert.Equal(t, "eastus", v.Region)
 		assert.Equal(t, "Standard_D2s_v3", v.ResourceType)
 		assert.Equal(t, common.CommitmentReservedInstance, v.CommitmentType)
-		assert.Equal(t, "3yr", v.Term)
+		assert.Equal(t, common.Term("3yr"), v.Term)
 		assert.Equal(t, "sub-123", v.Account)
 	}
 }

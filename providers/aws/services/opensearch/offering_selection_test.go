@@ -159,7 +159,7 @@ func selectedOffering(id, payment string) fixtureOffering {
 func selectionRecommendation(payment string) common.Recommendation {
 	return common.Recommendation{
 		Service: common.ServiceSearch, Region: "us-east-1", ResourceType: "m5.large.search",
-		Count: 3, Term: "1yr", PaymentOption: payment,
+		Count: 3, Term: "1yr", PaymentOption: common.PaymentOption(payment),
 	}
 }
 

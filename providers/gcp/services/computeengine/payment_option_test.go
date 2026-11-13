@@ -40,7 +40,7 @@ func TestConvertGCPRecommendation_PaymentOption(t *testing.T) {
 			}
 			require.NoError(t, err)
 			require.NotNil(t, rec)
-			assert.Equal(t, "monthly", rec.PaymentOption)
+			assert.Equal(t, common.PaymentOption("monthly"), rec.PaymentOption)
 		})
 	}
 }

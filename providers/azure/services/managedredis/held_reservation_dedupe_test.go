@@ -121,7 +121,7 @@ func TestHeldReservation_RoundTripReducesRecommendation(t *testing.T) {
 			require.Len(t, recs, 2)
 			upfront := recs[0]
 			require.Equal(t, 2, upfront.Count)
-			require.Equal(t, "upfront", upfront.PaymentOption)
+			require.Equal(t, common.PaymentOption("upfront"), upfront.PaymentOption)
 
 			c.SetInventoryFactories(factoriesRows(nil, purchasedReservation(t, upfront, 1)))
 			passed, err := adjust(t, c, []common.Recommendation{upfront})
@@ -216,7 +216,7 @@ func TestHeldReservation_VariantPin(t *testing.T) {
 	type variant struct{ term, payment string }
 	got := map[variant]int{}
 	for _, r := range passed {
-		got[variant{r.Term, r.PaymentOption}] = r.Count
+		got[variant{string(r.Term), string(r.PaymentOption)}] = r.Count
 	}
 	assert.Equal(t, map[variant]int{
 		{"1yr", "upfront"}: 1, {"1yr", "monthly"}: 1,

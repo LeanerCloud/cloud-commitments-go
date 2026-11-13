@@ -116,7 +116,7 @@ func extractedBase(t *testing.T, rec armconsumption.ReservationRecommendationCla
 	f, err := ExtractConsumption(rec)
 	require.NoError(t, err)
 	return common.Recommendation{
-		Region: f.Region, ResourceType: f.ResourceType, Count: f.Count, Term: f.Term,
+		Region: f.Region, ResourceType: f.ResourceType, Count: f.Count, Term: common.Term(f.Term),
 		OnDemandCost: f.OnDemandCost, EstimatedSavings: f.EstimatedSavings,
 	}
 }
@@ -124,7 +124,7 @@ func extractedBase(t *testing.T, rec armconsumption.ReservationRecommendationCla
 func byPayment(recs []common.Recommendation) map[string]common.Recommendation {
 	out := map[string]common.Recommendation{}
 	for _, r := range recs {
-		out[r.PaymentOption] = r
+		out[string(r.PaymentOption)] = r
 	}
 	return out
 }

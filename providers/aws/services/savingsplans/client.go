@@ -648,7 +648,7 @@ func convertPlanType(planType string) (types.SavingsPlanType, error) {
 // convertTermToSeconds converts a term string to seconds for the AWS Savings
 // Plans API. Returns an error on any unrecognized or empty input so callers
 // fail loud rather than silently buying the wrong commitment length.
-func convertTermToSeconds(term string) (int64, error) {
+func convertTermToSeconds(term common.Term) (int64, error) {
 	t, ok := common.ParseTermSpelling(term, common.SpellCanonical|common.SpellBareYears)
 	if !ok {
 		return 0, fmt.Errorf("unsupported Savings Plans term %q: must be one of 1yr, 1, 3yr, 3", term)
@@ -660,7 +660,7 @@ func convertTermToSeconds(term string) (int64, error) {
 // Returns an error on any unrecognized or empty input so callers fail loud
 // rather than silently buying the wrong (and potentially most expensive)
 // payment option.
-func convertPaymentOption(paymentOption string) (types.SavingsPlanPaymentOption, error) {
+func convertPaymentOption(paymentOption common.PaymentOption) (types.SavingsPlanPaymentOption, error) {
 	switch common.PaymentOption(paymentOption) {
 	case "All Upfront", common.PaymentAllUpfront:
 		return types.SavingsPlanPaymentOptionAllUpfront, nil

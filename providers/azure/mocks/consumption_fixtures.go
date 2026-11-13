@@ -46,7 +46,7 @@ func AssertConsumptionUnitVariants(t *testing.T, recs []common.Recommendation, p
 	t.Helper()
 	require.Len(t, recs, 4, "two recommendations expand to four variants")
 	cases := []struct {
-		term                  string
+		term                  common.Term
 		upfront, monthly      common.Recommendation
 		onDemand, total, days float64
 		unit, months          float64
@@ -56,8 +56,8 @@ func AssertConsumptionUnitVariants(t *testing.T, recs []common.Recommendation, p
 	}
 	for i := range cases {
 		c := &cases[i]
-		assert.Equal(t, "upfront", c.upfront.PaymentOption)
-		assert.Equal(t, "monthly", c.monthly.PaymentOption)
+		assert.Equal(t, common.PaymentOption("upfront"), c.upfront.PaymentOption)
+		assert.Equal(t, common.PaymentOption("monthly"), c.monthly.PaymentOption)
 		for _, r := range []*common.Recommendation{&c.upfront, &c.monthly} {
 			assert.Equal(t, c.term, r.Term)
 			assert.InDelta(t, c.onDemand*fixtureDaysPerMon/c.days, r.OnDemandCost, 1e-6)

@@ -114,7 +114,7 @@ func TestOfferingDetails(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%q/%dyr", tt.option, tt.years), func(t *testing.T) {
 			t.Parallel()
-			rec := common.Recommendation{ResourceType: "rt", Term: "term-x", PaymentOption: tt.option}
+			rec := common.Recommendation{ResourceType: "rt", Term: "term-x", PaymentOption: common.PaymentOption(tt.option)}
 			got, err := OfferingDetails(rec, "id-1", tt.years, 1200, 0.5, "EUR")
 			require.NoError(t, err)
 			assert.Equal(t, &common.OfferingDetails{
@@ -137,7 +137,7 @@ func TestOfferingDetails_UnknownPaymentOptionErrors(t *testing.T) {
 	for _, option := range []string{"bogus", "", "Partial Upfront"} {
 		t.Run(fmt.Sprintf("%q", option), func(t *testing.T) {
 			t.Parallel()
-			rec := common.Recommendation{ResourceType: "rt", Term: "1yr", PaymentOption: option}
+			rec := common.Recommendation{ResourceType: "rt", Term: "1yr", PaymentOption: common.PaymentOption(option)}
 			got, err := OfferingDetails(rec, "id-1", 1, 1200, 0.5, "EUR")
 			require.Error(t, err)
 			assert.Nil(t, got)

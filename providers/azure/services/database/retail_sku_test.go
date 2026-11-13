@@ -127,7 +127,7 @@ func TestClient_GetOfferingDetails_LiveRetailRows(t *testing.T) {
 		t.Run(tc.capability+"_"+tc.term, func(t *testing.T) {
 			catalog := newLiveCatalog(t)
 			details, err := NewClientWithHTTP(nil, "sub", "eastus", catalog).GetOfferingDetails(context.Background(), common.Recommendation{
-				ResourceType: tc.capability, Term: tc.term, PaymentOption: tc.payment,
+				ResourceType: tc.capability, Term: common.Term(tc.term), PaymentOption: common.PaymentOption(tc.payment),
 			})
 			require.NoError(t, err)
 			require.NotNil(t, details)
@@ -173,7 +173,7 @@ func TestClient_GetOfferingDetails_ZoneRedundantUsesZRRow(t *testing.T) {
 	} {
 		catalog := newLiveCatalog(t)
 		details, err := NewClientWithHTTP(nil, "sub", "eastus", catalog).GetOfferingDetails(context.Background(), common.Recommendation{
-			ResourceType: "GP_Gen5_2_ZR", Term: tc.term, PaymentOption: tc.payment,
+			ResourceType: "GP_Gen5_2_ZR", Term: common.Term(tc.term), PaymentOption: common.PaymentOption(tc.payment),
 		})
 		require.NoError(t, err, tc.term)
 		require.NotNil(t, details)

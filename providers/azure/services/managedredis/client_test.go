@@ -476,7 +476,7 @@ func TestGetOfferingDetails_PaymentOptions(t *testing.T) {
 			h.On("Do", mock.Anything).Return(resp, nil)
 			c := NewClientWithHTTP(nil, "sub", "eastus", h)
 			details, err := c.GetOfferingDetails(context.Background(), common.Recommendation{
-				ResourceType: "Premium_P1", Term: "1yr", PaymentOption: tt.option,
+				ResourceType: "Premium_P1", Term: "1yr", PaymentOption: common.PaymentOption(tt.option),
 			})
 			require.NoError(t, err)
 			assert.InDelta(t, tt.wantUpfront, details.UpfrontCost, 1e-9)
@@ -495,7 +495,7 @@ func TestGetOfferingDetails_UnknownPaymentOption(t *testing.T) {
 			h.On("Do", mock.Anything).Return(resp, nil)
 			c := NewClientWithHTTP(nil, "sub", "eastus", h)
 			details, err := c.GetOfferingDetails(context.Background(), common.Recommendation{
-				ResourceType: "Premium_P1", Term: "1yr", PaymentOption: option,
+				ResourceType: "Premium_P1", Term: "1yr", PaymentOption: common.PaymentOption(option),
 			})
 			require.Error(t, err)
 			assert.Nil(t, details)
@@ -793,7 +793,7 @@ func TestPurchaseCommitment_BillingPlan(t *testing.T) {
 			cred := &mockTokenCredential{token: "tok"}
 			c := NewClientWithHTTP(cred, "sub", "eastus", h)
 
-			rec := common.Recommendation{Region: "eastus", ResourceType: "Premium_P1", Term: "1yr", Count: 1, PaymentOption: tc.paymentOption}
+			rec := common.Recommendation{Region: "eastus", ResourceType: "Premium_P1", Term: "1yr", Count: 1, PaymentOption: common.PaymentOption(tc.paymentOption)}
 
 			if tc.wantErrSub != "" {
 				result, err := c.PurchaseCommitment(context.Background(), rec, common.PurchaseOptions{Source: common.PurchaseSourceCLI})
@@ -922,8 +922,8 @@ func TestConvertRecommendation_legacy(t *testing.T) {
 	assert.Equal(t, "Premium_P1", rec.ResourceType)
 	assert.Equal(t, 2, rec.Count)
 	assert.Equal(t, common.CommitmentReservedInstance, rec.CommitmentType)
-	assert.Equal(t, "1yr", rec.Term)
-	assert.Equal(t, "upfront", rec.PaymentOption)
+	assert.Equal(t, common.Term("1yr"), rec.Term)
+	assert.Equal(t, common.PaymentOption("upfront"), rec.PaymentOption)
 	assert.InDelta(t, 1000.0*30.4375/7, rec.OnDemandCost, 0.01)
 	assert.Zero(t, rec.CommitmentCost, "commitment is priced from the retail row at variant expansion")
 	assert.InDelta(t, 300.0*30.4375/7, rec.EstimatedSavings, 0.01)

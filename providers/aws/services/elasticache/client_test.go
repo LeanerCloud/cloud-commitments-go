@@ -434,7 +434,7 @@ func TestClient_ConvertPaymentOption(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := client.convertPaymentOption(tt.input)
+			result, err := client.convertPaymentOption(common.PaymentOption(tt.input))
 			if tt.expectErr {
 				assert.Error(t, err)
 				assert.Empty(t, result)

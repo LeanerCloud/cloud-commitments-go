@@ -355,7 +355,7 @@ func TestRequiredMonthsForTerm(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := requiredMonthsForTerm(tt.term)
+			result, err := requiredMonthsForTerm(common.Term(tt.term))
 			if tt.expectErr {
 				if assert.Error(t, err) {
 					assert.Contains(t, err.Error(), "unsupported OpenSearch reservation term")
@@ -387,7 +387,7 @@ func TestNormalizeOpenSearchPaymentOption(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := normalizeOpenSearchPaymentOption(tt.option)
+			result, err := normalizeOpenSearchPaymentOption(common.PaymentOption(tt.option))
 			if tt.wantErr {
 				assert.ErrorContains(t, err, "unsupported OpenSearch payment option")
 				assert.Empty(t, result)

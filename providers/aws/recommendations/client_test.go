@@ -399,7 +399,7 @@ func TestGetRecommendationsForService(t *testing.T) {
 	type combo struct{ term, payment string }
 	got := make([]combo, len(recs))
 	for i, r := range recs {
-		got[i] = combo{term: r.Term, payment: r.PaymentOption}
+		got[i] = combo{term: string(r.Term), payment: string(r.PaymentOption)}
 	}
 	want := []combo{
 		{"1yr", "all-upfront"}, {"1yr", "partial-upfront"}, {"1yr", "no-upfront"},
