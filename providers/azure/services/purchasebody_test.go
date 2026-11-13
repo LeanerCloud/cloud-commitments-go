@@ -78,7 +78,7 @@ func TestPurchaseBodies(t *testing.T) {
 	}
 }
 
-// Search stays upfront-only: the Capacity catalog does not recognise
+// Search stays upfront-only: the Capacity catalog does not recognize
 // SearchService, so Monthly cannot be confirmed (issue #38).
 func TestPurchaseBodies_SearchUpfrontOnly(t *testing.T) {
 	t.Parallel()

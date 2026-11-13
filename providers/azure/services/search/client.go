@@ -202,7 +202,7 @@ func (c *Client) convertSearchReservation(detail *armconsumption.ReservationDeta
 }
 
 // upfrontOnlyBillingPlan rejects Monthly: the Capacity catalog does not
-// recognise SearchService and the retail API has no Search reservation rows,
+// recognize SearchService and the retail API has no Search reservation rows,
 // so Monthly cannot be confirmed (issue #38).
 func upfrontOnlyBillingPlan(paymentOption string) (armreservations.ReservationBillingPlan, error) {
 	plan, err := reservations.BillingPlanForPaymentOption(paymentOption)
