@@ -225,3 +225,26 @@ func TestAllocate_ZeroShareFamilyEmitsNoRowOrHold(t *testing.T) {
 		}
 	}
 }
+
+// A family split with an EC2 Instance SP layer that is also a buffer would buy
+// family-less commitments next to the family rows, so it fails loud.
+func TestAllocate_FamilySplitRejectsNonBaseOnlyInstanceSPLayer(t *testing.T) {
+	t.Parallel()
+	for name, roles := range map[string][]LayerRole{
+		"merged base and buffer": {RoleBase, RoleBuffer},
+		"buffer only":            {RoleBuffer},
+	} {
+		t.Run(name, func(t *testing.T) {
+			in := familyInput(map[string]float64{"m5": 3, "c5": 1})
+			in.Layers = []LayerSpec{
+				{Type: LayerEC2InstanceSP, Roles: roles},
+				{Type: LayerComputeSP, Roles: []LayerRole{RoleFlex}},
+			}
+			in.Config.BufferFraction = 0.1
+			in.LayerStates = zeroStates(in.Layers)
+			if _, err := Allocate(in); err == nil || !strings.Contains(err.Error(), "only the base role") {
+				t.Fatalf("err = %v, want the base-only topology error", err)
+			}
+		})
+	}
+}

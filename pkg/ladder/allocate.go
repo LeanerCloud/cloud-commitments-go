@@ -282,7 +282,8 @@ func validateAllocateInput(in *AllocationInput) error {
 	if err := in.Baseline.Basis.Validate(); err != nil {
 		return fmt.Errorf("baseline: %w", err)
 	}
-	if _, err := parseFamilySplit(in.Baseline); err != nil {
+	fs, err := parseFamilySplit(in.Baseline)
+	if err != nil {
 		return fmt.Errorf("baseline: %w", err)
 	}
 	if len(in.Layers) == 0 {
@@ -290,6 +291,9 @@ func validateAllocateInput(in *AllocationInput) error {
 	}
 	if err := validateLayers(in.Layers); err != nil {
 		return fmt.Errorf("layers: %w", err)
+	}
+	if err := fs.validateTopology(in.Layers); err != nil {
+		return fmt.Errorf("baseline: %w", err)
 	}
 	if err := validateLayerStates(in.Layers, in.LayerStates); err != nil {
 		return fmt.Errorf("layer_states: %w", err)

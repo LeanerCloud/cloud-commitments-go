@@ -106,6 +106,22 @@ func (fs *familySplit) netInFlight(inFlight []InFlightTranche) error {
 	return nil
 }
 
+// validateTopology rejects a family split when the EC2 Instance SP layer carries
+// a role other than base: a merged base+buffer or buffer-only layer would
+// produce family-less purchases next to the family rows. A nil split accepts
+// any topology.
+func (fs *familySplit) validateTopology(layers []LayerSpec) error {
+	if fs == nil {
+		return nil
+	}
+	for _, ls := range layers {
+		if ls.Type == LayerEC2InstanceSP && (len(ls.Roles) != 1 || ls.Roles[0] != RoleBase) {
+			return fmt.Errorf("stable_usd_per_hour_by_family requires %s to carry only the base role, got %v", ls.Type, ls.Roles)
+		}
+	}
+	return nil
+}
+
 // baseAllocations returns the base-role allocations: one per family with a
 // positive share when the base layer is the family-bound EC2 Instance SP and a
 // family split is present, otherwise the single family-agnostic allocation.
