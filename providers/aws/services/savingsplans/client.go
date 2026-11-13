@@ -649,14 +649,11 @@ func convertPlanType(planType string) (types.SavingsPlanType, error) {
 // Plans API. Returns an error on any unrecognized or empty input so callers
 // fail loud rather than silently buying the wrong commitment length.
 func convertTermToSeconds(term string) (int64, error) {
-	switch common.Term(term) {
-	case common.Term3Year, "3":
-		return 94608000, nil // 3 years in seconds (365 * 3 * 86400)
-	case common.Term1Year, "1":
-		return 31536000, nil // 1 year in seconds (365 * 86400)
-	default:
+	t, ok := common.ParseTermSpelling(term, common.SpellCanonical|common.SpellBareYears)
+	if !ok {
 		return 0, fmt.Errorf("unsupported Savings Plans term %q: must be one of 1yr, 1, 3yr, 3", term)
 	}
+	return int64(t.Years()) * 365 * 86400, nil
 }
 
 // convertPaymentOption converts a payment option string to the AWS SDK type.
