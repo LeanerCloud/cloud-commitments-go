@@ -1,6 +1,6 @@
-// Package shared holds the catalog pricing pipeline and offering assembly that
+// Package catalogprice holds the catalog pricing pipeline and offering assembly that
 // the Cloud SQL, Cloud Storage and Memorystore clients have in common.
-package shared
+package catalogprice
 
 import (
 	"context"

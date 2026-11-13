@@ -13,7 +13,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skulist"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skumatch"
-	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/services/shared"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/services/catalogprice"
 )
 
 // BillingService lists SKUs of one Cloud Billing service (enables mocking).
@@ -118,17 +118,17 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 
 // GetOfferingDetails retrieves Cloud SQL offering details from GCP Billing API.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
-	return shared.OfferingDetails(ctx, rec, "gcp-cloudsql", c.region, c.getSQLPricing)
+	return catalogprice.OfferingDetails(ctx, rec, "gcp-cloudsql", c.region, c.getSQLPricing)
 }
 
 // SQLPricing contains pricing information for Cloud SQL.
-type SQLPricing = shared.Term
+type SQLPricing = catalogprice.Term
 
 // getSQLPricing gets pricing from GCP Cloud Billing Catalog API.
 // It returns an error when commitment pricing is absent from the catalog rather
 // than fabricating a price from a hardcoded discount factor (issue #1020).
 func (c *Client) getSQLPricing(ctx context.Context, tier, region string, termYears int) (*SQLPricing, error) {
-	return shared.Price(ctx, shared.PriceInput{
+	return catalogprice.Price(ctx, catalogprice.PriceInput{
 		Name:    "cloudsql",
 		Billing: c.billingService,
 		Opts:    c.clientOpts,
