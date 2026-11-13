@@ -321,7 +321,7 @@ func (a riCoverageAccumulator) addGroup(group types.ReservationCoverageGroup, wi
 	key := riCoveragePool{instType, normaliseDeployment(deployment), cacheEngine}
 	sum := a[key]
 	if err != nil {
-		log.Printf("warning: dropping RI coverage pool %s/%s: %v", key.instanceType, key.deployment, err)
+		log.Printf("WARNING: dropping RI coverage pool %s/%s: %v", key.instanceType, key.deployment, err)
 		sum.invalid = true
 		a[key] = sum
 		return
