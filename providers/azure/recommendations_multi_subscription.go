@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/concurrency"
@@ -240,26 +239,24 @@ func NewMultiSubscriptionRecommendationsClient(cred azcore.TokenCredential, acco
 	return &MultiSubscriptionRecommendationsClient{subscriptions: subscriptions}, nil
 }
 
-// GetRecommendations fans params out concurrently (errgroup) to the
+// GetRecommendations fans params out concurrently (CollectConcurrently) to the
 // subscriptions selected by selectSubscriptions -- every accessible
 // subscription unless params.AccountFilter narrows it -- and merges the
 // results.
 //
 // Error isolation mirrors RecommendationsClientAdapter.GetRecommendations:
-// each per-subscription goroutine captures its own error and returns nil to
-// the group, so one subscription failing (e.g. the principal lost Reader
+// each per-subscription task keeps its own error in its outcome, so one subscription failing (e.g. the principal lost Reader
 // access mid-run, or a subscription-specific throttle) never cancels
 // sibling subscriptions. The number of subscriptions in flight is capped with
-// g.SetLimit(concurrency.MaxParallelismFromEnv()) so a tenant with many
-// subscriptions cannot fan out unbounded. This is an errgroup limit, not a
+// the limit passed to CollectConcurrently (concurrency.MaxParallelismFromEnv()) so a tenant with many
+// subscriptions cannot fan out unbounded. This is a per-fan-out limit, not a
 // second semaphore: the shared semaphore that bounds aggregate concurrent ARM
 // calls is acquired only inside each per-subscription client's leaf calls
 // (never held while waiting on this fan-out), so the two bounds cannot
 // deadlock against each other.
 //
-// After g.Wait(), ctx.Err() is checked explicitly: g.Wait() only reports
-// errors returned to the group, and every goroutine here returns nil, so a
-// parent-context cancellation would otherwise go unnoticed.
+// CollectConcurrently returns the parent ctx error after the fan-out, so a
+// parent-context cancellation is not mistaken for a complete sweep.
 //
 // If every subscription fails, GetRecommendations returns a wrapped error
 // instead of a silently empty, nil-error result -- the same
@@ -288,30 +285,22 @@ func (m *MultiSubscriptionRecommendationsClient) GetRecommendations(ctx context.
 		return nil, err
 	}
 
-	results := make([][]common.Recommendation, len(targets))
-	errs := make([]error, len(targets))
-
-	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(concurrency.MaxParallelismFromEnv())
+	tasks := make([]func(context.Context) ([]common.Recommendation, error), len(targets))
 	for i, sub := range targets {
-		i, sub := i, sub
-		g.Go(func() error {
-			recs, err := sub.client.GetRecommendations(gctx, params)
-			results[i] = recs
-			errs[i] = err
-			return nil // error isolation: never propagate to errgroup
-		})
+		tasks[i] = func(ctx context.Context) ([]common.Recommendation, error) {
+			return sub.client.GetRecommendations(ctx, params)
+		}
 	}
-	if err := g.Wait(); err != nil {
-		// Unreachable in practice -- every goroutine above returns nil -- but
-		// handled explicitly (rather than discarded) so a future change that
-		// starts propagating a goroutine error isn't silently swallowed.
+	// CollectConcurrently isolates each subscription's error and returns the
+	// parent ctx error explicitly (see doc comment).
+	outcomes, err := concurrency.CollectConcurrently(ctx, concurrency.MaxParallelismFromEnv(), tasks)
+	if err != nil {
 		return nil, err
 	}
-
-	// Propagate parent-context cancellation explicitly -- see doc comment.
-	if err := ctx.Err(); err != nil {
-		return nil, err
+	results := make([][]common.Recommendation, len(outcomes))
+	errs := make([]error, len(outcomes))
+	for i, o := range outcomes {
+		results[i], errs[i] = o.Value, o.Err
 	}
 
 	return mergeSubscriptionResults(targets, results, errs, unmatched)
