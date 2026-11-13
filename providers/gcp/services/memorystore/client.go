@@ -15,6 +15,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skulist"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skumatch"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/services/shared"
 )
 
 // BillingService lists SKUs of one Cloud Billing service (enables mocking).
@@ -136,59 +137,28 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 
 // GetOfferingDetails retrieves Memorystore offering details from GCP Billing API.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
-	termYears, err := skumatch.TermYears(rec.Term)
-	if err != nil {
-		return nil, err
-	}
-
-	pricing, err := c.getRedisPricing(ctx, rec.ResourceType, c.region, termYears)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get pricing: %w", err)
-	}
-
-	offeringID := fmt.Sprintf("gcp-memorystore-%s-%s-%s", rec.ResourceType, c.region, rec.Term)
-	return skumatch.OfferingDetails(rec, offeringID, termYears, pricing.CommitmentPrice, pricing.HourlyRate, pricing.Currency)
+	return shared.OfferingDetails(ctx, rec, "gcp-memorystore", c.region, c.getRedisPricing)
 }
 
 // RedisPricing contains pricing information for Memorystore Redis.
-type RedisPricing struct {
-	Currency          string
-	HourlyRate        float64
-	CommitmentPrice   float64
-	OnDemandPrice     float64
-	SavingsPercentage float64
-}
+type RedisPricing = shared.Term
 
 // getRedisPricing gets pricing from GCP Cloud Billing Catalog API.
 // It returns an error when commitment pricing is absent from the catalog rather
 // than fabricating a price from a hardcoded discount factor (issue #1020).
 func (c *Client) getRedisPricing(ctx context.Context, tier, region string, termYears int) (*RedisPricing, error) {
-	billingSvc, err := skulist.Resolve(ctx, c.billingService, "memorystore", c.clientOpts...)
-	if err != nil {
-		return nil, err
-	}
-
-	skus, err := c.listSKUs(billingSvc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list SKUs: %w", err)
-	}
-
-	onDemandPrice, commitmentPrice, currency, err := extractPricingFromSKUs(skus.Skus, tier, region, termYears)
-	if err != nil {
-		return nil, err
-	}
-	prices, err := skumatch.ScaleToTerm("Memorystore tier "+tier, region, onDemandPrice, commitmentPrice, termYears)
-	if err != nil {
-		return nil, err
-	}
-
-	return &RedisPricing{
-		HourlyRate:        prices.HourlyRate,
-		CommitmentPrice:   prices.CommitmentPrice,
-		OnDemandPrice:     prices.OnDemandPrice,
-		Currency:          currency,
-		SavingsPercentage: prices.SavingsPercentage,
-	}, nil
+	return shared.Price(ctx, shared.PriceInput{
+		Name:    "memorystore",
+		Billing: c.billingService,
+		Opts:    c.clientOpts,
+		List:    c.listSKUs,
+		Extract: func(skus []*cloudbilling.Sku) (float64, float64, string, error) {
+			return extractPricingFromSKUs(skus, tier, region, termYears)
+		},
+		Label:     "Memorystore tier " + tier,
+		Region:    region,
+		TermYears: termYears,
+	})
 }
 
 // extractPricingFromSKUs extracts on-demand and commitment pricing from SKU list.

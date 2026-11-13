@@ -15,6 +15,7 @@ import (
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skulist"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/internal/skumatch"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/gcp/services/shared"
 )
 
 // BillingService lists SKUs of one Cloud Billing service (enables mocking).
@@ -132,59 +133,28 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 
 // GetOfferingDetails retrieves Cloud Storage offering details from GCP Billing API.
 func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendation) (*common.OfferingDetails, error) {
-	termYears, err := skumatch.TermYears(rec.Term)
-	if err != nil {
-		return nil, err
-	}
-
-	pricing, err := c.getStoragePricing(ctx, rec.ResourceType, c.region, termYears)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get pricing: %w", err)
-	}
-
-	offeringID := fmt.Sprintf("gcp-storage-%s-%s-%s", rec.ResourceType, c.region, rec.Term)
-	return skumatch.OfferingDetails(rec, offeringID, termYears, pricing.CommitmentPrice, pricing.HourlyRate, pricing.Currency)
+	return shared.OfferingDetails(ctx, rec, "gcp-storage", c.region, c.getStoragePricing)
 }
 
 // StoragePricing contains pricing information for Cloud Storage.
-type StoragePricing struct {
-	Currency          string
-	HourlyRate        float64
-	CommitmentPrice   float64
-	OnDemandPrice     float64
-	SavingsPercentage float64
-}
+type StoragePricing = shared.Term
 
 // getStoragePricing gets pricing from GCP Cloud Billing Catalog API.
 // It returns an error when commitment pricing is absent from the catalog rather
 // than fabricating a price from a hardcoded discount factor (issue #1020).
 func (c *Client) getStoragePricing(ctx context.Context, storageClass, region string, termYears int) (*StoragePricing, error) {
-	svc, err := skulist.Resolve(ctx, c.billingService, "cloudstorage", c.clientOpts...)
-	if err != nil {
-		return nil, err
-	}
-
-	skus, err := c.listSKUs(svc)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list SKUs: %w", err)
-	}
-
-	onDemandPrice, commitmentPrice, currency, err := extractStoragePricingFromSKUs(skus.Skus, storageClass, region, termYears)
-	if err != nil {
-		return nil, err
-	}
-	prices, err := skumatch.ScaleToTerm("Cloud Storage class "+storageClass, region, onDemandPrice, commitmentPrice, termYears)
-	if err != nil {
-		return nil, err
-	}
-
-	return &StoragePricing{
-		HourlyRate:        prices.HourlyRate,
-		CommitmentPrice:   prices.CommitmentPrice,
-		OnDemandPrice:     prices.OnDemandPrice,
-		Currency:          currency,
-		SavingsPercentage: prices.SavingsPercentage,
-	}, nil
+	return shared.Price(ctx, shared.PriceInput{
+		Name:    "cloudstorage",
+		Billing: c.billingService,
+		Opts:    c.clientOpts,
+		List:    c.listSKUs,
+		Extract: func(skus []*cloudbilling.Sku) (float64, float64, string, error) {
+			return extractStoragePricingFromSKUs(skus, storageClass, region, termYears)
+		},
+		Label:     "Cloud Storage class " + storageClass,
+		Region:    region,
+		TermYears: termYears,
+	})
 }
 
 // extractStoragePricingFromSKUs extracts on-demand and commitment pricing from SKU list.
