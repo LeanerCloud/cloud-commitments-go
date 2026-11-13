@@ -20,14 +20,11 @@ const (
 // ParseTermMonths converts a reservation term string to the offering duration
 // in months. The service name is used only in the error message.
 func ParseTermMonths(term, service string) (int, error) {
-	switch term {
-	case string(common.Term3Year), "3":
-		return 36, nil
-	case string(common.Term1Year), "1":
-		return 12, nil
-	default:
+	t, ok := common.ParseTermSpelling(term, common.SpellCanonical|common.SpellBareYears)
+	if !ok {
 		return 0, fmt.Errorf("unsupported %s reservation term %q: must be one of 1yr, 1, 3yr, 3", service, term)
 	}
+	return t.Months(), nil
 }
 
 // DurationSeconds converts a reservation term string to the duration in
