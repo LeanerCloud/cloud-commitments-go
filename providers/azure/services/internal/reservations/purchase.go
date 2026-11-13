@@ -111,14 +111,11 @@ func lockPurchaseToken(token string) (unlock func()) {
 // literal comparison (rec.Term == "3yr" || rec.Term == "3") should call this
 // instead to get consistent error reporting on unrecognized terms.
 func ParseTermYears(term string) (int, error) {
-	switch common.Term(strings.ToLower(strings.TrimSpace(term))) {
-	case "", "1", common.Term1Year, "1y":
-		return 1, nil
-	case "3", common.Term3Year, "3y":
-		return 3, nil
-	default:
+	t, ok := common.ParseTermSpelling(term, common.SpellCanonical|common.SpellBareYears|common.SpellShortYears|common.SpellEmptyIsOneYear|common.SpellFold)
+	if !ok {
 		return 0, fmt.Errorf("unsupported reservation term: %s", term)
 	}
+	return t.Years(), nil
 }
 
 // BillingPlanForPaymentOption maps a recommendation's payment-option string
