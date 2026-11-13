@@ -324,15 +324,9 @@ func copyFloatPtr(p *float64) *float64 {
 // termMonths converts a term string ("1yr", "3yr") to months.
 // Returns 0 for unrecognized strings.
 func termMonths(t string) int {
-	switch t {
-	case "1yr":
-		return 12
-	case "3yr":
-		return 36
-	default:
-		if t != "" {
-			log.Printf("warn: unrecognized term string %q, using 0 months", t)
-		}
-		return 0
+	term, ok := ParseTermSpelling(t, SpellCanonical)
+	if !ok && t != "" {
+		log.Printf("warn: unrecognized term string %q, using 0 months", t)
 	}
+	return term.Months()
 }
