@@ -93,12 +93,13 @@ func estimateStableUSDPerHour(series []float64, lowWater, bufferFraction float64
 
 // familyStableUSDPerHour sizes the base layer per instance family. With two or
 // more families it returns min(flat, sum over families of minimum observed
-// usage * (1 - bufferFraction)): a family-bound commitment is sized from that
-// family's own floor, and the sum of minima never exceeds the flat estimate.
-// With zero or one family the family series is the flat series (or absent), so
-// the flat estimate stands unchanged. A nil flat estimate stays nil. Family
-// series are validated (fail loud) only on the two-or-more path; a family fetch
-// error is handled by the caller, not here.
+// usage * (1 - bufferFraction)), counting only families that pass the same
+// stable gate as the flat series. A family that fails the gate (volatile or too
+// short) contributes nothing, so it can only lower the estimate. With zero or
+// one family the family series is the flat series (or absent), so the flat
+// estimate stands unchanged. A nil flat estimate stays nil. Family series are
+// validated (fail loud) only on the two-or-more path; a family fetch error is
+// handled by the caller, not here.
 func familyStableUSDPerHour(families map[string][]float64, flat *float64, bufferFraction float64) (*float64, error) {
 	if len(families) < 2 {
 		return flat, nil
@@ -116,6 +117,13 @@ func familyStableUSDPerHour(families map[string][]float64, flat *float64, buffer
 		}
 		if err := validateSeries(series); err != nil {
 			return nil, fmt.Errorf("family %s: %w", name, err)
+		}
+		p10, median, err := stableQuantiles(series)
+		if err != nil {
+			return nil, fmt.Errorf("family %s: %w", name, err)
+		}
+		if !stableGatePasses(len(series), p10, median) {
+			continue
 		}
 		total += slices.Min(series) * (1 - bufferFraction)
 	}

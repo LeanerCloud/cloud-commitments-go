@@ -35,7 +35,7 @@ func TestFamilyStable_NeverExceedsSumOfFamilyMinimums(t *testing.T) {
 		for i := 0; i < n; i++ {
 			series := make([]float64, 14+rng.IntN(20))
 			for j := range series {
-				series[j] = rng.Float64() * 100
+				series[j] = 50 + rng.Float64()*20
 			}
 			families[string(rune('a'+i))] = series
 			sumMin += minOf(series) * (1 - f)
@@ -50,11 +50,64 @@ func TestFamilyStable_NeverExceedsSumOfFamilyMinimums(t *testing.T) {
 
 // TestFamilyStable_CappedByFlat: when the flat estimate is smaller, it wins.
 func TestFamilyStable_CappedByFlat(t *testing.T) {
-	families := map[string][]float64{"m5": {10, 10, 10}, "c5": {4, 4, 4}}
+	families := map[string][]float64{"m5": steadySeries(10, 14), "c5": steadySeries(4, 14)}
 	got, err := familyStableUSDPerHour(families, ptr(2.0), 0.1)
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	assert.InDelta(t, 2.0, *got, 1e-9)
+}
+
+// steadySeries returns n equal daily values: it passes the stable gate.
+func steadySeries(v float64, n int) []float64 {
+	out := make([]float64, n)
+	for i := range out {
+		out[i] = v
+	}
+	return out
+}
+
+// TestFamilyStable_VolatileFamilyContributesNothing: a family that fails the
+// gate (p10 well below half its median) adds nothing, so only the steady family
+// counts. Summing its minimum would give 9.9 instead of 9.
+func TestFamilyStable_VolatileFamilyContributesNothing(t *testing.T) {
+	volatile := append([]float64{1, 1, 1, 1, 1}, steadySeries(100, 9)...)
+	families := map[string][]float64{"m5": steadySeries(10, 14), "c5": volatile}
+	got, err := familyStableUSDPerHour(families, ptr(1e9), 0.1)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.InDelta(t, 9.0, *got, 1e-9, "10 * 0.9 from the steady family only")
+}
+
+// TestFamilyStable_ShortFamilyContributesNothing: a 13-day family fails the
+// minimum-length gate and adds nothing.
+func TestFamilyStable_ShortFamilyContributesNothing(t *testing.T) {
+	families := map[string][]float64{"m5": steadySeries(10, 14), "c5": steadySeries(4, 13)}
+	got, err := familyStableUSDPerHour(families, ptr(1e9), 0.1)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.InDelta(t, 9.0, *got, 1e-9, "10 * 0.9 from the steady family only")
+}
+
+// TestFamilyStable_AllFamiliesFailGateReturnsNil: when no family passes, there
+// is no stable claim, so the base layer stays off even with a flat estimate.
+func TestFamilyStable_AllFamiliesFailGateReturnsNil(t *testing.T) {
+	volatile := append([]float64{1, 1, 1, 1, 1}, steadySeries(100, 9)...)
+	families := map[string][]float64{"c5": volatile, "m5": steadySeries(4, 13)}
+	got, err := familyStableUSDPerHour(families, ptr(5.0), 0.1)
+	require.NoError(t, err)
+	assert.Nil(t, got)
+}
+
+// TestFamilyStable_GateBoundaryPasses: p10 exactly half the median passes the
+// gate (">="). Here p10 = 5, median = 10, min = 5, so the total is
+// (10 + 5) * 0.9 = 13.5.
+func TestFamilyStable_GateBoundaryPasses(t *testing.T) {
+	boundary := append([]float64{5, 5}, steadySeries(10, 12)...)
+	families := map[string][]float64{"m5": steadySeries(10, 14), "c5": boundary}
+	got, err := familyStableUSDPerHour(families, ptr(1e9), 0.1)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	assert.InDelta(t, 13.5, *got, 1e-9)
 }
 
 // TestFamilyStable_NoFamilyDataUsesFlat: no family rows means the caller keeps
@@ -69,7 +122,7 @@ func TestFamilyStable_NoFamilyDataUsesFlat(t *testing.T) {
 // TestFamilyStable_NilFlatStaysNil: a volatile or short flat series keeps the
 // base layer off; per-family data cannot switch it on.
 func TestFamilyStable_NilFlatStaysNil(t *testing.T) {
-	families := map[string][]float64{"m5": {10, 10, 10}, "c5": {4, 4, 4}}
+	families := map[string][]float64{"m5": steadySeries(10, 14), "c5": steadySeries(4, 14)}
 	got, err := familyStableUSDPerHour(families, nil, 0.1)
 	require.NoError(t, err)
 	assert.Nil(t, got)
