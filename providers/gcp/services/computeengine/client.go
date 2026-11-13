@@ -565,8 +565,8 @@ func (c *Client) convertGCPCommitmentToCommon(commitment *computepb.Commitment) 
 // isResourceExhausted reports whether the error represents a RESOURCE_EXHAUSTED
 // (quota / 429) response. Uses typed checks first: errors.As for REST API errors
 // (*googleapi.Error with Code 429) and status.FromError for gRPC errors
-// (codes.ResourceExhausted). Falls back to string matching only for error types
-// that neither unwraps as a *googleapi.Error nor as a gRPC status (10-M3).
+// (codes.ResourceExhausted). Message text is never inspected: a substring match
+// would also retry unrelated errors that merely mention "429" (10-M3, #6).
 func isResourceExhausted(err error) bool {
 	if err == nil {
 		return false
@@ -581,9 +581,7 @@ func isResourceExhausted(err error) bool {
 	if st, ok := status.FromError(err); ok {
 		return st.Code() == codes.ResourceExhausted
 	}
-	// Fallback for wrapped/non-standard errors that carry the signal as text.
-	s := err.Error()
-	return strings.Contains(s, "ResourceExhausted") || strings.Contains(s, "RESOURCE_EXHAUSTED") || strings.Contains(s, "429")
+	return false
 }
 
 // errExistingCommitmentMismatch reports that a commitment already holds the

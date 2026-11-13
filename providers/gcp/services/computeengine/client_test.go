@@ -23,6 +23,8 @@ import (
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 	"google.golang.org/genproto/googleapis/type/money"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -2568,4 +2570,25 @@ func TestGetRecommendations_RecordsUnrecognizedTermSkip(t *testing.T) {
 	require.Len(t, entries, 1)
 	assert.Contains(t, entries[0], `"rec-5yr"`)
 	assert.Contains(t, entries[0], `"5yr"`)
+}
+
+func TestIsResourceExhaustedClassifiesTypedErrorsOnly(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"googleapi 429 wrapped", fmt.Errorf("create: %w", &googleapi.Error{Code: 429}), true},
+		{"grpc ResourceExhausted", status.Error(codes.ResourceExhausted, "quota"), true},
+		{"googleapi 403", &googleapi.Error{Code: 403, Message: "forbidden"}, false},
+		{"grpc PermissionDenied", status.Error(codes.PermissionDenied, "denied"), false},
+		{"untyped text RESOURCE_EXHAUSTED", errors.New("RESOURCE_EXHAUSTED: quota exceeded"), false},
+		{"untyped text 429", errors.New("request id 4290 failed"), false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isResourceExhausted(tt.err))
+		})
+	}
 }
