@@ -55,11 +55,11 @@ var liveCommitmentsFilter = fmt.Sprintf("(status != %s) (status != %s)",
 // because a purchase must name its plan explicitly.
 func termPlan(term string) (string, error) {
 	if strings.TrimSpace(term) == "" {
-		return "", fmt.Errorf("termPlan: unrecognized commitment term %q (empty)", term)
+		return "", fmt.Errorf("computeengine: termPlan: unrecognized commitment term %q (empty)", term)
 	}
 	years, err := skumatch.TermYears(term)
 	if err != nil {
-		return "", fmt.Errorf("termPlan: unrecognized commitment term %q: %w", term, err)
+		return "", fmt.Errorf("computeengine: termPlan: unrecognized commitment term %q: %w", term, err)
 	}
 	if years == 3 {
 		return computepb.Commitment_THIRTY_SIX_MONTH.String(), nil
@@ -767,19 +767,19 @@ func (c *Client) PurchaseCommitment(ctx context.Context, rec common.Recommendati
 // common.MaskToken and never logged verbatim.
 func (c *Client) buildInsertRequest(rec common.Recommendation, opts common.PurchaseOptions) (*computepb.InsertRegionCommitmentRequest, string, error) {
 	if rec.Count <= 0 {
-		return nil, "", fmt.Errorf("buildInsertRequest: rec.Count must be > 0 (got %d); a zero-vCPU commitment is invalid (issue #1022)", rec.Count)
+		return nil, "", fmt.Errorf("computeengine: buildInsertRequest: rec.Count must be > 0 (got %d); a zero-vCPU commitment is invalid (issue #1022)", rec.Count)
 	}
 
 	plan, err := termPlan(rec.Term)
 	if err != nil {
-		return nil, "", fmt.Errorf("buildInsertRequest: %w", err)
+		return nil, "", fmt.Errorf("computeengine: buildInsertRequest: %w", err)
 	}
 
 	// Prefer the persisted commitment type over machine-family hints.
 	// Legacy advice without a type uses the machine-family mapping.
 	commitType, err := commitmentTypeForRecommendation(rec)
 	if err != nil {
-		return nil, "", fmt.Errorf("buildInsertRequest: %w", err)
+		return nil, "", fmt.Errorf("computeengine: buildInsertRequest: %w", err)
 	}
 
 	// GCP's computepb.Commitment has no Labels field, and the RegionCommitments
@@ -793,7 +793,7 @@ func (c *Client) buildInsertRequest(rec common.Recommendation, opts common.Purch
 
 	commitmentName, err := idempotentCommitmentName(opts.IdempotencyToken)
 	if err != nil {
-		return nil, "", fmt.Errorf("buildInsertRequest: %w", err)
+		return nil, "", fmt.Errorf("computeengine: buildInsertRequest: %w", err)
 	}
 
 	// Derive the memory Amount from the Recommender payload (stored in
@@ -1312,16 +1312,16 @@ func memoryMBFromDetails(rec common.Recommendation) (int64, error) {
 		cd = d
 	case *common.ComputeDetails:
 		if d == nil {
-			return 0, fmt.Errorf("memoryMBFromDetails: MEMORY resource amount absent from recommendation Details (no MEMORY op in Recommender payload); cannot build CUD insert without explicit memory")
+			return 0, fmt.Errorf("computeengine: memoryMBFromDetails: MEMORY resource amount absent from recommendation Details (no MEMORY op in Recommender payload); cannot build CUD insert without explicit memory")
 		}
 		cd = *d
 	default:
-		return 0, fmt.Errorf("memoryMBFromDetails: MEMORY resource amount absent from recommendation Details (no MEMORY op in Recommender payload); cannot build CUD insert without explicit memory")
+		return 0, fmt.Errorf("computeengine: memoryMBFromDetails: MEMORY resource amount absent from recommendation Details (no MEMORY op in Recommender payload); cannot build CUD insert without explicit memory")
 	}
 	if cd.MemoryGB > 0 {
 		return int64(cd.MemoryGB * 1024), nil
 	}
-	return 0, fmt.Errorf("memoryMBFromDetails: MEMORY resource amount absent from recommendation Details (no MEMORY op in Recommender payload); cannot build CUD insert without explicit memory")
+	return 0, fmt.Errorf("computeengine: memoryMBFromDetails: MEMORY resource amount absent from recommendation Details (no MEMORY op in Recommender payload); cannot build CUD insert without explicit memory")
 }
 
 // idempotentNameTokenLen is how many leading hex characters of the idempotency
