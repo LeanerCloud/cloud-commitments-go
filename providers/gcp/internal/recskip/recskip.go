@@ -29,7 +29,7 @@ func WithLog(ctx context.Context) (context.Context, *Log) {
 // Record logs a dropped recommendation and records it in the context's Log, if
 // any. scope names where it was dropped (for example "computeengine us-east1").
 func Record(ctx context.Context, scope string, err error) {
-	logging.Warnf("gcp %s: skipping recommendation: %v", scope, err)
+	logging.Warnf("GCP %s: skipping recommendation: %v", scope, err)
 	if l, ok := ctx.Value(logKey{}).(*Log); ok {
 		l.mu.Lock()
 		l.entries = append(l.entries, fmt.Sprintf("%s: %v", scope, err))

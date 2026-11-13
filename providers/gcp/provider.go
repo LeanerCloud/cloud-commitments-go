@@ -122,7 +122,7 @@ func NewProvider(config *provider.Config) (*Provider, error) {
 			// Non-nil but wrong-typed slot: log so mis-wirings (wrong
 			// concrete type passed to the `any`-typed slot) surface
 			// instead of being silently ignored. Falls back to ADC.
-			logging.Warnf("gcp provider: config.GCPTokenSource is %T, expected oauth2.TokenSource — falling back to ambient credentials", config.GCPTokenSource)
+			logging.Warnf("GCP provider: config.GCPTokenSource is %T, expected oauth2.TokenSource — falling back to ambient credentials", config.GCPTokenSource)
 		}
 	}
 
