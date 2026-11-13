@@ -299,6 +299,12 @@ func (c *rateCollector) add(sku *cloudbilling.Sku, isCommit, isRAM bool) error {
 	return slot.set(price, sku, spread)
 }
 
+// rates returns the four collected prices. A missing on-demand pair is an error
+// for every family: it is how h4d surfaces outside its six regions (us-central1,
+// us-east1, us-west1, asia-south1, asia-southeast1, europe-west4), where the
+// catalog has H4D on-demand and commitment SKUs in the same six. The DWS and Spot
+// H4D labels are alternate usage types, not on-demand fallbacks, so they are not
+// matched.
 func (c *rateCollector) rates(machineType, region string, termYears int) (*familyRates, error) {
 	switch {
 	case !c.odCPU.seen || !c.odRAM.seen:
