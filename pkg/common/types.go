@@ -297,6 +297,13 @@ type Recommendation struct {
 	// USD: providers skip a recommendation whose source reports an explicit
 	// non-USD currency; an AWS Cost Explorer detail with no CurrencyCode is
 	// accepted as is. CommitmentCurrency covers only the commitment legs.
+	//
+	// Zero is the default for all four cost fields: a zero is either a known
+	// zero (for example a no-upfront CommitmentCost or a 0% saving) or a figure
+	// the provider did not return, and the fields alone cannot tell them apart.
+	// Priced (below) marks OnDemandCost and EstimatedSavings only; CommitmentCost
+	// and SavingsPercentage have no marker. No pointer was adopted because it
+	// would break every caller and the JSON/CSV output.
 	OnDemandCost      float64 `json:"on_demand_cost" csv:"OnDemandCost"`
 	CommitmentCost    float64 `json:"commitment_cost" csv:"CommitmentCost"`
 	EstimatedSavings  float64 `json:"estimated_savings" csv:"EstimatedSavings"`
