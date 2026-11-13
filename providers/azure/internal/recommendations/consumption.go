@@ -175,14 +175,11 @@ func checkLookBackDays(d *int32) (int, error) {
 // TermYears maps a normalised term ("1yr", "3yr") to years and fails on
 // anything else.
 func TermYears(term string) (int, error) {
-	switch common.Term(term) {
-	case common.Term1Year:
-		return 1, nil
-	case common.Term3Year:
-		return 3, nil
-	default:
+	t, ok := common.ParseTermSpelling(term, common.SpellCanonical)
+	if !ok {
 		return 0, fmt.Errorf("unrecognized term %q", term)
 	}
+	return t.Years(), nil
 }
 
 // ReservationPrice is the retail price of one reservation unit for a whole
