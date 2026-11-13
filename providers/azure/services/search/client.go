@@ -305,6 +305,10 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 		return nil, fmt.Errorf("invalid term: %w", err)
 	}
 
+	if _, planErr := upfrontOnlyBillingPlan(rec.PaymentOption); planErr != nil {
+		return nil, planErr
+	}
+
 	searchPricing, err := c.getSearchPricing(ctx, rec.ResourceType, c.region, termYears)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pricing: %w", err)
@@ -317,8 +321,6 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 	case common.PaymentAllUpfront, "upfront":
 		upfrontCost = totalCost
 		recurringCost = 0
-	case "monthly", common.PaymentNoUpfront:
-		return nil, fmt.Errorf("azure search reservations are upfront-only until Monthly billing is confirmed in the Capacity catalog; got payment option %q", rec.PaymentOption)
 	default:
 		// Fail loud on an unrecognized payment option rather than silently
 		// billing it as all-upfront (owner policy: no silent fallbacks on

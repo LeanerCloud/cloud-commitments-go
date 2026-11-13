@@ -250,15 +250,13 @@ func TestSearchClient_GetOfferingDetails_NoUpfront(t *testing.T) {
 		nil,
 	)
 
-	rec := common.Recommendation{
-		ResourceType:  "standard",
-		Term:          "1yr",
-		PaymentOption: "no-upfront",
+	for _, payment := range []string{"no-upfront", "monthly"} {
+		rec := common.Recommendation{ResourceType: "standard", Term: "1yr", PaymentOption: payment}
+		details, err := client.GetOfferingDetails(ctx, rec)
+		require.ErrorContains(t, err, "upfront-only")
+		assert.Nil(t, details)
 	}
-
-	details, err := client.GetOfferingDetails(ctx, rec)
-	require.ErrorContains(t, err, "upfront-only")
-	assert.Nil(t, details)
+	mockHTTP.AssertNotCalled(t, "Do", mock.Anything)
 }
 
 func TestSearchClient_GetOfferingDetails_APIError(t *testing.T) {
