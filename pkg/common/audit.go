@@ -322,7 +322,10 @@ func copyFloatPtr(p *float64) *float64 {
 }
 
 // termMonths converts a term string ("1yr", "3yr") to months.
-// Returns 0 for unrecognized strings.
+// Returns 0 for unrecognized strings. It does not fail loud: NewAuditRecord is
+// exported, has no caller in this repo, and records failed and skipped
+// recommendations too, whose term may be the unrecognized value that caused
+// the failure. An audit write must not itself fail, so the bad term is logged.
 func termMonths(t string) int {
 	term, ok := ParseTermSpelling(t, SpellCanonical)
 	if !ok && t != "" {
