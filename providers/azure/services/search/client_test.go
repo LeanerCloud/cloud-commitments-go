@@ -223,16 +223,16 @@ func TestSearchClient_GetOfferingDetails_3YearTerm(t *testing.T) {
 	rec := common.Recommendation{
 		ResourceType:  "standard",
 		Term:          "3yr",
-		PaymentOption: "monthly",
+		PaymentOption: "all-upfront",
 	}
 
 	details, err := client.GetOfferingDetails(ctx, rec)
 	require.NoError(t, err)
 	require.NotNil(t, details)
 	assert.Equal(t, "3yr", details.Term)
-	assert.Equal(t, "monthly", details.PaymentOption)
+	assert.Equal(t, "all-upfront", details.PaymentOption)
 	assert.Equal(t, 1200.0, details.TotalCost)
-	assert.Equal(t, 1200.0/36.0, details.RecurringCost)
+	assert.Equal(t, 0.0, details.RecurringCost)
 	assert.Equal(t, 1200.0/(8760.0*3), details.EffectiveHourlyRate)
 }
 
@@ -257,10 +257,8 @@ func TestSearchClient_GetOfferingDetails_NoUpfront(t *testing.T) {
 	}
 
 	details, err := client.GetOfferingDetails(ctx, rec)
-	require.NoError(t, err)
-	require.NotNil(t, details)
-	assert.Equal(t, float64(0), details.UpfrontCost)
-	assert.Equal(t, 500.0/12.0, details.RecurringCost)
+	require.ErrorContains(t, err, "upfront-only")
+	assert.Nil(t, details)
 }
 
 func TestSearchClient_GetOfferingDetails_APIError(t *testing.T) {
@@ -399,8 +397,8 @@ func TestSearchClient_GetOfferingDetails_MixedTermsBothOrders(t *testing.T) {
 	}{
 		{name: "one year first", term: "1yr", payment: "upfront", items: []pricing.RetailPriceItem{oneYear, threeYears}, wantTotal: 800, wantPaid: 800, termYears: 1},
 		{name: "one year last", term: "1yr", payment: "upfront", items: []pricing.RetailPriceItem{threeYears, oneYear}, wantTotal: 800, wantPaid: 800, termYears: 1},
-		{name: "three years first", term: "3yr", payment: "monthly", items: []pricing.RetailPriceItem{threeYears, oneYear}, wantTotal: 1900, wantPaid: 1900.0 / 36, termYears: 3},
-		{name: "three years last", term: "3yr", payment: "monthly", items: []pricing.RetailPriceItem{oneYear, threeYears}, wantTotal: 1900, wantPaid: 1900.0 / 36, termYears: 3},
+		{name: "three years first", term: "3yr", payment: "upfront", items: []pricing.RetailPriceItem{threeYears, oneYear}, wantTotal: 1900, wantPaid: 1900, termYears: 3},
+		{name: "three years last", term: "3yr", payment: "upfront", items: []pricing.RetailPriceItem{oneYear, threeYears}, wantTotal: 1900, wantPaid: 1900, termYears: 3},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body, err := json.Marshal(AzureRetailPrice{Items: tc.items})

@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Notices
 
+- **Azure search reservations are upfront-only (#38).** `search` purchases and
+  offering quotes with `monthly` or `no-upfront` are refused before any request,
+  because the Capacity catalog does not recognise `SearchService`. Monthly stays
+  allowed for cache, managedredis and synapse, whose catalog rows list it.
+
 - **Expiry adjustment functions return an error (#450).**
   `recommendations.AdjustExistingCoverageForExpiringCommitments`,
   `...WithCoverage` and `...WithCoverageOptions` now return `error` as their

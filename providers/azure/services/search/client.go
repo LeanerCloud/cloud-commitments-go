@@ -318,8 +318,7 @@ func (c *Client) GetOfferingDetails(ctx context.Context, rec common.Recommendati
 		upfrontCost = totalCost
 		recurringCost = 0
 	case "monthly", common.PaymentNoUpfront:
-		upfrontCost = 0
-		recurringCost = totalCost / (float64(termYears) * 12)
+		return nil, fmt.Errorf("azure search reservations are upfront-only until Monthly billing is confirmed in the Capacity catalog; got payment option %q", rec.PaymentOption)
 	default:
 		// Fail loud on an unrecognized payment option rather than silently
 		// billing it as all-upfront (owner policy: no silent fallbacks on
