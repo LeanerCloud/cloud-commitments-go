@@ -48,9 +48,9 @@ func BreakEven(rec Recommendation) (months float64, known bool) {
 
 func breakEvenTermMonths(term string) (float64, bool) {
 	switch normalizeReservationTerm(term) {
-	case "1yr":
+	case string(Term1Year):
 		return 12, true
-	case "3yr":
+	case string(Term3Year):
 		return 36, true
 	default:
 		return 0, false
@@ -58,6 +58,12 @@ func breakEvenTermMonths(term string) (float64, bool) {
 }
 
 func isFinite(v float64) bool { return !math.IsNaN(v) && !math.IsInf(v, 0) }
+
+// paymentKeyReplacer folds payment spellings ("all-upfront", "All_Upfront")
+// to one key. The typed constants are folded with it too, so their case arms match.
+var paymentKeyReplacer = strings.NewReplacer("-", "", "_", "", " ", "")
+
+func paymentKey(p PaymentOption) string { return paymentKeyReplacer.Replace(string(p)) }
 
 // UpfrontPriceUnknown reports whether rec's zero CommitmentCost is a missing
 // price rather than a known zero upfront: the payment option says an upfront
@@ -69,8 +75,8 @@ func UpfrontPriceUnknown(rec Recommendation) bool {
 	if rec.CommitmentCost != 0 {
 		return false
 	}
-	switch strings.NewReplacer("-", "", "_", "", " ", "").Replace(strings.ToLower(strings.TrimSpace(rec.PaymentOption))) {
-	case "allupfront", "upfront", "partialupfront", "partial":
+	switch paymentKeyReplacer.Replace(strings.ToLower(strings.TrimSpace(rec.PaymentOption))) {
+	case paymentKey(PaymentAllUpfront), "upfront", paymentKey(PaymentPartialUpfront), "partial":
 		return true
 	default:
 		return false

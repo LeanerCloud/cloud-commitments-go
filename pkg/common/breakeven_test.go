@@ -83,3 +83,29 @@ func TestUpfrontPriceUnknown(t *testing.T) {
 		})
 	}
 }
+
+// Pins each typed Term and PaymentOption constant to its wire value and to
+// the break-even term and missing-price result it drives.
+func TestBreakEven_TypedConstants(t *testing.T) {
+	t.Parallel()
+	assert.Equal(t, "1yr", string(Term1Year))
+	assert.Equal(t, "3yr", string(Term3Year))
+	assert.Equal(t, "all-upfront", string(PaymentAllUpfront))
+	assert.Equal(t, "partial-upfront", string(PaymentPartialUpfront))
+	assert.Equal(t, "no-upfront", string(PaymentNoUpfront))
+
+	parsed, err := ParseTerm(string(Term1Year))
+	assert.NoError(t, err)
+	assert.Equal(t, Term1Year, parsed)
+
+	months, ok := breakEvenTermMonths(string(Term1Year))
+	assert.Equal(t, 12.0, months)
+	assert.True(t, ok)
+	months, ok = breakEvenTermMonths(string(Term3Year))
+	assert.Equal(t, 36.0, months)
+	assert.True(t, ok)
+
+	assert.True(t, UpfrontPriceUnknown(Recommendation{PaymentOption: string(PaymentAllUpfront)}))
+	assert.True(t, UpfrontPriceUnknown(Recommendation{PaymentOption: string(PaymentPartialUpfront)}))
+	assert.False(t, UpfrontPriceUnknown(Recommendation{PaymentOption: string(PaymentNoUpfront)}))
+}
