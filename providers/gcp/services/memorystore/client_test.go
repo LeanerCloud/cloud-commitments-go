@@ -6,8 +6,6 @@ import (
 	"testing"
 
 	"cloud.google.com/go/recommender/apiv1/recommenderpb"
-	"cloud.google.com/go/redis/apiv1/redispb"
-	gax "github.com/googleapis/gax-go/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/cloudbilling/v1"
@@ -19,62 +17,6 @@ import (
 )
 
 // Mock implementations
-
-// MockRedisService implements RedisService for testing.
-type MockRedisService struct {
-	instances    []*redispb.Instance
-	instancesErr error
-	createResult CreateInstanceOperation
-	createErr    error
-	createCalled bool
-	closeCalled  bool
-}
-
-func (m *MockRedisService) ListInstances(ctx context.Context, req *redispb.ListInstancesRequest) RedisIterator {
-	return &MockRedisIterator{instances: m.instances, err: m.instancesErr}
-}
-
-func (m *MockRedisService) CreateInstance(ctx context.Context, req *redispb.CreateInstanceRequest) (CreateInstanceOperation, error) {
-	m.createCalled = true
-	if m.createErr != nil {
-		return nil, m.createErr
-	}
-	return m.createResult, nil
-}
-
-func (m *MockRedisService) Close() error {
-	m.closeCalled = true
-	return nil
-}
-
-// MockRedisIterator implements RedisIterator for testing.
-type MockRedisIterator struct {
-	instances []*redispb.Instance
-	index     int
-	err       error
-}
-
-func (m *MockRedisIterator) Next() (*redispb.Instance, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	if m.index >= len(m.instances) {
-		return nil, iterator.Done
-	}
-	instance := m.instances[m.index]
-	m.index++
-	return instance, nil
-}
-
-// MockCreateInstanceOperation implements CreateInstanceOperation for testing.
-type MockCreateInstanceOperation struct {
-	instance *redispb.Instance
-	err      error
-}
-
-func (m *MockCreateInstanceOperation) Wait(ctx context.Context, opts ...gax.CallOption) (*redispb.Instance, error) {
-	return m.instance, m.err
-}
 
 // MockBillingService implements BillingService for testing.
 type MockBillingService struct {
@@ -277,8 +219,7 @@ func TestRedisPricingStructure(t *testing.T) {
 // TestMemorystoreClient_GetExistingCommitments_Stub verifies the documented
 // stub behavior: the GCP Memorystore Redis API does not expose commitment
 // status — ReservedIpRange is the VPC-peering CIDR, not a commitment
-// indicator. The production code returns (nil, nil) and the injected
-// redisService is intentionally never called from this path.
+// indicator. The production code returns (nil, nil).
 //
 // If a future implementation adds real commitment detection here, this test
 // must be updated to match — do NOT silently swap in the mock-based variant
@@ -289,22 +230,10 @@ func TestMemorystoreClient_GetExistingCommitments_Stub(t *testing.T) {
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
-	// Inject a service that would error if called — verifies the stub does
-	// not accidentally touch the redis service.
-	sentinel := &MockRedisService{
-		instancesErr: errors.New("redis service must not be called from stub"),
-	}
-	client.SetRedisService(sentinel)
-
 	commitments, err := client.GetExistingCommitments(ctx)
 
 	require.NoError(t, err, "stub must not error")
 	assert.Nil(t, commitments, "stub must return nil until real detection is implemented")
-
-	// Close must NOT have been called: the stub returns before creating any
-	// client, so there is nothing to close. Asserting false here documents
-	// that the stub owns the lifecycle correctly.
-	assert.False(t, sentinel.closeCalled, "stub must not close a service it never opened")
 }
 
 // TestMemorystoreClient_PurchaseCommitment_NotSupported is the regression test for
@@ -315,13 +244,6 @@ func TestMemorystoreClient_PurchaseCommitment_NotSupported(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	mockService := &MockRedisService{
-		// If PurchaseCommitment ever calls CreateInstance, this would return a
-		// successful op; the assertions below ensure it is never invoked.
-		createResult: &MockCreateInstanceOperation{instance: &redispb.Instance{Name: "test-instance"}},
-	}
-	client.SetRedisService(mockService)
 
 	rec := common.Recommendation{
 		ResourceType:   "STANDARD_HA",
@@ -335,8 +257,6 @@ func TestMemorystoreClient_PurchaseCommitment_NotSupported(t *testing.T) {
 	assert.False(t, result.Success)
 	assert.Empty(t, result.CommitmentID)
 	assert.ErrorIs(t, result.Error, common.ErrCommitmentPurchaseNotSupported)
-	// The critical guarantee: a "purchase" must never create infrastructure.
-	assert.False(t, mockService.createCalled, "PurchaseCommitment must not call CreateInstance")
 }
 
 func TestMemorystoreClient_GetOfferingDetails_WithMockService(t *testing.T) {
@@ -597,11 +517,6 @@ func TestMemorystoreClient_SetterMethods(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
-
-	// Test SetRedisService
-	mockRedis := &MockRedisService{}
-	client.SetRedisService(mockRedis)
-	assert.Equal(t, mockRedis, client.redisService)
 
 	// Test SetBillingService
 	mockBilling := &MockBillingService{}

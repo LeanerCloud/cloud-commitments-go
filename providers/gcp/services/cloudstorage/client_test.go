@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"cloud.google.com/go/recommender/apiv1/recommenderpb"
-	"cloud.google.com/go/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/api/cloudbilling/v1"
@@ -20,60 +19,6 @@ import (
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 )
-
-// MockStorageService mocks the StorageService interface.
-type MockStorageService struct {
-	buckets      []*storage.BucketAttrs
-	listErr      error
-	bucketName   string
-	createErr    error
-	createCalled *bool
-}
-
-func (m *MockStorageService) Buckets(ctx context.Context, projectID string) BucketIterator {
-	return &MockBucketIterator{buckets: m.buckets, err: m.listErr}
-}
-
-func (m *MockStorageService) Bucket(name string) BucketHandle {
-	m.bucketName = name
-	return &MockBucketHandle{createErr: m.createErr, createCalled: m.createCalled}
-}
-
-func (m *MockStorageService) Close() error {
-	return nil
-}
-
-// MockBucketIterator mocks the BucketIterator interface.
-type MockBucketIterator struct {
-	buckets []*storage.BucketAttrs
-	index   int
-	err     error
-}
-
-func (m *MockBucketIterator) Next() (*storage.BucketAttrs, error) {
-	if m.err != nil {
-		return nil, m.err
-	}
-	if m.index >= len(m.buckets) {
-		return nil, iterator.Done
-	}
-	b := m.buckets[m.index]
-	m.index++
-	return b, nil
-}
-
-// MockBucketHandle mocks the BucketHandle interface.
-type MockBucketHandle struct {
-	createErr    error
-	createCalled *bool
-}
-
-func (m *MockBucketHandle) Create(ctx context.Context, projectID string, attrs *storage.BucketAttrs) error {
-	if m.createCalled != nil {
-		*m.createCalled = true
-	}
-	return m.createErr
-}
 
 // MockBillingService mocks the BillingService interface.
 type MockBillingService struct {
@@ -265,11 +210,6 @@ func TestCloudStorageClient_SetterMethods(t *testing.T) {
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
-	// Test SetStorageService
-	mockStorage := &MockStorageService{}
-	client.SetStorageService(mockStorage)
-	assert.Equal(t, mockStorage, client.storageService)
-
 	// Test SetBillingService
 	mockBilling := &MockBillingService{}
 	client.SetBillingService(mockBilling)
@@ -298,10 +238,6 @@ func TestCloudStorageClient_PurchaseCommitment_NotSupported(t *testing.T) {
 	ctx := context.Background()
 	client, _ := NewClient(ctx, "test-project", "us-central1")
 
-	createCalled := false
-	mockService := &MockStorageService{createCalled: &createCalled}
-	client.SetStorageService(mockService)
-
 	rec := common.Recommendation{
 		ResourceType:   "STANDARD",
 		CommitmentCost: 100.0,
@@ -314,8 +250,6 @@ func TestCloudStorageClient_PurchaseCommitment_NotSupported(t *testing.T) {
 	assert.False(t, result.Success)
 	assert.Empty(t, result.CommitmentID)
 	assert.ErrorIs(t, result.Error, common.ErrCommitmentPurchaseNotSupported)
-	// The critical guarantee: a "purchase" must never create infrastructure.
-	assert.False(t, createCalled, "PurchaseCommitment must not call bucket Create")
 }
 
 // TestCloudStorageClient_GetRecommendations_NotSupported is the regression test

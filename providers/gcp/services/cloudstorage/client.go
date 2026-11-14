@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/recommender/apiv1/recommenderpb"
-	"cloud.google.com/go/storage"
 	"google.golang.org/api/cloudbilling/v1"
 	"google.golang.org/api/option"
 
@@ -20,23 +19,6 @@ import (
 
 // BillingService lists SKUs of one Cloud Billing service (enables mocking).
 type BillingService = skulist.BillingService
-
-// StorageService interface for storage operations (enables mocking).
-type StorageService interface {
-	Buckets(ctx context.Context, projectID string) BucketIterator
-	Bucket(name string) BucketHandle
-	Close() error
-}
-
-// BucketIterator interface for bucket iteration (enables mocking).
-type BucketIterator interface {
-	Next() (*storage.BucketAttrs, error)
-}
-
-// BucketHandle interface for bucket operations (enables mocking).
-type BucketHandle interface {
-	Create(ctx context.Context, projectID string, attrs *storage.BucketAttrs) error
-}
 
 // RecommenderClient preserves the legacy injection API for source compatibility.
 //
@@ -58,7 +40,6 @@ type Client struct {
 	skus           skulist.Cache
 	projectID      string
 	region         string
-	storageService StorageService
 	billingService BillingService
 	clientOpts     []option.ClientOption
 }
@@ -70,11 +51,6 @@ func NewClient(ctx context.Context, projectID, region string, opts ...option.Cli
 		region:     region,
 		clientOpts: opts,
 	}, nil
-}
-
-// SetStorageService sets the storage service (for testing).
-func (c *Client) SetStorageService(svc StorageService) {
-	c.storageService = svc
 }
 
 // SetRecommenderClient ignores the supplied client and does not close it.

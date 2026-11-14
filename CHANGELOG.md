@@ -57,6 +57,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 - **Removed (`aws`/`azure`/`gcp` service clients):** the unused `ValidateOffering` and `GetValidResourceTypes` methods, and the exported test seams `RPValidateAPI`/`SetRPValidateClient` (azure savingsplans), `SQLAdminService`/`SetSQLAdminService` (gcp cloudsql), `MachineTypesService`/`MachineTypesIterator`/`SetMachineTypesService` (gcp computeengine), `RedisCachesPager`/`SetRedisCachesPager` (azure cache and managedredis), `ServicesPager`/`SetSearchServicesPager` (azure search). None of these were part of `pkg/provider` interfaces; callers that type-asserted the concrete clients must drop those calls. `GetOfferingDetails` is unchanged. (#11)
 
+- **Removed (gcp `cloudstorage` and `memorystore` clients):** the unused exported test seams `StorageService`/`BucketIterator`/`BucketHandle`/`SetStorageService` and `RedisService`/`RedisIterator`/`CreateInstanceOperation`/`SetRedisService`. Purchases are a no-op, so nothing read them; callers that type-asserted the concrete clients must drop those calls. The gcp module no longer requires `cloud.google.com/go/storage` or `cloud.google.com/go/redis`. (#6)
+
 ### Added
 
 - **`ladder.LadderPlan.ValidateRunCaps`:** checks an assembled plan against the per-run caps: the summed immediate purchase USD/hr must not exceed `max_hourly_commit_per_run`, and purchases plus reshapes must not exceed `max_actions_per_run` (holds are not counted). Pure, no caller yet; the per-run execution gate in #27 is the intended caller. (#27)

@@ -7,8 +7,6 @@ import (
 	"time"
 
 	"cloud.google.com/go/recommender/apiv1/recommenderpb"
-	"cloud.google.com/go/redis/apiv1/redispb"
-	gax "github.com/googleapis/gax-go/v2"
 	"google.golang.org/api/cloudbilling/v1"
 	"google.golang.org/api/option"
 
@@ -20,23 +18,6 @@ import (
 
 // BillingService lists SKUs of one Cloud Billing service (enables mocking).
 type BillingService = skulist.BillingService
-
-// RedisService interface for Redis operations.
-type RedisService interface {
-	ListInstances(ctx context.Context, req *redispb.ListInstancesRequest) RedisIterator
-	CreateInstance(ctx context.Context, req *redispb.CreateInstanceRequest) (CreateInstanceOperation, error)
-	Close() error
-}
-
-// RedisIterator interface for iterating Redis instances.
-type RedisIterator interface {
-	Next() (*redispb.Instance, error)
-}
-
-// CreateInstanceOperation interface for create instance operation.
-type CreateInstanceOperation interface {
-	Wait(ctx context.Context, opts ...gax.CallOption) (*redispb.Instance, error)
-}
 
 // RecommenderIterator interface for iterating recommendations.
 type RecommenderIterator interface {
@@ -54,7 +35,6 @@ type Client struct {
 	skus           skulist.Cache
 	projectID      string
 	region         string
-	redisService   RedisService
 	billingService BillingService
 	clientOpts     []option.ClientOption
 }
@@ -66,11 +46,6 @@ func NewClient(ctx context.Context, projectID, region string, opts ...option.Cli
 		region:     region,
 		clientOpts: opts,
 	}, nil
-}
-
-// SetRedisService sets the Redis service (for testing).
-func (c *Client) SetRedisService(svc RedisService) {
-	c.redisService = svc
 }
 
 // SetBillingService sets the billing service (for testing).
