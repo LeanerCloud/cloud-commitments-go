@@ -3,6 +3,7 @@ package common //nolint:revive // pkg/common is the module's core domain package
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 )
 
@@ -36,8 +37,9 @@ var (
 	ErrClaimHeld = errors.New("purchase claim held by another holder")
 	// ErrClaimSettlePending is returned by AcquireClaim when the lease on a
 	// sending claim has expired but the settle window since the holder's last
-	// renewal has not elapsed. The earlier holder's purchase may still commit.
-	ErrClaimSettlePending = errors.New("purchase claim settle window has not elapsed")
+	// renewal has not elapsed. The earlier holder's purchase may still commit,
+	// so it also wraps ErrOutcomeUnknown (go#745 plan Q4: fail loud, buy nothing).
+	ErrClaimSettlePending = fmt.Errorf("purchase claim settle window has not elapsed: %w", ErrOutcomeUnknown)
 	// ErrClaimLost is returned by RenewClaim, AdvanceClaim and ReleaseClaim when
 	// the row is no longer this holder and generation.
 	ErrClaimLost = errors.New("purchase claim lost")
