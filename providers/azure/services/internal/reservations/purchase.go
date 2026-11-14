@@ -72,8 +72,8 @@ type tokenLock struct {
 // tokenLocks holds the in-process lock for each idempotency token with a
 // purchase in flight (issue #745). Without it, two concurrent calls with the
 // same token can both list before either order is visible and both buy.
-// Azure mints the order ID in calculatePrice, so there is no client key to claim
-// across processes; that residual window is not covered here.
+// Azure mints the order ID in calculatePrice, so there is no client key to PUT
+// idempotently; across processes the durable claim of WithClaimer covers it.
 var (
 	tokenLocksMu sync.Mutex
 	tokenLocks   = map[string]*tokenLock{}
@@ -373,7 +373,7 @@ func DoPurchaseTwoStep(ctx context.Context, httpClient HTTPClient, calcURL strin
 	// No idempotency token, so no re-check is possible between attempts. This
 	// entry point is retained for callers that have none; every service executor
 	// goes through DoIdempotentPurchaseTwoStep.
-	orderID, _, err := purchaseTwoStepGuarded(ctx, httpClient, calcURL, bodyBytes, bearerToken, "", "")
+	orderID, _, err := purchaseTwoStepGuarded(ctx, httpClient, calcURL, bodyBytes, bearerToken, "", "", nil)
 	return orderID, err
 }
 
@@ -441,7 +441,7 @@ func recheckAlreadyPurchased(ctx context.Context, httpClient HTTPClient, bearerT
 //
 // Ordering matters: the check runs before doCalculatePrice, so a purchase that
 // already exists short-circuits without minting yet another order ID.
-func purchaseTwoStepGuarded(ctx context.Context, httpClient HTTPClient, calcURL string, bodyBytes []byte, bearerToken, idempotencyToken, commitmentCurrency string) (orderID string, existing bool, err error) {
+func purchaseTwoStepGuarded(ctx context.Context, httpClient HTTPClient, calcURL string, bodyBytes []byte, bearerToken, idempotencyToken, commitmentCurrency string, guard *claimGuard) (orderID string, existing bool, err error) {
 	for attempt := 1; attempt <= purchaseMaxAttempts; attempt++ {
 		existingID, found, err := recheckAlreadyPurchased(ctx, httpClient, bearerToken, idempotencyToken, attempt)
 		if err != nil {
@@ -451,9 +451,9 @@ func purchaseTwoStepGuarded(ctx context.Context, httpClient HTTPClient, calcURL 
 			return existingID, true, nil
 		}
 		// Step 1: calculatePrice -- mint a session-bound reservationOrderId.
-		orderID, err := doCalculatePrice(ctx, httpClient, calcURL, bodyBytes, bearerToken, commitmentCurrency)
+		orderID, err := priceUnderClaim(ctx, guard, attempt, httpClient, calcURL, bodyBytes, bearerToken, commitmentCurrency)
 		if err != nil {
-			return "", false, afterUncertainAttempt(attempt, fmt.Errorf("calculatePrice (attempt %d/%d): %w", attempt, purchaseMaxAttempts, err))
+			return "", false, err
 		}
 
 		// Step 2: purchase -- commit the order.
@@ -477,6 +477,20 @@ func purchaseTwoStepGuarded(ctx context.Context, httpClient HTTPClient, calcURL 
 	// because the compiler cannot prove that, and worded generally rather than
 	// naming session timeout, which is now only one of two retry triggers.
 	return "", false, afterUncertainAttempt(purchaseMaxAttempts, fmt.Errorf("reservation purchase exhausted %d attempts", purchaseMaxAttempts))
+}
+
+// priceUnderClaim runs one attempt's step 1 inside the purchase claim:
+// calculatePrice, then advance the claim to sending before the purchase
+// request. A nil guard skips the claim steps. Errors come back already marked for the attempt.
+func priceUnderClaim(ctx context.Context, guard *claimGuard, attempt int, httpClient HTTPClient, calcURL string, bodyBytes []byte, bearerToken, commitmentCurrency string) (string, error) {
+	orderID, err := doCalculatePrice(ctx, httpClient, calcURL, bodyBytes, bearerToken, commitmentCurrency)
+	if err != nil {
+		return "", afterUncertainAttempt(attempt, fmt.Errorf("calculatePrice (attempt %d/%d): %w", attempt, purchaseMaxAttempts, err))
+	}
+	if err := guard.beforeSend(ctx, attempt); err != nil {
+		return "", err
+	}
+	return orderID, nil
 }
 
 // afterUncertainAttempt marks an error returned on attempt 2 or later with
@@ -770,19 +784,45 @@ func matchReservationOrderInPage(page *reservationOrdersListResponse, idempotenc
 //
 // commitmentCurrency is the recommendation currency the calculatePrice billing
 // currency must match; empty means USD (see checkBillingCurrency).
-func DoIdempotentPurchaseTwoStep(ctx context.Context, httpClient HTTPClient, calcURL string, bodyBytes []byte, bearerToken, idempotencyToken, commitmentCurrency string) (orderID string, existing bool, err error) {
-	if idempotencyToken != "" {
-		defer lockPurchaseToken(idempotencyToken)()
-		existingID, found, err := FindReservationOrderByIdempotencyToken(ctx, httpClient, bearerToken, idempotencyToken)
-		if err != nil {
-			return "", false, fmt.Errorf("idempotency lookup failed before Azure reservation purchase (refusing to purchase to avoid a possible double-buy): %w", err)
-		}
-		if found {
-			log.Printf("Azure reservation order for idempotency token %s already exists (%s); skipping purchase (issue #721 re-drive)", common.MaskToken(idempotencyToken), existingID)
-			return existingID, true, nil
-		}
+//
+// With a token, the purchase also takes the durable claim of WithClaimer
+// (go#745) after the in-process lock and before the lookup, so two processes
+// cannot both pass the lookup and buy. A loser returns an error wrapping
+// common.ErrRefusedBeforePurchase at once. With no claimer, only the in-process
+// lock guards the token and one log line says so. A claim error from a
+// configured claimer never falls through to a purchase. A claim already
+// completed for the token adopts its recorded order after reading its state by
+// ID (adoptCompletedOrder), without listing.
+func DoIdempotentPurchaseTwoStep(ctx context.Context, httpClient HTTPClient, calcURL string, bodyBytes []byte, bearerToken, idempotencyToken, commitmentCurrency string, opts ...PurchaseOption) (orderID string, existing bool, err error) {
+	if idempotencyToken == "" {
+		return purchaseTwoStepGuarded(ctx, httpClient, calcURL, bodyBytes, bearerToken, "", commitmentCurrency, nil)
 	}
-	return purchaseTwoStepGuarded(ctx, httpClient, calcURL, bodyBytes, bearerToken, idempotencyToken, commitmentCurrency)
+	defer lockPurchaseToken(idempotencyToken)()
+	guard, claim, err := acquireClaim(ctx, newPurchaseConfig(opts), idempotencyToken)
+	if err != nil {
+		return "", false, err
+	}
+	if claim.Phase == common.ClaimCompleted {
+		id, err := adoptCompletedOrder(ctx, httpClient, bearerToken, claim.OrderID)
+		return id, err == nil, err
+	}
+	orderID, existing, err = lookupThenPurchase(ctx, httpClient, calcURL, bodyBytes, bearerToken, idempotencyToken, commitmentCurrency, guard)
+	guard.release(ctx, orderID)
+	return orderID, existing, err
+}
+
+// lookupThenPurchase is DoIdempotentPurchaseTwoStep after the claim is held:
+// adopt an order already tagged with the token, otherwise run the guarded flow.
+func lookupThenPurchase(ctx context.Context, httpClient HTTPClient, calcURL string, bodyBytes []byte, bearerToken, idempotencyToken, commitmentCurrency string, guard *claimGuard) (string, bool, error) {
+	existingID, found, err := FindReservationOrderByIdempotencyToken(ctx, httpClient, bearerToken, idempotencyToken)
+	if err != nil {
+		return "", false, fmt.Errorf("idempotency lookup failed before Azure reservation purchase (refusing to purchase to avoid a possible double-buy): %w", err)
+	}
+	if found {
+		log.Printf("Azure reservation order for idempotency token %s already exists (%s); skipping purchase (issue #721 re-drive)", common.MaskToken(idempotencyToken), existingID)
+		return existingID, true, nil
+	}
+	return purchaseTwoStepGuarded(ctx, httpClient, calcURL, bodyBytes, bearerToken, idempotencyToken, commitmentCurrency, guard)
 }
 
 // doPurchase calls the purchase endpoint with the given body.
