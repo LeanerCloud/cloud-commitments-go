@@ -7,13 +7,16 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations/reservationstest"
 )
 
 const claimTok = "claim-tok"
@@ -143,7 +146,7 @@ func (f *claimFixture) seed(t *testing.T, phase common.ClaimPhase, orderID strin
 	}
 }
 
-func buy(f *claimFixture, az HTTPClient, claimer common.PurchaseClaimer, opts ...PurchaseOption) (string, bool, error) {
+func buy(az HTTPClient, claimer common.PurchaseClaimer, opts ...PurchaseOption) (string, bool, error) {
 	return DoIdempotentPurchaseTwoStep(context.Background(), az, calcURL, []byte(testBody), "bearer", claimTok, "",
 		append([]PurchaseOption{WithClaimer(claimer)}, opts...)...)
 }
@@ -151,7 +154,7 @@ func buy(f *claimFixture, az HTTPClient, claimer common.PurchaseClaimer, opts ..
 func TestClaim_SuccessCompletesTheRow(t *testing.T) {
 	t.Parallel()
 	f, az := newClaimFixture(), &claimAzure{}
-	id, existing, err := buy(f, az, f.store)
+	id, existing, err := buy(az, f.store)
 	require.NoError(t, err)
 	assert.False(t, existing)
 	assert.Equal(t, 1, az.purchases)
@@ -175,19 +178,19 @@ func TestClaim_LoserSettleAndStoreErrorsBuyNothing(t *testing.T) {
 	require.NoError(t, err)
 	_ = held
 	az := &claimAzure{}
-	_, _, err = buy(f, az, f.store)
+	_, _, err = buy(az, f.store)
 	require.ErrorIs(t, err, common.ErrClaimHeld)
 	assert.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
 	assert.Zero(t, az.calls(), "a loser makes no Azure call")
 
 	g := newClaimFixture()
 	g.seed(t, common.ClaimSending, "", false)
-	_, _, err = buy(g, az, g.store)
+	_, _, err = buy(az, g.store)
 	require.ErrorIs(t, err, common.ErrOutcomeUnknown)
 	assert.NotErrorIs(t, err, common.ErrRefusedBeforePurchase)
 	assert.Zero(t, az.calls())
 
-	_, _, err = buy(f, az, &failingClaimer{acquireErr: errors.New("store down")})
+	_, _, err = buy(az, &failingClaimer{acquireErr: errors.New("store down")})
 	require.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
 	assert.Zero(t, az.calls(), "a claim error fails closed")
 }
@@ -196,6 +199,10 @@ func TestClaim_LoserSettleAndStoreErrorsBuyNothing(t *testing.T) {
 type failingClaimer struct {
 	common.PurchaseClaimer
 	acquireErr, advanceErr error
+	lostRenews             atomic.Int32
+	loseRenewals           atomic.Bool
+	renewErr               error
+	releaseCtxErr          error
 }
 
 func (c *failingClaimer) AcquireClaim(ctx context.Context, token, holder string, ttl, settle time.Duration) (common.Claim, error) {
@@ -210,6 +217,22 @@ func (c *failingClaimer) AdvanceClaim(ctx context.Context, cl common.Claim, p co
 		return c.advanceErr
 	}
 	return c.PurchaseClaimer.AdvanceClaim(ctx, cl, p)
+}
+
+func (c *failingClaimer) RenewClaim(ctx context.Context, cl common.Claim, ttl time.Duration) error {
+	if c.renewErr != nil {
+		return c.renewErr
+	}
+	if c.loseRenewals.Load() {
+		c.lostRenews.Add(1)
+		return fmt.Errorf("%w: test", common.ErrClaimLost)
+	}
+	return c.PurchaseClaimer.RenewClaim(ctx, cl, ttl)
+}
+
+func (c *failingClaimer) ReleaseClaim(ctx context.Context, cl common.Claim, o common.ClaimOutcome) error {
+	c.releaseCtxErr = ctx.Err()
+	return c.PurchaseClaimer.ReleaseClaim(ctx, cl, o)
 }
 
 // F9: the release decision follows the phase, never the error class.
@@ -229,7 +252,7 @@ func TestClaim_ReleaseByPhase(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			f := newClaimFixture()
-			_, _, err := buy(f, tc.az, f.store)
+			_, _, err := buy(tc.az, f.store)
 			require.Error(t, err)
 			row := f.store.Row(claimTok)
 			assert.Equal(t, tc.wantPhase, row.Phase)
@@ -241,7 +264,7 @@ func TestClaim_ReleaseByPhase(t *testing.T) {
 func TestClaim_AdvanceErrorSendsNoPurchase(t *testing.T) {
 	t.Parallel()
 	f, az := newClaimFixture(), &claimAzure{}
-	_, _, err := buy(f, az, &failingClaimer{PurchaseClaimer: f.store, advanceErr: errors.New("store down")})
+	_, _, err := buy(az, &failingClaimer{PurchaseClaimer: f.store, advanceErr: errors.New("store down")})
 	require.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
 	assert.Zero(t, az.purchases)
 	assert.False(t, f.store.Row(claimTok).Exists, "still claimed, so the row is deleted")
@@ -254,7 +277,7 @@ func TestClaim_TakeoverOfSendingRowIsNeverDeleted(t *testing.T) {
 	f := newClaimFixture()
 	f.seed(t, common.ClaimSending, "", true)
 	az := &claimAzure{calcStatus: 500}
-	_, _, err := buy(f, az, f.store)
+	_, _, err := buy(az, f.store)
 	require.Error(t, err)
 	assert.Equal(t, 1, az.lists, "the list is checked before buying")
 	row := f.store.Row(claimTok)
@@ -268,7 +291,7 @@ func TestClaim_TakeoverOfSendingRowAdoptsAnOrderTheListShows(t *testing.T) {
 	f := newClaimFixture()
 	f.seed(t, common.ClaimSending, "", true)
 	az := &claimAzure{orders: []claimOrder{{"order-late", "Succeeded"}}}
-	id, existing, err := buy(f, az, f.store)
+	id, existing, err := buy(az, f.store)
 	require.NoError(t, err)
 	assert.True(t, existing)
 	assert.Equal(t, "order-late", id)
@@ -279,13 +302,13 @@ func TestClaim_TakeoverOfSendingRowAdoptsAnOrderTheListShows(t *testing.T) {
 // F6b / F6c: a completed row wins; its order state decides adopt or fail loud.
 func TestClaim_CompletedRowByRecordedOrderState(t *testing.T) {
 	t.Parallel()
-	for _, state := range []string{"Failed", "Cancelled", "Expired", "BillingFailed", "FutureState"} {
+	for _, state := range []string{"Failed", string(armreservations.ProvisioningStateCancelled), "Expired", "BillingFailed", "FutureState"} {
 		t.Run(state, func(t *testing.T) {
 			t.Parallel()
 			f := newClaimFixture()
 			f.seed(t, common.ClaimCompleted, "order-9", false)
 			az := &claimAzure{byID: map[string]string{"order-9": state}}
-			id, existing, err := buy(f, az, f.store)
+			id, existing, err := buy(az, f.store)
 			require.Error(t, err)
 			assert.Empty(t, id)
 			assert.False(t, existing)
@@ -299,9 +322,98 @@ func TestClaim_CompletedRowByRecordedOrderState(t *testing.T) {
 	f := newClaimFixture()
 	f.seed(t, common.ClaimCompleted, "order-9", false)
 	az := &claimAzure{byID: map[string]string{"order-9": "Succeeded"}}
-	id, existing, err := buy(f, az, f.store)
+	id, existing, err := buy(az, f.store)
 	require.NoError(t, err)
 	assert.True(t, existing)
 	assert.Equal(t, "order-9", id)
 	assert.Zero(t, az.purchases+az.calcs+az.lists)
+}
+
+// F5d: a lost claim on attempt 2 or later reads outcome-unknown, never refused.
+func TestClaim_LostClaimOnLaterAttemptIsOutcomeUnknown(t *testing.T) {
+	t.Parallel()
+	f := newClaimFixture()
+	fc := &failingClaimer{PurchaseClaimer: f.store}
+	az := &claimAzure{purchStatus: []int{400}} // "Session timed out": retryable
+	az.onPurchase = func(int) { fc.loseRenewals.Store(true); waitForLostRenew(fc) }
+	_, _, err := buy(az, fc, withClaimTiming(time.Minute, time.Millisecond, time.Minute))
+	require.Error(t, err)
+	assert.ErrorIs(t, err, common.ErrOutcomeUnknown)
+	assert.NotErrorIs(t, err, common.ErrRefusedBeforePurchase)
+	assert.ErrorIs(t, err, common.ErrClaimLost)
+	assert.Equal(t, 1, az.calcs, "no calculatePrice after the claim was lost")
+}
+
+func TestClaim_LostClaimBeforeTheFirstPurchaseIsRefused(t *testing.T) {
+	t.Parallel()
+	f := newClaimFixture()
+	fc := &failingClaimer{PurchaseClaimer: f.store}
+	az := &claimAzure{}
+	az.onCalc = func() { fc.loseRenewals.Store(true); waitForLostRenew(fc) }
+	_, _, err := buy(az, fc, withClaimTiming(time.Minute, time.Millisecond, time.Minute))
+	require.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
+	assert.NotErrorIs(t, err, common.ErrOutcomeUnknown)
+	assert.Zero(t, az.purchases, "the checkpoint before the POST aborts")
+}
+
+func waitForLostRenew(fc *failingClaimer) {
+	for i := 0; i < 400 && fc.lostRenews.Load() == 0; i++ {
+		time.Sleep(5 * time.Millisecond)
+	}
+	time.Sleep(20 * time.Millisecond) // let the heartbeat record the loss
+}
+
+func TestClaim_ReleaseSurvivesACanceledContext(t *testing.T) {
+	t.Parallel()
+	f := newClaimFixture()
+	fc := &failingClaimer{PurchaseClaimer: f.store}
+	ctx, cancel := context.WithCancel(context.Background())
+	az := &claimAzure{onPurchase: func(int) { cancel() }}
+	_, _, err := DoIdempotentPurchaseTwoStep(ctx, az, calcURL, []byte(testBody), "bearer", claimTok, "", WithClaimer(fc))
+	require.NoError(t, err)
+	assert.NoError(t, fc.releaseCtxErr, "release runs on a context detached from the caller's cancellation")
+	assert.Equal(t, common.ClaimCompleted, f.store.Row(claimTok).Phase)
+}
+
+// claimingJournal is an AttemptJournal that also implements PurchaseClaimer.
+type claimingJournal struct {
+	common.AttemptJournal
+	common.PurchaseClaimer
+}
+
+func TestSubmit_UsesAJournalThatImplementsPurchaseClaimer(t *testing.T) {
+	t.Parallel()
+	f, az := newClaimFixture(), &claimAzure{}
+	opts := common.PurchaseOptions{IdempotencyToken: claimTok, AttemptJournal: claimingJournal{PurchaseClaimer: f.store}}
+	id, _, err := Submit(context.Background(), &reservationstest.CountingCred{}, az, []byte(testBody), opts, "")
+	require.NoError(t, err)
+	row := f.store.Row(claimTok)
+	assert.Equal(t, common.ClaimCompleted, row.Phase, "Submit takes the claim through the journal")
+	assert.Equal(t, id, row.OrderID)
+}
+
+// F8: renewals failing with a plain error (store unreachable) flag the claim
+// lost once the local deadline passes, before the purchase request.
+func TestClaim_RenewalsFailingPastTheDeadlineAbortBeforeThePurchase(t *testing.T) {
+	t.Parallel()
+	f := newClaimFixture()
+	fc := &failingClaimer{PurchaseClaimer: f.store, renewErr: errors.New("store unreachable")}
+	az := &claimAzure{}
+	az.onCalc = func() { time.Sleep(150 * time.Millisecond) }
+	_, _, err := buy(az, fc, withClaimTiming(80*time.Millisecond, 10*time.Millisecond, time.Minute))
+	require.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
+	assert.ErrorIs(t, err, common.ErrClaimLost)
+	assert.Zero(t, az.purchases)
+}
+
+// F2: an expired claimed row is taken over (generation 2) and bought once.
+func TestClaim_ExpiredClaimedRowIsTakenOver(t *testing.T) {
+	t.Parallel()
+	f := newClaimFixture()
+	f.seed(t, common.ClaimClaimed, "", false)
+	az := &claimAzure{}
+	_, _, err := buy(az, f.store)
+	require.NoError(t, err)
+	assert.Equal(t, 1, az.purchases)
+	assert.EqualValues(t, 2, f.store.Row(claimTok).Generation)
 }
