@@ -6,7 +6,7 @@ require (
 	cloud.google.com/go/compute v1.75.0
 	cloud.google.com/go/recommender v1.21.1
 	cloud.google.com/go/resourcemanager v1.18.1
-	github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261113193456-9c14696cdd16
+	github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261114123204-cc29f588cb09
 	github.com/googleapis/gax-go/v2 v2.27.0
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/oauth2 v0.38.0

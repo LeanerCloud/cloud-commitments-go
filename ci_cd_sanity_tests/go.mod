@@ -31,13 +31,13 @@ require (
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	golang.org/x/crypto v0.58.0 // indirect
 	golang.org/x/net v0.62.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 )
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
-	github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261020191912-205cf99b8ef3
+	github.com/LeanerCloud/cloud-commitments-go/pkg v0.0.0-20261114123204-cc29f588cb09
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.9
 )
 
@@ -46,5 +46,5 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/signin v1.12.4 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.6 // indirect
-	golang.org/x/sync v0.24.0 // indirect
+	golang.org/x/sync v0.25.0 // indirect
 )
