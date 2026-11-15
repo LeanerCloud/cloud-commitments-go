@@ -101,7 +101,7 @@ func TestDoIdempotentPurchaseTwoStep_ConcurrentSameToken_PurchasesOnce(t *testin
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			orderIDs[i], existing[i], errs[i] = DoIdempotentPurchaseTwoStep(ctx, fake, calcURL, []byte(testBody), "tok", token, "")
+			orderIDs[i], existing[i], errs[i] = DoIdempotentPurchaseTwoStep(ctx, fake, calcURL, []byte(testBody), "tok", token, "", nil)
 		}(i)
 	}
 	wg.Wait()

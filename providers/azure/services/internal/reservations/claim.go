@@ -18,39 +18,19 @@ import (
 // from the caller's cancellation so a canceled request still records its state.
 const claimReleaseTimeout = 10 * time.Second
 
-// purchaseConfig is what a PurchaseOption sets. The zero claimer means the
-// in-process lock is the only guard.
-type purchaseConfig struct {
-	claimer    common.PurchaseClaimer
+// claimTiming holds the lease numbers of one purchase claim (go#745 Q3).
+type claimTiming struct {
 	ttl        time.Duration
 	renewEvery time.Duration
 	settle     time.Duration
 }
 
-// PurchaseOption configures DoIdempotentPurchaseTwoStep.
-type PurchaseOption func(*purchaseConfig)
-
-// WithClaimer makes the purchase exclusive per idempotency token across
-// processes through c (go#745). A nil c leaves the in-process lock alone.
-func WithClaimer(c common.PurchaseClaimer) PurchaseOption {
-	return func(cfg *purchaseConfig) { cfg.claimer = c }
-}
-
-// withClaimTiming overrides the lease numbers; for tests.
-func withClaimTiming(ttl, renewEvery, settle time.Duration) PurchaseOption {
-	return func(cfg *purchaseConfig) { cfg.ttl, cfg.renewEvery, cfg.settle = ttl, renewEvery, settle }
-}
-
-func newPurchaseConfig(opts []PurchaseOption) *purchaseConfig {
-	cfg := &purchaseConfig{
+func defaultClaimTiming() claimTiming {
+	return claimTiming{
 		ttl:        common.DefaultClaimTTL,
 		renewEvery: common.DefaultClaimRenewInterval,
 		settle:     common.DefaultClaimSettleWindow,
 	}
-	for _, o := range opts {
-		o(cfg)
-	}
-	return cfg
 }
 
 // newHolderID is a per-process ID plus a per-call nonce, so two goroutines of
@@ -80,16 +60,16 @@ type claimGuard struct {
 }
 
 // acquireClaim takes the durable claim for token. It returns a nil guard when no
-// claimer is configured (logged once per purchase) or when the claim row is
-// already completed; in that case the returned Claim carries the recorded order.
-// A claim error never falls through to buying.
-func acquireClaim(ctx context.Context, cfg *purchaseConfig, token string) (*claimGuard, common.Claim, error) {
-	if cfg.claimer == nil {
+// claimer is given (logged once per purchase) or when the claim row is already
+// completed; in that case the returned Claim carries the recorded order. A claim
+// error never falls through to buying.
+func acquireClaim(ctx context.Context, claimer common.PurchaseClaimer, timing claimTiming, token string) (*claimGuard, common.Claim, error) {
+	if claimer == nil {
 		log.Printf("no durable purchase claimer for idempotency token %s; relying on the in-process lock only, so two processes can still double-buy (go#745)", common.MaskToken(token))
 		return nil, common.Claim{}, nil
 	}
 	start := time.Now()
-	claim, err := cfg.claimer.AcquireClaim(ctx, token, newHolderID(), cfg.ttl, cfg.settle)
+	claim, err := claimer.AcquireClaim(ctx, token, newHolderID(), timing.ttl, timing.settle)
 	switch {
 	case errors.Is(err, common.ErrClaimSettlePending):
 		// Already wraps ErrOutcomeUnknown: the earlier holder may still commit.
@@ -104,11 +84,11 @@ func acquireClaim(ctx context.Context, cfg *purchaseConfig, token string) (*clai
 	}
 	hbCtx, stop := context.WithCancel(context.WithoutCancel(ctx))
 	g := &claimGuard{
-		claimer: cfg.claimer, claim: claim, ttl: cfg.ttl,
-		deadline: start.Add(cfg.ttl), sending: claim.Phase == common.ClaimSending,
+		claimer: claimer, claim: claim, ttl: timing.ttl,
+		deadline: start.Add(timing.ttl), sending: claim.Phase == common.ClaimSending,
 		stop: stop, done: make(chan struct{}),
 	}
-	go g.heartbeat(hbCtx, cfg.renewEvery)
+	go g.heartbeat(hbCtx, timing.renewEvery)
 	return g, claim, nil
 }
 

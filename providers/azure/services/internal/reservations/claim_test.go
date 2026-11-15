@@ -146,9 +146,12 @@ func (f *claimFixture) seed(t *testing.T, phase common.ClaimPhase, orderID strin
 	}
 }
 
-func buy(az HTTPClient, claimer common.PurchaseClaimer, opts ...PurchaseOption) (string, bool, error) {
-	return DoIdempotentPurchaseTwoStep(context.Background(), az, calcURL, []byte(testBody), "bearer", claimTok, "",
-		append([]PurchaseOption{WithClaimer(claimer)}, opts...)...)
+func buy(az HTTPClient, claimer common.PurchaseClaimer) (string, bool, error) {
+	return DoIdempotentPurchaseTwoStep(context.Background(), az, calcURL, []byte(testBody), "bearer", claimTok, "", claimer)
+}
+
+func buyTimed(az HTTPClient, claimer common.PurchaseClaimer, timing claimTiming) (string, bool, error) {
+	return purchaseTwoStepWithTiming(context.Background(), az, calcURL, []byte(testBody), "bearer", claimTok, "", claimer, timing)
 }
 
 func TestClaim_SuccessCompletesTheRow(t *testing.T) {
@@ -166,7 +169,7 @@ func TestClaim_SuccessCompletesTheRow(t *testing.T) {
 func TestClaim_NoClaimerKeepsTheInProcessBehaviour(t *testing.T) {
 	t.Parallel()
 	az := &claimAzure{}
-	_, _, err := DoIdempotentPurchaseTwoStep(context.Background(), az, calcURL, []byte(testBody), "bearer", claimTok, "")
+	_, _, err := DoIdempotentPurchaseTwoStep(context.Background(), az, calcURL, []byte(testBody), "bearer", claimTok, "", nil)
 	require.NoError(t, err)
 	assert.Equal(t, 1, az.purchases)
 }
@@ -336,7 +339,7 @@ func TestClaim_LostClaimOnLaterAttemptIsOutcomeUnknown(t *testing.T) {
 	fc := &failingClaimer{PurchaseClaimer: f.store}
 	az := &claimAzure{purchStatus: []int{400}} // "Session timed out": retryable
 	az.onPurchase = func(int) { fc.loseRenewals.Store(true); waitForLostRenew(fc) }
-	_, _, err := buy(az, fc, withClaimTiming(time.Minute, time.Millisecond, time.Minute))
+	_, _, err := buyTimed(az, fc, claimTiming{ttl: time.Minute, renewEvery: time.Millisecond, settle: time.Minute})
 	require.Error(t, err)
 	assert.ErrorIs(t, err, common.ErrOutcomeUnknown)
 	assert.NotErrorIs(t, err, common.ErrRefusedBeforePurchase)
@@ -350,7 +353,7 @@ func TestClaim_LostClaimBeforeTheFirstPurchaseIsRefused(t *testing.T) {
 	fc := &failingClaimer{PurchaseClaimer: f.store}
 	az := &claimAzure{}
 	az.onCalc = func() { fc.loseRenewals.Store(true); waitForLostRenew(fc) }
-	_, _, err := buy(az, fc, withClaimTiming(time.Minute, time.Millisecond, time.Minute))
+	_, _, err := buyTimed(az, fc, claimTiming{ttl: time.Minute, renewEvery: time.Millisecond, settle: time.Minute})
 	require.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
 	assert.NotErrorIs(t, err, common.ErrOutcomeUnknown)
 	assert.Zero(t, az.purchases, "the checkpoint before the POST aborts")
@@ -369,7 +372,7 @@ func TestClaim_ReleaseSurvivesACanceledContext(t *testing.T) {
 	fc := &failingClaimer{PurchaseClaimer: f.store}
 	ctx, cancel := context.WithCancel(context.Background())
 	az := &claimAzure{onPurchase: func(int) { cancel() }}
-	_, _, err := DoIdempotentPurchaseTwoStep(ctx, az, calcURL, []byte(testBody), "bearer", claimTok, "", WithClaimer(fc))
+	_, _, err := DoIdempotentPurchaseTwoStep(ctx, az, calcURL, []byte(testBody), "bearer", claimTok, "", fc)
 	require.NoError(t, err)
 	assert.NoError(t, fc.releaseCtxErr, "release runs on a context detached from the caller's cancellation")
 	assert.Equal(t, common.ClaimCompleted, f.store.Row(claimTok).Phase)
@@ -400,7 +403,7 @@ func TestClaim_RenewalsFailingPastTheDeadlineAbortBeforeThePurchase(t *testing.T
 	fc := &failingClaimer{PurchaseClaimer: f.store, renewErr: errors.New("store unreachable")}
 	az := &claimAzure{}
 	az.onCalc = func() { time.Sleep(150 * time.Millisecond) }
-	_, _, err := buy(az, fc, withClaimTiming(80*time.Millisecond, 10*time.Millisecond, time.Minute))
+	_, _, err := buyTimed(az, fc, claimTiming{ttl: 80 * time.Millisecond, renewEvery: 10 * time.Millisecond, settle: time.Minute})
 	require.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
 	assert.ErrorIs(t, err, common.ErrClaimLost)
 	assert.Zero(t, az.purchases)

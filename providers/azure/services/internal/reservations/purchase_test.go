@@ -691,7 +691,7 @@ func TestDoIdempotentPurchaseTwoStep_UnrecognizedState_DoesNotPurchase(t *testin
 		return r.Method == http.MethodGet && r.URL.String() == listURL
 	})).Return(resp, nil).Once()
 
-	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), m, calcURL, []byte(testBody), "tok", "redrive-tok", "")
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), m, calcURL, []byte(testBody), "tok", "redrive-tok", "", nil)
 	require.ErrorIs(t, err, ErrReservationOrderBlocked)
 	assert.False(t, existing)
 	assert.Empty(t, orderID)
@@ -747,7 +747,7 @@ func TestDoIdempotentPurchaseTwoStep_BillingFailed_NeitherAdoptsNorPurchases(t *
 		return r.Method == http.MethodGet && r.URL.String() == listURL
 	})).Return(resp, nil).Once()
 
-	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), m, calcURL, []byte(testBody), "tok", "redrive-tok", "")
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), m, calcURL, []byte(testBody), "tok", "redrive-tok", "", nil)
 	require.ErrorIs(t, err, ErrReservationOrderBlocked)
 	assert.False(t, existing)
 	assert.Empty(t, orderID)
@@ -900,7 +900,7 @@ func TestDoIdempotentPurchaseTwoStep_EmptyToken_NoLookup(t *testing.T) {
 		return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/order-no-tok/purchase"
 	})).Return(purchaseResp22, nil).Once()
 
-	orderID, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "", "")
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "", "", nil)
 	require.NoError(t, err)
 	assert.False(t, existing)
 	assert.Equal(t, "order-no-tok", orderID)
@@ -943,7 +943,7 @@ func TestDoIdempotentPurchaseTwoStep_NoMatch_FallsThroughToPurchase(t *testing.T
 		return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/order-fresh/purchase"
 	})).Return(purchaseResp25, nil).Once()
 
-	orderID, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "fresh-tok-1", "")
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "fresh-tok-1", "", nil)
 	require.NoError(t, err)
 	assert.False(t, existing, "a fresh purchase is not an existing commitment")
 	assert.Equal(t, "order-fresh", orderID)
@@ -976,7 +976,7 @@ func TestDoIdempotentPurchaseTwoStep_Match_ShortCircuits(t *testing.T) {
 		return r.Method == http.MethodGet && r.URL.String() == listURL
 	})).Return(lookupResp26, nil).Once()
 
-	orderID, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "redrive-tok", "")
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "redrive-tok", "", nil)
 	require.NoError(t, err)
 	assert.True(t, existing, "a tagged order was adopted, so this is an existing commitment")
 	assert.Equal(t, "order-already-bought", orderID)
@@ -1005,7 +1005,7 @@ func TestDoIdempotentPurchaseTwoStep_LookupFailure_DoesNotPurchase(t *testing.T)
 		return r.Method == http.MethodGet
 	})).Return(lookupResp27, nil).Once()
 
-	_, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "tok-failing", "")
+	_, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "tok-failing", "", nil)
 	require.Error(t, err)
 	assert.False(t, existing, "a failed lookup must not be reported as an adoption")
 	assert.Contains(t, err.Error(), "idempotency lookup failed")
@@ -1057,7 +1057,7 @@ func TestDoIdempotentPurchaseTwoStep_DifferentTokens_DistinctReservations(t *tes
 			return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/"+mintedOrderID+"/purchase"
 		})).Return(purchaseResp30, nil).Once()
 
-		got, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", idemTok, "")
+		got, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", idemTok, "", nil)
 		require.NoError(t, err)
 		assert.False(t, existing)
 		m.AssertExpectations(t)
@@ -1136,7 +1136,7 @@ func TestDoIdempotentPurchaseTwoStep_PreservesTwoStepFlow(t *testing.T) {
 		return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/second/purchase"
 	})).Return(purchaseResp35, nil).Once()
 
-	orderID, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "retry-tok", "")
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(ctx, m, calcURL, []byte(testBody), "tok", "retry-tok", "", nil)
 	require.NoError(t, err)
 	assert.False(t, existing)
 	assert.Equal(t, "second", orderID)
@@ -1567,7 +1567,7 @@ func TestPurchaseRetry_DoesNotDoubleBuyWhenFirstAttemptCommitted(t *testing.T) {
 		purchase: func(int) *http.Response { return fakeResp(http.StatusBadRequest, sessionTimeout) },
 	}
 
-	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token, "")
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token, "", nil)
 	require.NoError(t, err, "the committed order must be adopted, not treated as a failure")
 	assert.True(t, existing, "adopting an order the first attempt committed is an existing commitment")
 	assert.Equal(t, "committed-order", orderID)
@@ -1599,7 +1599,7 @@ func TestPurchaseRetry_StillRecoversWhenFirstAttemptGenuinelyFailed(t *testing.T
 		},
 	}
 
-	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token, "")
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token, "", nil)
 	require.NoError(t, err, "a genuine session timeout must still be recovered by the retry")
 	assert.False(t, existing, "a retry that purchased after a genuine failure is a fresh purchase")
 	assert.Equal(t, "order-2", orderID, "the second attempt's freshly minted order ID must be returned")
@@ -1628,7 +1628,7 @@ func TestPurchaseRetry_CurrencyRefusalAfterUncertainAttemptIsOutcomeUnknown(t *t
 		},
 	}
 
-	_, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token, "USD")
+	_, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token, "USD", nil)
 	require.Error(t, err)
 	assert.False(t, existing)
 	assert.ErrorIs(t, err, common.ErrCurrencyNotAccepted, "the cause stays matchable")
@@ -1653,7 +1653,7 @@ func TestPurchaseRetry_FailureAfterUncertainAttemptIsOutcomeUnknown(t *testing.T
 		},
 	}
 
-	_, _, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", "tok-671-500", "")
+	_, _, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", "tok-671-500", "", nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, common.ErrOutcomeUnknown)
 	assert.Equal(t, 2, c.purchases)
@@ -1676,7 +1676,7 @@ func TestPurchaseRetry_CancelDuringRetryDelayIsOutcomeUnknown(t *testing.T) {
 		},
 	}
 
-	_, _, err := DoIdempotentPurchaseTwoStep(ctx, c, calcURL, []byte(testBody), "tok", "tok-671-cancel", "")
+	_, _, err := DoIdempotentPurchaseTwoStep(ctx, c, calcURL, []byte(testBody), "tok", "tok-671-cancel", "", nil)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.Canceled, "the cause stays in the chain")
 	assert.ErrorIs(t, err, common.ErrOutcomeUnknown, "attempt 1 may have committed")
@@ -1692,7 +1692,7 @@ func TestPurchaseRetry_FirstAttemptFailureIsNotOutcomeUnknown(t *testing.T) {
 		listResp: func(int) (*http.Response, error) { return fakeResp(http.StatusOK, emptyOrdersList), nil },
 		purchase: func(int) *http.Response { return fakeResp(http.StatusConflict, `{"error":"conflict"}`) },
 	}
-	_, _, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", "tok-671-first", "")
+	_, _, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", "tok-671-first", "", nil)
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, common.ErrOutcomeUnknown)
 	assert.Equal(t, 1, c.purchases)
@@ -1717,7 +1717,7 @@ func TestPurchaseRetry_RefusesRetryWhenRecheckLookupFails(t *testing.T) {
 		purchase: func(int) *http.Response { return fakeResp(http.StatusBadRequest, sessionTimeout) },
 	}
 
-	_, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token, "")
+	_, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token, "", nil)
 	require.Error(t, err)
 	assert.False(t, existing, "a refused re-check is a failure, not an adoption")
 	assert.Contains(t, err.Error(), "refusing to retry",
@@ -1755,7 +1755,7 @@ func TestPurchaseRetry_RefusesRetryWhenRecheckFindsBillingFailedOrder(t *testing
 		purchase: func(int) *http.Response { return fakeResp(http.StatusBadRequest, sessionTimeout) },
 	}
 
-	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token, "")
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", token, "", nil)
 	require.ErrorIs(t, err, ErrReservationOrderBlocked)
 	assert.Contains(t, err.Error(), "order-bf")
 	assert.Contains(t, err.Error(), "BillingFailed")
@@ -1787,7 +1787,7 @@ func TestDoIdempotentPurchaseTwoStep_PurchaseFailure_NotFlagged(t *testing.T) {
 		return r.Method == http.MethodPost && r.URL.Path == "/providers/Microsoft.Capacity/reservationOrders/order-x/purchase"
 	})).Return(purchase, nil).Once()
 
-	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), m, calcURL, []byte(testBody), "tok", "fail-tok", "")
+	orderID, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), m, calcURL, []byte(testBody), "tok", "fail-tok", "", nil)
 	require.Error(t, err)
 	assert.Empty(t, orderID)
 	assert.False(t, existing)

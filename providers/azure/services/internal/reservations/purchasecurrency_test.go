@@ -58,7 +58,7 @@ func TestPurchaseChecksBillingCurrency(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			c := &currencyClient{calcBody: calcWithCurrency(tt.billing)}
-			id, _, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", "", tt.rec)
+			id, _, err := DoIdempotentPurchaseTwoStep(context.Background(), c, calcURL, []byte(testBody), "tok", "", tt.rec, nil)
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)
@@ -77,7 +77,7 @@ func TestPurchaseChecksBillingCurrency(t *testing.T) {
 
 func TestPurchaseAPIFailureIsNotCurrencyRefusal(t *testing.T) {
 	t.Parallel()
-	_, _, err := DoIdempotentPurchaseTwoStep(context.Background(), failingClient{}, calcURL, []byte(testBody), "tok", "", "USD")
+	_, _, err := DoIdempotentPurchaseTwoStep(context.Background(), failingClient{}, calcURL, []byte(testBody), "tok", "", "USD", nil)
 	require.Error(t, err)
 	assert.NotErrorIs(t, err, common.ErrCurrencyNotAccepted)
 }

@@ -74,9 +74,9 @@ func Submit(ctx context.Context, cred azcore.TokenCredential, httpc HTTPClient, 
 	if err != nil {
 		return "", false, fmt.Errorf("failed to get access token: %w", err)
 	}
-	var purchaseOpts []PurchaseOption
-	if claimer, ok := opts.AttemptJournal.(common.PurchaseClaimer); ok {
-		purchaseOpts = append(purchaseOpts, WithClaimer(claimer))
+	var claimer common.PurchaseClaimer
+	if c, ok := opts.AttemptJournal.(common.PurchaseClaimer); ok {
+		claimer = c
 	}
-	return DoIdempotentPurchaseTwoStep(ctx, httpc, CalculatePriceURL(), body, token.Token, opts.IdempotencyToken, commitmentCurrency, purchaseOpts...)
+	return DoIdempotentPurchaseTwoStep(ctx, httpc, CalculatePriceURL(), body, token.Token, opts.IdempotencyToken, commitmentCurrency, claimer)
 }

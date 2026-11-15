@@ -73,7 +73,7 @@ type tokenLock struct {
 // purchase in flight (issue #745). Without it, two concurrent calls with the
 // same token can both list before either order is visible and both buy.
 // Azure mints the order ID in calculatePrice, so there is no client key to PUT
-// idempotently; across processes the durable claim of WithClaimer covers it.
+// idempotently; across processes the durable claim of a non-nil claimer covers it.
 var (
 	tokenLocksMu sync.Mutex
 	tokenLocks   = map[string]*tokenLock{}
@@ -789,20 +789,26 @@ func matchReservationOrderInPage(page *reservationOrdersListResponse, idempotenc
 // commitmentCurrency is the recommendation currency the calculatePrice billing
 // currency must match; empty means USD (see checkBillingCurrency).
 //
-// With a token, the purchase also takes the durable claim of WithClaimer
+// With a token and a non-nil claimer, the purchase also takes the durable claim
 // (go#745) after the in-process lock and before the lookup, so two processes
 // cannot both pass the lookup and buy. A loser returns an error wrapping
-// common.ErrRefusedBeforePurchase at once. With no claimer, only the in-process
-// lock guards the token and one log line says so. A claim error from a
-// configured claimer never falls through to a purchase. A claim already
-// completed for the token adopts its recorded order after reading its state by
-// ID (adoptCompletedOrder), without listing.
-func DoIdempotentPurchaseTwoStep(ctx context.Context, httpClient HTTPClient, calcURL string, bodyBytes []byte, bearerToken, idempotencyToken, commitmentCurrency string, opts ...PurchaseOption) (orderID string, existing bool, err error) {
+// common.ErrRefusedBeforePurchase at once. With a nil claimer, only the
+// in-process lock guards the token and one log line says so. A claim error from
+// a non-nil claimer never falls through to a purchase. A claim already completed
+// for the token adopts its recorded order after reading its state by ID
+// (adoptCompletedOrder), without listing.
+func DoIdempotentPurchaseTwoStep(ctx context.Context, httpClient HTTPClient, calcURL string, bodyBytes []byte, bearerToken, idempotencyToken, commitmentCurrency string, claimer common.PurchaseClaimer) (orderID string, existing bool, err error) {
+	return purchaseTwoStepWithTiming(ctx, httpClient, calcURL, bodyBytes, bearerToken, idempotencyToken, commitmentCurrency, claimer, defaultClaimTiming())
+}
+
+// purchaseTwoStepWithTiming is DoIdempotentPurchaseTwoStep with the claim lease
+// numbers explicit, so tests can shorten them.
+func purchaseTwoStepWithTiming(ctx context.Context, httpClient HTTPClient, calcURL string, bodyBytes []byte, bearerToken, idempotencyToken, commitmentCurrency string, claimer common.PurchaseClaimer, timing claimTiming) (orderID string, existing bool, err error) {
 	if idempotencyToken == "" {
 		return purchaseTwoStepGuarded(ctx, httpClient, calcURL, bodyBytes, bearerToken, "", commitmentCurrency, nil)
 	}
 	defer lockPurchaseToken(idempotencyToken)()
-	guard, claim, err := acquireClaim(ctx, newPurchaseConfig(opts), idempotencyToken)
+	guard, claim, err := acquireClaim(ctx, claimer, timing, idempotencyToken)
 	if err != nil {
 		return "", false, err
 	}

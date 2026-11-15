@@ -63,7 +63,7 @@ func TestClaim_CheckpointOnAttemptOneRefusesBeforeThePurchase(t *testing.T) {
 			t.Parallel()
 			f := newClaimFixture()
 			az := &claimAzure{onCalc: tc.onCalc}
-			id, existing, err := buy(az, f.store, withClaimTiming(tc.ttl, time.Hour, time.Minute))
+			id, existing, err := buyTimed(az, f.store, claimTiming{ttl: tc.ttl, renewEvery: time.Hour, settle: time.Minute})
 			require.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
 			assert.ErrorIs(t, err, common.ErrClaimLost)
 			assert.NotErrorIs(t, err, common.ErrOutcomeUnknown)
@@ -91,7 +91,7 @@ func TestClaim_LeaseExpiringDuringThePurchaseStillReturnsTheOrder(t *testing.T) 
 		f.now = f.now.Add(2 * time.Minute) // past the 1m lease, inside the 10m settle window
 		_, peerErr = f.store.AcquireClaim(context.Background(), claimTok, "peer", time.Minute, 10*time.Minute)
 	}
-	id, existing, err := buy(az, rec, withClaimTiming(time.Minute, time.Hour, 10*time.Minute))
+	id, existing, err := buyTimed(az, rec, claimTiming{ttl: time.Minute, renewEvery: time.Hour, settle: 10 * time.Minute})
 	require.NoError(t, err)
 	assert.False(t, existing)
 	assert.Equal(t, "order-1", id)
@@ -118,7 +118,7 @@ func TestClaim_ClaimTakenOverDuringThePurchaseReportsLostOnRelease(t *testing.T)
 			panic(err)
 		}
 	}
-	id, _, err := buy(az, rec, withClaimTiming(time.Minute, time.Hour, 10*time.Minute))
+	id, _, err := buyTimed(az, rec, claimTiming{ttl: time.Minute, renewEvery: time.Hour, settle: 10 * time.Minute})
 	require.NoError(t, err, "the caller's result stands")
 	assert.Equal(t, "order-1", id)
 	require.True(t, rec.released)
@@ -156,7 +156,7 @@ func TestClaim_TwoFlowsWithoutASharedLockBuyOnce(t *testing.T) {
 	first := make(chan result, 1)
 	go func() {
 		var r result
-		r.id, r.existing, r.err = DoIdempotentPurchaseTwoStep(context.Background(), az, calcURL, []byte(testBody), "bearer", "proc-a", "", WithClaimer(store))
+		r.id, r.existing, r.err = DoIdempotentPurchaseTwoStep(context.Background(), az, calcURL, []byte(testBody), "bearer", "proc-a", "", store)
 		first <- r
 	}()
 	select {
@@ -165,7 +165,7 @@ func TestClaim_TwoFlowsWithoutASharedLockBuyOnce(t *testing.T) {
 		t.Fatal("first flow never reached the purchase request")
 	}
 
-	_, _, err := DoIdempotentPurchaseTwoStep(context.Background(), az, calcURL, []byte(testBody), "bearer", "proc-b", "", WithClaimer(store))
+	_, _, err := DoIdempotentPurchaseTwoStep(context.Background(), az, calcURL, []byte(testBody), "bearer", "proc-b", "", store)
 	require.ErrorIs(t, err, common.ErrClaimHeld, "the second flow is blocked by the durable claim, not by an in-process lock")
 	assert.ErrorIs(t, err, common.ErrRefusedBeforePurchase)
 	az.mu.Lock()
@@ -180,7 +180,7 @@ func TestClaim_TwoFlowsWithoutASharedLockBuyOnce(t *testing.T) {
 	assert.False(t, r.existing)
 	assert.Equal(t, "order-1", r.id)
 
-	id, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), az, calcURL, []byte(testBody), "bearer", "proc-c", "", WithClaimer(store))
+	id, existing, err := DoIdempotentPurchaseTwoStep(context.Background(), az, calcURL, []byte(testBody), "bearer", "proc-c", "", store)
 	require.NoError(t, err)
 	assert.True(t, existing, "the completed row is adopted")
 	assert.Equal(t, "order-1", id)
@@ -194,7 +194,7 @@ func TestClaim_HeartbeatKeepsTheClaimAliveAcrossASlowStep(t *testing.T) {
 	t.Parallel()
 	f := newClaimFixture()
 	az := &claimAzure{onCalc: func() { time.Sleep(300 * time.Millisecond) }}
-	id, _, err := buy(az, f.store, withClaimTiming(100*time.Millisecond, 10*time.Millisecond, time.Minute))
+	id, _, err := buyTimed(az, f.store, claimTiming{ttl: 100 * time.Millisecond, renewEvery: 10 * time.Millisecond, settle: time.Minute})
 	require.NoError(t, err)
 	assert.Equal(t, "order-1", id)
 	assert.Equal(t, 1, az.purchases)
