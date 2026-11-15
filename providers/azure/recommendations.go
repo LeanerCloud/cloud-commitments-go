@@ -167,11 +167,9 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 	synapseIdx := addTask(includeSynapse, func(ctx context.Context) ([]common.Recommendation, error) {
 		return newSynapseClientFn(r.cred, r.subscriptionID, "").GetRecommendations(ctx, params)
 	})
-	// Savings Plans — Azure has no stable public API for SP purchase
-	// recommendations (Benefits Recommendations API is still in preview).
-	// The call returns an empty slice so the service appears in the fan-out
-	// and will start returning data once the API stabilizes without requiring
-	// a scheduler change.
+	// Savings Plans — the client calls the Benefit Recommendations API, so a
+	// failure here is a real service failure and counts toward the
+	// all-attempted-failed guard.
 	spIdx := addTask(includeSP, func(ctx context.Context) ([]common.Recommendation, error) {
 		return newSavingsPlansClientFn(r.cred, r.subscriptionID, "").GetRecommendations(ctx, params)
 	})
@@ -219,23 +217,15 @@ func (r *RecommendationsClientAdapter) GetRecommendations(ctx context.Context, p
 		serviceResult{err: redisErr, name: "managedredis", recs: redisRecs, attempted: includeRedis},
 		serviceResult{err: cosmosErr, name: "cosmosdb", recs: cosmosRecs, attempted: includeCosmos},
 		serviceResult{err: synapseErr, name: "synapse", recs: synapseRecs, attempted: includeSynapse},
-		// The savingsplans client is a stub that unconditionally returns
-		// ([], nil) until the Benefits Recommendations API stabilizes (see
-		// services/savingsplans Client.GetRecommendations). Counting its
-		// built-in success as an attempted service would keep the
-		// all-attempted-failed guard from ever firing on a total provider
-		// failure (expired credential, subscription-wide throttle), so it is
-		// excluded from the guard until it makes real API calls.
-		serviceResult{err: spErr, name: "savingsplans", recs: spRecs, attempted: false},
-		// The Advisor client is excluded from the all-attempted-failed guard
-		// for the same reason: getAdvisorRecommendations swallows pagination
+		serviceResult{err: spErr, name: "savingsplans", recs: spRecs, attempted: includeSP},
+		// The Advisor client is excluded from the all-attempted-failed guard:
+		// getAdvisorRecommendations swallows pagination
 		// errors (the auth failure from an expired credential surfaces as a
 		// 401 during pager.NextPage, not during client construction) and
 		// always returns (recs, nil). Counting its unconditional success as
 		// an attempted service would keep the guard from firing on a total
-		// credential failure -- the same hazard the savingsplans exclusion
-		// prevents. When getAdvisorRecommendations is changed to propagate
-		// hard errors, flip this flag back to true.
+		// credential failure. When getAdvisorRecommendations is changed to
+		// propagate hard errors, flip this flag back to true.
 		serviceResult{err: advisorErr, name: "advisor", recs: advisorRecs, attempted: false})
 	return withSkips(merged, err, skips)
 }

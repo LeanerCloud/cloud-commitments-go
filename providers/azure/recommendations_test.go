@@ -337,6 +337,28 @@ func TestGetRecommendations_SavingsPlansServiceIncluded(t *testing.T) {
 	}
 }
 
+// TestRecommendationsClientAdapter_GetRecommendations_SavingsPlansOnlyFailureFailsLoud
+// pins that the savingsplans fan-out entry counts as attempted: when it is the
+// only service requested and errors, GetRecommendations must return the error
+// instead of (empty, nil).
+func TestRecommendationsClientAdapter_GetRecommendations_SavingsPlansOnlyFailureFailsLoud(t *testing.T) {
+	spErr := errors.New("benefit recommendations: 401 unauthorized")
+	overrideServiceClientFns(t,
+		&fakeServiceClient{}, &fakeServiceClient{}, &fakeServiceClient{}, &fakeServiceClient{},
+		&fakeServiceClient{err: spErr})
+	adapter := &RecommendationsClientAdapter{
+		cred:             &mockAzureTokenCredential{},
+		subscriptionID:   "test-subscription",
+		getAdvisorRecsFn: noopAdvisorFn,
+	}
+
+	recs, err := adapter.GetRecommendations(context.Background(), &common.RecommendationParams{Service: common.ServiceSavingsPlansAll})
+
+	require.Error(t, err)
+	assert.ErrorIs(t, err, spErr)
+	assert.Empty(t, recs)
+}
+
 // TestRecommendationsClientAdapter_GetRecommendations_PropagatesContextCancellation
 // pins the contract that GetRecommendations propagates ctx.Err() to its caller
 // after the errgroup Wait() — the parent context being canceled or its
@@ -453,12 +475,10 @@ func TestMergeServiceResults_OrderIsStable(t *testing.T) {
 // SucceededAccountIDs, UpsertRecommendations evicted all previously collected
 // rows for it, and last_collection_error was cleared.
 //
-// savingsplans and advisor are both attempted=false because GetRecommendations
-// excludes them from the guard: savingsplans is a stub that makes no API call
-// and always returns ([], nil); advisor's getAdvisorRecommendations swallows
-// pagination errors and therefore also always returns (recs, nil). Counting
-// either as an attempted service would keep the guard from firing on a real
-// total credential failure.
+// advisor is attempted=false because GetRecommendations excludes it from the
+// guard: getAdvisorRecommendations swallows pagination errors and always
+// returns (recs, nil), so counting it would keep the guard from firing on a
+// real total credential failure. savingsplans makes real API calls and counts.
 func TestMergeServiceResults_AllAttemptedFailed(t *testing.T) {
 	t.Parallel()
 	authErr := errors.New("DefaultAzureCredential: federated token expired")
@@ -468,13 +488,13 @@ func TestMergeServiceResults_AllAttemptedFailed(t *testing.T) {
 		serviceResult{err: authErr, name: "database", recs: nil, attempted: true},
 		serviceResult{err: authErr, name: "cache", recs: nil, attempted: true},
 		serviceResult{err: authErr, name: "cosmosdb", recs: nil, attempted: true},
-		serviceResult{err: nil, name: "savingsplans", recs: nil, attempted: false},
+		serviceResult{err: authErr, name: "savingsplans", recs: nil, attempted: true},
 		serviceResult{err: nil, name: "advisor", recs: nil, attempted: false},
 	)
 
 	require.Error(t, err, "all-attempted-failed merge must fail loud, not return (empty, nil)")
 	assert.ErrorIs(t, err, authErr, "the underlying service error must be wrapped")
-	assert.Contains(t, err.Error(), "all 4 Azure recommendation services failed")
+	assert.Contains(t, err.Error(), "all 5 Azure recommendation services failed")
 	assert.Nil(t, recs)
 }
 
@@ -482,7 +502,7 @@ func TestMergeServiceResults_AllAttemptedFailed(t *testing.T) {
 // services skipped by the params filter (attempted == false, nil err) are not
 // counted as successes: when every ATTEMPTED service failed, the merge must
 // still error even though skipped entries carry a nil err.
-// savingsplans and advisor are always attempted=false in production (see
+// advisor is always attempted=false in production (see
 // TestMergeServiceResults_AllAttemptedFailed), so the scenario here models
 // a service-filter run where only compute is requested and it fails.
 func TestMergeServiceResults_SkippedServicesDoNotMaskTotalFailure(t *testing.T) {
@@ -515,7 +535,7 @@ func TestMergeServiceResults_PartialFailureStillSucceeds(t *testing.T) {
 		serviceResult{err: svcErr, name: "database", recs: nil, attempted: true},
 		serviceResult{err: svcErr, name: "cache", recs: nil, attempted: true},
 		serviceResult{err: svcErr, name: "cosmosdb", recs: nil, attempted: true},
-		serviceResult{err: nil, name: "savingsplans", recs: nil, attempted: false},
+		serviceResult{err: nil, name: "savingsplans", recs: nil, attempted: true},
 		serviceResult{err: nil, name: "advisor", recs: nil, attempted: false},
 	)
 
@@ -524,15 +544,13 @@ func TestMergeServiceResults_PartialFailureStillSucceeds(t *testing.T) {
 	assert.Equal(t, common.ServiceCompute, recs[0].Service)
 }
 
-// TestMergeServiceResults_StubsDoNotMaskTotalFailure replicates the exact
+// TestMergeServiceResults_AdvisorDoesNotMaskTotalFailure replicates the
 // production shape of a total Azure provider failure (e.g. an expired
-// federated credential): the four real services all error, while both
-// non-API-making entries -- the savingsplans stub (always ([], nil)) and
-// advisor (getAdvisorRecommendations swallows pagination auth errors and
-// always returns (recs, nil)) -- succeed. GetRecommendations passes
-// attempted=false for both; the merge must still fail loud rather than
-// counting either stub's unconditional success and returning (empty, nil).
-func TestMergeServiceResults_StubsDoNotMaskTotalFailure(t *testing.T) {
+// federated credential): every attempted service errors, while advisor
+// (getAdvisorRecommendations swallows pagination auth errors and always
+// returns (recs, nil)) succeeds. GetRecommendations passes attempted=false
+// for it; the merge must still fail loud rather than returning (empty, nil).
+func TestMergeServiceResults_AdvisorDoesNotMaskTotalFailure(t *testing.T) {
 	t.Parallel()
 	authErr := errors.New("DefaultAzureCredential: federated token expired")
 
@@ -541,13 +559,13 @@ func TestMergeServiceResults_StubsDoNotMaskTotalFailure(t *testing.T) {
 		serviceResult{err: authErr, name: "database", recs: nil, attempted: true},
 		serviceResult{err: authErr, name: "cache", recs: nil, attempted: true},
 		serviceResult{err: authErr, name: "cosmosdb", recs: nil, attempted: true},
-		serviceResult{err: nil, name: "savingsplans", recs: []common.Recommendation{}, attempted: false},
+		serviceResult{err: authErr, name: "savingsplans", recs: nil, attempted: true},
 		serviceResult{err: nil, name: "advisor", recs: []common.Recommendation{}, attempted: false},
 	)
 
-	require.Error(t, err, "stubs that swallow errors must not mask a total provider failure")
+	require.Error(t, err, "advisor's swallowed errors must not mask a total provider failure")
 	assert.ErrorIs(t, err, authErr)
-	assert.Contains(t, err.Error(), "all 4 Azure recommendation services failed")
+	assert.Contains(t, err.Error(), "all 5 Azure recommendation services failed")
 	assert.Nil(t, recs)
 }
 
