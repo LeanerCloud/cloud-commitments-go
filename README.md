@@ -12,7 +12,7 @@ The repository has five Go modules and no root module, so run Go commands from i
 
 | Module | Contents |
 |---|---|
-| [`pkg`](pkg) | Provider interfaces and shared domain packages: [`common`](pkg/common) types and JSON codecs, [`provider`](pkg/provider) credential detection and discovery, [`scorer`](pkg/scorer) and [`recfilter`](pkg/recfilter) for ranking and filtering recommendations, [`reccontract`](pkg/reccontract) for the recommendation request contract, [`exchange`](pkg/exchange) for AWS Convertible RI exchanges, [`ladder`](pkg/ladder) for commitment-laddering plans, [`retry`](pkg/retry), [`httpclient`](pkg/httpclient), [`concurrency`](pkg/concurrency), [`logging`](pkg/logging) and [`reporter`](pkg/reporter) |
+| [`pkg`](pkg) | Provider interfaces and shared domain packages: [`common`](pkg/common) types and JSON codecs, [`provider`](pkg/provider) credential detection and discovery, [`scorer`](pkg/scorer) and [`recfilter`](pkg/recfilter) for ranking and filtering recommendations, [`reccontract`](pkg/reccontract) for the recommendation request contract, [`exchange`](pkg/exchange) for AWS Convertible RI exchanges, [`ladder`](pkg/ladder) for commitment-laddering plans, [`retry`](pkg/retry), [`httpclient`](pkg/httpclient), [`concurrency`](pkg/concurrency), [`logging`](pkg/logging), [`reporter`](pkg/reporter) and [`insurance`](pkg/insurance) for Archera insured-commitment quotes and eligibility |
 | [`providers/aws`](providers/aws) | AWS integration with service clients for EC2, RDS, ElastiCache, MemoryDB, OpenSearch, Redshift and Savings Plans |
 | [`providers/azure`](providers/azure) | Azure integration, including Advisor-based recommendations across subscriptions |
 | [`providers/gcp`](providers/gcp) | GCP integration |
@@ -50,6 +50,26 @@ Don't run the binaries under `ci_cd_sanity_tests/cmd/` unless you mean to hit th
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) first, and report security problems as described in [SECURITY.md](SECURITY.md). Design notes are under [docs/design](docs/design), and [CHANGELOG.md](CHANGELOG.md) tracks changes.
 
+## AWS default values
+
+These defaults apply when a caller leaves the value unset. They are kept as they are and listed here so callers can override them.
+
+| Default | Value | Where | Effect |
+| --- | --- | --- | --- |
+| Coverage and utilization lookback | 30 days | `providers/aws/recommendations/coverage.go:242-243` (`coverageWindow`), `providers/aws/recommendations/utilization.go:41-42`, `providers/aws/ladder/ladder.go:19` (`DefaultLookbackDays`) | A non-positive `lookbackDays` passed to `GetRICoverageMap` or `GetRIUtilization` is replaced with 30. The ladder uses 30 when `Config.LookbackDays` is zero. Pass an explicit window to size from a different history. |
+| MemoryDB reserved-node engine | `redis` | `providers/aws/services/memorydb/client.go:329` (`ReservedNodeEngine`), used at `providers/aws/recommendations/parser_services.go:260` | Every MemoryDB recommendation is labelled `redis`, including Valkey clusters. The MemoryDB purchase path does not filter on engine, so the label affects display, pool keys and duplicate detection only. |
+
+## About
+
+Built by [LeanerCloud](https://leanercloud.com), a group of AWS cost
+optimization and FinOps specialists, also authors of [AutoSpotting](https://autospotting.io).
+
+Development is sponsored by [Archera](https://www.archera.ai/cudly), which
+funds it from insurance purchases made through that page. Archera can insure
+the Savings Plans, Reserved Instances and CUD purchases you make with this tool.
+
+If this tool saves you time and money, please give us a ⭐ so others can also find it.
+
 ## License
 
-CUDly is maintained by [LeanerCloud](https://github.com/LeanerCloud) and licensed under the [Open Software License 3.0](LICENSE). Third-party notices are in [NOTICE](NOTICE).
+cloud-commitments-go is maintained by [LeanerCloud](https://github.com/LeanerCloud) and licensed under the [Open Software License 3.0](LICENSE). Third-party notices are in [NOTICE](NOTICE).
