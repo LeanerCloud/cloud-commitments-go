@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/smithy-go/encoding/cbor"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -47,8 +48,9 @@ func (f *expiryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	switch f.service {
 	case "memorydb":
 		require.Equal(f.t, "POST", req.Method)
-		require.Equal(f.t, "AmazonMemoryDB.DescribeReservedNodes", req.Header.Get("X-Amz-Target"))
-		contentType = "application/x-amz-json-1.1"
+		require.Equal(f.t, "/service/AmazonMemoryDB/operation/DescribeReservedNodes", req.URL.Path)
+		require.Empty(f.t, req.Header.Get("X-Amz-Target"))
+		contentType = "application/cbor"
 	case "opensearch":
 		require.Equal(f.t, "GET", req.Method)
 		require.Equal(f.t, "/2021-01-01/opensearch/reservedInstances", req.URL.Path)
@@ -61,6 +63,30 @@ func (f *expiryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {contentType}},
 		Body: io.NopCloser(strings.NewReader(f.body)), Request: req}, nil
+}
+
+// memorydbCBORBody encodes the fixture records as the rpcv2 CBOR response that
+// memorydb's DescribeReservedNodes uses from service/memorydb v1.43.0 on. Start
+// times are epoch seconds under CBOR tag 1, which the decoder requires.
+func memorydbCBORBody(listKey string, records []map[string]any) cbor.Value {
+	list := make(cbor.List, 0, len(records))
+	for _, record := range records {
+		item := cbor.Map{}
+		for key, value := range record {
+			switch v := value.(type) {
+			case string:
+				item[key] = cbor.String(v)
+			case int:
+				item[key] = cbor.Uint(v)
+			case int32:
+				item[key] = cbor.Uint(v)
+			case int64:
+				item[key] = cbor.Tag{ID: 1, Value: cbor.Uint(v)}
+			}
+		}
+		list = append(list, item)
+	}
+	return cbor.Map{listKey: list}
 }
 
 type expiryRow struct {
@@ -101,11 +127,14 @@ func expiryClient(t *testing.T, service string, rows ...expiryRow) provider.Serv
 		records = append(records, record)
 	}
 	var body string
-	if service == "memorydb" || service == "opensearch" {
+	switch service {
+	case "memorydb":
+		body = string(cbor.Encode(memorydbCBORBody(n[0]+"s", records)))
+	case "opensearch":
 		data, err := json.Marshal(map[string]any{n[0] + "s": records})
 		require.NoError(t, err)
 		body = string(data)
-	} else {
+	default:
 		var entries strings.Builder
 		for _, record := range records {
 			fmt.Fprintf(&entries, "<%s>", n[0])
