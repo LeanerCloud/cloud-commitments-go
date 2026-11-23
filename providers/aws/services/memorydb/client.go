@@ -103,8 +103,8 @@ func (c *Client) GetExistingCommitments(ctx context.Context) ([]common.Commitmen
 				Engine:         ReservedNodeEngine,
 				Count:          int(node.NodeCount),
 				State:          state,
-				StartDate:      aws.ToTime(node.StartTime),
-				EndDate:        reservationexpiry.EndDate(aws.ToTime(node.StartTime), node.Duration),
+				StartDate:      aws.ToTime(node.StartTime).UTC(),
+				EndDate:        reservationexpiry.EndDate(aws.ToTime(node.StartTime).UTC(), node.Duration),
 			}
 
 			commitments = append(commitments, commitment)
