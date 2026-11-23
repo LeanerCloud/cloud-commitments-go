@@ -127,13 +127,14 @@ func expiryClient(t *testing.T, service string, rows ...expiryRow) provider.Serv
 		records = append(records, record)
 	}
 	var body string
-	if service == "memorydb" {
+	switch service {
+	case "memorydb":
 		body = string(cbor.Encode(memorydbCBORBody(n[0]+"s", records)))
-	} else if service == "opensearch" {
+	case "opensearch":
 		data, err := json.Marshal(map[string]any{n[0] + "s": records})
 		require.NoError(t, err)
 		body = string(data)
-	} else {
+	default:
 		var entries strings.Builder
 		for _, record := range records {
 			fmt.Fprintf(&entries, "<%s>", n[0])
