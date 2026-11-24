@@ -15,16 +15,22 @@ const (
 	matchOffer = "daadf00d-ffff-4aba-8ada-abcdefabcdef"
 )
 
-func contractMatchFixture(t *testing.T) (*Comparison, []LineItem) {
-	t.Helper()
+// contractMatchBodies returns the synthetic vendor line-item array and comparison bodies.
+func contractMatchBodies() (itemsBody, comparisonBody string) {
 	item := `{"id":"` + matchItem + `","plan_id":"` + matchPlan + `","offer_id":"` + matchOffer + `","account_id":"Source-account-a","selected_quantity":7,"selected_commitment":0.50000000000000000001,"is_selected":true,"contract_term":"one_year_gris","payment_option":"No Upfront","contract_spec":{"commitment_type":"opaque-contract-type"},"offer":{"id":"` + matchOffer + `","type":"savings_plan","provider":"aws","provider_offering_id":"provider-offer-a","offering_id":"distinct-catalog-offer","duration_seconds":31536000,"region":"us-east-1","az":null,"instance_type":null,"instance_family":"m5","product_description":null,"tenancy":null,"plan_type":"EC2Instance","is_multi_az":null,"is_flexible":null,"payment_option":"No Upfront"}}`
-	items, err := DecodeLineItems(strings.NewReader("["+item+"]"), matchPlan)
-	require.NoError(t, err)
 	current := `{"is_current":true,"offer_id":"` + matchOffer + `","selected_amount":0.50000000000000000001,"commitment_type":"savings_plan","contract_term":"one_year_gris","payment_option":"no_upfront","offer":{"provider":"aws","region":"us-east-1"},"discount_rate":0,"commitment_upfront_cost":0,"commitment_financials_monthly_rate":{},"delta_vs_current":{"monthly_net_savings":0,"upfront_cost":0,"discount_rate":0}}`
 	candidate := strings.ReplaceAll(strings.Replace(current, `"is_current":true`, `"is_current":false`, 1), matchOffer, "faadf00d-ffff-4aba-8ada-abcdefabcdef")
 	candidate = strings.Replace(candidate, "no_upfront", "all_upfront", 1)
-	body := `{"current_totals":{"commitment_financials_monthly_rate":{},"commitment_upfront_cost":0},"hypothetical_totals":[],"data":[{"line_item_id":"` + matchItem + `","current":` + current + `,"candidates":[` + candidate + "," + candidate + `]}]}`
-	comparison, err := DecodeComparison(strings.NewReader(body), "fixture-org", matchPlan, time.Unix(1, 0))
+	comparisonBody = `{"current_totals":{"commitment_financials_monthly_rate":{},"commitment_upfront_cost":0},"hypothetical_totals":[],"data":[{"line_item_id":"` + matchItem + `","current":` + current + `,"candidates":[` + candidate + "," + candidate + `]}]}`
+	return "[" + item + "]", comparisonBody
+}
+
+func contractMatchFixture(t *testing.T) (*Comparison, []LineItem) {
+	t.Helper()
+	itemsBody, comparisonBody := contractMatchBodies()
+	items, err := DecodeLineItems(strings.NewReader(itemsBody), matchPlan)
+	require.NoError(t, err)
+	comparison, err := DecodeComparison(strings.NewReader(comparisonBody), "fixture-org", matchPlan, time.Unix(1, 0))
 	require.NoError(t, err)
 	return comparison, items
 }
