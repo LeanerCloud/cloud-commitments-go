@@ -48,6 +48,8 @@ const (
 	QuoteErrRejected          QuoteErrorKind = "vendor_rejected"
 	QuoteErrVendorUnavailable QuoteErrorKind = "vendor_unavailable"
 	QuoteErrInvalidResponse   QuoteErrorKind = "invalid_response"
+	// QuoteErrUnrepresentable means a vendor number has no exact decimal form.
+	QuoteErrUnrepresentable QuoteErrorKind = "unrepresentable_value"
 )
 
 // QuoteError is the only error QuoteRecommendation returns. Its text is fixed and never contains vendor,
@@ -87,8 +89,13 @@ const (
 // scoped to it for every payment option. Only an exact, unique match with a proven comparison basis yields
 // figures; anything else is unavailable, ambiguous or ineligible. Each vendor read is a single call with no
 // retry, and a failure returns no partial result.
+//
+// Callers map these knowingly: an ineligible recommendation returns a result with no vendor call (the
+// platform route returned an empty comparison); only the quote status carries a DTO, so unavailable and
+// ambiguous results have none; a context deadline or client timeout is QuoteErrTimeout while a cancellation
+// is QuoteErrCanceled (the platform route reported both as a timeout). recommendationID and planID must be UUIDs.
 func QuoteRecommendation(ctx context.Context, client RecommendationQuoteClient, planID, recommendationID string, rec *RecommendationIdentity) (*RecommendationQuote, error) {
-	if isNilClient(client) || !validMatchUUID(planID) {
+	if isNilClient(client) || !validMatchUUID(planID) || !validMatchUUID(recommendationID) {
 		return nil, &QuoteError{Kind: QuoteErrInvalidRequest, Stage: stageRequest}
 	}
 	if !validRecommendation(rec) {
@@ -115,6 +122,9 @@ func quoteFromComparison(recommendationID, planID string, rec *RecommendationIde
 		return nil, &QuoteError{Kind: QuoteErrInvalidResponse, Stage: stageComparison}
 	}
 	dto, err := BuildRecommendationComparison(recommendationID, planID, rec, cmp, items)
+	if errors.Is(err, ErrUnrepresentable) {
+		return nil, &QuoteError{Kind: QuoteErrUnrepresentable, Stage: stageBuild}
+	}
 	if err != nil {
 		return nil, &QuoteError{Kind: QuoteErrInvalidResponse, Stage: stageBuild}
 	}
@@ -173,6 +183,8 @@ func quoteFailure(ctx context.Context, err error, stage string) *QuoteError {
 		if he.StatusCode >= 500 {
 			out.Kind = QuoteErrVendorUnavailable
 		}
+	case errors.As(err, &ne):
+		out.Kind = QuoteErrVendorUnavailable
 	default:
 		out.Kind = QuoteErrInvalidResponse
 	}

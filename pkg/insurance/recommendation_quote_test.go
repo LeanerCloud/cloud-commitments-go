@@ -3,6 +3,7 @@ package insurance
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,7 @@ import (
 )
 
 const (
+	recID       = "9aadf00d-ffff-4aba-8ada-abcdefabcdef"
 	otherItem   = "eaadf00d-ffff-4aba-8ada-abcdefabcdef"
 	vendorWords = "VENDOR-INTERNAL-DETAIL"
 )
@@ -99,12 +101,12 @@ func requireQuoteError(t *testing.T, err error, kind QuoteErrorKind, stage strin
 
 func TestQuoteRecommendationExactMatchReturnsOneFigureSet(t *testing.T) {
 	s, c := newQuoteServer(t)
-	got, err := QuoteRecommendation(context.Background(), c, matchPlan, "rec-1", contractRecommendation())
+	got, err := QuoteRecommendation(context.Background(), c, matchPlan, recID, contractRecommendation())
 	require.NoError(t, err)
 	require.Equal(t, QuoteStatusQuote, got.Status)
 	require.Empty(t, got.Reason)
 	require.NotNil(t, got.Comparison)
-	require.Equal(t, "rec-1", got.Comparison.RecommendationID)
+	require.Equal(t, recID, got.Comparison.RecommendationID)
 	require.Equal(t, ResourceAssociated, got.Comparison.Status)
 	require.Equal(t, matchOffer, got.Comparison.Current.OfferID)
 
@@ -120,7 +122,7 @@ func TestQuoteRecommendationNoLineItemIsUnavailableWithoutComparison(t *testing.
 	s, c := newQuoteServer(t)
 	rec := contractRecommendation()
 	rec.Region, rec.TopLevelRegion = "eu-west-1", "eu-west-1"
-	got, err := QuoteRecommendation(context.Background(), c, matchPlan, "rec-1", rec)
+	got, err := QuoteRecommendation(context.Background(), c, matchPlan, recID, rec)
 	require.NoError(t, err)
 	require.Equal(t, QuoteStatusUnavailable, got.Status)
 	require.Equal(t, ReasonIdentityUnproven, got.Reason)
@@ -131,7 +133,7 @@ func TestQuoteRecommendationNoLineItemIsUnavailableWithoutComparison(t *testing.
 func TestQuoteRecommendationTwoCandidatesAreAmbiguousWithoutComparison(t *testing.T) {
 	s, c := newQuoteServer(t)
 	s.items, s.pages = withSecondItem(s.items, "us-east-1"), 2
-	got, err := QuoteRecommendation(context.Background(), c, matchPlan, "rec-1", contractRecommendation())
+	got, err := QuoteRecommendation(context.Background(), c, matchPlan, recID, contractRecommendation())
 	require.NoError(t, err)
 	require.Equal(t, QuoteStatusAmbiguous, got.Status)
 	require.Equal(t, ReasonAmbiguousLineItems, got.Reason)
@@ -148,7 +150,7 @@ func TestQuoteRecommendationIneligibleMakesNoVendorCall(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			s, c := newQuoteServer(t)
-			got, err := QuoteRecommendation(context.Background(), c, matchPlan, "rec-1", edit(contractRecommendation()))
+			got, err := QuoteRecommendation(context.Background(), c, matchPlan, recID, edit(contractRecommendation()))
 			require.NoError(t, err)
 			require.Equal(t, QuoteStatusIneligible, got.Status)
 			require.Equal(t, ReasonIdentityUnproven, got.Reason)
@@ -162,7 +164,7 @@ func TestQuoteRecommendationComparisonForOtherLineItemsOnlyIsUnavailable(t *test
 	s, c := newQuoteServer(t)
 	s.items, s.pages = withSecondItem(s.items, "eu-west-1"), 2
 	s.compare = strings.Replace(s.compare, matchItem, otherItem, 1)
-	got, err := QuoteRecommendation(context.Background(), c, matchPlan, "rec-1", contractRecommendation())
+	got, err := QuoteRecommendation(context.Background(), c, matchPlan, recID, contractRecommendation())
 	require.NoError(t, err)
 	require.Equal(t, QuoteStatusUnavailable, got.Status)
 	require.Equal(t, ReasonComparisonBasisUnproven, got.Reason)
@@ -172,7 +174,7 @@ func TestQuoteRecommendationComparisonForOtherLineItemsOnlyIsUnavailable(t *test
 func TestQuoteRecommendationEmptyComparisonIsUnavailable(t *testing.T) {
 	s, c := newQuoteServer(t)
 	s.compare = `{"current_totals":{"commitment_financials_monthly_rate":{},"commitment_upfront_cost":0},"hypothetical_totals":[],"data":[]}`
-	got, err := QuoteRecommendation(context.Background(), c, matchPlan, "rec-1", contractRecommendation())
+	got, err := QuoteRecommendation(context.Background(), c, matchPlan, recID, contractRecommendation())
 	require.NoError(t, err)
 	require.Equal(t, QuoteStatusUnavailable, got.Status)
 	require.Nil(t, got.Comparison)
@@ -181,7 +183,7 @@ func TestQuoteRecommendationEmptyComparisonIsUnavailable(t *testing.T) {
 func TestQuoteRecommendationInexactCommitmentNeverYieldsFigures(t *testing.T) {
 	s, c := newQuoteServer(t)
 	s.compare = strings.Replace(s.compare, `"selected_amount":0.50000000000000000001`, `"selected_amount":0.6`, 1)
-	got, err := QuoteRecommendation(context.Background(), c, matchPlan, "rec-1", contractRecommendation())
+	got, err := QuoteRecommendation(context.Background(), c, matchPlan, recID, contractRecommendation())
 	require.NoError(t, err)
 	require.Equal(t, QuoteStatusUnavailable, got.Status)
 	require.Equal(t, ReasonComparisonBasisUnproven, got.Reason)
@@ -201,7 +203,7 @@ func TestQuoteRecommendationVendorFailuresAreTypedAndCarryNoVendorText(t *testin
 			t.Run(fmt.Sprintf("%s/%d", stage, tc.status), func(t *testing.T) {
 				s, c := newQuoteServer(t)
 				s.failPath, s.status = "/"+strings.ReplaceAll(stage, "_", "-"), tc.status
-				got, err := QuoteRecommendation(context.Background(), c, matchPlan, "rec-1", contractRecommendation())
+				got, err := QuoteRecommendation(context.Background(), c, matchPlan, recID, contractRecommendation())
 				require.Nil(t, got)
 				qe := requireQuoteError(t, err, tc.kind, stage)
 				assert.Equal(t, tc.status, qe.Status)
@@ -229,7 +231,7 @@ func TestQuoteRecommendationKeepsRetryAfterAsDuration(t *testing.T) {
 	t.Cleanup(srv.Close)
 	c, err := newClient(srv.URL, Config{APIKey: NewSecret(testKey), OrgID: testOrg}, srv.Client())
 	require.NoError(t, err)
-	_, err = QuoteRecommendation(context.Background(), c, matchPlan, "rec-1", contractRecommendation())
+	_, err = QuoteRecommendation(context.Background(), c, matchPlan, recID, contractRecommendation())
 	require.Equal(t, 7*time.Second, requireQuoteError(t, err, QuoteErrRejected, "line_items").RetryAfter)
 }
 
@@ -239,7 +241,7 @@ func TestQuoteRecommendationTimeoutsAndCancellation(t *testing.T) {
 		s.hang = true
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 		defer cancel()
-		got, err := QuoteRecommendation(ctx, c, matchPlan, "rec-1", contractRecommendation())
+		got, err := QuoteRecommendation(ctx, c, matchPlan, recID, contractRecommendation())
 		require.Nil(t, got)
 		requireQuoteError(t, err, QuoteErrTimeout, "line_items")
 		require.ErrorIs(t, err, context.DeadlineExceeded)
@@ -253,14 +255,14 @@ func TestQuoteRecommendationTimeoutsAndCancellation(t *testing.T) {
 		hc.Timeout = 50 * time.Millisecond
 		c, err := newClient(srv.URL, Config{APIKey: NewSecret(testKey), OrgID: testOrg}, &hc)
 		require.NoError(t, err)
-		_, err = QuoteRecommendation(context.Background(), c, matchPlan, "rec-1", contractRecommendation())
+		_, err = QuoteRecommendation(context.Background(), c, matchPlan, recID, contractRecommendation())
 		requireQuoteError(t, err, QuoteErrTimeout, "line_items")
 	})
 	t.Run("canceled before start", func(t *testing.T) {
 		s, c := newQuoteServer(t)
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
-		_, err := QuoteRecommendation(ctx, c, matchPlan, "rec-1", contractRecommendation())
+		_, err := QuoteRecommendation(ctx, c, matchPlan, recID, contractRecommendation())
 		requireQuoteError(t, err, QuoteErrCanceled, "line_items")
 		require.ErrorIs(t, err, context.Canceled)
 		require.Empty(t, s.paths)
@@ -270,7 +272,7 @@ func TestQuoteRecommendationTimeoutsAndCancellation(t *testing.T) {
 		s.hang = true
 		ctx, cancel := context.WithCancel(context.Background())
 		go func() { time.Sleep(50 * time.Millisecond); cancel() }()
-		_, err := QuoteRecommendation(ctx, c, matchPlan, "rec-1", contractRecommendation())
+		_, err := QuoteRecommendation(ctx, c, matchPlan, recID, contractRecommendation())
 		requireQuoteError(t, err, QuoteErrCanceled, "line_items")
 		require.ErrorIs(t, err, context.Canceled)
 	})
@@ -305,7 +307,7 @@ func TestQuoteRecommendationCancellationBetweenReadsSkipsComparison(t *testing.T
 	cmp, items := contractMatchFixture(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	f := &fakeQuoteClient{items: items, cmp: cmp, onLineItems: cancel}
-	_, err := QuoteRecommendation(ctx, f, matchPlan, "rec-1", contractRecommendation())
+	_, err := QuoteRecommendation(ctx, f, matchPlan, recID, contractRecommendation())
 	requireQuoteError(t, err, QuoteErrCanceled, "comparison")
 	require.Zero(t, f.comparisons)
 }
@@ -313,12 +315,12 @@ func TestQuoteRecommendationCancellationBetweenReadsSkipsComparison(t *testing.T
 func TestQuoteRecommendationRejectsUnusableInputsWithoutCalls(t *testing.T) {
 	cmp, items := contractMatchFixture(t)
 	f := &fakeQuoteClient{items: items, cmp: cmp}
-	_, err := QuoteRecommendation(context.Background(), f, "not-a-uuid", "rec-1", contractRecommendation())
+	_, err := QuoteRecommendation(context.Background(), f, "not-a-uuid", recID, contractRecommendation())
 	requireQuoteError(t, err, QuoteErrInvalidRequest, "request")
-	_, err = QuoteRecommendation(context.Background(), nil, matchPlan, "rec-1", contractRecommendation())
+	_, err = QuoteRecommendation(context.Background(), nil, matchPlan, recID, contractRecommendation())
 	requireQuoteError(t, err, QuoteErrInvalidRequest, "request")
 	var typedNil *fakeQuoteClient
-	_, err = QuoteRecommendation(context.Background(), typedNil, matchPlan, "rec-1", contractRecommendation())
+	_, err = QuoteRecommendation(context.Background(), typedNil, matchPlan, recID, contractRecommendation())
 	requireQuoteError(t, err, QuoteErrInvalidRequest, "request")
 	require.Zero(t, f.comparisons)
 }
@@ -335,10 +337,9 @@ func TestQuoteRecommendationMalformedVendorDataIsATypedErrorWithoutFigures(t *te
 		"duplicate row":        {&fakeQuoteClient{items: items, cmp: &dup}, "build"},
 		"line items other err": {&fakeQuoteClient{itemsErr: fmt.Errorf("decode %s", vendorWords)}, "line_items"},
 		"comparison other err": {&fakeQuoteClient{items: items, cmpErr: fmt.Errorf("decode %s", vendorWords)}, "comparison"},
-		"non-timeout net err":  {&fakeQuoteClient{itemsErr: &net.DNSError{Err: vendorWords, IsTimeout: false}}, "line_items"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			got, err := QuoteRecommendation(context.Background(), tc.f, matchPlan, "rec-1", contractRecommendation())
+			got, err := QuoteRecommendation(context.Background(), tc.f, matchPlan, recID, contractRecommendation())
 			require.Nil(t, got)
 			qe := requireQuoteError(t, err, QuoteErrInvalidResponse, tc.stage)
 			assert.Equal(t, "archera recommendation quote failed: invalid_response at "+tc.stage, qe.Error())
@@ -374,8 +375,43 @@ func TestQuoteRecommendationChecksContextBeforeAnyVendorRead(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	f := &fakeQuoteClient{items: items, cmp: cmp}
-	_, err := QuoteRecommendation(ctx, f, matchPlan, "rec-1", contractRecommendation())
+	_, err := QuoteRecommendation(ctx, f, matchPlan, recID, contractRecommendation())
 	requireQuoteError(t, err, QuoteErrCanceled, "line_items")
 	require.Zero(t, f.lineItemReads)
 	require.Zero(t, f.comparisons)
+}
+
+func TestQuoteRecommendationTransportFailureIsVendorUnavailable(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	c, err := newClient(srv.URL, Config{APIKey: NewSecret(testKey), OrgID: testOrg}, srv.Client())
+	require.NoError(t, err)
+	srv.Close()
+	got, err := QuoteRecommendation(context.Background(), c, matchPlan, recID, contractRecommendation())
+	require.Nil(t, got)
+	requireQuoteError(t, err, QuoteErrVendorUnavailable, "line_items")
+	assert.NotContains(t, err.Error(), srv.Listener.Addr().String())
+
+	f := &fakeQuoteClient{itemsErr: &net.DNSError{Err: vendorWords}}
+	_, err = QuoteRecommendation(context.Background(), f, matchPlan, recID, contractRecommendation())
+	requireQuoteError(t, err, QuoteErrVendorUnavailable, "line_items")
+	assert.NotContains(t, err.Error(), vendorWords)
+}
+
+func TestQuoteRecommendationUnrepresentableValueHasItsOwnKind(t *testing.T) {
+	cmp, items := contractMatchFixture(t)
+	cmp.Rows[0].Current.UpfrontCost = big.NewRat(1, 3)
+	got, err := QuoteRecommendation(context.Background(), &fakeQuoteClient{items: items, cmp: cmp}, matchPlan, recID, contractRecommendation())
+	require.Nil(t, got)
+	qe := requireQuoteError(t, err, QuoteErrUnrepresentable, "build")
+	assert.Equal(t, "archera recommendation quote failed: unrepresentable_value at build", qe.Error())
+}
+
+func TestQuoteRecommendationRequiresUUIDRecommendationID(t *testing.T) {
+	for _, id := range []string{"", "rec-1", recID + "0"} {
+		s, c := newQuoteServer(t)
+		got, err := QuoteRecommendation(context.Background(), c, matchPlan, id, contractRecommendation())
+		require.Nil(t, got, id)
+		requireQuoteError(t, err, QuoteErrInvalidRequest, "request")
+		require.Empty(t, s.paths)
+	}
 }
