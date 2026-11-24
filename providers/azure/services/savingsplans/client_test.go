@@ -271,7 +271,7 @@ func TestGetExistingCommitments_PagerError(t *testing.T) {
 func makeRec(term string) common.Recommendation {
 	return common.Recommendation{
 		Term:          common.Term(term),
-		PaymentOption: "No Upfront",
+		PaymentOption: "upfront",
 		Details: &common.SavingsPlanDetails{
 			PlanType:         "Compute",
 			HourlyCommitment: 1.5,

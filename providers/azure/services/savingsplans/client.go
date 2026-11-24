@@ -15,11 +15,13 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/billingbenefits/armbillingbenefits"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/reservations/armreservations"
 
 	"github.com/LeanerCloud/cloud-commitments-go/pkg/common"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/httpclient"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/pricing"
 	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/internal/slot"
+	"github.com/LeanerCloud/cloud-commitments-go/providers/azure/services/internal/reservations"
 )
 
 // SavingsPlanOrderAliasAPI defines operations on SavingsPlanOrderAlias (enables mocking).
@@ -497,6 +499,10 @@ func (c *Client) purchaseOrderBody(rec common.Recommendation, spDetails *common.
 	if err != nil {
 		return armbillingbenefits.SavingsPlanOrderAliasModel{}, err
 	}
+	billingPlan, err := toAzureBillingPlan(rec.PaymentOption)
+	if err != nil {
+		return armbillingbenefits.SavingsPlanOrderAliasModel{}, err
+	}
 	grain := armbillingbenefits.CommitmentGrainHourly
 	billingScopeID := c.billingScopeID()
 	appliedScope := armbillingbenefits.AppliedScopeTypeShared
@@ -508,6 +514,7 @@ func (c *Client) purchaseOrderBody(rec common.Recommendation, spDetails *common.
 			DisplayName:      &displayName,
 			BillingScopeID:   &billingScopeID,
 			Term:             &term,
+			BillingPlan:      billingPlan,
 			AppliedScopeType: &appliedScope,
 			Commitment: &armbillingbenefits.Commitment{
 				Amount:       &hourlyAmount,
@@ -566,6 +573,22 @@ func (c *Client) fetchOnDemandRate(ctx context.Context, planType string) (float6
 	}
 
 	return 0, fmt.Errorf("no on-demand pricing found for savings plan type %s", planType)
+}
+
+// toAzureBillingPlan maps the payment option to the order alias billingPlan.
+// The SDK documents the field as required only for monthly billing and has no
+// upfront value, so upfront sends nil. Empty, partial-upfront and unknown
+// options fail rather than default, since a wrong default changes what is
+// charged.
+func toAzureBillingPlan(p common.PaymentOption) (*armbillingbenefits.BillingPlan, error) {
+	plan, err := reservations.BillingPlanForPaymentOption(p)
+	if err != nil {
+		return nil, fmt.Errorf("savings plan payment option: %w", err)
+	}
+	if plan == armreservations.ReservationBillingPlanMonthly {
+		return toPtr(armbillingbenefits.BillingPlanP1M), nil
+	}
+	return nil, nil
 }
 
 // toAzureTerm converts a CUDly term string to an armbillingbenefits.Term.
