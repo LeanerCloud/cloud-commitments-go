@@ -820,8 +820,10 @@ func TestSavingsPlansSlugsAllNormalize(t *testing.T) {
 
 func TestDecodeServiceDetailsFor_SavingsPlanSpellings(t *testing.T) {
 	t.Parallel()
-	keys := []string{"savings-plans"}
-	for _, s := range append(SavingsPlansPlanTypes(), ServiceSavingsPlansAll) {
+	canonical := append(SavingsPlansPlanTypes(), ServiceSavingsPlansAll)
+	keys := make([]string, 0, 2*len(canonical)+1)
+	keys = append(keys, "savings-plans")
+	for _, s := range canonical {
 		keys = append(keys, string(s))
 	}
 	for legacy := range legacySavingsPlansSlugs {
