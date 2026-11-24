@@ -157,3 +157,118 @@ func TestMatchRecommendationRefusesUnprovenAssociation(t *testing.T) {
 		})
 	}
 }
+
+func TestMatchRecommendationRejectsAmbiguousVendorRows(t *testing.T) {
+	r, rows, items := matchFixture()
+	rows = append(rows, rows[0])
+	_, err := MatchRecommendation(matchPlan, r, rows, items)
+	require.Error(t, err)
+	r, rows, items = matchFixture()
+	items = append(items, items[0])
+	items[1].ID = "eaadf00d-ffff-4aba-8ada-abcdefabcdef"
+	rows = append(rows, rows[0])
+	rows[1].LineItemID = items[1].ID
+	got, err := MatchRecommendation(matchPlan, r, rows, items)
+	require.NoError(t, err)
+	require.Equal(t, MatchUnavailable, got.Status)
+	require.Empty(t, got.LineItemID)
+}
+
+func TestMatchRecommendationRejectsEqualMalformedUUIDReferences(t *testing.T) {
+	for _, bad := range []string{"", "not-a-uuid", strings.ReplaceAll(matchItem, "-", ""), "zzzzzzzz-zzzz-4zzz-8zzz-zzzzzzzzzzzz"} {
+		for _, field := range []string{"plan", "item", "offer"} {
+			t.Run(field+"_"+bad, func(t *testing.T) {
+				r, rows, items := matchFixture()
+				plan := matchPlan
+				switch field {
+				case "plan":
+					plan, items[0].PlanID = bad, bad
+				case "item":
+					rows[0].LineItemID, items[0].ID = bad, bad
+				case "offer":
+					rows[0].CurrentOfferID, items[0].OfferID = bad, bad
+				}
+				got, err := MatchRecommendation(plan, r, rows, items)
+				require.NoError(t, err)
+				require.Equal(t, MatchUnavailable, got.Status)
+			})
+		}
+	}
+}
+
+func TestMatchRecommendationUnavailableForNilOrZeroAmounts(t *testing.T) {
+	zero := func() *big.Rat { return new(big.Rat) }
+	tests := []struct {
+		name   string
+		change func(*RecommendationIdentity, *ComparisonIdentity, *LineItemIdentity)
+		reason Reason
+	}{
+		{"recommendation_nil", func(r *RecommendationIdentity, _ *ComparisonIdentity, _ *LineItemIdentity) { r.HourlyCommitment = nil }, ReasonIdentityUnproven},
+		{"recommendation_zero", func(r *RecommendationIdentity, _ *ComparisonIdentity, _ *LineItemIdentity) {
+			r.HourlyCommitment = zero()
+		}, ReasonIdentityUnproven},
+		{"item_nil", func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
+			i.SelectedCommitment = nil
+		}, ReasonIdentityUnproven},
+		{"item_zero", func(_ *RecommendationIdentity, _ *ComparisonIdentity, i *LineItemIdentity) {
+			i.SelectedCommitment = zero()
+		}, ReasonIdentityUnproven},
+		{"current_nil", func(_ *RecommendationIdentity, c *ComparisonIdentity, _ *LineItemIdentity) {
+			c.CurrentSelectedAmount = nil
+		}, ReasonComparisonBasisUnproven},
+		{"current_zero", func(_ *RecommendationIdentity, c *ComparisonIdentity, _ *LineItemIdentity) {
+			c.CurrentSelectedAmount = zero()
+		}, ReasonComparisonBasisUnproven},
+		{"all_zero", func(r *RecommendationIdentity, c *ComparisonIdentity, i *LineItemIdentity) {
+			r.HourlyCommitment, c.CurrentSelectedAmount, i.SelectedCommitment = zero(), zero(), zero()
+		}, ReasonIdentityUnproven},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, rows, items := matchFixture()
+			tt.change(r, &rows[0], &items[0])
+			got, err := MatchRecommendation(matchPlan, r, rows, items)
+			require.NoError(t, err)
+			require.Equal(t, MatchUnavailable, got.Status)
+			require.Equal(t, tt.reason, got.Reason)
+			require.Empty(t, got.LineItemID)
+			require.Empty(t, got.Candidates)
+		})
+	}
+}
+
+func TestSelectLineItem(t *testing.T) {
+	r, _, items := matchFixture()
+	id, status := SelectLineItem(r, items)
+	require.Equal(t, SelectOne, status)
+	require.Equal(t, matchItem, id)
+
+	other := items[0]
+	other.ID = "eaadf00d-ffff-4aba-8ada-abcdefabcdef"
+	other.Region = "eu-west-1"
+	id, status = SelectLineItem(r, []LineItemIdentity{other, items[0]})
+	require.Equal(t, SelectOne, status)
+	require.Equal(t, matchItem, id)
+
+	id, status = SelectLineItem(r, []LineItemIdentity{other})
+	require.Equal(t, SelectNone, status)
+	require.Empty(t, id)
+	id, status = SelectLineItem(r, nil)
+	require.Equal(t, SelectNone, status)
+	require.Empty(t, id)
+
+	twin := items[0]
+	twin.ID = other.ID
+	id, status = SelectLineItem(r, []LineItemIdentity{items[0], twin})
+	require.Equal(t, SelectAmbiguous, status)
+	require.Empty(t, id)
+
+	bad := *r
+	bad.HourlyCommitment = nil
+	id, status = SelectLineItem(&bad, items)
+	require.Equal(t, SelectNone, status)
+	require.Empty(t, id)
+	id, status = SelectLineItem(nil, items)
+	require.Equal(t, SelectNone, status)
+	require.Empty(t, id)
+}

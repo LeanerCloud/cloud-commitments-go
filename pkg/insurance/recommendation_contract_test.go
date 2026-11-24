@@ -29,6 +29,15 @@ func contractMatchFixture(t *testing.T) (*Comparison, []LineItem) {
 	return comparison, items
 }
 
+// contractRecommendation is the identity the stored recommendation projects to for contractMatchFixture.
+func contractRecommendation() *RecommendationIdentity {
+	hourly, _ := new(big.Rat).SetString("0.50000000000000000001")
+	return &RecommendationIdentity{Provider: "aws", SourceAccountID: "Source-account-a", CloudAccountID: "cloud-account-a",
+		Service: "savings-plans-ec2instance", PlanType: "EC2Instance", OfferingID: "provider-offer-a",
+		Region: "us-east-1", TopLevelRegion: "us-east-1", InstanceFamily: "m5", Payment: "no_upfront",
+		NativeDurationSeconds: 31536000, HourlyCommitment: hourly}
+}
+
 func TestProjectContractMapsEveryIdentityField(t *testing.T) {
 	comparison, items := contractMatchFixture(t)
 	rows, identities, err := ProjectContract(comparison, items)
@@ -54,6 +63,20 @@ func TestProjectContractMapsEveryIdentityField(t *testing.T) {
 	require.Equal(t, "all_upfront", rows[0].Candidates[0].Payment)
 	require.Equal(t, rows[0].Candidates[0].OfferID, rows[0].Candidates[1].OfferID)
 	require.Zero(t, identities[0].SelectedCommitment.Cmp(comparison.Rows[0].Current.SelectedAmount))
+}
+
+func TestProjectContractJoinsActualDecodedIdentity(t *testing.T) {
+	comparison, items := contractMatchFixture(t)
+	rows, identities, err := ProjectContract(comparison, items)
+	require.NoError(t, err)
+	got, err := MatchRecommendation(matchPlan, contractRecommendation(), rows, identities)
+	require.NoError(t, err)
+	require.Equal(t, ResourceAssociated, got.Status)
+	require.Equal(t, matchItem, got.LineItemID)
+	require.Len(t, got.Candidates, 2)
+	require.Equal(t, CandidateVendorAlternative, got.Candidates[0].Status)
+	require.Equal(t, ReasonStoredDecimalOnly, got.AmountProvenance)
+	require.Equal(t, ReasonUnavailableSourcePrecision, got.EconomicStatus)
 }
 
 func TestProjectContractRejectsMissingComparison(t *testing.T) {
@@ -104,6 +127,10 @@ func TestProjectContractPreservesMissingOrContradictoryEvidence(t *testing.T) {
 			rows, identities, err := ProjectContract(c, items)
 			require.NoError(t, err)
 			tt.check(t, rows[0], identities[0])
+			got, err := MatchRecommendation(matchPlan, contractRecommendation(), rows, identities)
+			require.NoError(t, err)
+			require.Equal(t, MatchUnavailable, got.Status)
+			require.Empty(t, got.LineItemID)
 		})
 	}
 }
@@ -146,4 +173,26 @@ func TestProjectContractExcludesTheCurrentOfferFromAlternatives(t *testing.T) {
 	for _, candidate := range rows[0].Candidates {
 		require.NotEqual(t, current.OfferID, candidate.OfferID)
 	}
+	_, identities, err := ProjectContract(comparison, items)
+	require.NoError(t, err)
+	got, err := MatchRecommendation(matchPlan, contractRecommendation(), rows, identities)
+	require.NoError(t, err)
+	require.Len(t, got.Candidates, 2)
+}
+
+func TestProjectContractUnselectedTwinDoesNotCreateAmbiguity(t *testing.T) {
+	comparison, items := contractMatchFixture(t)
+	twin := items[0]
+	twin.ID = "eaadf00d-ffff-4aba-8ada-abcdefabcdef"
+	twin.IsSelected = false
+	items = append(items, twin)
+	rec := contractRecommendation()
+	_, identities, err := ProjectContract(comparison, items)
+	require.NoError(t, err)
+	require.Empty(t, identities[1].Type)
+	id, status := SelectLineItem(rec, identities)
+	require.Equal(t, SelectOne, status)
+	require.Equal(t, matchItem, id)
+	_, status = SelectLineItem(rec, identities[1:])
+	require.Equal(t, SelectNone, status)
 }
