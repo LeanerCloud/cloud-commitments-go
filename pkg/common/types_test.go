@@ -4,6 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -716,4 +720,84 @@ func TestRecommendationPricedJSONRoundTrip(t *testing.T) {
 	var out Recommendation
 	require.NoError(t, json.Unmarshal(b, &out))
 	assert.True(t, out.Priced)
+}
+
+func TestNormalizeSavingsPlansServiceType(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		in     ServiceType
+		want   ServiceType
+		wantOK bool
+	}{
+		{"umbrella canonical", ServiceSavingsPlansAll, ServiceSavingsPlansAll, true},
+		{"compute canonical", ServiceSavingsPlansCompute, ServiceSavingsPlansCompute, true},
+		{"ec2instance canonical", ServiceSavingsPlansEC2Instance, ServiceSavingsPlansEC2Instance, true},
+		{"sagemaker canonical", ServiceSavingsPlansSageMaker, ServiceSavingsPlansSageMaker, true},
+		{"database canonical", ServiceSavingsPlansDatabase, ServiceSavingsPlansDatabase, true},
+		{"legacy hyphenated umbrella", "savings-plans", ServiceSavingsPlansAll, true},
+		{"legacy dash-free compute", "savingsplans-compute", ServiceSavingsPlansCompute, true},
+		{"legacy dash-free ec2instance", "savingsplans-ec2instance", ServiceSavingsPlansEC2Instance, true},
+		{"legacy dash-free sagemaker", "savingsplans-sagemaker", ServiceSavingsPlansSageMaker, true},
+		{"legacy dash-free database", "savingsplans-database", ServiceSavingsPlansDatabase, true},
+		{"unrelated service", ServiceRDS, "", false},
+		{"empty", "", "", false},
+		{"prefix only", "savings", "", false},
+		{"unknown per-type", "savings-plans-unknown", "", false},
+		{"upper case is not folded", "Savings-Plans", "", false},
+		{"surrounding space is not trimmed", " savingsplans", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, ok := NormalizeSavingsPlansServiceType(tt.in)
+			assert.Equal(t, tt.wantOK, ok)
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestIsSavingsPlan_RejectsLegacySpellings(t *testing.T) {
+	t.Parallel()
+	for legacy := range legacySavingsPlansSlugs {
+		assert.Falsef(t, IsSavingsPlan(legacy), "IsSavingsPlan(%q) must stay false", legacy)
+	}
+}
+
+// A new ServiceSavingsPlans* constant must be normalizable and have its
+// dash-free spelling covered, or this fails.
+func TestSavingsPlansSlugsAllNormalize(t *testing.T) {
+	t.Parallel()
+	f, err := parser.ParseFile(token.NewFileSet(), "types.go", nil, 0)
+	require.NoError(t, err)
+	var slugs []ServiceType
+	for _, d := range f.Decls {
+		gd, ok := d.(*ast.GenDecl)
+		if !ok || gd.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range gd.Specs {
+			vs := spec.(*ast.ValueSpec)
+			for _, n := range vs.Names {
+				if !strings.HasPrefix(n.Name, "ServiceSavingsPlans") {
+					continue
+				}
+				require.Len(t, vs.Values, 1, n.Name)
+				lit, ok := vs.Values[0].(*ast.BasicLit)
+				require.Truef(t, ok, "%s must be a string literal", n.Name)
+				slugs = append(slugs, ServiceType(strings.Trim(lit.Value, `"`)))
+			}
+		}
+	}
+	require.Len(t, slugs, 5, "ServiceSavingsPlans* constants changed; update normalization and this test")
+	for _, slug := range slugs {
+		got, ok := NormalizeSavingsPlansServiceType(slug)
+		assert.Truef(t, ok && got == slug, "canonical %q must normalize to itself", slug)
+		dashFree := ServiceType(strings.Replace(string(slug), "savings-plans", "savingsplans", 1))
+		got, ok = NormalizeSavingsPlansServiceType(dashFree)
+		assert.Truef(t, ok && got == slug, "dash-free %q must normalize to %q", dashFree, slug)
+	}
+	got, ok := NormalizeSavingsPlansServiceType("savings-plans")
+	assert.True(t, ok)
+	assert.Equal(t, ServiceSavingsPlansAll, got)
 }

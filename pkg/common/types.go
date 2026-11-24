@@ -176,22 +176,41 @@ func (s ServiceType) String() string {
 	return string(s)
 }
 
-// IsSavingsPlan reports whether s is any Savings Plans service slug --
-// the umbrella sentinel (ServiceSavingsPlansAll), any of the four per-plan-type
-// constants, or the dash-free frontend spelling "savingsplans" that the API
-// handler stores verbatim without normalisation. Use it when code needs to
-// recognize the Savings Plans family irrespective of plan type (e.g., stats
-// aggregation, region-ignoring filters, display-name branching).
-func IsSavingsPlan(s ServiceType) bool {
+// legacySavingsPlansSlugs maps retired Savings Plans spellings to their
+// canonical slug: the pre-#85 hyphenated umbrella and dash-free per-type forms.
+var legacySavingsPlansSlugs = map[ServiceType]ServiceType{
+	"savings-plans":            ServiceSavingsPlansAll,
+	"savingsplans-compute":     ServiceSavingsPlansCompute,
+	"savingsplans-ec2instance": ServiceSavingsPlansEC2Instance,
+	"savingsplans-sagemaker":   ServiceSavingsPlansSageMaker,
+	"savingsplans-database":    ServiceSavingsPlansDatabase,
+}
+
+// NormalizeSavingsPlansServiceType maps s to its canonical Savings Plans slug.
+// Canonical slugs return themselves; known legacy spellings return the
+// canonical slug they stand for. Anything else, including non-Savings-Plans
+// services and differently cased input, returns ("", false) so callers fail
+// loudly instead of defaulting.
+func NormalizeSavingsPlansServiceType(s ServiceType) (ServiceType, bool) {
 	switch s {
 	case ServiceSavingsPlansAll,
 		ServiceSavingsPlansCompute,
 		ServiceSavingsPlansEC2Instance,
 		ServiceSavingsPlansSageMaker,
 		ServiceSavingsPlansDatabase:
-		return true
+		return s, true
 	}
-	return string(s) == "savingsplans"
+	canonical, ok := legacySavingsPlansSlugs[s]
+	return canonical, ok
+}
+
+// IsSavingsPlan reports whether s is a canonical Savings Plans service slug:
+// the umbrella sentinel (ServiceSavingsPlansAll) or one of the four per-plan-type
+// constants. Legacy spellings are deliberately rejected so existing callers keep
+// their behavior; pass them through NormalizeSavingsPlansServiceType first.
+func IsSavingsPlan(s ServiceType) bool {
+	canonical, ok := NormalizeSavingsPlansServiceType(s)
+	return ok && canonical == s
 }
 
 // SavingsPlansPlanTypes returns the four per-plan-type SP slugs in canonical
