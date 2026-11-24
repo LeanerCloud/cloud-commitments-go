@@ -13,6 +13,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ec2 v1.349.0
 	github.com/aws/aws-sdk-go-v2/service/sts v1.53.0
 	github.com/aws/smithy-go v1.28.9
+	github.com/google/uuid v1.6.0
 	github.com/stretchr/testify v1.12.1
 	golang.org/x/sync v0.25.0
 	golang.org/x/sys v0.50.0
