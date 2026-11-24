@@ -196,3 +196,13 @@ func TestProjectContractUnselectedTwinDoesNotCreateAmbiguity(t *testing.T) {
 	_, status = SelectLineItem(rec, identities[1:])
 	require.Equal(t, SelectNone, status)
 }
+
+func TestProjectContractCarriesProviders(t *testing.T) {
+	comparison, items := contractMatchFixture(t)
+	items[0].Offer.Provider = "gcp"
+	comparison.Rows[0].Current.Provider = "azure"
+	rows, identities, err := ProjectContract(comparison, items)
+	require.NoError(t, err)
+	require.Equal(t, "gcp", identities[0].Provider)
+	require.Equal(t, "azure", rows[0].Provider)
+}

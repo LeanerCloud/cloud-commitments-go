@@ -272,3 +272,70 @@ func TestSelectLineItem(t *testing.T) {
 	require.Equal(t, SelectNone, status)
 	require.Empty(t, id)
 }
+
+func TestMatchRecommendationPlanTypeMustBeEC2Instance(t *testing.T) {
+	r, rows, items := matchFixture()
+	r.PlanType, items[0].PlanType = "Compute", "Compute"
+	got, err := MatchRecommendation(matchPlan, r, rows, items)
+	require.NoError(t, err)
+	require.Equal(t, MatchUnavailable, got.Status)
+}
+
+func TestMatchRecommendationRequiresRegionOnEveryEvidence(t *testing.T) {
+	r, rows, items := matchFixture()
+	empty := ""
+	r.Region, items[0].Region, rows[0].Region = "", "", &empty
+	got, err := MatchRecommendation(matchPlan, r, rows, items)
+	require.NoError(t, err)
+	require.Equal(t, MatchUnavailable, got.Status)
+}
+
+func TestMatchRecommendationRejectsUnusableSourceCharacters(t *testing.T) {
+	for name, source := range map[string]string{"space": "source account", "nbsp": "source account",
+		"control": "source\x00account", "format": "source​account"} {
+		t.Run(name, func(t *testing.T) {
+			r, rows, items := matchFixture()
+			r.SourceAccountID, items[0].SourceAccountID = source, source
+			got, err := MatchRecommendation(matchPlan, r, rows, items)
+			require.NoError(t, err)
+			require.Equal(t, MatchUnavailable, got.Status)
+		})
+	}
+}
+
+func TestMatchRecommendationDuplicateLineItemIDIsAnError(t *testing.T) {
+	r, rows, items := matchFixture()
+	items = append(items, items[0])
+	items[1].ID = strings.ToUpper(matchItem)
+	_, err := MatchRecommendation(matchPlan, r, rows, items)
+	require.Error(t, err)
+}
+
+func TestMatchRecommendationRefusesUnreferencedMalformedLineItem(t *testing.T) {
+	r, rows, items := matchFixture()
+	stray := items[0]
+	stray.ID, stray.Region = "not-a-uuid", "eu-west-1"
+	got, err := MatchRecommendation(matchPlan, r, rows, append(items, stray))
+	require.NoError(t, err)
+	require.Equal(t, MatchUnavailable, got.Status)
+}
+
+func TestMatchRecommendationReportsAmbiguityReason(t *testing.T) {
+	r, rows, items := matchFixture()
+	twin := items[0]
+	twin.ID = "eaadf00d-ffff-4aba-8ada-abcdefabcdef"
+	twinRow := rows[0]
+	twinRow.LineItemID = twin.ID
+	got, err := MatchRecommendation(matchPlan, r, append(rows, twinRow), append(items, twin))
+	require.NoError(t, err)
+	require.Equal(t, MatchUnavailable, got.Status)
+	require.Equal(t, ReasonAmbiguousLineItems, got.Reason)
+}
+
+func TestMatchRecommendationComparesRowIDsCaseInsensitively(t *testing.T) {
+	r, rows, items := matchFixture()
+	rows[0].LineItemID = strings.ToUpper(matchItem)
+	got, err := MatchRecommendation(matchPlan, r, rows, items)
+	require.NoError(t, err)
+	require.Equal(t, ResourceAssociated, got.Status)
+}

@@ -264,3 +264,25 @@ func TestRecommendationDTOInexactIdentityNeverRendersFigures(t *testing.T) {
 		})
 	}
 }
+
+func TestRecommendationDTONativeFieldsComeFromTheMatchedLineItemAndRow(t *testing.T) {
+	c, items := contractMatchFixture(t)
+	other := items[0]
+	other.ID = "22222222-2222-4222-8222-222222222222"
+	otherSource, otherPlan, otherFamily, otherSeconds := "another-source", "Compute", "c5", big.NewRat(94608000, 1)
+	other.AccountID, other.Offer.PlanType, other.Offer.InstanceFamily, other.Offer.DurationSeconds = &otherSource, &otherPlan, &otherFamily, otherSeconds
+	unrelated := c.Rows[0]
+	unrelated.LineItemID = other.ID
+	unrelated.Current.UpfrontCost = big.NewRat(999, 1)
+	c.Rows = append([]ComparisonRow{unrelated}, c.Rows...)
+	later := other
+	later.ID = "33333333-3333-4333-8333-333333333333"
+	items = append(append([]LineItem{other}, items...), later)
+	got, err := buildFixture(t, c, items)
+	require.NoError(t, err)
+	require.Equal(t, ResourceAssociated, got.Status)
+	require.Equal(t, "31536000", *got.Current.NativeDurationSeconds)
+	require.Equal(t, "EC2Instance", *got.Current.NativePlanType)
+	require.Equal(t, "m5", *got.Current.NativeInstanceFamily)
+	require.Equal(t, "0", *got.Current.UpfrontCost)
+}

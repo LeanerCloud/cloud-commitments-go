@@ -38,7 +38,7 @@ func TestDecimal_NonTerminatingFailsLoud(t *testing.T) {
 }
 
 func TestCleanString(t *testing.T) {
-	assert.Equal(t, "abc", CleanString("a\x00b\u200bc\u2028\n\t"))
+	assert.Equal(t, "abc", CleanString("a\x00b\u200bc\u2028\u2029\n\t"))
 	assert.Equal(t, "plain text", CleanString("plain text"))
 	long := strings.Repeat("a", 300)
 	assert.Len(t, CleanString(long), 256)
