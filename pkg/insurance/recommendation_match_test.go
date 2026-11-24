@@ -292,7 +292,7 @@ func TestMatchRecommendationRequiresRegionOnEveryEvidence(t *testing.T) {
 
 func TestMatchRecommendationRejectsUnusableSourceCharacters(t *testing.T) {
 	for name, source := range map[string]string{"space": "source account", "nbsp": "source account",
-		"control": "source\x00account", "format": "source​account"} {
+		"control": "source\x00account", "format": "source\u200baccount"} {
 		t.Run(name, func(t *testing.T) {
 			r, rows, items := matchFixture()
 			r.SourceAccountID, items[0].SourceAccountID = source, source
