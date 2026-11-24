@@ -3,6 +3,7 @@ package insurance
 import (
 	"encoding/json"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -112,8 +113,154 @@ func ptr(s string) *string { return &s }
 func TestPaymentAndCleanPtrSanitizeAndKeepNil(t *testing.T) {
 	assert.Nil(t, payment(nil))
 	assert.Nil(t, cleanPtr(nil))
-	p := PaymentOption("no‮_upfront\n")
+	p := PaymentOption("no\u202e_upfront\n")
 	assert.Equal(t, "no_upfront", *payment(&p))
 	s := "a\x00b"
 	assert.Equal(t, "ab", *cleanPtr(&s))
+}
+
+func TestRecommendationDTOUnmatchedCarriesNoFigures(t *testing.T) {
+	for name, change := range map[string]func(*RecommendationIdentity, *Comparison, *[]LineItem){
+		"source": func(r *RecommendationIdentity, _ *Comparison, _ *[]LineItem) {
+			r.SourceAccountID = "other"
+		},
+		"ambiguous": func(_ *RecommendationIdentity, c *Comparison, i *[]LineItem) {
+			dup := (*i)[0]
+			dup.ID = "22222222-2222-4222-8222-222222222222"
+			*i = append(*i, dup)
+			row := c.Rows[0]
+			row.LineItemID = dup.ID
+			c.Rows = append(c.Rows, row)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c, items := contractMatchFixture(t)
+			c.Rows[0].Current.UpfrontCost = big.NewRat(1, 3)
+			rec := contractRecommendation()
+			change(rec, c, &items)
+			got, err := BuildRecommendationComparison("requested-row", matchPlan, rec, c, items)
+			require.NoError(t, err)
+			require.Equal(t, MatchUnavailable, got.Status)
+			require.NotEmpty(t, got.Reason)
+			require.Empty(t, got.AmountProvenance)
+			require.Equal(t, ReasonIdentityUnproven, got.EconomicStatus)
+			require.Nil(t, got.Current)
+			require.Empty(t, got.Candidates)
+			require.Nil(t, got.Currency)
+			require.Nil(t, got.ComparableDelta)
+			require.NotContains(t, string(mustMarshal(t, got)), "faadf00d")
+		})
+	}
+}
+
+func TestRecommendationDTOCandidateMismatchAndUnrepresentable(t *testing.T) {
+	c, items := contractMatchFixture(t)
+	c.Rows[0].Candidates[0].SelectedAmount = big.NewRat(1, 2)
+	c.Rows[0].Candidates[0].UpfrontCost = big.NewRat(1, 3)
+	got, err := buildFixture(t, c, items)
+	require.NoError(t, err)
+	require.Equal(t, ResourceAssociated, got.Status)
+	require.Nil(t, got.Candidates[0].Figures)
+	require.Equal(t, CandidateUnavailable, got.Candidates[0].Status)
+	require.Equal(t, ReasonCandidateBasisUnproven, got.Candidates[0].Reason)
+	require.NotNil(t, got.Candidates[1].Figures)
+
+	for name, fn := range map[string]func(*Comparison){
+		"current":   func(c *Comparison) { c.Rows[0].Current.UpfrontCost = big.NewRat(1, 3) },
+		"candidate": func(c *Comparison) { c.Rows[0].Candidates[1].Monthly.Premium = big.NewRat(1, 3) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			sub, subItems := contractMatchFixture(t)
+			fn(sub)
+			subGot, subErr := buildFixture(t, sub, subItems)
+			require.ErrorIs(t, subErr, ErrUnrepresentable)
+			require.Nil(t, subGot)
+		})
+	}
+	_, err = buildFixture(t, nil, items)
+	require.Error(t, err)
+}
+
+func TestRecommendationDTOMissingRowIsAnError(t *testing.T) {
+	c, items := contractMatchFixture(t)
+	rec := contractRecommendation()
+	rows, ids, err := ProjectContract(c, items)
+	require.NoError(t, err)
+	match, err := MatchRecommendation(matchPlan, rec, rows, ids)
+	require.NoError(t, err)
+	c.Rows = nil
+	m := &mapper{}
+	require.ErrorIs(t, m.fillMatched(&RecommendationComparisonDTO{}, &match, c, items), errRecommendationRowMissing)
+}
+
+func TestRecommendationDTONeverListsCurrentOfferAsAlternative(t *testing.T) {
+	c, items := contractMatchFixture(t)
+	row := &c.Rows[0]
+	currentCopy := row.Current
+	currentCopy.UpfrontCost = big.NewRat(99, 1)
+	row.Candidates[0].UpfrontCost = big.NewRat(31, 1)
+	row.Candidates[1].SelectedAmount = big.NewRat(1, 2)
+	row.Candidates = append([]OfferEntry{currentCopy}, row.Candidates...)
+	got, err := buildFixture(t, c, items)
+	require.NoError(t, err)
+	require.Len(t, got.Candidates, 2)
+	require.Equal(t, "31", *got.Candidates[0].Figures.UpfrontCost)
+	require.Nil(t, got.Candidates[1].Figures)
+	require.Equal(t, ReasonCandidateBasisUnproven, got.Candidates[1].Reason)
+}
+
+func TestRecommendationDTOIgnoresUnrelatedRows(t *testing.T) {
+	c, items := contractMatchFixture(t)
+	unrelated := c.Rows[0]
+	unrelated.LineItemID = "22222222-2222-4222-8222-222222222222"
+	unrelated.Current.UpfrontCost = big.NewRat(1, 3)
+	c.Rows = append(c.Rows, unrelated)
+	other := items[0]
+	other.ID = unrelated.LineItemID
+	src := "another-source"
+	other.AccountID = &src
+	items = append(items, other)
+	got, err := buildFixture(t, c, items)
+	require.NoError(t, err)
+	require.Equal(t, ResourceAssociated, got.Status)
+	require.Len(t, got.Candidates, 2)
+	require.NotContains(t, string(mustMarshal(t, got)), "another-source")
+}
+
+func TestRecommendationDTOSanitizesVendorStrings(t *testing.T) {
+	c, items := contractMatchFixture(t)
+	hostile := "one_year\u202e\n<script>" + strings.Repeat("界", 100)
+	c.Rows[0].Current.ContractTerm = &hostile
+	c.Rows[0].Candidates[0].OfferID = hostile
+	c.Rows[0].Candidates[0].CommitmentType = hostile
+	got, err := buildFixture(t, c, items)
+	require.NoError(t, err)
+	require.Equal(t, CleanString(hostile), *got.Current.EffectiveContractTerm)
+	require.Equal(t, CleanString(hostile), got.Candidates[0].OfferID)
+	require.LessOrEqual(t, len(got.Candidates[0].OfferID), maxVendorStrLen)
+	require.NotContains(t, got.Candidates[0].OfferID, "\u202e")
+	require.Equal(t, hostile, c.Rows[0].Candidates[0].OfferID)
+}
+
+func TestRecommendationDTOInexactIdentityNeverRendersFigures(t *testing.T) {
+	changes := map[string]func(*RecommendationIdentity){
+		"account":  func(r *RecommendationIdentity) { r.SourceAccountID = "Source-account-b" },
+		"offering": func(r *RecommendationIdentity) { r.OfferingID = "provider-offer-b" },
+		"duration": func(r *RecommendationIdentity) { r.NativeDurationSeconds = 94608000 },
+		"payment":  func(r *RecommendationIdentity) { r.Payment = "all_upfront" },
+		"amount":   func(r *RecommendationIdentity) { r.HourlyCommitment = rat(t, "0.5") },
+		"service":  func(r *RecommendationIdentity) { r.Service = "savings-plans-compute" },
+	}
+	for name, change := range changes {
+		t.Run(name, func(t *testing.T) {
+			c, items := contractMatchFixture(t)
+			rec := contractRecommendation()
+			change(rec)
+			got, err := BuildRecommendationComparison("requested-row", matchPlan, rec, c, items)
+			require.NoError(t, err)
+			require.Equal(t, MatchUnavailable, got.Status)
+			require.Nil(t, got.Current)
+			require.Empty(t, got.Candidates)
+		})
+	}
 }
