@@ -7,6 +7,7 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -764,31 +765,46 @@ func TestIsSavingsPlan_RejectsLegacySpellings(t *testing.T) {
 	}
 }
 
-// A new ServiceSavingsPlans* constant must be normalizable and have its
-// dash-free spelling covered, or this fails.
-func TestSavingsPlansSlugsAllNormalize(t *testing.T) {
-	t.Parallel()
-	f, err := parser.ParseFile(token.NewFileSet(), "types.go", nil, 0)
+// declaredSavingsPlansSlugs returns the value of every ServiceSavingsPlans*
+// string constant declared in any non-test file of the package.
+func declaredSavingsPlansSlugs(t *testing.T) []ServiceType {
+	t.Helper()
+	files, err := filepath.Glob("*.go")
 	require.NoError(t, err)
 	var slugs []ServiceType
-	for _, d := range f.Decls {
-		gd, ok := d.(*ast.GenDecl)
-		if !ok || gd.Tok != token.CONST {
+	for _, name := range files {
+		if strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		for _, spec := range gd.Specs {
-			vs := spec.(*ast.ValueSpec)
-			for _, n := range vs.Names {
-				if !strings.HasPrefix(n.Name, "ServiceSavingsPlans") {
-					continue
+		f, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
+		require.NoError(t, err)
+		for _, d := range f.Decls {
+			gd, ok := d.(*ast.GenDecl)
+			if !ok || gd.Tok != token.CONST {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				vs := spec.(*ast.ValueSpec)
+				for i, n := range vs.Names {
+					if !strings.HasPrefix(n.Name, "ServiceSavingsPlans") {
+						continue
+					}
+					require.Greaterf(t, len(vs.Values), i, "%s needs a literal value", n.Name)
+					lit, ok := vs.Values[i].(*ast.BasicLit)
+					require.Truef(t, ok, "%s must be a string literal", n.Name)
+					slugs = append(slugs, ServiceType(strings.Trim(lit.Value, `"`)))
 				}
-				require.Len(t, vs.Values, 1, n.Name)
-				lit, ok := vs.Values[0].(*ast.BasicLit)
-				require.Truef(t, ok, "%s must be a string literal", n.Name)
-				slugs = append(slugs, ServiceType(strings.Trim(lit.Value, `"`)))
 			}
 		}
 	}
+	return slugs
+}
+
+// A new SP slug in any package file must be normalizable and have its
+// dash-free spelling covered, or this fails.
+func TestSavingsPlansSlugsAllNormalize(t *testing.T) {
+	t.Parallel()
+	slugs := declaredSavingsPlansSlugs(t)
 	require.Len(t, slugs, 5, "ServiceSavingsPlans* constants changed; update normalization and this test")
 	for _, slug := range slugs {
 		got, ok := NormalizeSavingsPlansServiceType(slug)
@@ -800,4 +816,20 @@ func TestSavingsPlansSlugsAllNormalize(t *testing.T) {
 	got, ok := NormalizeSavingsPlansServiceType("savings-plans")
 	assert.True(t, ok)
 	assert.Equal(t, ServiceSavingsPlansAll, got)
+}
+
+func TestDecodeServiceDetailsFor_SavingsPlanSpellings(t *testing.T) {
+	t.Parallel()
+	keys := []string{"savings-plans"}
+	for _, s := range append(SavingsPlansPlanTypes(), ServiceSavingsPlansAll) {
+		keys = append(keys, string(s))
+	}
+	for legacy := range legacySavingsPlansSlugs {
+		keys = append(keys, string(legacy))
+	}
+	for _, k := range keys {
+		got, err := DecodeServiceDetailsFor(k, json.RawMessage(`{}`))
+		require.NoErrorf(t, err, "service %q", k)
+		assert.IsTypef(t, &SavingsPlanDetails{}, got, "service %q", k)
+	}
 }

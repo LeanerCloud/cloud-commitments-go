@@ -124,6 +124,9 @@ func DecodeServiceDetailsFor(service string, raw json.RawMessage) (ServiceDetail
 // (unknown or untyped service); DecodeServiceDetailsFor rejects a payload
 // for such a slug.
 func newDetailsForService(service string) (ServiceDetails, bool) {
+	if _, ok := NormalizeSavingsPlansServiceType(ServiceType(service)); ok {
+		return &SavingsPlanDetails{}, true
+	}
 	switch service {
 	// AWS — EC2 / RDS / ElastiCache: the three services whose
 	// findOfferingID type-asserts a typed *Details pointer today. These
@@ -135,26 +138,6 @@ func newDetailsForService(service string) (ServiceDetails, bool) {
 		return &DatabaseDetails{}, true
 	case string(ServiceElastiCache), string(ServiceCache), string(ServiceMemoryDB):
 		return &CacheDetails{}, true
-
-	// AWS Savings Plans -- all umbrella + per-plan-type slugs use
-	// SavingsPlanDetails. The dash-free spellings are the canonical
-	// values of ServiceSavingsPlansAll / ServiceSavingsPlansCompute etc.;
-	// "savings-plans" (with a dash) is the legacy umbrella alias that
-	// internal/purchase/execution.go: mapSavingsPlansSlug still
-	// recognizes so purchase_executions JSONB rows persisted before
-	// the rename in PR #94 (merged 2026-04-30) still resolve. Recognizing it
-	// here means a legacy direct-execute approval still decodes against the
-	// right type.
-	// TODO(#95): drop "savings-plans" here once the ~6-month retention
-	// window has passed (earliest 2026-10-30). See execution.go
-	// mapSavingsPlansSlug for the full removal checklist.
-	case string(ServiceSavingsPlansAll),
-		string(ServiceSavingsPlansCompute),
-		string(ServiceSavingsPlansEC2Instance),
-		string(ServiceSavingsPlansSageMaker),
-		string(ServiceSavingsPlansDatabase),
-		"savings-plans":
-		return &SavingsPlanDetails{}, true
 
 	// Services that don't currently type-assert Details in
 	// findOfferingID (OpenSearch / Redshift / MemoryDB read rec.ResourceType
